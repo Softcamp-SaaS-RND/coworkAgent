@@ -1,0 +1,31 @@
+[package]
+name = "coworkagent-app"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "an_app"
+
+[[bin]]
+name = "coworkAgent"
+path = "src/main.rs"
+
+[dependencies]
+an-agent = { path = "../agent" }
+an-core = { path = "../core" }
+an-net = { path = "../net" }
+axum = "0.8.9"
+getrandom = "0.4.3"
+log = "0.4.34"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.152"
+tao = "0.37.1"
+futures-util = { version = "0.3.34", default-features = false }
+tokio = { version = "1.53.2", features = ["rt-multi-thread", "net", "macros", "sync", "time"] }
+tray-icon = "0.26.1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
+[dev-dependencies]
+tokio = { version = "1.53.2", features = ["io-util"] }

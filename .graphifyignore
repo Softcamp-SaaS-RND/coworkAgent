@@ -1,0 +1,8 @@
+# graphify 추출 제외 — 이 파일이 있으면 .gitignore 를 대신한다(그래서 .gitignore 항목도 함께 둔다).
+__pycache__/
+*.py[cod]
+.pytest_cache/
+target/
+graphify-out/
+# 개인 세션 메모 — 제품 구조와 무관해 그래프에 잘못된 연결을 만든다.
+.remember/

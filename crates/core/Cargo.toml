@@ -1,0 +1,15 @@
+[package]
+name = "an-core"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "an_core"
+
+[dependencies]
+dirs = "7.0.0"
+log = { version = "0.4.34", features = ["std"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+
+[dev-dependencies]
+rusqlite = "0.40.2"

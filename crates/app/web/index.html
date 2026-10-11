@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>coworkAgent</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div id="app">
+    <nav id="rail" aria-label="PC 전환">
+      <div id="rail_pcs"></div>
+      <button type="button" id="rail_add" class="rail-btn add" aria-label="초대 붙여넣기로 PC 추가">+</button>
+      <button type="button" id="rail_settings" class="rail-btn settings" aria-label="설정">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"></path>
+        </svg>
+      </button>
+    </nav>
+
+    <aside id="sidebar" aria-label="대화 목록">
+      <div class="side-head">
+        <strong id="side_name">…</strong>
+        <span id="side_sub">…</span>
+      </div>
+      <section>
+        <h2>내 에이전트</h2>
+        <ul id="side_agents" class="side-list"></ul>
+      </section>
+      <section>
+        <h2>대화 <a id="new_conv_link" href="#new" class="side-add" aria-label="새 대화">+</a></h2>
+        <ul id="conv_list" class="side-list"></ul>
+      </section>
+      <section class="side-bottom">
+        <h2>연결 가능한 사용자</h2>
+        <ul id="side_peers" class="side-list"></ul>
+      </section>
+    </aside>
+
+    <main id="main">
+      <section id="home" class="view">
+        <div class="empty">
+          <h1>coworkAgent</h1>
+          <p>왼쪽에서 대화를 고르거나, "대화" 옆 + 로 새 대화를 여세요.</p>
+          <p class="hint">PC 를 처음 잇는다면 레일의 + 로 받은 초대를 붙여 넣으세요.</p>
+        </div>
+      </section>
+
+      <section id="conversation" class="view" hidden>
+        <header class="conv-head">
+          <div class="conv-title">
+            <strong id="conv_title"></strong>
+            <span id="conv_sub"></span>
+          </div>
+          <span id="conv_relay" class="hint" hidden></span>
+          <button id="conv_relay_btn" type="button" hidden></button>
+          <a id="conv_timeline_link" class="pill" href="#">타임라인</a>
+        </header>
+        <div id="messages" aria-live="polite"></div>
+        <form id="reply_form" class="composer">
+          <fieldset class="targets">
+            <legend>받는 쪽</legend>
+            <label><input type="radio" name="reply_target" id="reply_to_agent" checked> <span id="reply_agent_label">에이전트에게</span></label>
+            <label><input type="radio" name="reply_target" id="reply_to_human"> 사람에게 — 실행 없이 양쪽 이력에만</label>
+          </fieldset>
+          <label for="reply_text" class="sr-only">메시지</label>
+          <div class="row">
+            <textarea id="reply_text" rows="2" required placeholder="메시지 입력"></textarea>
+            <button type="submit" class="primary">보내기</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="timeline" class="view" hidden>
+        <header class="tl-head">
+          <a id="tl_back" href="#">← 대화로</a>
+          <span id="tl_kicker" class="kicker"></span>
+          <h2 id="tl_title"></h2>
+          <span id="tl_sub" class="hint"></span>
+        </header>
+        <ol id="tl_list"></ol>
+      </section>
+
+      <section id="new" class="view" hidden>
+        <h1>새 대화</h1>
+        <form id="chat_form" class="grid">
+          <label for="chat_peer">상대</label>
+          <select id="chat_peer"></select>
+          <label for="chat_agent">상대 에이전트</label>
+          <select id="chat_agent"></select>
+          <label for="chat_relay_agent">내 에이전트로 자동 왕복</label>
+          <select id="chat_relay_agent"><option value="">안 함 — 상대 에이전트에게만</option></select>
+          <label for="chat_relay_cap">자동 왕복 상한</label>
+          <input id="chat_relay_cap" type="number" min="1" max="50" value="10">
+          <label for="chat_text">메시지</label>
+          <textarea id="chat_text" rows="4" required></textarea>
+          <button type="submit" class="primary">보내기</button>
+        </form>
+        <p id="chat_msg" role="status"></p>
+      </section>
+
+      <section id="settings" class="view" hidden>
+        <h1>설정</h1>
+
+        <section id="me" class="card">
+          <h2>내 정보</h2>
+          <dl>
+            <dt>이름</dt><dd id="me_name">…</dd>
+            <dt>PC 이름</dt><dd id="me_host">…</dd>
+            <dt>지문</dt><dd id="me_fingerprint" class="fp">…</dd>
+            <dt>수신 주소</dt><dd id="me_addrs">…</dd>
+            <dt>버전</dt><dd id="version">…</dd>
+            <dt>데이터 경로</dt><dd id="data_dir">…</dd>
+            <dt>DB</dt><dd id="db">…</dd>
+          </dl>
+        </section>
+
+        <section id="peers" class="card">
+          <h2>피어</h2>
+          <form id="invite_form">
+            <label for="invite_text">초대 붙여넣기</label>
+            <textarea id="invite_text" rows="3" placeholder="메신저로 받은 coworkAgent 페어링 초대 메시지를 통째로 붙여 넣으세요"></textarea>
+            <button type="submit">추가 · 승인</button>
+          </form>
+          <details>
+            <summary>주소 · 코드로 직접 추가</summary>
+            <form id="add_form">
+              <label for="add_addr">주소(IP:포트)</label>
+              <input id="add_addr" name="addr" placeholder="192.168.0.10:47100" required>
+              <label for="add_code">초대 코드</label>
+              <input id="add_code" name="code" placeholder="ABCD-EFGH" autocomplete="off">
+              <button type="submit">추가</button>
+            </form>
+          </details>
+          <p><button type="button" id="window_btn">페어링 받기</button>
+            <span class="hint">누르면 초대 메시지가 나옵니다 — "초대 복사" 후 메신저로 보내세요. 5분 동안 그 초대로 들어온 요청 1건만 받습니다.</span></p>
+          <div id="invite_box" hidden>
+            <pre id="invite"></pre>
+            <button type="button" id="copy_btn">초대 복사</button>
+          </div>
+          <p id="peer_msg" role="status"></p>
+          <p class="hint">승인 전에 상대 화면의 "내 정보 → 지문" 과 아래 지문이 같은지 전화·대면으로 확인하세요.</p>
+          <ul id="peer_list" class="list"></ul>
+        </section>
+
+        <section id="agents" class="card">
+          <h2>내 에이전트</h2>
+          <p class="hint">페어링된 상대가 부를 수 있는 이 PC 의 Claude 프로필입니다. 폴더 안에서 문의에 답만 합니다 — 파일 수정 · 삭제 · 명령 실행은 하지 않습니다. 허용 도구는 읽기 전용(Read,Grep,Glob,LS,NotebookRead) 안에서만 고릅니다.</p>
+          <form id="agent_form" class="grid">
+            <label for="agent_name">이름</label>
+            <input id="agent_name" required maxlength="64" placeholder="review">
+            <label for="agent_folder">폴더(절대 경로)</label>
+            <input id="agent_folder" required placeholder="D:\work\project">
+            <label for="agent_tools">허용 도구</label>
+            <input id="agent_tools" placeholder="Read,Grep,Glob">
+            <label for="agent_prompt">추가 지시</label>
+            <textarea id="agent_prompt" rows="2"></textarea>
+            <button type="submit">등록</button>
+          </form>
+          <p id="agent_msg" role="status"></p>
+          <ul id="agent_list" class="list"></ul>
+        </section>
+
+        <section id="notify" class="card">
+          <h2>알림</h2>
+          <p><label><input type="checkbox" id="notify_inbound"> 인바운드 요청 알림(브라우저 알림 · 트레이 표시)</label></p>
+          <p class="hint">페어링 요청 · 상대 승인 · 받은 메시지를 이 탭이 열려 있으면 브라우저 알림으로, 탭과 무관하게 트레이 아이콘의 주황 점으로
+            알립니다. 알림 표시 · 억제(집중 지원 · 방해 금지)는 OS 설정을 따릅니다.</p>
+          <fieldset class="prefs">
+            <legend>알릴 것(위 알림이 켜져 있을 때)</legend>
+            <p><label><input type="checkbox" id="notify_pair"> 페어링 요청 · 승인</label></p>
+            <p><label><input type="checkbox" id="notify_request"> 받은 요청(상대 사람 글)</label></p>
+            <p><label><input type="checkbox" id="notify_reply"> 받은 답</label></p>
+            <p><label for="notify_relay">자동 왕복</label>
+              <select id="notify_relay">
+                <option value="start_end">시작 · 끝만</option>
+                <option value="every">글마다</option>
+                <option value="off">알리지 않음</option>
+              </select></p>
+            <p><label><input type="checkbox" id="notify_preview"> 알림에 글 앞부분 보이기</label></p>
+          </fieldset>
+          <p><label for="relay_cap_default">새 자동 왕복 대화의 상한 기본값</label>
+            <input id="relay_cap_default" type="number" min="1" max="50"> 왕복(1 ~ 50)</p>
+        </section>
+      </section>
+
+      <p id="status_msg" role="status"></p>
+    </main>
+  </div>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
