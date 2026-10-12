@@ -28,21 +28,7 @@
 PC 마다 coworkAgent **주 인스턴스 하나**가 트레이에 상주하며 서버와 클라이언트를 겸한다. 웹UI 는 각자 자기 PC 의 앱에만 붙고,
 PC 사이는 앱끼리 직접 통신한다.
 
-```mermaid
-flowchart LR
-  subgraph PA["PC A — 묻는 쪽"]
-    BA["브라우저 웹UI"] -- "HTTP 127.0.0.1 · 쿠키 토큰" --> CA["coworkAgent"]
-    CLIA["coworkAgent ask (CLI)"] -- "HTTP · Bearer 토큰" --> CA
-    CA --- DBA[("SQLite")]
-  end
-  subgraph PB["PC B — 에이전트가 있는 쪽"]
-    CB["coworkAgent"] --- DBB[("SQLite")]
-    CB -- "자식 프로세스 · stdin" --> CL["claude -p (cwd = 에이전트 폴더)"]
-  end
-  CA -- "Message · TLS 1.3 상호 인증" --> CB
-  CB -- "Reply" --> CA
-  CL -- "HTTPS · 질문 · 읽은 파일 내용" --> MS["Claude 모델 서비스"]
-```
+![통신 구성 — 브라우저 · CLI · 앱 · claude -p · 모델 서비스](docs/images/comm-overview.png)
 
 | 구간 | 전송 | 인증 · 보호 | 비고 |
 |---|---|---|---|
@@ -62,40 +48,11 @@ flowchart LR
 
 ### 페어링 — 초대 한 번
 
-```mermaid
-sequenceDiagram
-  actor UB as B 사용자
-  participant B as B 앱(초대 생성)
-  participant A as A 앱(초대 수락)
-  actor UA as A 사용자
-  UB->>B: 초대 생성
-  B-->>UB: 초대 텍스트(주소 · 초대 코드 · 지문), 5분 · 1번
-  UB->>UA: 메신저 등으로 전달
-  UA->>A: 초대 수락에 붙여 넣기 → 추가 · 승인
-  A->>B: Hello — 초대의 지문으로 B 키 고정
-  B->>B: 코드 일치 → 자동 승인 · 새 연결 등록 알림
-  B-->>A: Hello(approved)
-  A->>B: Approve
-  B-->>A: Ok — 양쪽 승인 = 페어링
-```
+![페어링 순서](docs/images/comm-pairing.png)
 
 ### 질의 1왕복
 
-```mermaid
-sequenceDiagram
-  actor U as A 사용자(웹UI · CLI)
-  participant A as A 앱
-  participant B as B 앱
-  participant C as claude -p(B)
-  U->>A: 글 보내기
-  A->>B: Message(대화 · 에이전트 · 본문)
-  B->>B: 검증(페어링 · 집중 · 에이전트) → 대기열 등록
-  B-->>A: Ok
-  B->>C: stdin = 맥락 앞붙임 + 본문, cwd = 에이전트 폴더, --session-id 또는 --resume
-  C-->>B: JSON(답 · session_id · 턴 · 시간)
-  B->>A: Reply(답 · 모델 · effort · 턴 · 시간)
-  A-->>B: Ok — 두 PC 의 이력에 같은 답
-```
+![질의 1왕복 순서](docs/images/comm-query.png)
 
 - **세션** — 대화의 첫 실행은 coworkAgent 가 만든 UUID 로 `--session-id`, 다음부터 `--resume`. 맥락은 답한 PC 의 Claude Code
   기록에만 있고 coworkAgent 는 세션 ID 만 갖는다.
@@ -104,6 +61,7 @@ sequenceDiagram
 - **접속 감시** — 30초마다 페어링된 상대에게 `Ping` → `Pong{focus}`. 마지막 응답이 75초 안이면 온라인.
 
 동작 · 세션 · 저장 구조의 전체는 [개발자 가이드](docs/manual/dev/developer-guide.md).
+위 그림은 mermaid 를 미리 그린 PNG 다 — 원본 mermaid 는 개발자 가이드 1 · 8 장.
 
 ## 요구 사항
 
