@@ -28,7 +28,7 @@ impl Invite {
     pub fn to_text(&self, name: &str, host: &str) -> String {
         format!(
             "coworkAgent 페어링 초대 — {name} · {host}\n\
-             5분 안에 coworkAgent 웹UI \"초대 붙여넣기\" 에 이 메시지를 통째로 붙여 넣으세요.\n\
+             5분 안에 coworkAgent 웹UI \"초대 수락\" 에 이 메시지를 통째로 붙여 넣으세요.\n\
              {MARK}{}/{}/{}",
             self.addr, self.code, self.fingerprint
         )

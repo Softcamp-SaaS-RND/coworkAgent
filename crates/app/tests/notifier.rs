@@ -1,4 +1,4 @@
-use an_app::notify::Notifier;
+use an_app::notify::{Notifier, SettingsPatch};
 use an_net::node::PeerEvent;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -258,4 +258,68 @@ fn preview_off() {
     // 끝 알림의 사유는 이 PC 문구라 보인다.
     n.on_event(&message(RelayEnd));
     assert!(rx.try_recv().unwrap().body.contains("비밀 본문"));
+}
+
+fn pause(n: &Notifier, on: bool) {
+    n.update(&SettingsPatch {
+        notify_paused: Some(on),
+        ..Default::default()
+    })
+    .unwrap();
+}
+
+/// 알림 일시 중지 — 켜져 있어도 알림 · 트레이 표시가 나가지 않는다(전체 켜짐은 그대로).
+#[test]
+fn paused_drops_notices_and_tray() {
+    let (n, marks) = notifier("paused");
+    n.set_enabled(true).unwrap();
+    pause(&n, true);
+    assert!(n.prefs().notify_paused);
+    let mut rx = n.subscribe();
+    n.on_event(&request());
+    n.on_event(&message(an_net::node::MessageKind::Request));
+    assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
+    assert!(marks.lock().unwrap().is_empty(), "트레이도 그대로");
+    assert_eq!(n.pending(), 0);
+    assert!(n.enabled(), "전체 켜짐은 따로");
+}
+
+/// 일시 중지를 풀면 다시 알린다 — 멈춘 동안의 이벤트는 쌓이지 않는다.
+#[test]
+fn resume_after_pause_notifies_again() {
+    let (n, marks) = notifier("resume");
+    n.set_enabled(true).unwrap();
+    pause(&n, true);
+    n.on_event(&request());
+    pause(&n, false);
+    let mut rx = n.subscribe();
+    n.on_event(&request());
+    assert_eq!(rx.try_recv().unwrap().kind, "pair_request");
+    assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
+    assert_eq!(*marks.lock().unwrap(), vec![1]);
+}
+
+/// 집중 — 요청 거부와 함께 알림도 멈춘다(알림 일시 중지 설정 값은 그대로). 집중을 풀면 그 설정대로 다시 알린다.
+#[test]
+fn focus_pauses_notices() {
+    let (n, marks) = notifier("focus");
+    n.set_enabled(true).unwrap();
+    let focus = |on: bool| {
+        n.update(&SettingsPatch {
+            focus: Some(on),
+            ..Default::default()
+        })
+        .unwrap()
+    };
+    focus(true);
+    assert!(n.prefs().focus && !n.prefs().notify_paused);
+    let mut rx = n.subscribe();
+    n.on_event(&request());
+    n.on_event(&message(an_net::node::MessageKind::Reply));
+    assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
+    assert!(marks.lock().unwrap().is_empty(), "트레이도 그대로");
+    focus(false);
+    n.on_event(&request());
+    assert_eq!(rx.try_recv().unwrap().kind, "pair_request");
+    assert_eq!(*marks.lock().unwrap(), vec![1]);
 }

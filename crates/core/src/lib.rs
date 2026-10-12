@@ -6,4 +6,5 @@ pub mod instance;
 pub mod log_file;
 pub mod paths;
 pub mod peers;
+pub mod run_opts;
 pub mod settings;

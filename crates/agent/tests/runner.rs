@@ -1,6 +1,5 @@
 use an_agent::runner::{
-    GUARD_PROMPT, MIN_CLAUDE, Session, claude_args, parse_output, parse_version, run_process,
-    version_ok,
+    GUARD_PROMPT, MIN_CLAUDE, Session, parse_output, parse_version, run_process, version_ok,
 };
 use an_core::agents::Agent;
 use std::io::ErrorKind;
@@ -13,7 +12,13 @@ fn agent(tools: &str, prompt: &str) -> Agent {
         folder: "/work".into(),
         tools: tools.into(),
         prompt: prompt.into(),
+        group: None,
+        uid: String::new(),
     }
+}
+
+fn claude_args(agent: &Agent, session: &Session) -> Vec<String> {
+    an_agent::runner::claude_args(agent, session, "sonnet", "high")
 }
 
 /// `flag` 바로 뒤 값.

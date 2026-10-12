@@ -158,6 +158,6 @@ async fn prefs_patch_validated_and_persisted() {
         ),
         (false, true, "off", false)
     );
-    assert_eq!(n.relay_cap_default(), 3);
+    assert_eq!(n.relay_cap_default().unwrap(), 3);
     assert!(!n.enabled(), "틀린 본문의 전체 켜짐도 저장되지 않는다");
 }

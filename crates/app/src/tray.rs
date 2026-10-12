@@ -1,4 +1,4 @@
-//! 트레이 상주(S2) — 메뉴 "열기" · "내 정보 보기"(S4) · "종료", "새 요청" 표시(S9), 시작 실패 시 오류 모드(D30).
+//! 트레이 상주(S2) — 메뉴 "열기" · "종료", "새 요청" 표시(S9), 시작 실패 시 오류 모드(D30).
 //! 두 OS 공통 tray-icon 만 쓴다. macOS 는 Dock 아이콘 없이 메뉴 막대에만(T4).
 use crate::browser;
 use std::io;
@@ -72,7 +72,7 @@ impl Tray {
         (Self { event_loop }, Attention(proxy))
     }
 
-    /// 정상 모드 — "열기" · "내 정보 보기" 는 웹UI 를 열고 `on_seen` 을 부른다(새 요청 표시 지움). "종료" 는 `on_quit` 후 끝.
+    /// 정상 모드 — "열기" 는 웹UI 를 열고 `on_seen` 을 부른다(새 요청 표시 지움). "종료" 는 `on_quit` 후 끝.
     pub fn run(
         self,
         url: String,
@@ -80,10 +80,9 @@ impl Tray {
         on_quit: impl FnOnce() + 'static,
     ) -> ! {
         let open = MenuItem::new("열기", true, None);
-        let me = MenuItem::new("내 정보 보기", true, None);
         let quit = MenuItem::new("종료", true, None);
-        let (open_id, me_id, quit_id) = (open.id().clone(), me.id().clone(), quit.id().clone());
-        let mut menu = Some((open, me, quit));
+        let (open_id, quit_id) = (open.id().clone(), quit.id().clone());
+        let mut menu = Some((open, quit));
         let mut tray: Option<TrayIcon> = None;
         let mut on_quit = Some(on_quit);
 
@@ -92,8 +91,8 @@ impl Tray {
             match event {
                 // macOS 는 이벤트 루프가 돈 뒤에 트레이를 만들어야 한다.
                 Event::NewEvents(StartCause::Init) => {
-                    if let Some((open, me, quit)) = menu.take() {
-                        match build(&[&open, &me, &quit], "coworkAgent", icon(Mark::None)) {
+                    if let Some((open, quit)) = menu.take() {
+                        match build(&[&open, &quit], "coworkAgent", icon(Mark::None)) {
                             Ok(t) => tray = Some(t),
                             Err(e) => {
                                 // 트레이 없이는 쓸 수 없다 — 사유를 보이고 정리 뒤 끝낸다(조용히 사라지지 않는다).
@@ -121,15 +120,9 @@ impl Tray {
                         }
                     }
                 }
-                Event::UserEvent(TrayEvent::Menu(e)) if e.id == open_id || e.id == me_id => {
-                    // 진입 리다이렉트(`/?t=` → `/`) 뒤에도 조각 `#me` 는 브라우저가 이어 붙인다.
-                    let target = if e.id == me_id {
-                        format!("{url}#me")
-                    } else {
-                        url.clone()
-                    };
+                Event::UserEvent(TrayEvent::Menu(e)) if e.id == open_id => {
                     // 열린 경우에만 "봤다" — 실패하면 새 요청 표시를 남긴다.
-                    match browser::open(&target) {
+                    match browser::open(&url) {
                         Ok(()) => on_seen(),
                         Err(e) => log::error!("브라우저 열기 실패: {e}"),
                     }
@@ -225,31 +218,30 @@ enum Mark {
     None,
     /// 새 요청 — 오른쪽 위 주황 점.
     Attention,
-    /// 시작 실패 — 붉은 원.
+    /// 시작 실패 — 붉은 바탕.
     Error,
 }
 
-/// 32×32 원형 아이콘 — 파일 자산 없이 코드로 그린다.
+/// 32×32 RGBA — 실행 파일 아이콘과 같은 그림. `tools/gen_icon.py` 가 만든다.
+const TRAY: &[u8] = include_bytes!("../assets/tray.rgba");
+const TRAY_ERROR: &[u8] = include_bytes!("../assets/tray-error.rgba");
+
 fn icon(mark: Mark) -> Icon {
     const N: u32 = 32;
-    let base: [u8; 4] = match mark {
-        Mark::Error => [0xd9, 0x3b, 0x2b, 0xff],
-        _ => [0x2b, 0x5f, 0xd9, 0xff],
-    };
-    let mut rgba = Vec::with_capacity((N * N * 4) as usize);
-    for y in 0..N {
-        for x in 0..N {
-            let (dx, dy) = (x as f32 - 15.5, y as f32 - 15.5);
-            let (ax, ay) = (x as f32 - 25.0, y as f32 - 6.0);
-            let dot = matches!(mark, Mark::Attention) && ax * ax + ay * ay <= 36.0;
-            let px: [u8; 4] = if dot {
-                [0xf0, 0x8c, 0x00, 0xff]
-            } else if dx * dx + dy * dy <= 15.0 * 15.0 {
-                base
-            } else {
-                [0, 0, 0, 0]
-            };
-            rgba.extend_from_slice(&px);
+    let mut rgba = match mark {
+        Mark::Error => TRAY_ERROR,
+        _ => TRAY,
+    }
+    .to_vec();
+    if matches!(mark, Mark::Attention) {
+        for y in 0..N {
+            for x in 0..N {
+                let (ax, ay) = (x as f32 - 25.0, y as f32 - 6.0);
+                if ax * ax + ay * ay <= 36.0 {
+                    let i = ((y * N + x) * 4) as usize;
+                    rgba[i..i + 4].copy_from_slice(&[0xf0, 0x8c, 0x00, 0xff]);
+                }
+            }
         }
     }
     Icon::from_rgba(rgba, N, N).expect("고정 크기 아이콘")

@@ -48,6 +48,15 @@ pub enum Request {
         /// 하나로(알림 묶기).
         #[serde(default)]
         relay: Option<String>,
+        /// 글의 출처 — `cli` = 보낸 쪽 사용자 AI 에이전트가 CLI 로 쓴 글. 이전 버전 상대는 싣지 않고 무시한다(사람 글로 보인다).
+        #[serde(default)]
+        via: Option<String>,
+        /// 사람 글의 종류 — 참 = 요청(건의), 거짓 = 질의(기본). 받은 쪽 이력에도 남는다.
+        #[serde(default)]
+        request: bool,
+        /// 멘션 — 그 대화에서 부른 받는 PC 의 다른 에이전트(`agent` 는 늘 대화 에이전트 — 받은 쪽에 대화가 아직 없어도 대화를 그 에이전트로 연다).
+        #[serde(default)]
+        mention: Option<String>,
     },
     /// 에이전트의 답을 보낸 쪽으로 되돌린다(페어링된 상대만). `ok = false` 면 `text` 는 실패 사유.
     /// `turns` · `duration_ms` 는 실행 정보 — 이전 버전 상대는 싣지 않는다(없으면 `None`).
@@ -63,6 +72,11 @@ pub enum Request {
         duration_ms: Option<i64>,
         #[serde(default)]
         lc: Option<i64>,
+        /// 답을 실행한 model · effort — 받은 쪽은 `run_opts` 글자 규칙에 맞는 것만 남긴다.
+        #[serde(default)]
+        model: Option<String>,
+        #[serde(default)]
+        effort: Option<String>,
     },
     /// 실행 없이 상대 이력에 남기는 글(D18 · D23) — `author = "human"` 사람 글(`exec` = 보낸 쪽 에이전트에게 한 실행 요청인가),
     /// `author = "agent"` 보낸 쪽 에이전트의 답(`reply_to` = 그 실행 요청 사람 글 uuid). 페어링된 상대만.
@@ -88,6 +102,23 @@ pub enum Request {
         duration_ms: Option<i64>,
         #[serde(default)]
         lc: Option<i64>,
+        /// 글의 출처 — `Message` 의 `via` 와 같다.
+        #[serde(default)]
+        via: Option<String>,
+        /// 에이전트 답의 model · effort — `Reply` 와 같다.
+        #[serde(default)]
+        model: Option<String>,
+        #[serde(default)]
+        effort: Option<String>,
+        /// 사람 글의 종류 — `Message` 의 `request` 와 같다.
+        #[serde(default)]
+        request: bool,
+    },
+    /// 요청 완료 표시 — 그 글을 받은 쪽이 바꾸고 쓴 쪽에 상태로 보낸다(쓴 쪽은 자기 요청 글에만 받는다). 페어링된 상대만.
+    Done {
+        conv: String,
+        msg: String,
+        done: bool,
     },
 }
 
@@ -97,14 +128,21 @@ pub enum Response {
     Hello {
         name: String,
         host: String,
+        /// 초대 생성 측이 이 hello 를 초대 코드로 자동 승인했다 — 받은 쪽은 같은 세대의 상대 승인으로 기록한다.
+        #[serde(default)]
+        approved: bool,
     },
     Ok,
-    Pong,
+    /// `Ping` 의 답 — 답한 쪽이 집중(설정 `focus`) 중인가(접속 상태 · 상대 집중 표시).
+    Pong {
+        #[serde(default)]
+        focus: bool,
+    },
     Agents {
         names: Vec<String>,
     },
     /// `not_paired` · `unknown` · `stale`(이전 세대 승인) · `busy` · `closed`(페어링 받기 창이 닫혔거나 초대 코드 불일치) ·
-    /// `bad_request` · `unknown_agent` · `unsupported`(받는 쪽에 처리기가 없음)
+    /// `bad_request` · `unknown_agent` · `unsupported`(받는 쪽에 처리기가 없음) · `focus`(받는 쪽이 집중 중 — 새 실행 요청 거부)
     Error {
         code: String,
     },
@@ -147,9 +185,31 @@ pub async fn read_frame<R: AsyncRead + Unpin, T: DeserializeOwned>(r: &mut R) ->
     Ok(serde_json::from_slice(&body)?)
 }
 
+/// 상대가 준 오류 코드 — 영소문자 · `_` 1 ~ 32 자만 그대로, 그 밖은 `unknown`(저장 · 표시 전에 — 페어링된 상대의 값도 그대로 믿지 않는다).
+pub fn clean_code(code: &str) -> &str {
+    let ok =
+        (1..=32).contains(&code.len()) && code.bytes().all(|b| b.is_ascii_lowercase() || b == b'_');
+    if ok { code } else { "unknown" }
+}
+
 /// 제어 문자를 빼고 앞뒤 공백을 지운 뒤 `MAX_NAME_CHARS` 글자로 자른다. 비면 `?`.
 pub fn clean_name(s: &str) -> String {
     let kept: String = s.chars().filter(|c| !c.is_control()).collect();
     let cut: String = kept.trim().chars().take(MAX_NAME_CHARS).collect();
     if cut.is_empty() { "?".into() } else { cut }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clean_code;
+
+    #[test]
+    fn clean_code_keeps_known_shape_only() {
+        assert_eq!(clean_code("focus"), "focus");
+        assert_eq!(clean_code("unknown_agent"), "unknown_agent");
+        let long = "x".repeat(33);
+        for bad in ["", "Focus", "focus!", "a\u{202e}b", long.as_str()] {
+            assert_eq!(clean_code(bad), "unknown", "{bad:?}");
+        }
+    }
 }

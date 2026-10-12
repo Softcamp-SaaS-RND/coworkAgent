@@ -1,7 +1,8 @@
 mod common;
+use an_agent::chat::Compose;
 use an_agent::runner::Session;
-use an_core::agents;
 use an_core::chat::{self, Author, Dir, State};
+use an_core::{agents, run_opts, settings};
 use an_net::node::{Me, Node, PeerEvent};
 use an_net::proto::{Request, Response};
 use std::time::{Duration, Instant};
@@ -22,6 +23,8 @@ async fn human_to_remote_agent_roundtrip() {
     );
     let (b_id, _) = common::pair(&a, &b).await;
     agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    // A 가 B 를 부르는 표시 이름 — A 의 알림에 쓰인다(B 는 모른다).
+    an_core::peers::set_tile(&common::db(&a), b_id, Some("검토팀"), None).unwrap();
 
     let (conv, sent) = a.chat.send(b_id, "review", None, "안녕").await.unwrap();
     assert_eq!(conv.dir, Dir::Out);
@@ -76,9 +79,17 @@ async fn human_to_remote_agent_roundtrip() {
             .lock()
             .unwrap()
             .iter()
-            .any(|e| matches!(e, PeerEvent::Message { .. }))
+            .any(|e| matches!(e, PeerEvent::Message { name, .. } if name == "검토팀"))
     })
     .await;
+    assert!(
+        b.events
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|e| !matches!(e, PeerEvent::Message { name, .. } if name == "검토팀")),
+        "표시 이름은 이 PC 에만"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -114,6 +125,70 @@ async fn followup_resumes_session() {
     assert_eq!(
         chat::list(&b_db).unwrap()[0].session.as_deref(),
         Some(first.as_str())
+    );
+}
+
+/// 실행 도중 폴더를 바꾸면(세션을 지운다) 끝난 옛 실행이 세션을 되살리지 않는다 — 다음 요청은 새 세션. 지우고 같은 이름 · 같은 폴더로
+/// 다시 등록해도 같다(에이전트 세대가 다르다).
+#[tokio::test(flavor = "multi_thread")]
+async fn folder_change_during_run_drops_stale_session() {
+    let (a, b) = (
+        common::side("fc-a", Duration::ZERO).await,
+        common::side("fc-b", Duration::from_millis(800)).await,
+    );
+    let (b_id, _) = common::pair(&a, &b).await;
+    let b_db = common::db(&b);
+    let dev = agents::add(&b_db, "dev", ".", None, "").unwrap();
+    let (conv, _) = a.chat.send(b_id, "dev", None, "첫 질문").await.unwrap();
+    common::eventually(|| b.runs.lock().unwrap().len() == 1).await;
+    // 옛 폴더의 실행이 아직 끝나지 않았다.
+    let elsewhere = std::env::temp_dir().display().to_string();
+    agents::update(&b_db, dev.id, &elsewhere, &dev.tools, &dev.prompt, None).unwrap();
+    let a_db = common::db(&a);
+    common::eventually(|| agent_messages(&a_db, conv.id).len() == 1).await;
+    assert_eq!(
+        chat::list(&b_db).unwrap()[0].session,
+        None,
+        "옛 세션을 남기지 않는다"
+    );
+    a.chat
+        .send(b_id, "dev", Some(conv.id), "이어서")
+        .await
+        .unwrap();
+    common::eventually(|| agent_messages(&a_db, conv.id).len() == 2).await;
+    {
+        let runs = b.runs.lock().unwrap();
+        assert!(
+            matches!(runs[1].session, Session::New(_)),
+            "{:?}",
+            runs[1].session
+        );
+    }
+    a.chat
+        .send(b_id, "dev", Some(conv.id), "셋째")
+        .await
+        .unwrap();
+    common::eventually(|| b.runs.lock().unwrap().len() == 3).await;
+    // 실행 중에 지우고 같은 이름 · 같은 폴더로 다시 등록.
+    let now = agents::by_name(&b_db, "dev").unwrap().unwrap();
+    assert!(agents::remove(&b_db, now.id).unwrap());
+    agents::add(&b_db, "dev", &elsewhere, None, "").unwrap();
+    common::eventually(|| agent_messages(&a_db, conv.id).len() == 3).await;
+    assert_eq!(
+        chat::list(&b_db).unwrap()[0].session,
+        None,
+        "지운 에이전트의 세션을 되살리지 않는다"
+    );
+    a.chat
+        .send(b_id, "dev", Some(conv.id), "넷째")
+        .await
+        .unwrap();
+    common::eventually(|| agent_messages(&a_db, conv.id).len() == 4).await;
+    let runs = b.runs.lock().unwrap();
+    assert!(
+        matches!(runs[3].session, Session::New(_)),
+        "{:?}",
+        runs[3].session
     );
 }
 
@@ -165,6 +240,9 @@ async fn unpaired_or_unknown_agent_refused() {
             lc: None,
             by_agent: Some("mine".into()),
             relay: None,
+            via: None,
+            request: false,
+            mention: None,
         },
         Request::Relay {
             conv: "c".into(),
@@ -179,6 +257,13 @@ async fn unpaired_or_unknown_agent_refused() {
             turns: None,
             duration_ms: None,
             lc: None,
+            model: None,
+            effort: None,
+        },
+        Request::Done {
+            conv: "c".into(),
+            msg: "m".into(),
+            done: true,
         },
     ] {
         let (resp, _) = stranger.send(b.addr, None, &req).await.unwrap();
@@ -244,6 +329,8 @@ async fn forged_or_duplicate_reply_refused() {
             turns: None,
             duration_ms: None,
             lc: None,
+            model: None,
+            effort: None,
         };
         let (resp, _) = b.node.send(a.addr, None, &req).await.unwrap();
         assert_eq!(resp, Response::error("unknown"), "{reply_to}");
@@ -351,6 +438,8 @@ async fn unconfirmed_delivery_keeps_waiting_for_reply() {
         turns: None,
         duration_ms: None,
         lc: None,
+        model: None,
+        effort: None,
     };
     let (resp, _) = b.node.send(a.addr, None, &req).await.unwrap();
     assert_eq!(resp, Response::Ok);
@@ -449,4 +538,421 @@ async fn reply_without_meta_accepted() {
         (got.text.as_str(), got.turns, got.duration_ms, got.reply_to),
         ("옛 답", None, None, Some(sent.id))
     );
+}
+
+/// 실행한 model · effort 가 답에 남는다 — 실행한 쪽 · 보낸 쪽 둘 다(받은 요청의 답 `Reply` · 받은 쪽 사람 요청의 답 미러 `Post`).
+#[tokio::test(flavor = "multi_thread")]
+async fn reply_records_model_effort_both_sides() {
+    let (a, b) = (
+        common::side("mx-a", Duration::ZERO).await,
+        common::side("mx-b", Duration::ZERO).await,
+    );
+    let (b_id, _) = common::pair(&a, &b).await;
+    let b_db = common::db(&b);
+    agents::add(&b_db, "dev", ".", None, "").unwrap();
+    settings::set(&b_db, run_opts::MODEL_KEY, "opus").unwrap();
+    settings::set(&b_db, run_opts::EFFORT_KEY, "low").unwrap();
+    let (conv, _) = a.chat.send(b_id, "dev", None, "질문").await.unwrap();
+    let a_db = common::db(&a);
+    common::eventually(|| agent_messages(&a_db, conv.id).len() == 1).await;
+    let meta = |m: &chat::Message| (m.model.clone(), m.effort.clone());
+    let want = (Some("opus".to_string()), Some("low".to_string()));
+    assert_eq!(
+        meta(&agent_messages(&a_db, conv.id)[0]),
+        want,
+        "보낸 쪽(Reply)"
+    );
+    let bc = chat::list(&b_db).unwrap().remove(0);
+    assert_eq!(meta(&agent_messages(&b_db, bc.id)[0]), want, "실행한 쪽");
+    // 받은 쪽 사람이 쓴 실행 요청의 답 — 미러(Post)로 보낸 쪽에도.
+    b.chat.post(bc.id, "B 쪽 질문", true).await.unwrap();
+    common::eventually(|| agent_messages(&a_db, conv.id).len() == 2).await;
+    assert_eq!(
+        meta(&agent_messages(&a_db, conv.id)[1]),
+        want,
+        "보낸 쪽(Post)"
+    );
+    // 받은 model · effort 는 글자 규칙을 지난 것만 남긴다 — 틀리면 버린다(신뢰하지 않는 입력).
+    chat::add_human(
+        &a_db,
+        conv.id,
+        "raw-ask",
+        "원시 질문",
+        State::Sent,
+        true,
+        true,
+    )
+    .unwrap();
+    let req = Request::Reply {
+        conv: conv.uuid.clone(),
+        msg: "raw-reply".into(),
+        reply_to: "raw-ask".into(),
+        text: "원시 답".into(),
+        ok: true,
+        turns: None,
+        duration_ms: None,
+        lc: None,
+        model: Some("bad model!".into()),
+        effort: Some("turbo".into()),
+    };
+    let (resp, _) = b.node.send(a.addr, None, &req).await.unwrap();
+    assert_eq!(resp, Response::Ok);
+    let raw = chat::message_by_uuid(&a_db, "raw-reply").unwrap().unwrap();
+    assert_eq!(meta(&raw), (None, None), "틀린 값은 버린다");
+}
+
+/// 집중(받는 쪽 설정 `focus`) — 새 실행 요청은 `focus` 로 거부: 받은 쪽은 실행 · 기록 · 알림 없음, 보낸 쪽 글은 실패 + 거절 코드 + 그 상대를
+/// 접속 · 집중으로. 집중을 끄면 다시 받고, 집중 중에도 내 요청의 답은 받는다.
+#[tokio::test(flavor = "multi_thread")]
+async fn focus_refuses_new_request_unrecorded() {
+    let (a, b) = (
+        common::side("fr-a", Duration::ZERO).await,
+        common::side("fr-b", Duration::from_millis(400)).await,
+    );
+    let (b_id, _) = common::pair(&a, &b).await;
+    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    settings::set(&common::db(&b), settings::FOCUS_KEY, "1").unwrap();
+    let err = a
+        .chat
+        .send(b_id, "review", None, "집중 중에 묻는다")
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("상대가 집중 중"), "{err}");
+    let conv = chat::list(&common::db(&a)).unwrap().remove(0);
+    let m = chat::messages(&common::db(&a), conv.id).unwrap().remove(0);
+    assert_eq!(
+        (m.state, m.refused.as_deref()),
+        (State::Error, Some("focus"))
+    );
+    let p = an_core::peers::by_id(&common::db(&a), b_id)
+        .unwrap()
+        .unwrap();
+    assert!(p.focus && p.seen_at.is_some(), "거절도 접속 증거 {p:?}");
+    assert!(
+        chat::list(&common::db(&b)).unwrap().is_empty(),
+        "받은 쪽 기록 없음"
+    );
+    assert!(b.runs.lock().unwrap().is_empty());
+    assert!(
+        !b.events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, PeerEvent::Message { .. })),
+        "받은 쪽 알림 없음"
+    );
+    // 집중을 끄면 다시 받는다 — 같은 대화 이어 쓰기. 그 답이 오기 전에 A 가 집중을 켜도 답은 받는다.
+    settings::set(&common::db(&b), settings::FOCUS_KEY, "0").unwrap();
+    a.chat
+        .send(b_id, "review", Some(conv.id), "다시 묻는다")
+        .await
+        .unwrap();
+    settings::set(&common::db(&a), settings::FOCUS_KEY, "1").unwrap();
+    common::eventually(|| agent_messages(&common::db(&a), conv.id).len() == 1).await;
+    assert_eq!(b.runs.lock().unwrap().len(), 1);
+    // 이미 받은 글의 재전송(같은 uuid)은 새 요청이 아니다 — B 가 집중이어도 Ok, 다시 실행하지 않는다.
+    settings::set(&common::db(&b), settings::FOCUS_KEY, "1").unwrap();
+    let again = chat::messages(&common::db(&a), conv.id)
+        .unwrap()
+        .into_iter()
+        .find(|m| m.text == "다시 묻는다")
+        .unwrap();
+    let peer = a.node.peers().unwrap().remove(0);
+    let resend = Request::Message {
+        conv: conv.uuid.clone(),
+        msg: again.uuid.clone(),
+        agent: "review".into(),
+        text: again.text.clone(),
+        lc: None,
+        by_agent: None,
+        relay: None,
+        via: None,
+        request: false,
+        mention: None,
+    };
+    let (resp, _) = a
+        .node
+        .send(b.addr, Some(peer.spki.clone()), &resend)
+        .await
+        .unwrap();
+    assert_eq!(resp, Response::Ok);
+    assert_eq!(b.runs.lock().unwrap().len(), 1, "다시 실행하지 않는다");
+}
+
+/// 질의 · 요청(메시지 단위, 기본 질의)이 양쪽 이력에 남고, 완료 표시는 받은 쪽만 바꿔 쓴 쪽에 상태로 간다(취소도). 쓴 쪽 · 질의 · 답에는 표시하지
+/// 못한다. 받은 대화에서 B 가 쓴 요청(미러 `post`)도 같다 — 그 글의 받은 쪽은 A. 알리지 못하면 경고 — 이 PC 표시는 남는다.
+#[tokio::test(flavor = "multi_thread")]
+async fn ask_kind_and_done_sync_both_sides() {
+    let (a, b) = (
+        common::side("ak-a", Duration::ZERO).await,
+        common::side("ak-b", Duration::ZERO).await,
+    );
+    let (b_id, a_id) = common::pair(&a, &b).await;
+    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    let ask = |request| Compose {
+        request,
+        ..Default::default()
+    };
+    let (conv, q) = a
+        .chat
+        .send_with(b_id, "review", None, "질의 하나", ask(false))
+        .await
+        .unwrap();
+    let (_, r) = a
+        .chat
+        .send_with(b_id, "review", Some(conv.id), "요청 하나", ask(true))
+        .await
+        .unwrap();
+    assert!(!q.request && r.request);
+    common::eventually(|| agent_messages(&common::db(&a), conv.id).len() == 2).await;
+    let a_msg = |uuid: &str| {
+        chat::message_by_uuid(&common::db(&a), uuid)
+            .unwrap()
+            .unwrap()
+    };
+    let b_msg = |uuid: &str| {
+        chat::message_by_uuid(&common::db(&b), uuid)
+            .unwrap()
+            .unwrap()
+    };
+    assert_eq!(
+        (b_msg(&q.uuid).request, b_msg(&r.uuid).request),
+        (false, true),
+        "받은 쪽에도 종류"
+    );
+    // 받은 쪽(B)만 완료 표시 — 쓴 쪽(A)에 상태로 간다.
+    let (m, warning) = b
+        .chat
+        .mark_done(b_msg(&r.uuid).id, true, None)
+        .await
+        .unwrap();
+    assert!(m.done_at.is_some() && warning.is_none(), "{warning:?}");
+    assert!(a_msg(&r.uuid).done_at.is_some(), "쓴 쪽은 받은 대로");
+    // 쓴 쪽 · 질의 · 답은 못 바꾼다.
+    let invalid = |e: std::io::Error| e.kind() == std::io::ErrorKind::InvalidInput;
+    assert!(invalid(
+        a.chat
+            .mark_done(a_msg(&r.uuid).id, false, None)
+            .await
+            .unwrap_err()
+    ));
+    assert!(invalid(
+        b.chat
+            .mark_done(b_msg(&q.uuid).id, true, None)
+            .await
+            .unwrap_err()
+    ));
+    let bc = chat::list(&common::db(&b)).unwrap().remove(0);
+    let reply = agent_messages(&common::db(&b), bc.id).remove(0);
+    assert!(invalid(
+        b.chat.mark_done(reply.id, true, None).await.unwrap_err()
+    ));
+    // 취소도 같은 길.
+    b.chat
+        .mark_done(b_msg(&r.uuid).id, false, None)
+        .await
+        .unwrap();
+    assert_eq!(a_msg(&r.uuid).done_at, None);
+    // 페어링된 상대의 조작 프레임 — 내 질의 · 답 · 다른 대화의 요청이면 `unknown`, 쓴 쪽 기록은 그대로.
+    let (other, oreq) = a
+        .chat
+        .send_with(b_id, "review", None, "다른 대화 요청", ask(true))
+        .await
+        .unwrap();
+    common::eventually(|| agent_messages(&common::db(&a), other.id).len() == 1).await;
+    let pa = b.node.peers().unwrap().remove(0);
+    let answer = agent_messages(&common::db(&a), conv.id).remove(0).uuid;
+    for msg in [&q.uuid, &answer, &oreq.uuid] {
+        let forged = Request::Done {
+            conv: conv.uuid.clone(),
+            msg: msg.clone(),
+            done: true,
+        };
+        let (resp, _) = b
+            .node
+            .send(a.addr, Some(pa.spki.clone()), &forged)
+            .await
+            .unwrap();
+        assert_eq!(resp, Response::error("unknown"), "{msg}");
+        assert_eq!(a_msg(msg).done_at, None, "{msg}");
+    }
+    // 받은 대화에서 B 가 쓴 요청(미러) — 받은 쪽 = A.
+    let (_, bm, _) = b
+        .chat
+        .post_with(bc.id, "B 의 요청", true, ask(true))
+        .await
+        .unwrap();
+    common::eventually(|| {
+        chat::message_by_uuid(&common::db(&a), &bm.uuid)
+            .unwrap()
+            .is_some()
+    })
+    .await;
+    let am = a_msg(&bm.uuid);
+    assert!(am.request && !am.mine, "{am:?}");
+    a.chat.mark_done(am.id, true, None).await.unwrap();
+    assert!(b_msg(&bm.uuid).done_at.is_some());
+    // 쓴 쪽에 닿지 못하면 경고 — 이 PC 표시는 남고 쓴 쪽은 그대로.
+    common::db(&b)
+        .execute(
+            "UPDATE peers SET addr = '127.0.0.1:1' WHERE id = ?1",
+            [a_id],
+        )
+        .unwrap();
+    let (m, warning) = b
+        .chat
+        .mark_done(b_msg(&r.uuid).id, true, None)
+        .await
+        .unwrap();
+    assert!(m.done_at.is_some(), "{m:?}");
+    assert!(
+        warning
+            .as_deref()
+            .is_some_and(|w| w.contains("상대에 알리지 못했다")),
+        "{warning:?}"
+    );
+    assert_eq!(a_msg(&r.uuid).done_at, None);
+}
+
+/// 멘션(보낸 대화 · 자동 왕복 아님) — 받은 쪽은 부른 에이전트를 그 에이전트 세션으로 실행하고(대화 에이전트 세션은 그대로), 양쪽 요청 · 답에
+/// 부른 이름이 남는다. 같은 에이전트를 다시 부르면 그 세션을 잇는다. 대화 에이전트 이름은 멘션이 아니다. 없는 에이전트는 상대가 거절하고,
+/// 받은 대화에서는 멘션하지 않는다.
+#[tokio::test(flavor = "multi_thread")]
+async fn mention_runs_named_agent_own_session() {
+    let (a, b) = (
+        common::side("mn-a", Duration::ZERO).await,
+        common::side("mn-b", Duration::ZERO).await,
+    );
+    let (b_id, _) = common::pair(&a, &b).await;
+    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "guide", ".", None, "").unwrap();
+    let mention = |name| Compose {
+        mention: Some(name),
+        ..Default::default()
+    };
+    let (conv, _) = a.chat.send(b_id, "review", None, "처음").await.unwrap();
+    common::eventually(|| agent_messages(&common::db(&a), conv.id).len() == 1).await;
+    let (_, asked) = a
+        .chat
+        .send_with(
+            b_id,
+            "review",
+            Some(conv.id),
+            "@guide 봐 주세요",
+            mention("guide"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(asked.agent.as_deref(), Some("guide"));
+    common::eventually(|| agent_messages(&common::db(&a), conv.id).len() == 2).await;
+    a.chat
+        .send_with(
+            b_id,
+            "review",
+            Some(conv.id),
+            "@guide 하나 더",
+            mention("guide"),
+        )
+        .await
+        .unwrap();
+    common::eventually(|| agent_messages(&common::db(&a), conv.id).len() == 3).await;
+    let (_, plain) = a
+        .chat
+        .send_with(
+            b_id,
+            "review",
+            Some(conv.id),
+            "@review 다시",
+            mention("review"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(plain.agent, None, "대화 에이전트는 멘션이 아니다");
+    common::eventually(|| agent_messages(&common::db(&a), conv.id).len() == 4).await;
+    let runs = b.runs.lock().unwrap().clone();
+    let names: Vec<_> = runs.iter().map(|r| r.agent.name.as_str()).collect();
+    assert_eq!(names, ["review", "guide", "guide", "review"]);
+    let id = |s: &Session| match s {
+        Session::New(id) | Session::Resume(id) => id.clone(),
+    };
+    assert!(
+        matches!(runs[1].session, Session::New(_)) && id(&runs[1].session) != id(&runs[0].session),
+        "멘션한 에이전트는 자기 세션"
+    );
+    assert!(
+        matches!(runs[2].session, Session::Resume(_))
+            && id(&runs[2].session) == id(&runs[1].session),
+        "같은 에이전트를 다시 부르면 그 세션"
+    );
+    assert_eq!(
+        id(&runs[3].session),
+        id(&runs[0].session),
+        "대화 에이전트 세션은 그대로"
+    );
+    for side in [&a, &b] {
+        let db = common::db(side);
+        let c = chat::list(&db).unwrap().remove(0);
+        let got: Vec<_> = chat::messages(&db, c.id)
+            .unwrap()
+            .into_iter()
+            .map(|m| m.agent)
+            .collect();
+        let g = Some("guide".to_string());
+        assert_eq!(
+            got,
+            [None, None, g.clone(), g.clone(), g.clone(), g, None, None],
+            "요청 · 답 모두"
+        );
+    }
+    let bc = chat::list(&common::db(&b)).unwrap().remove(0);
+    assert_eq!(
+        chat::agent_session(&common::db(&b), bc.id, "guide").unwrap(),
+        Some(id(&runs[1].session))
+    );
+    assert_eq!(bc.session, Some(id(&runs[0].session)));
+    // 없는 에이전트 — 상대가 거절.
+    let e = a
+        .chat
+        .send_with(b_id, "review", Some(conv.id), "@nobody", mention("nobody"))
+        .await
+        .unwrap_err();
+    assert_eq!(e.kind(), std::io::ErrorKind::PermissionDenied, "{e}");
+    // 받은 대화에서는 멘션하지 않는다.
+    let e = b
+        .chat
+        .post_with(bc.id, "@guide", true, mention("guide"))
+        .await
+        .unwrap_err();
+    assert_eq!(e.kind(), std::io::ErrorKind::InvalidInput, "{e}");
+    // 첫 글이 받은 쪽에 닿지 않은 대화(집중 거절)의 멘션 — 받은 쪽은 대화를 대화 에이전트로 열고 그 글만 멘션으로 남긴다.
+    settings::set(&common::db(&b), settings::FOCUS_KEY, "1").unwrap();
+    a.chat
+        .send(b_id, "review", None, "닿지 않는 첫 글")
+        .await
+        .unwrap_err();
+    settings::set(&common::db(&b), settings::FOCUS_KEY, "0").unwrap();
+    let late = chat::list(&common::db(&a))
+        .unwrap()
+        .into_iter()
+        .find(|c| c.id != conv.id)
+        .unwrap();
+    let (_, asked) = a
+        .chat
+        .send_with(
+            b_id,
+            "review",
+            Some(late.id),
+            "@guide 처음 닿는 글",
+            mention("guide"),
+        )
+        .await
+        .unwrap();
+    common::eventually(|| agent_messages(&common::db(&a), late.id).len() == 1).await;
+    let db = common::db(&b);
+    let bl = chat::find(&db, &late.uuid, chat::list(&db).unwrap()[0].peer_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(bl.agent, "review", "대화 에이전트로 연다");
+    let got = chat::message_by_uuid(&db, &asked.uuid).unwrap().unwrap();
+    assert_eq!(got.agent.as_deref(), Some("guide"));
 }

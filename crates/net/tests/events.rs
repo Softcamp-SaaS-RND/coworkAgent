@@ -40,15 +40,26 @@ async fn accepted_hello_emits_pair_request() {
 
     let code = b.open();
     a.node.add(b.addr, code).await.unwrap();
-    let want = PeerEvent::PairRequest {
-        name: "user-ev-req-a".into(),
-        host: "PC-ev-req-a".into(),
-        fingerprint: a.node.identity().fingerprint(),
+    let (name, host, fingerprint) = (
+        "user-ev-req-a".to_string(),
+        "PC-ev-req-a".to_string(),
+        a.node.identity().fingerprint(),
+    );
+    // 초대로 들어온 처음 보는 키는 자동 등록 알림(D8 개정).
+    let auto = PeerEvent::AutoPaired {
+        name: name.clone(),
+        host: host.clone(),
+        fingerprint: fingerprint.clone(),
     };
-    assert_eq!(*seen.lock().unwrap(), vec![want.clone()]);
-    // 아는 PC 가 다시 추가해도 요청이다(승인이 초기화된다).
+    assert_eq!(*seen.lock().unwrap(), vec![auto.clone()]);
+    // 아는 PC 가 다시 추가하면 요청이다(승인이 초기화된다).
     a.node.add(b.addr, None).await.unwrap();
-    assert_eq!(*seen.lock().unwrap(), vec![want.clone(), want]);
+    let want = PeerEvent::PairRequest {
+        name,
+        host,
+        fingerprint,
+    };
+    assert_eq!(*seen.lock().unwrap(), vec![auto, want]);
 }
 
 #[tokio::test]

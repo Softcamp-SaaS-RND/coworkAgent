@@ -299,7 +299,7 @@ async fn conversation_post_targets() {
     let (_, r) = call(port_a, &ha, "POST", "/api/conversations", &body.to_string()).await;
     let conv_a = r["conversation"]["id"].as_i64().unwrap();
     messages(port_a, &ha, conv_a, 2).await;
-    // A: 사람에게(실행 없음).
+    // A: 사람에게 보내기는 없다(D23 개정) — 400, 이력에 남지 않는다.
     let path_a = format!("/api/conversations/{conv_a}/messages");
     let (code, r) = call(
         port_a,
@@ -309,14 +309,7 @@ async fn conversation_post_targets() {
         r#"{"text":"A 메모","to":"human"}"#,
     )
     .await;
-    assert_eq!(code, 201, "{r}");
-    assert_eq!(
-        (
-            r["message"]["mine"].as_bool(),
-            r["message"]["exec"].as_bool()
-        ),
-        (Some(true), Some(false))
-    );
+    assert_eq!(code, 400, "{r}");
     // B: 받은 대화에 자기 에이전트에게.
     let (_, list) = call(port_b, &hb, "GET", "/api/conversations", "").await;
     let conv_b = list[0]["id"].as_i64().unwrap();
@@ -330,8 +323,8 @@ async fn conversation_post_targets() {
     )
     .await;
     assert_eq!(code, 201, "{r}");
-    // A 이력: 질문 · 답 · A 메모 · B 질문 · 답 — 발화자 표시용 mine · exec.
-    let ms = messages(port_a, &ha, conv_a, 5).await;
+    // A 이력: 질문 · 답 · B 질문 · 답 — 발화자 표시용 mine · exec.
+    let ms = messages(port_a, &ha, conv_a, 4).await;
     let flags: Vec<_> = ms
         .as_array()
         .unwrap()
@@ -349,7 +342,6 @@ async fn conversation_post_targets() {
         [
             ("human".to_string(), true, true),
             ("agent".to_string(), false, false),
-            ("human".to_string(), true, false),
             ("human".to_string(), false, true),
             ("agent".to_string(), false, false),
         ]
@@ -474,4 +466,64 @@ async fn relay_cap_default_from_settings() {
     an_core::settings::set(&a_db, an_agent::chat::RELAY_CAP_KEY, "4").unwrap();
     let (_, r) = call(port_a, &ha, "POST", "/api/conversations", &start).await;
     assert_eq!(r["conversation"]["relay_cap"], 4, "{r}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn via_api() {
+    let (a, b) = (side("via-a").await, side("via-b").await);
+    let code = b.node.open_window(PAIRING_WINDOW);
+    let pb = a.node.add(b.addr, Some(code)).await.unwrap();
+    let pa = b.node.peers().unwrap().remove(0);
+    a.node.approve(pb.id).await.unwrap();
+    b.node.approve(pa.id).await.unwrap();
+    agents::add(
+        &db::open(&b.paths.db_file()).unwrap(),
+        "review",
+        ".",
+        None,
+        "",
+    )
+    .unwrap();
+    let (port, h) = web(a.chat.clone()).await;
+    // CLI 출처 — 새 대화 · 이어 쓰기 모두 via 가 남고, 웹UI 글은 null.
+    let body =
+        serde_json::json!({ "peer_id": pb.id, "agent": "review", "text": "질문", "via": "cli" });
+    let (code, r) = call(port, &h, "POST", "/api/conversations", &body.to_string()).await;
+    assert_eq!(code, 201, "{r}");
+    assert_eq!(r["message"]["via"], "cli");
+    let conv = r["conversation"]["id"].as_i64().unwrap();
+    let ms = messages(port, &h, conv, 2).await;
+    assert_eq!(
+        (ms[0]["via"].as_str(), ms[1]["via"].as_str()),
+        (Some("cli"), None)
+    );
+    assert_eq!(
+        ms[1]["reply_to"], ms[0]["id"],
+        "답은 질문의 로컬 id 를 가리킨다"
+    );
+    let path = format!("/api/conversations/{conv}/messages");
+    let (code, r) = call(port, &h, "POST", &path, r#"{"text":"메모","via":"cli"}"#).await;
+    assert_eq!(code, 201, "{r}");
+    assert_eq!(r["message"]["via"], "cli");
+    let (code, r) = call(port, &h, "POST", &path, r#"{"text":"웹"}"#).await;
+    assert_eq!(code, 201, "{r}");
+    assert!(r["message"]["via"].is_null());
+    // 모르는 출처는 거부.
+    let (code, _) = call(port, &h, "POST", &path, r#"{"text":"x","via":"web"}"#).await;
+    assert_eq!(code, 400);
+    let body = serde_json::json!({ "peer_id": pb.id, "agent": "review", "text": "q", "via": "cli", "relay_agent": "dev" });
+    assert_eq!(
+        call(port, &h, "POST", "/api/conversations", &body.to_string())
+            .await
+            .0,
+        400,
+        "자동 왕복 시작의 via 는 버리지 않고 거절"
+    );
+    let body = serde_json::json!({ "peer_id": pb.id, "agent": "review", "text": "q", "via": "x" });
+    assert_eq!(
+        call(port, &h, "POST", "/api/conversations", &body.to_string())
+            .await
+            .0,
+        400
+    );
 }

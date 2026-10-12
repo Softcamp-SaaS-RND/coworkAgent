@@ -130,14 +130,32 @@ fn reply_meta_and_summaries() {
         q.id,
         Some(3),
         Some(18400),
+        Some("opus"),
+        Some("high"),
     )
     .unwrap();
     assert_eq!(
         (r.author, r.reply_to, r.turns, r.duration_ms),
         (chat::Author::Agent, Some(q.id), Some(3), Some(18400))
     );
+    assert_eq!(
+        (r.model.as_deref(), r.effort.as_deref()),
+        (Some("opus"), Some("high"))
+    );
     // 실행 정보 없는 답(이전 버전 상대)도.
-    let r2 = chat::add_reply(&c, a.id, "r2", "답2", chat::State::Error, q.id, None, None).unwrap();
+    let r2 = chat::add_reply(
+        &c,
+        a.id,
+        "r2",
+        "답2",
+        chat::State::Error,
+        q.id,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
     assert_eq!((r2.turns, r2.duration_ms), (None, None));
     chat::add_message(
         &c,
@@ -189,6 +207,8 @@ fn human_posts_and_notes() {
         "답",
         chat::State::Done,
         q1.id,
+        None,
+        None,
         None,
         None,
     )

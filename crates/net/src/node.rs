@@ -22,6 +22,8 @@ use tokio_rustls::{TlsAcceptor, TlsConnector};
 pub const PEER_PORT: u16 = 47100;
 /// 발신 연결 1개(TLS 포함 요청·응답 전체)의 상한.
 pub const IO_DEADLINE: Duration = Duration::from_secs(10);
+/// 접속 상태 확인 주기 — 페어링된 상대마다 `Ping`(앱 시작 직후 한 번).
+pub const PRESENCE_EVERY: Duration = Duration::from_secs(30);
 /// 수신 연결 1개의 상한 — 인증 전 느린 연결이 자리를 오래 붙잡지 못하게 발신보다 짧다.
 pub const INBOUND_DEADLINE: Duration = Duration::from_secs(3);
 /// 동시에 처리하는 수신 연결 수. 넘치면 accept 를 멈추지 않고 바로 끊는다.
@@ -52,6 +54,12 @@ pub enum PeerEvent {
     },
     /// 상대 승인이 같은 세대에 반영됐다.
     Approved { name: String, host: String },
+    /// 초대 코드로 들어온 처음 보는 PC 를 승인 없이 등록했다(D8 개정 — 모르는 연결이면 바로 삭제).
+    AutoPaired {
+        name: String,
+        host: String,
+        fingerprint: String,
+    },
     /// 원격 메시지가 왔다 — 받은 요청(내 에이전트에게) 또는 받은 답(원격 에이전트에게서). `preview` 는 앞부분만
     /// (`RelayEnd` 면 이 PC 가 만든 멈춘 사유).
     Message {
@@ -352,6 +360,7 @@ impl Node {
                 | Request::Reply { .. }
                 | Request::Post { .. }
                 | Request::Relay { .. }
+                | Request::Done { .. }
         ) {
             let peer = peers::by_spki(&self.db(), spki).map_err(db_err)?;
             let resp = match (peer, self.requests.get()) {
@@ -390,14 +399,30 @@ impl Node {
                         &round,
                     )
                     .map_err(db_err)?;
-                    event = Some(PeerEvent::PairRequest {
-                        name: p.name,
-                        host: p.host,
-                        fingerprint: crate::identity::fingerprint(spki),
+                    // 처음 보는 키가 여기 왔다 = 받기 창의 초대 코드가 맞았다 → 내 승인은 자동(D8 개정).
+                    let auto = !known;
+                    if auto {
+                        peers::set_my_ok(&db, p.id).map_err(db_err)?;
+                    }
+                    let (name, host, fingerprint) =
+                        (p.name, p.host, crate::identity::fingerprint(spki));
+                    event = Some(if auto {
+                        PeerEvent::AutoPaired {
+                            name,
+                            host,
+                            fingerprint,
+                        }
+                    } else {
+                        PeerEvent::PairRequest {
+                            name,
+                            host,
+                            fingerprint,
+                        }
                     });
                     Response::Hello {
                         name: self.me.name.clone(),
                         host: self.me.host.clone(),
+                        approved: auto,
                     }
                 }
             }
@@ -428,7 +453,12 @@ impl Node {
                     .map_err(db_err)?
                     .is_some_and(|p| p.paired());
                 if paired {
-                    Response::Pong
+                    // 못 읽으면 꺼짐으로 답한다 — 연결을 끊으면 상대가 이 PC 를 오프라인으로 본다(받기 판정도 못 읽으면 받는다).
+                    let focus = an_core::settings::focus(&db).unwrap_or_else(|e| {
+                        log::warn!("집중 설정 읽기 실패 — 꺼짐으로 답한다: {e}");
+                        false
+                    });
+                    Response::Pong { focus }
                 } else {
                     Response::error("not_paired")
                 }
@@ -438,7 +468,8 @@ impl Node {
             | Request::Message { .. }
             | Request::Reply { .. }
             | Request::Post { .. }
-            | Request::Relay { .. } => Response::error("bad_request"),
+            | Request::Relay { .. }
+            | Request::Done { .. } => Response::error("bad_request"),
         };
         Ok((resp, event))
     }
@@ -538,17 +569,58 @@ impl Node {
             ));
         }
         match resp {
-            Response::Hello { name, host } => peers::upsert(
-                &self.db(),
-                &spki,
-                &clean_name(&name),
-                &clean_name(&host),
-                &addr.to_string(),
-                &round,
-            )
-            .map_err(db_err),
+            Response::Hello {
+                name,
+                host,
+                approved,
+            } => {
+                let db = self.db();
+                let p = peers::upsert(
+                    &db,
+                    &spki,
+                    &clean_name(&name),
+                    &clean_name(&host),
+                    &addr.to_string(),
+                    &round,
+                )
+                .map_err(db_err)?;
+                if !approved {
+                    return Ok(p);
+                }
+                peers::set_their_ok(&db, &spki, &round).map_err(db_err)?;
+                peers::by_id(&db, p.id).map_err(db_err)?.ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::NotFound, "방금 등록한 상대가 없다")
+                })
+            }
             other => Err(refused(other)),
         }
+    }
+
+    /// 그룹 · model · effort 를 통째로 바꾼다(`None` = 지움) — 이 PC 만의 표시 · 실행 설정이라 상대에 알리지 않는다.
+    pub fn set_peer_meta(
+        &self,
+        id: i64,
+        group: Option<&str>,
+        model: Option<&str>,
+        effort: Option<&str>,
+    ) -> io::Result<Peer> {
+        if !peers::set_meta(&self.db(), id, group, model, effort).map_err(db_err)? {
+            return Err(io::Error::new(io::ErrorKind::NotFound, "없는 피어"));
+        }
+        self.peer(id)
+    }
+
+    /// 표시 이름 · 타일 아이콘을 통째로 바꾼다(`None` = 지움) — 이 PC 만의 표시라 상대에 알리지 않는다.
+    pub fn set_peer_tile(
+        &self,
+        id: i64,
+        alias: Option<&str>,
+        icon: Option<&str>,
+    ) -> io::Result<Peer> {
+        if !peers::set_tile(&self.db(), id, alias, icon).map_err(db_err)? {
+            return Err(io::Error::new(io::ErrorKind::NotFound, "없는 피어"));
+        }
+        self.peer(id)
     }
 
     /// 내 승인 → 상대에 통지. 통지가 실패해도 내 승인은 남는다(다시 부르면 재통지).
@@ -587,14 +659,37 @@ impl Node {
         }
     }
 
-    pub async fn ping(&self, id: i64) -> io::Result<()> {
+    /// 연결 확인 — 상대가 집중 중인가를 돌려주고, 받은 `Pong` 을 접속 상태로 남긴다(거절 · 전송 오류는 남기지 않는다).
+    pub async fn ping(&self, id: i64) -> io::Result<bool> {
         let peer = self.peer(id)?;
         match self
             .send(parse_addr(&peer.addr)?, Some(peer.spki), &Request::Ping)
             .await?
         {
-            (Response::Pong, _) => Ok(()),
+            (Response::Pong { focus }, _) => {
+                peers::set_presence(&self.db(), id, focus).map_err(db_err)?;
+                Ok(focus)
+            }
             (other, _) => Err(refused(other)),
+        }
+    }
+
+    /// 접속 상태 — 시작 직후와 [`PRESENCE_EVERY`] 마다 페어링된 상대 모두에 [`ping`](Self::ping)(상대별 작업, 실패는 넘어간다).
+    pub async fn watch_presence(self: Arc<Self>) {
+        let mut tick = tokio::time::interval(PRESENCE_EVERY);
+        // 절전에서 깨어나도 놓친 주기를 몰아 보내지 않는다(상대의 연결 수 제한을 채우지 않게).
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            let Ok(peers) = self.peers() else {
+                continue;
+            };
+            for p in peers.into_iter().filter(Peer::paired) {
+                let me = self.clone();
+                tokio::spawn(async move {
+                    let _ = me.ping(p.id).await;
+                });
+            }
         }
     }
 }

@@ -27,11 +27,14 @@
 
 ## dev/ — 개발자·AI 에이전트
 
-- [dev/an_core.md](dev/an_core.md) — base: 데이터 경로 · SQLite · 로그 회전 · 단일 인스턴스
+- [dev/an_core.md](dev/an_core.md) — base: 데이터 경로 · SQLite · 로그 회전 · 단일 인스턴스 · 실행 옵션 · 화면 설정 검증
 - [dev/an_net.md](dev/an_net.md) — comm: 신원 · RPK TLS · 피어 프로토콜 · 페어링 노드 · 초대 텍스트
 - [dev/an_agent.md](dev/an_agent.md) — domain: `claude -p` 실행기 · 대화 왕복 조율 · DB 대기열
-- [dev/an_app.md](dev/an_app.md) — app: 로컬 웹UI 서버 · 핸드오프 · 트레이 · 브라우저 · 에이전트 · 대화 API · 시작 순서
+- [dev/an_app.md](dev/an_app.md) — app: 로컬 웹UI 서버 · 핸드오프 · 트레이 · 브라우저 · 에이전트 · 대화 API · AI 에이전트용 CLI · 시작 순서
+- [dev/developer-guide.md](dev/developer-guide.md) — 절차·운영(모듈 매뉴얼 형식의 예외): 생성되는 프로세스 · 서비스 역할 · `claude -p` 세션 관리 ·
+  저장소(코드 · 데이터 · Claude Code 기록) · 워크플로우 — 모듈을 가로지른 실행 구조
 
 ## user/ — 돌려 쓰는 사람
 
-없음 <!-- 실행 안내가 생기면 한 줄씩: 상대 링크 + 한 줄 요약 -->
+- [user/user-guide.md](user/user-guide.md) — 실행 · 연결(초대) · 에이전트 등록 · 대화 · 질의/요청 · @멘션 · 자동 왕복 · 집중 · 알림 · CLI ·
+  내 데이터 · 문제 해결 <!-- 실행 안내가 생기면 한 줄씩: 상대 링크 + 한 줄 요약 -->

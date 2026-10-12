@@ -2,7 +2,7 @@ mod common;
 use an_net::proto::{Request, Response};
 
 #[tokio::test]
-async fn add_leaves_both_sides_pending() {
+async fn add_registers_both_sides() {
     let (a, b) = (common::start("add-a").await, common::start("add-b").await);
     let code = b.open();
     let pb = a.node.add(b.addr, code).await.unwrap();
@@ -12,7 +12,7 @@ async fn add_leaves_both_sides_pending() {
         ("user-add-b", "PC-add-b")
     );
     assert_eq!(pb.addr, b.addr.to_string());
-    assert!(!pb.my_ok && !pb.their_ok);
+    assert!(!pb.my_ok && pb.their_ok, "초대 생성 측 자동 승인(D8 개정)");
 
     let pa = b.only_peer();
     assert_eq!(pa.spki, a.node.identity().spki());
@@ -22,7 +22,7 @@ async fn add_leaves_both_sides_pending() {
         a.addr.to_string(),
         "주소 = 접속 IP + hello 의 포트"
     );
-    assert!(!pa.my_ok && !pa.their_ok);
+    assert!(pa.my_ok && !pa.their_ok, "초대 수락 측은 아직 승인 전");
 
     // 자기 자신의 주소는 추가하지 않는다.
     assert!(a.node.add(a.addr, None).await.is_err());
@@ -33,7 +33,9 @@ async fn add_leaves_both_sides_pending() {
 async fn one_side_approval_is_not_paired() {
     let (a, b) = (common::start("one-a").await, common::start("one-b").await);
     let code = b.open();
-    let pb = a.node.add(b.addr, code).await.unwrap();
+    a.node.add(b.addr, code).await.unwrap();
+    // 다시 추가(코드 없음)는 양쪽 승인이 지워진다 — 사람 승인 경로.
+    let pb = a.node.add(b.addr, None).await.unwrap();
     let pb = a.node.approve(pb.id).await.unwrap();
     assert!(pb.my_ok && !pb.paired());
     let pa = b.only_peer();
@@ -129,4 +131,40 @@ async fn removed_peer_rejected_again() {
     let code = b.open();
     let pb = a.node.add(b.addr, code).await.unwrap();
     assert!(!pb.paired() && !b.only_peer().paired());
+}
+
+/// `Pong` 에 상대의 집중(설정 `focus`)을 싣고, Ping 한 쪽은 받은 시각 · 집중을 남긴다(접속 상태). 거절된 Ping 은 남기지 않는다.
+#[tokio::test]
+async fn pong_carries_focus_and_presence() {
+    let (a, b) = (common::start("pong-a").await, common::start("pong-b").await);
+    let code = b.open();
+    let pb = a.node.add(b.addr, code).await.unwrap();
+    a.node.approve(pb.id).await.unwrap();
+    assert_eq!(a.only_peer().seen_at, None, "아직 Ping 전");
+    // 주기 확인은 시작 직후 한 번 — 다음은 30초 뒤라 아래 단정과 겹치지 않는다.
+    tokio::spawn(a.node.clone().watch_presence());
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while a.only_peer().seen_at.is_none() {
+        assert!(
+            std::time::Instant::now() < until,
+            "watch_presence 가 Ping 하지 않았다"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(!a.node.ping(pb.id).await.unwrap(), "집중 꺼짐");
+    let p = a.only_peer();
+    assert!(p.seen_at.is_some_and(|t| t > 0) && !p.focus, "{p:?}");
+    let b_db = an_core::db::open(&b.paths.db_file()).unwrap();
+    an_core::settings::set(&b_db, an_core::settings::FOCUS_KEY, "1").unwrap();
+    assert!(a.node.ping(pb.id).await.unwrap(), "집중 켜짐");
+    assert!(a.only_peer().focus);
+    an_core::settings::set(&b_db, an_core::settings::FOCUS_KEY, "0").unwrap();
+    assert!(!a.node.ping(pb.id).await.unwrap());
+    assert!(!a.only_peer().focus);
+    // B 가 A 를 지우면 Ping 은 거절 — 접속 기록은 그대로.
+    let before = a.only_peer().seen_at;
+    let pa = b.only_peer();
+    an_core::peers::remove(&b_db, pa.id).unwrap();
+    assert!(a.node.ping(pb.id).await.is_err());
+    assert_eq!(a.only_peer().seen_at, before);
 }

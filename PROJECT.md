@@ -42,6 +42,10 @@
 - **Git 브랜치**: Task 별 `task/NN-이름` 브랜치 → main 으로 merge. rebase 는 사용자 요청 시에만.
 - **수동 테스트 시점**: 프로토타입(Phase 1 끝)까지는 함수 테스트 · TDD 만 — 각 Task 의 수동 gate 는 ABANDON 으로 드러내고
   프로토타입 인수 Task 에서 일괄 진행한다(masterPlan D28).
+- **개발 PC 재실행**: `python tools/rebuild_run.py` — 떠 있는 coworkAgent 강제 종료 → 릴리스 빌드 → 실행(실행 파일 잠금 때문에
+  끄고 빌드한다). 실행 중이던 요청은 다음 시작 때 실패 답이 되고, 빌드가 실패하면 앱은 꺼진 채로 남는다. 앱은 탐색기로
+  띄워 부른 셸의 환경 변수가 앱 · `claude -p` 로 새지 않는다 — Claude Code 세션에서 앱을 띄울 때는 `Start-Process` 대신 이것을 쓴다
+  (세션 환경엔 `CLAUDE_CODE_MESSAGING_TOKEN` · `CLAUDE_EFFORT` 등이 있다).
 
 ## 검증 명령
 

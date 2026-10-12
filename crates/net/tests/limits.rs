@@ -97,23 +97,15 @@ async fn unapproved_peer_cap() {
         .send(b.addr, None, &hello("n", "h", 1, b.open()))
         .await
         .unwrap();
-    for _ in 1..MAX_UNAPPROVED {
-        let n = Node::new(
-            common::bare_identity(),
-            an_core::db::Connection::open_in_memory().unwrap(),
-            Me {
-                name: "n".into(),
-                host: "h".into(),
-                port: 1,
-            },
-        );
-        let (resp, _) = n
-            .send(b.addr, None, &hello("n", "h", 1, b.open()))
-            .await
-            .unwrap();
-        assert!(matches!(resp, Response::Hello { .. }), "{resp:?}");
+    // 초대로 들어온 키는 자동 승인(D8 개정)이라 미승인 기록은 아는 키의 재 hello 로만 생긴다 — 그 상태를 DB 에 직접 만든다.
+    for i in 1..=MAX_UNAPPROVED {
+        let spki = format!("unapproved-{i}");
+        an_core::peers::upsert(&b.db(), spki.as_bytes(), "n", "h", "127.0.0.1:1", "r").unwrap();
     }
-    assert_eq!(b.node.peers().unwrap().len() as i64, MAX_UNAPPROVED);
+    assert_eq!(
+        an_core::peers::count_unapproved(&b.db()).unwrap(),
+        MAX_UNAPPROVED
+    );
 
     // 33번째 처음 보는 키 → busy(맞는 초대 코드가 있어도 상한이 먼저), 기록 안 늘어남.
     let late = common::start("cap-late").await;
@@ -123,7 +115,7 @@ async fn unapproved_peer_cap() {
         .await
         .unwrap();
     assert_eq!(resp, Response::error("busy"));
-    assert_eq!(b.node.peers().unwrap().len() as i64, MAX_UNAPPROVED);
+    assert_eq!(b.node.peers().unwrap().len() as i64, MAX_UNAPPROVED + 1);
 
     // 이미 아는 키는 상한 · 코드와 무관하게 hello 가 통한다.
     let (resp, _) = first
@@ -133,9 +125,10 @@ async fn unapproved_peer_cap() {
         .unwrap();
     assert!(matches!(resp, Response::Hello { .. }), "{resp:?}");
 
-    // 하나를 승인하면 자리가 난다.
-    let id = b.node.peers().unwrap()[0].id;
-    an_core::peers::set_my_ok(&b.db(), id).unwrap();
+    // 재 hello 로 first 도 미승인(상한 + 1) — 둘을 승인하면 자리가 난다.
+    for p in b.node.peers().unwrap().iter().filter(|p| !p.my_ok).take(2) {
+        an_core::peers::set_my_ok(&b.db(), p.id).unwrap();
+    }
     let (resp, _) = late
         .node
         .send(b.addr, None, &hello("n", "h", 1, b.open()))

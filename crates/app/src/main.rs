@@ -6,7 +6,7 @@ use an_agent::runner::{find_claude, run_claude};
 use an_app::notify::{self, Notifier};
 use an_app::server::{self, Status};
 use an_app::tray::{Attention, Tray, write_start_error};
-use an_app::{browser, chat_api, handoff, peers_api};
+use an_app::{browser, chat_api, cli, handoff, peers_api};
 use an_core::db;
 use an_core::instance::{Acquired, InstanceInfo, InstanceLock};
 use an_core::log_file::FileLogger;
@@ -18,6 +18,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 fn main() {
+    // AI 에이전트용 CLI — 트레이 · 잠금 · 로거를 거치지 않는다(주 인스턴스가 되지 않는다). 떠 있는 인스턴스에 요청만 한다.
+    // `args()` 는 UTF-8 이 아닌 인자에서 패닉한다 — 트레이 시작까지 막지 않게 손실 변환.
+    let args: Vec<String> = std::env::args_os()
+        .skip(1)
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    // 인자가 있으면 CLI 다 — 트레이는 인자 없이만 뜬다. 모르는 명령도 트레이로 새지 않고 사용법 오류(2)로 끝난다.
+    if !args.is_empty() {
+        std::process::exit(cli::main(&args));
+    }
     let (tray, attention) = Tray::new();
     match start(attention) {
         Ok(Some(app)) => tray.run(app.url, app.on_seen, app.on_quit),
@@ -107,6 +117,8 @@ fn start(attention: Attention) -> Result<Option<App>, Box<dyn Error>> {
         }
     }
     runtime.spawn(node.clone().serve(peer_listener));
+    // 접속 상태 — 페어링된 상대를 주기적으로 확인(상대 집중 · 온라인 표시).
+    runtime.spawn(node.clone().watch_presence());
 
     let open_url = url.clone();
     let app = server::router_with(

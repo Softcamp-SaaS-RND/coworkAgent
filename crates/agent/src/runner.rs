@@ -21,6 +21,9 @@ pub struct RunInput {
     pub session: Session,
     /// 원격에서 온 텍스트 — 신뢰하지 않는 입력. 표준 입력으로만.
     pub text: String,
+    /// `--model` · `--effort` — [`an_core::run_opts::resolve`] 가 검증해 정한 값.
+    pub model: String,
+    pub effort: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,7 +46,7 @@ pub const GUARD_PROMPT: &str = "이 세션은 coworkAgent 를 통해 다른 PC �
 비밀(키 · 토큰 · 비밀번호 · 개인정보)은 답에 싣지 않는다.";
 
 /// 실행 인자(D22 · D31) — 도구는 읽기 전용 목록 안 것만, 시스템 프롬프트는 [`GUARD_PROMPT`] + 프로필 추가 지시.
-pub fn claude_args(agent: &Agent, session: &Session) -> Vec<String> {
+pub fn claude_args(agent: &Agent, session: &Session, model: &str, effort: &str) -> Vec<String> {
     let tools = an_core::agents::read_only(&agent.tools);
     let mut a: Vec<String> = [
         "-p",
@@ -77,6 +80,14 @@ pub fn claude_args(agent: &Agent, session: &Session) -> Vec<String> {
         Session::New(id) => a.extend(["--session-id".into(), id.clone()]),
         Session::Resume(id) => a.extend(["--resume".into(), id.clone()]),
     }
+    // `--effort <level>`(low · medium · high · xhigh · max) — 공식 CHANGELOG 상 `--effort` 는 2.1.72 이전부터, xhigh 는 2.1.111 부터,
+    // max 는 2.1.221 이전부터 있어 `MIN_CLAUDE`(2.1.267) 이상이면 모두 받는다. 실측: 2.1.293 ~ 2.1.296 `--help`.
+    a.extend([
+        "--model".into(),
+        model.into(),
+        "--effort".into(),
+        effort.into(),
+    ]);
     a
 }
 
@@ -265,8 +276,8 @@ pub fn find_claude() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(exe))
 }
 
-/// 실행 인자가 요구하는 가장 낮은 Claude Code 버전 — `--system-prompt-snapshot` 이 있는 버전(검증 환경 2.1.296 에서 확인, 도입
-/// 버전 2.1.267 은 적대적 평가 지적 기준 — 확인 필요). 낮으면 가드 없이 돌리지 않고 업데이트를 안내한다.
+/// 실행 인자가 요구하는 가장 낮은 Claude Code 버전 — `--system-prompt-snapshot off` 가 들어온 2.1.267(공식 CHANGELOG 2.1.267
+/// "Added `--system-prompt-snapshot off`"). 나머지 인자(`--effort` 등)는 그보다 먼저 있었다. 낮으면 가드 없이 돌리지 않고 업데이트를 안내한다.
 pub const MIN_CLAUDE: (u32, u32, u32) = (2, 1, 267);
 
 /// `claude --version` 출력(`2.1.296 (Claude Code)`)의 버전.
@@ -311,7 +322,7 @@ pub fn run_claude(program: &Path, input: &RunInput) -> io::Result<RunOutput> {
     check_version(program)?;
     let out = run_process(
         program,
-        &claude_args(&input.agent, &input.session),
+        &claude_args(&input.agent, &input.session, &input.model, &input.effort),
         Path::new(&input.agent.folder),
         &input.text,
         RUN_TIMEOUT,

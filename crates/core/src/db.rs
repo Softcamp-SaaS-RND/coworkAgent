@@ -1,7 +1,7 @@
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 12;
 
 /// DB 를 열고 스키마를 `SCHEMA_VERSION` 으로 올린다. 이 실행 파일보다 새 스키마면 열지 않는다.
 pub fn open(path: &Path) -> rusqlite::Result<Connection> {
@@ -114,6 +114,116 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
             }
         }
         tx.execute_batch("PRAGMA user_version = 7;")?;
+        tx.commit()?;
+    }
+    if v < 8 {
+        // 글의 출처 — `cli` = 사용자 AI 에이전트가 CLI 로 쓴 글, NULL = 웹UI(사람).
+        let tx = conn.unchecked_transaction()?;
+        if !has_column(&tx, "messages", "via")? {
+            tx.execute_batch("ALTER TABLE messages ADD COLUMN via TEXT;")?;
+        }
+        tx.execute_batch("PRAGMA user_version = 8;")?;
+        tx.commit()?;
+    }
+    if v < 9 {
+        // 그룹(피어 · 에이전트) · 상대별 실행 덮어쓰기(model · effort, NULL = 전역 기본값).
+        let tx = conn.unchecked_transaction()?;
+        for (table, col) in [
+            ("peers", "grp"),
+            ("peers", "model"),
+            ("peers", "effort"),
+            ("agents", "grp"),
+        ] {
+            if !has_column(&tx, table, col)? {
+                tx.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} TEXT;"))?;
+            }
+        }
+        tx.execute_batch("PRAGMA user_version = 9;")?;
+        tx.commit()?;
+    }
+    if v < 10 {
+        // 이 PC 에서 붙이는 표시 — 대화 제목(NULL = 첫 사람 글 앞부분) · 상대 표시 이름(별칭) · 타일 아이콘(PNG data URL).
+        let tx = conn.unchecked_transaction()?;
+        for (table, col) in [
+            ("conversations", "title"),
+            ("peers", "alias"),
+            ("peers", "icon"),
+        ] {
+            if !has_column(&tx, table, col)? {
+                tx.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} TEXT;"))?;
+            }
+        }
+        tx.execute_batch("PRAGMA user_version = 10;")?;
+        tx.commit()?;
+    }
+    if v < 11 {
+        // 이 PC 의 작업 화면 — ★ · 읽은 마지막 글 · 저장 · 답의 실행 옵션 · 내 활동을 본 마지막 글 · 기록 id · 자동 왕복 시작/끝 기록
+        // (+ 내 글이 실패로 바뀐 순간 — `message_id`) · 대화별 글 · 기록 색인(5초 새로 고침의 대화 목록 · 안 읽음 · 내 활동이 표 전체를 훑지 않게).
+        // 이전 대화는 다 읽은 것, 이전 활동은 본 것으로 둔다.
+        let tx = conn.unchecked_transaction()?;
+        for (table, col, ty) in [
+            ("conversations", "starred_at", "INTEGER"),
+            ("conversations", "read_id", "INTEGER"),
+            ("messages", "saved_at", "INTEGER"),
+            ("messages", "model", "TEXT"),
+            ("messages", "effort", "TEXT"),
+            ("peers", "activity_seen_msg", "INTEGER"),
+            ("peers", "activity_seen_event", "INTEGER"),
+        ] {
+            if !has_column(&tx, table, col)? {
+                tx.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {ty};"))?;
+            }
+        }
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS relay_events (
+               id INTEGER PRIMARY KEY,
+               conversation_id INTEGER NOT NULL,
+               kind TEXT NOT NULL,
+               detail TEXT NOT NULL DEFAULT '',
+               created_at INTEGER NOT NULL,
+               message_id INTEGER
+             );
+             CREATE INDEX IF NOT EXISTS messages_by_conv ON messages(conversation_id);
+             CREATE INDEX IF NOT EXISTS relay_events_by_conv ON relay_events(conversation_id);
+             CREATE INDEX IF NOT EXISTS relay_events_by_message ON relay_events(message_id);
+             UPDATE conversations SET read_id = (SELECT max(m.id) FROM messages m WHERE m.conversation_id = conversations.id)
+               WHERE read_id IS NULL;
+             UPDATE peers SET activity_seen_msg = (SELECT coalesce(max(id), 0) FROM messages),
+               activity_seen_event = (SELECT coalesce(max(id), 0) FROM relay_events)
+               WHERE activity_seen_msg IS NULL;
+             PRAGMA user_version = 11;",
+        )?;
+        tx.commit()?;
+    }
+    if v < 12 {
+        // 상대에게 보이는 동작(집중 · 질의/요청 · 멘션) — 글: 요청(건의, NULL · 0 = 질의) · 완료 표시 시각 · 멘션한 에이전트(NULL = 대화
+        // 에이전트) · 상대가 거절한 코드, 상대: 마지막 `Pong` 시각 · 그때의 집중, 멘션한 에이전트의 Claude 세션(대화 에이전트는
+        // `conversations.session` 그대로).
+        let tx = conn.unchecked_transaction()?;
+        for (table, col, ty) in [
+            ("messages", "request", "INTEGER"),
+            ("messages", "done_at", "INTEGER"),
+            ("messages", "agent", "TEXT"),
+            ("messages", "refused", "TEXT"),
+            ("peers", "seen_at", "INTEGER"),
+            ("peers", "focus", "INTEGER"),
+            ("agents", "uid", "TEXT"),
+        ] {
+            if !has_column(&tx, table, col)? {
+                tx.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {ty};"))?;
+            }
+        }
+        // 에이전트 세대 — 끝난 실행이 지워졌다 다시 등록된(또는 폴더가 바뀐) 에이전트에 옛 세션을 남기지 않게.
+        tx.execute_batch(
+            "UPDATE agents SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL;
+             CREATE TABLE IF NOT EXISTS agent_sessions (
+               conversation_id INTEGER NOT NULL,
+               agent TEXT NOT NULL,
+               session TEXT NOT NULL,
+               PRIMARY KEY (conversation_id, agent)
+             );
+             PRAGMA user_version = 12;",
+        )?;
         tx.commit()?;
     }
     Ok(conn)

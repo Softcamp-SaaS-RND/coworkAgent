@@ -128,7 +128,8 @@ async fn add_then_list_peer() {
     assert_eq!(list.len(), 1);
     assert_eq!(list[0]["fingerprint"], b.identity().fingerprint());
     assert_eq!(list[0]["name"], "user-list-b");
-    assert_eq!(list[0]["paired"], false);
+    // 코드가 맞아 상대가 승인했으므로 붙인 쪽 승인까지 한 번에 — 직접 추가도 자동 등록(Task #15 D8 추가 수용 · 적대적 평가 라운드 1).
+    assert_eq!(list[0]["paired"], true);
 
     // 형식 아닌 주소 → 400, JSON 아닌 본문(폼 CSRF 형태) → 415.
     let (code, _) = common::send_body(

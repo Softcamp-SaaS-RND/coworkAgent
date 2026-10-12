@@ -12,15 +12,35 @@ pub struct Peer {
     pub their_ok: bool,
     /// 이번 페어링 세대 — 마지막 hello 의 `round`. approve 는 같은 세대에만 적용된다.
     pub round: String,
+    /// 사용자가 붙인 그룹 이름(없으면 `None`).
+    pub group: Option<String>,
+    /// 이 상대 요청 실행의 model · effort 덮어쓰기(없으면 전역 기본값).
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    /// 이 PC 에서 부르는 표시 이름(별칭) · 타일 아이콘(PNG data URL) — 없으면 `None`.
+    pub alias: Option<String>,
+    pub icon: Option<String>,
+    /// 접속 상태 — 마지막 `Pong` 을 받은 시각(유닉스 초, 없으면 아직) · 그때 상대의 집중.
+    pub seen_at: Option<i64>,
+    pub focus: bool,
 }
+
+/// 온라인으로 보는 마지막 `Pong` 이후 시간(초) — 확인 주기(`PRESENCE_EVERY` 30초)의 두 번 반.
+pub const ONLINE_WITHIN: i64 = 75;
 
 impl Peer {
     pub fn paired(&self) -> bool {
         self.my_ok && self.their_ok
     }
+
+    /// 마지막 `Pong` 이 `now` 에서 [`ONLINE_WITHIN`] 초 안이면 온라인. 받은 시각이 `now` 보다 뒤(시계를 되돌림)면 오프라인으로 본다.
+    pub fn online(&self, now: i64) -> bool {
+        self.seen_at
+            .is_some_and(|t| (0..=ONLINE_WITHIN).contains(&(now - t)))
+    }
 }
 
-const COLS: &str = "id, spki, name, host, addr, my_ok, their_ok, round";
+const COLS: &str = "id, spki, name, host, addr, my_ok, their_ok, round, grp, model, effort, alias, icon, seen_at, focus";
 
 fn row(r: &Row) -> rusqlite::Result<Peer> {
     Ok(Peer {
@@ -32,6 +52,13 @@ fn row(r: &Row) -> rusqlite::Result<Peer> {
         my_ok: r.get(5)?,
         their_ok: r.get(6)?,
         round: r.get(7)?,
+        group: r.get(8)?,
+        model: r.get(9)?,
+        effort: r.get(10)?,
+        alias: r.get(11)?,
+        icon: r.get(12)?,
+        seen_at: r.get(13)?,
+        focus: r.get::<_, Option<bool>>(14)?.unwrap_or(false),
     })
 }
 
@@ -100,6 +127,73 @@ pub fn remove(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
     Ok(conn.execute("DELETE FROM peers WHERE id = ?1", [id])? == 1)
 }
 
+/// 그룹 · model · effort 를 통째로 바꾼다(`None` = 지움). 값 검증은 [`crate::run_opts`].
+pub fn set_meta(
+    conn: &Connection,
+    id: i64,
+    group: Option<&str>,
+    model: Option<&str>,
+    effort: Option<&str>,
+) -> rusqlite::Result<bool> {
+    Ok(conn.execute(
+        "UPDATE peers SET grp = ?2, model = ?3, effort = ?4 WHERE id = ?1",
+        params![id, group, model, effort],
+    )? == 1)
+}
+
 pub fn remove_spki(conn: &Connection, spki: &[u8]) -> rusqlite::Result<bool> {
     Ok(conn.execute("DELETE FROM peers WHERE spki = ?1", [spki])? == 1)
+}
+
+/// 접속 상태 — 상대가 지금 응답했다(`Pong` · 실행 요청 거절), 그때의 집중과 함께. 없는 상대면 `false`.
+pub fn set_presence(conn: &Connection, id: i64, focus: bool) -> rusqlite::Result<bool> {
+    Ok(conn.execute(
+        "UPDATE peers SET seen_at = unixepoch(), focus = ?2 WHERE id = ?1",
+        params![id, focus],
+    )? == 1)
+}
+
+/// 표시 이름 · 타일 아이콘을 통째로 바꾼다(`None` = 지움). 값 검증은 [`crate::run_opts`].
+pub fn set_tile(
+    conn: &Connection,
+    id: i64,
+    alias: Option<&str>,
+    icon: Option<&str>,
+) -> rusqlite::Result<bool> {
+    Ok(conn.execute(
+        "UPDATE peers SET alias = ?2, icon = ?3 WHERE id = ?1",
+        params![id, alias, icon],
+    )? == 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ONLINE_WITHIN, Peer};
+
+    #[test]
+    fn online_window_edges() {
+        let peer = |seen_at| Peer {
+            id: 1,
+            spki: Vec::new(),
+            name: String::new(),
+            host: String::new(),
+            addr: String::new(),
+            my_ok: true,
+            their_ok: true,
+            round: String::new(),
+            group: None,
+            model: None,
+            effort: None,
+            alias: None,
+            icon: None,
+            seen_at,
+            focus: false,
+        };
+        let now = 1_000;
+        assert!(peer(Some(now - ONLINE_WITHIN + 1)).online(now));
+        assert!(peer(Some(now - ONLINE_WITHIN)).online(now));
+        assert!(!peer(Some(now - ONLINE_WITHIN - 1)).online(now));
+        assert!(!peer(Some(now + 1)).online(now), "시계를 되돌림");
+        assert!(!peer(None).online(now));
+    }
 }

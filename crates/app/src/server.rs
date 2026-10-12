@@ -11,6 +11,9 @@ use tokio::net::TcpListener;
 pub const COOKIE: &str = "an_token";
 
 /// 상태 페이지(T2)에 보이는 값.
+/// CLI 가 기대하는 로컬 API 판(`/api/status` 의 `cli_api`) — CLI 출처 표시(`via`)를 아는 주 인스턴스만 이 값을 낸다.
+pub const CLI_API: u32 = 1;
+
 pub struct Status {
     pub version: String,
     pub data_dir: String,
@@ -67,6 +70,7 @@ pub fn router_with(
         .route("/app.js", get(app_js))
         .route("/view.js", get(view_js))
         .route("/app.css", get(app_css))
+        .route("/favicon.ico", get(favicon))
         .route("/api/status", get(api_status))
         .route("/api/open", post(api_open))
         .with_state(state.clone())
@@ -178,10 +182,18 @@ async fn app_css() -> impl IntoResponse {
     )
 }
 
+/// 브라우저 탭 아이콘 — 실행 파일 · 트레이와 같은 에이전트 아이콘.
+async fn favicon() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "image/x-icon")],
+        include_bytes!("../assets/coworkAgent.ico").as_slice(),
+    )
+}
+
 async fn api_status(State(s): State<Arc<AppState>>) -> impl IntoResponse {
     let st = &s.status;
     let body = format!(
-        r#"{{"version":"{}","data_dir":"{}","db":"{}"}}"#,
+        r#"{{"version":"{}","data_dir":"{}","db":"{}","cli_api":{CLI_API}}}"#,
         json_escape(&st.version),
         json_escape(&st.data_dir),
         json_escape(&st.db)
