@@ -141,7 +141,7 @@ impl Notifier {
     }
 
     fn status(&self) -> std::sync::MutexGuard<'_, Status> {
-        self.status.lock().expect("알림 상태 잠금이 오염됐다")
+        an_core::sync::lock(&self.status)
     }
 
     pub fn enabled(&self) -> bool {
@@ -152,7 +152,7 @@ impl Notifier {
     pub fn set_enabled(&self, on: bool) -> io::Result<()> {
         let mut st = self.status();
         {
-            let db = self.db.lock().expect("설정 DB 잠금이 오염됐다");
+            let db = an_core::sync::lock(&self.db);
             settings::set(&db, NOTIFY_KEY, if on { "1" } else { "0" }).map_err(db_err)?;
         }
         st.enabled = on;
@@ -276,7 +276,7 @@ impl Notifier {
         // 전체 켜짐까지 한 트랜잭션 · 한 상태 잠금 — 부분 저장도, 그 사이에 끼는 이벤트도 없다.
         let mut st = self.status();
         let prefs = {
-            let db = self.db.lock().expect("설정 DB 잠금이 오염됐다");
+            let db = an_core::sync::lock(&self.db);
             let tx = db.unchecked_transaction().map_err(db_err)?;
             for (key, v) in &writes {
                 settings::set(&tx, key, v).map_err(db_err)?;
@@ -298,21 +298,21 @@ impl Notifier {
 
     /// 실행 전역 기본값(model, effort) · 화면 테마.
     pub fn run_defaults(&self) -> io::Result<(String, String, String)> {
-        let db = self.db.lock().expect("설정 DB 잠금이 오염됐다");
+        let db = an_core::sync::lock(&self.db);
         let (model, effort) = run_opts::defaults(&db).map_err(db_err)?;
         Ok((model, effort, run_opts::theme(&db).map_err(db_err)?))
     }
 
     /// 화면 — 사이드바 폭 · '나' 타일(표시 이름, 아이콘).
     pub fn screen(&self) -> io::Result<(i64, Option<String>, Option<String>)> {
-        let db = self.db.lock().expect("설정 DB 잠금이 오염됐다");
+        let db = an_core::sync::lock(&self.db);
         let (alias, icon) = run_opts::me_tile(&db).map_err(db_err)?;
         Ok((run_opts::side_width(&db).map_err(db_err)?, alias, icon))
     }
 
     /// 자동 왕복 상한 기본값(설정).
     pub fn relay_cap_default(&self) -> io::Result<i64> {
-        default_relay_cap(&self.db.lock().expect("설정 DB 잠금이 오염됐다")).map_err(db_err)
+        default_relay_cap(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
 
     /// 막히지 않는다 — 켜져 있고 세부 설정이 허락하면 건수 · 트레이 표시를 올리고 구독자에게 뿌린다(구독자가 없으면 그냥

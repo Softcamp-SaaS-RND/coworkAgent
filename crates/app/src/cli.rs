@@ -1,4 +1,5 @@
-//! 사용자 AI 에이전트용 CLI(D14 보강) — `peers` · `ask` · `history`. 떠 있는 주 인스턴스의 로컬 API 를
+//! 사용자 AI 에이전트용 CLI(D14 보강) — `peers` · `ask` · `wait` · `status` · `history`. `ask` 하나 = 앱의 CLI 트랜잭션 하나(#1c) — 앱이 주인이고
+//! CLI 는 그 상태를 본다(중복 키 · 이어 받기 · 닿지 않음 멈춤). 떠 있는 주 인스턴스의 로컬 API 를
 //! `instance.json` 의 bearer 토큰으로 부른다(웹UI 와 같은 신뢰 경계). 앱을 띄우지 않는다 — 실행 중이 아니면 종료 코드 3.
 //! CLI 로 쓴 글은 `via = "cli"` 로 양쪽 이력에 남는다. 파이프로 부르는 것을 전제한다(릴리스는 콘솔 없는 서브시스템).
 use crate::handoff::local_request;
@@ -19,11 +20,13 @@ pub const EXIT_NOT_RUNNING: i32 = 3;
 pub const EXIT_API: i32 = 4;
 /// 답 실패(에이전트 실행 오류 · 상대에 못 보냄).
 pub const EXIT_REPLY_FAILED: i32 = 5;
-/// 답 대기 시간 초과.
+/// 답 대기 시간 초과(안전판 — 앱 판정이 먼저 끝낸다).
 pub const EXIT_TIMEOUT: i32 = 6;
+/// 상대에 정해진 시간 닿지 않아 멈춤(#1c) — 트랜잭션은 남는다, `wait <tx>` 로 이어 받는다.
+pub const EXIT_STALLED: i32 = 7;
 
-/// 답 대기 상한 — 원격 실행 시간 제한(D24 개정 30분)과 같다.
-pub const WAIT_LIMIT: Duration = Duration::from_secs(30 * 60);
+/// CLI 자체 대기 안전판(#1c) — 끝은 앱의 트랜잭션 판정(답 · 실패 · 멈춤)이 정한다. 상대가 대기 · 실행 중으로 확인되는 동안은 기다린다.
+pub const WAIT_LIMIT: Duration = Duration::from_secs(24 * 3600);
 /// 답 확인 간격.
 const POLL: Duration = Duration::from_secs(1);
 /// 로컬 API 요청 한 번의 상한 — 새 대화는 상대에 닿을 때까지 기다린다.
@@ -33,14 +36,17 @@ const CLI_LABEL: &str = "AI 에이전트(CLI)";
 
 pub const USAGE: &str = "사용법:
   coworkAgent peers [--json]
-  coworkAgent ask <상대> \"<질문>\" [--agent <이름>] [--conv <대화ID>] [--no-wait] [--json]
+  coworkAgent ask <상대> \"<질문>\" [--agent <이름>] [--conv <대화ID>] [--id <키>] [--no-wait] [--json]
+  coworkAgent wait <트랜잭션> [--json]
+  coworkAgent status <트랜잭션> [--json]
   coworkAgent history [<상대>] [--conv <대화ID>] [--json]
+--id <키> 로 같은 질문을 다시 실행하면 새로 보내지 않고 그 트랜잭션의 결과를 받는다(1 ~ 64자 영문 · 숫자 · . _ -). 종료 코드 7 = 상대에 닿지 않아 멈춤(wait 로 이어 받기).
 --conv 와 함께 준 --agent 가 그 대화 에이전트가 아니면 그 상대 PC 의 다른 에이전트를 부른다(멘션 — 내가 연 대화 · 자동 왕복 아님).
 <상대> = 피어 표시 이름 또는 지문 앞자리(4자 이상). 본문이 -- 로 시작하면 앞에 -- 를 둔다(그 뒤는 전부 인자)";
 
 /// 첫 인자가 CLI 하위 명령인가 — `main` 이 트레이 시작 전에 가른다.
 pub fn is_command(arg: &str) -> bool {
-    matches!(arg, "peers" | "ask" | "history")
+    matches!(arg, "peers" | "ask" | "wait" | "status" | "history")
 }
 
 /// 실행 파일 진입점 — 표준 출력 · 오류에 쓰고 종료 코드를 돌려준다.
@@ -73,12 +79,12 @@ pub fn run(
     let result = Cli::parse(args).and_then(|cli| {
         let api = Api::open(instance_file)?;
         api.handshake()?;
-        cli.exec(&api, out, wait_limit)
+        cli.exec(&api, out, err, wait_limit)
     });
     match result {
         Ok(()) => EXIT_OK,
         Err(Fail(code, msg)) => {
-            let _ = writeln!(err, "{msg}");
+            let _ = writeln!(err, "{}", printable(&msg));
             code
         }
     }
@@ -106,6 +112,8 @@ struct Cli {
     no_wait: bool,
     agent: Option<String>,
     conv: Option<i64>,
+    /// 트랜잭션 키(`ask --id`).
+    id: Option<String>,
 }
 
 impl Cli {
@@ -121,6 +129,7 @@ impl Cli {
             no_wait: false,
             agent: None,
             conv: None,
+            id: None,
         };
         let mut it = args[1..].iter();
         while let Some(a) = it.next() {
@@ -138,6 +147,9 @@ impl Cli {
                             .clone(),
                     )
                 }
+                "--id" => {
+                    cli.id = Some(it.next().ok_or_else(|| bad("--id 에 키가 없다"))?.clone())
+                }
                 "--conv" => {
                     let v = it.next().ok_or_else(|| bad("--conv 에 대화 ID 가 없다"))?;
                     cli.conv = Some(v.parse().map_err(|_| bad("--conv 는 숫자 대화 ID"))?);
@@ -149,6 +161,7 @@ impl Cli {
         let (min, max, agent, no_wait, conv) = match cli.cmd.as_str() {
             "peers" => (0, 0, false, false, false),
             "ask" => (2, 2, true, true, true),
+            "wait" | "status" => (1, 1, false, false, false),
             _ => (0, 1, false, false, true), // history
         };
         if cli.pos.len() < min || cli.pos.len() > max {
@@ -157,19 +170,31 @@ impl Cli {
         if (cli.agent.is_some() && !agent)
             || (cli.no_wait && !no_wait)
             || (cli.conv.is_some() && !conv)
+            || (cli.id.is_some() && cli.cmd != "ask")
         {
             return Err(bad(&format!("{} 에 쓸 수 없는 옵션", cli.cmd)));
         }
         if min == 2 && cli.pos[1].trim().is_empty() {
             return Err(bad("본문이 비었다"));
         }
+        if matches!(cli.cmd.as_str(), "wait" | "status") && cli.pos[0].parse::<i64>().is_err() {
+            return Err(bad("트랜잭션은 숫자"));
+        }
         Ok(cli)
     }
 
-    fn exec(&self, api: &Api, out: &mut dyn Write, wait_limit: Duration) -> Result<(), Fail> {
+    fn exec(
+        &self,
+        api: &Api,
+        out: &mut dyn Write,
+        err: &mut dyn Write,
+        wait_limit: Duration,
+    ) -> Result<(), Fail> {
         match self.cmd.as_str() {
             "peers" => self.peers(api, out),
-            "ask" => self.ask(api, out, wait_limit),
+            "ask" => self.ask(api, out, err, wait_limit),
+            "wait" => self.wait(api, out, err, wait_limit),
+            "status" => self.status(api, out),
             _ => self.history(api, out),
         }
     }
@@ -201,7 +226,13 @@ impl Cli {
         Ok(())
     }
 
-    fn ask(&self, api: &Api, out: &mut dyn Write, wait_limit: Duration) -> Result<(), Fail> {
+    fn ask(
+        &self,
+        api: &Api,
+        out: &mut dyn Write,
+        err: &mut dyn Write,
+        wait_limit: Duration,
+    ) -> Result<(), Fail> {
         let peer = resolve_peer(api, &self.pos[0])?;
         let (pid, question) = (peer["id"].as_i64().unwrap_or(0), self.pos[1].as_str());
         let sent = if let Some(cid) = self.conv {
@@ -233,7 +264,7 @@ impl Cli {
                     )));
                 }
             }
-            let body = json!({ "text": question, "to": "agent", "via": "cli", "agent": mention });
+            let body = json!({ "text": question, "to": "agent", "via": "cli", "agent": mention, "tx_key": self.id });
             api.call(
                 "POST",
                 &format!("/api/conversations/{cid}/messages"),
@@ -244,26 +275,58 @@ impl Cli {
                 Some(a) => a.clone(),
                 None => sole_agent(api, pid, text(&peer["name"]))?,
             };
-            let body = json!({ "peer_id": pid, "agent": agent, "text": question, "via": "cli" });
+            let body = json!({ "peer_id": pid, "agent": agent, "text": question, "via": "cli", "tx_key": self.id });
             api.call("POST", "/api/conversations", Some(body))?
         };
         let (conv, asked) = (&sent["conversation"], &sent["message"]);
         let cid = conv["id"].as_i64().unwrap_or(0);
+        let tx = sent["tx"].as_i64();
         if self.no_wait {
             return if self.json {
-                line(out, json!({ "conversation": conv, "asked": asked }))
+                line(out, json!({ "conversation": conv, "asked": asked, "tx": tx }))
             } else {
                 line(out, cid)
             };
         }
-        let reply = wait_reply(api, cid, asked["id"].as_i64().unwrap_or(0), wait_limit)?;
+        let tx = tx.ok_or_else(|| Fail(EXIT_API, "앱이 트랜잭션을 만들지 못했다 — 다시 보내지 말고 history 로 확인".into()))?;
+        let done = wait_tx(api, tx, wait_limit, self.json, err)?;
+        self.answer(out, &done)
+    }
+
+    /// 이어 받기 — 멈춘 트랜잭션도 다시 감시한다.
+    fn wait(
+        &self,
+        api: &Api,
+        out: &mut dyn Write,
+        err: &mut dyn Write,
+        wait_limit: Duration,
+    ) -> Result<(), Fail> {
+        let tx: i64 = self.pos[0].parse().unwrap_or(0);
+        api.call("POST", &format!("/api/tx/{tx}/resume"), Some(json!({})))?;
+        let done = wait_tx(api, tx, wait_limit, self.json, err)?;
+        self.answer(out, &done)
+    }
+
+    /// 지금 상태 한 번.
+    fn status(&self, api: &Api, out: &mut dyn Write) -> Result<(), Fail> {
+        let v = api.call("GET", &format!("/api/tx/{}", self.pos[0]), None)?;
+        if self.json {
+            return line(out, &v);
+        }
+        let state = text(&v["state"]);
+        let more = progress_line(&v).unwrap_or_default();
+        line(out, format!("{}\t{state}\t{more}", self.pos[0]).trim_end())
+    }
+
+    /// 끝난 트랜잭션 출력 — 답 본문 또는 JSON `{conversation, asked, reply, tx}`.
+    fn answer(&self, out: &mut dyn Write, done: &Value) -> Result<(), Fail> {
         if self.json {
             line(
                 out,
-                json!({ "conversation": conv, "asked": asked, "reply": reply }),
+                json!({ "conversation": done["conversation"], "asked": done["message"], "reply": done["reply"], "tx": done["tx"] }),
             )
         } else {
-            line(out, text(&reply["text"]))
+            line(out, text(&done["reply"]["text"]))
         }
     }
 
@@ -486,50 +549,98 @@ fn sole_agent(api: &Api, pid: i64, name: &str) -> Result<String, Fail> {
     }
 }
 
-/// 답을 기다린다 — 질문(`asked`, 로컬 id)에 단 에이전트 답이 `done` 이면 그 답, `error` 거나 질문이 `error` · `undelivered` 면 실패.
-fn wait_reply(api: &Api, cid: i64, asked: i64, limit: Duration) -> Result<Value, Fail> {
+/// 트랜잭션이 끝날 때까지(#1c) — 진행(보내는 중 · 대기 · 처리 중 + 단계)이 바뀔 때마다 `err` 에 한 줄. 끝: 답(돌려줌) · 실패(5) · 멈춤(7) ·
+/// 안전판(`limit` — 6). CLI 가 죽어도 트랜잭션은 앱에 남는다(`wait <tx>`).
+fn wait_tx(api: &Api, tx: i64, limit: Duration, json: bool, err: &mut dyn Write) -> Result<Value, Fail> {
     let until = Instant::now() + limit;
+    let mut shown: Option<String> = None;
     loop {
-        let ms = api
-            .call("GET", &format!("/api/conversations/{cid}/messages"), None)
-            .map_err(|Fail(code, msg)| {
-                Fail(code, format!("{msg}\n대화 {cid} 는 계속된다. 나중에 확인: coworkAgent history --conv {cid}"))
-            })?;
-        let ms = list(&ms);
-        if let Some(r) = ms
-            .iter()
-            .find(|m| m["author"] == "agent" && m["reply_to"] == asked)
-        {
-            match text(&r["state"]) {
-                "done" => return Ok(r.clone()),
-                "error" => {
-                    return Err(Fail(
-                        EXIT_REPLY_FAILED,
-                        format!("상대 에이전트 실행 실패: {}", text(&r["text"])),
-                    ));
-                }
-                _ => {}
+        let v = api
+            .call("GET", &format!("/api/tx/{tx}"), None)
+            .map_err(|Fail(code, msg)| Fail(code, format!("{msg}\n나중에 이어 받기: coworkAgent wait {tx}")))?;
+        let cid = v["conversation"]["id"].as_i64().unwrap_or(0);
+        match text(&v["state"]) {
+            "answered" => return Ok(v),
+            "failed" => {
+                let why = if v["reply"].is_object() {
+                    format!("상대 에이전트 실행 실패: {}", text(&v["reply"]["text"]))
+                } else {
+                    format!(
+                        "질문을 상대에 보내지 못했다({})",
+                        v["message"]["refused"].as_str().unwrap_or(text(&v["message"]["state"]))
+                    )
+                };
+                return Err(Fail(EXIT_REPLY_FAILED, why));
             }
-        }
-        if let Some(q) = ms.iter().find(|m| m["id"] == asked) {
-            let state = text(&q["state"]);
-            if matches!(state, "error" | "undelivered") {
+            "stalled" => {
                 return Err(Fail(
-                    EXIT_REPLY_FAILED,
-                    format!("질문을 상대에 보내지 못했다(상태 {state})"),
+                    EXIT_STALLED,
+                    format!("상대에 닿지 않아 멈췄다 — 트랜잭션 {tx} 는 남는다. 나중에 이어 받기: coworkAgent wait {tx}"),
                 ));
             }
+            _ => {}
+        }
+        let now = if json { progress_json(&v).map(|j| j.to_string()) } else { progress_line(&v) };
+        if let Some(l) = now.filter(|l| shown.as_ref() != Some(l)) {
+            let _ = line(err, &l);
+            shown = Some(l);
         }
         let left = until.saturating_duration_since(Instant::now());
         if left.is_zero() {
             return Err(Fail(
                 EXIT_TIMEOUT,
                 format!(
-                    "답 대기 시간 초과 — 대화 {cid} 는 계속된다. 나중에 확인: coworkAgent history --conv {cid}"
+                    "답 대기 시간 초과 — 대화 {cid} 는 계속된다. 나중에: coworkAgent wait {tx} · coworkAgent history --conv {cid}"
                 ),
             ));
         }
         std::thread::sleep(left.min(POLL));
+    }
+}
+
+/// 진행 한 줄(평문) — 보내는 중 · 대기(앞 사람 수) · 처리 중(+ 단계 요약). 진행이 없으면 `None`.
+fn progress_line(v: &Value) -> Option<String> {
+    let p = &v["progress"];
+    match text(&v["state"]) {
+        "sending" => Some(format!(
+            "보내는 중 — 상대에 아직 닿지 않아 이 PC 에 보관했다(다시 보냄 {}회)",
+            v["outbox"]["tries"].as_i64().unwrap_or(0)
+        )),
+        "queued" => Some(format!(
+            "대기 중 — 상대 PC 에 처리 중인 작업이 많다(앞에 {}건)",
+            p["ahead"].as_u64().unwrap_or(0)
+        )),
+        "running" => {
+            let d = &p["detail"];
+            let mut parts = Vec::new();
+            if let Some(t) = d["turns"].as_u64().filter(|t| *t > 0) {
+                parts.push(format!("{t}턴"));
+            }
+            if let Some(tools) = d["tools"].as_object() {
+                parts.extend(tools.iter().map(|(k, n)| format!("{k} {n}")));
+            }
+            if let Some(s) = d["secs"].as_u64().filter(|s| *s > 0) {
+                parts.push(format!("{s}초"));
+            }
+            Some(if parts.is_empty() {
+                "처리 중".into()
+            } else {
+                format!("처리 중 — {}", parts.join(" · "))
+            })
+        }
+        _ => None,
+    }
+}
+
+/// 진행 한 줄(`--json`) — `{"progress": "sending"|"queued"|"running", "ahead"?, "detail"?}`.
+fn progress_json(v: &Value) -> Option<Value> {
+    let p = &v["progress"];
+    match text(&v["state"]) {
+        "sending" => Some(json!({ "progress": "sending", "tries": v["outbox"]["tries"] })),
+        "queued" => Some(json!({ "progress": "queued", "ahead": p["ahead"].as_u64().unwrap_or(0) })),
+        "running" if p["detail"].is_object() => Some(json!({ "progress": "running", "detail": p["detail"] })),
+        "running" => Some(json!({ "progress": "running" })),
+        _ => None,
     }
 }
 
@@ -592,7 +703,15 @@ fn hex(s: &str) -> String {
 }
 
 fn line(out: &mut dyn Write, s: impl std::fmt::Display) -> Result<(), Fail> {
-    writeln!(out, "{s}").map_err(|e| Fail(EXIT_API, format!("출력 실패: {e}")))
+    writeln!(out, "{}", printable(&s.to_string()))
+        .map_err(|e| Fail(EXIT_API, format!("출력 실패: {e}")))
+}
+
+/// 터미널을 조작하는 제어 문자를 지운다 — C0(줄바꿈 · 탭 제외) · DEL · C1. 원격 답 · 이름이 화면 · 파이프로 나간다(1a A14).
+pub fn printable(s: &str) -> String {
+    s.chars()
+        .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
+        .collect()
 }
 
 #[cfg(test)]

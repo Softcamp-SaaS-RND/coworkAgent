@@ -32,10 +32,11 @@ pub(crate) struct PeerView {
     /// 이 PC 에서 부르는 표시 이름 · 타일 아이콘(PNG data URL) — `null` 이면 원래 이름 · 글자 타일.
     alias: Option<String>,
     icon: Option<String>,
-    /// 접속 상태 — 마지막 `Pong` 이 [`an_core::peers::ONLINE_WITHIN`] 안이면 온라인, 그때 상대가 집중 중이었나(오프라인이면 거짓). 시각은 내지 않는다(레일이
-    /// 30초마다 다시 그려지지 않게).
+    /// 접속 상태 — 마지막 통신이 [`an_core::peers::ONLINE_WITHIN`] 안이면 온라인, 마지막 `Pong` · 거절 때 상대가 집중 중이었나(오프라인이면 거짓).
     online: bool,
     focus: bool,
+    /// 마지막으로 주고받기에 성공한 시각(유닉스 초, 없으면 `null`, #1c) — 화면 "n분 전 통신". 통신할 때만 바뀐다(주기 확인 없음).
+    seen_at: Option<i64>,
 }
 
 impl From<Peer> for PeerView {
@@ -57,6 +58,7 @@ impl From<Peer> for PeerView {
             model: p.model,
             effort: p.effort,
             alias: p.alias,
+            seen_at: p.seen_at,
             icon: p.icon,
             online,
             focus: online && p.focus,
@@ -115,8 +117,15 @@ fn fail(e: io::Error) -> Response {
     (code, Json(json!({ "error": e.to_string() }))).into_response()
 }
 
-async fn me(State(node): State<Arc<Node>>) -> Json<serde_json::Value> {
+/// 내 정보 — `ui_port` 는 요청 Host 의 포트(guard 가 `127.0.0.1:{웹UI 포트}` 만 들인다).
+async fn me(State(node): State<Arc<Node>>, headers: axum::http::HeaderMap) -> Json<serde_json::Value> {
     let me = node.me();
+    let ui_port = headers
+        .get(axum::http::header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| h.rsplit_once(':'))
+        .and_then(|(_, p)| p.parse::<u16>().ok());
+    let holder = node.peer_holder();
     let addrs: Vec<String> = lan_ip()
         .map(|ip| SocketAddr::new(ip, me.port).to_string())
         .into_iter()
@@ -127,6 +136,11 @@ async fn me(State(node): State<Arc<Node>>) -> Json<serde_json::Value> {
         "fingerprint": node.identity().fingerprint(),
         "port": me.port,
         "addrs": addrs,
+        "ui_port": ui_port,
+        "peer_port_fixed": me.port == an_net::node::PEER_PORT,
+        "peer_port_holder": holder.map(|h| json!({ "name": h.name, "pid": h.pid })),
+        "peer_port_note": node.peer_port_note(),
+        "open_connections": node.open_connections(),
     }))
 }
 
@@ -271,8 +285,9 @@ async fn remove(State(node): State<Arc<Node>>, Path(id): Path<i64>) -> Response 
 }
 
 /// 연결 확인 — 받은 `Pong` 은 접속 상태로 남는다(`GET /api/peers` 의 `online` · `focus`).
+/// 연결 확인(웹UI 시작 · 타일 고름 · 버튼) — 60초 안에 통신했으면 보내지 않는다(#1c).
 async fn ping(State(node): State<Arc<Node>>, Path(id): Path<i64>) -> Response {
-    match node.ping(id).await {
+    match node.refresh(id, 60).await {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => fail(e),
     }

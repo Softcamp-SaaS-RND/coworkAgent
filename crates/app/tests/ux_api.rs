@@ -17,7 +17,15 @@ fn echo() -> Run {
             Session::New(id) | Session::Resume(id) => id.clone(),
         };
         Ok(RunOutput {
-            text: format!("답: {}", input.text),
+            text: format!(
+                "답: {}",
+                // 실행 입력의 원격 본문(`<원격 본문>` 구분자 안)만 되돌린다.
+                input
+                    .text
+                    .rsplit_once("<원격 본문>\n")
+                    .and_then(|(_, r)| r.strip_suffix("\n</원격 본문>"))
+                    .unwrap_or(&input.text)
+            ),
             session,
             is_error: false,
             turns: Some(1),
@@ -95,7 +103,7 @@ async fn web(
     let h = vec![
         common::host(port),
         common::origin(port),
-        ("Cookie", format!("{}={token}", server::COOKIE)),
+        ("Authorization", format!("Bearer {token}")),
         ("Content-Type", "application/json".to_string()),
     ];
     (port, h)
@@ -1423,7 +1431,7 @@ async fn settings_notify_paused_roundtrip() {
 }
 
 /// 집중 — 이 PC 설정(기본 꺼짐 · 다시 열어도 유지, 알림 일시 중지와 별개). 상대가 연결 확인(Ping)하면 접속 · 집중이 보인다 — 피어 JSON 은
-/// `online` · `focus` 두 참거짓만(시각은 내지 않는다).
+/// `online` · `focus` + 마지막 통신 시각 `seen_at`(#1c — 통신할 때만 바뀐다).
 #[tokio::test(flavor = "multi_thread")]
 async fn focus_setting_and_peer_presence() {
     let (a, b) = (side("fc-a").await, side("fc-b").await);
@@ -1444,7 +1452,7 @@ async fn focus_setting_and_peer_presence() {
         (&json!(false), &json!(false)),
         "아직 Ping 전 {list}"
     );
-    assert!(list[0].get("seen_at").is_none(), "{list}");
+    assert!(list[0]["seen_at"].is_null(), "{list}");
     let (code, _) = b
         .call("POST", &format!("/api/peers/{pa}/ping"), Value::Null)
         .await;
@@ -1459,6 +1467,10 @@ async fn focus_setting_and_peer_presence() {
         .call("PUT", "/api/settings", json!({ "focus": false }))
         .await;
     assert_eq!(code, 200);
+    // 화면 확인은 60초 안 중복 없음(#1c) — 기한이 지난 것으로 돌려 다음 확인이 실제로 나가게.
+    b.db()
+        .execute("UPDATE peers SET seen_at = seen_at - 120 WHERE id = ?1", [pa])
+        .unwrap();
     b.call("POST", &format!("/api/peers/{pa}/ping"), Value::Null)
         .await;
     let (_, list) = b.call("GET", "/api/peers", Value::Null).await;

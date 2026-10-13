@@ -1,7 +1,7 @@
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 12;
+pub const SCHEMA_VERSION: i64 = 13;
 
 /// DB 를 열고 스키마를 `SCHEMA_VERSION` 으로 올린다. 이 실행 파일보다 새 스키마면 열지 않는다.
 pub fn open(path: &Path) -> rusqlite::Result<Connection> {
@@ -225,6 +225,39 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
              PRAGMA user_version = 12;",
         )?;
         tx.commit()?;
+    }
+    if v < 13 {
+        // 보내는 쪽 보관(D7 — #1c): 상대에게 가는 대화 프레임을 먼저 적고 상대별 줄이 ack 까지 다시 보낸다. CLI 트랜잭션(중복 키 · 이어 받기 ·
+        // 닿지 않음 판정).
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS outbox (
+                id INTEGER PRIMARY KEY,
+                peer_id INTEGER NOT NULL,
+                conv_id INTEGER,
+                msg_id INTEGER,
+                kind TEXT NOT NULL,
+                frame TEXT NOT NULL,
+                key TEXT,
+                state TEXT NOT NULL DEFAULT 'pending',
+                tries INTEGER NOT NULL DEFAULT 0,
+                waited INTEGER NOT NULL DEFAULT 0,
+                next_at INTEGER NOT NULL DEFAULT 0,
+                last_try INTEGER,
+                last_error TEXT,
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS outbox_peer ON outbox (peer_id, state, id);
+            CREATE TABLE IF NOT EXISTS cli_tx (
+                id INTEGER PRIMARY KEY,
+                key TEXT UNIQUE,
+                message_id INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                asked_at INTEGER,
+                unreachable_since INTEGER,
+                stalled_at INTEGER
+            );
+            PRAGMA user_version = 13;",
+        )?;
     }
     Ok(conn)
 }

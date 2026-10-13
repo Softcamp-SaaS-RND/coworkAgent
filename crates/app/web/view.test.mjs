@@ -3,6 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  entryToken,
+  DISCONNECTED,
   stateText,
   peerState,
   convLabel,
@@ -45,6 +47,12 @@ import {
   lastRun,
   presence,
   refusedText,
+  progressText,
+  outboxText,
+  stepText,
+  runsSummary,
+  portText,
+  messagesSigOf,
   askTag,
   mentionQuery,
   mentionTarget,
@@ -454,10 +462,11 @@ test("profile_menu — 표시 이름 · 아이콘 · 집중(켜짐 표시) · �
 });
 
 test("presence — 상대 접속 상태(레일 점 · 사이드바 머리 · 대화 머리글) · 거절 사유", () => {
-  assert.deepEqual(presence({ online: true, focus: false }), { key: "online", text: "온라인" });
-  assert.deepEqual(presence({ online: true, focus: true }), { key: "focus", text: "집중 중" });
-  assert.deepEqual(presence({ online: false, focus: true }), { key: "offline", text: "오프라인" }, "오프라인이면 집중 표시 없음");
-  assert.deepEqual(presence(undefined), { key: "offline", text: "오프라인" }, "모르는 상대");
+  const now = 1_000_000;
+  assert.deepEqual(presence({ seen_at: now - 10, focus: false }, now), { key: "online", text: "방금 통신" });
+  assert.deepEqual(presence({ seen_at: now - 10, focus: true }, now), { key: "focus", text: "집중 중 · 방금 통신" });
+  assert.deepEqual(presence({ seen_at: now - 600, focus: true }, now), { key: "offline", text: "10분 전 통신" }, "오래되면 집중 표시 없음");
+  assert.deepEqual(presence(undefined, now), { key: "offline", text: "통신 기록 없음" }, "모르는 상대");
   assert.equal(refusedText({ state: "error", refused: "focus" }), "상대가 집중 중");
   assert.equal(refusedText({ state: "error", refused: "busy" }), "상대가 거절(busy)");
   assert.equal(refusedText({ state: "error", refused: null }), "");
@@ -677,4 +686,95 @@ test("mention — 입력 중인 @ 범위 · 글의 첫 @이름(긴 이름 먼저
   assert.equal(authorLabel(out, { author: "agent", agent: "guide" }, "이도윤 · DYOON"), "이도윤/guide");
   assert.equal(authorLabel(out, { author: "agent", agent: null }, "이도윤 · DYOON"), "이도윤/review");
   assert.equal(authorLabel({ dir: "in", agent: "dev" }, { author: "agent", agent: "guide" }, "김 · KIM"), "내 guide");
+});
+
+test("entry_token", () => {
+  const a = "a".repeat(64);
+  const b = "b".repeat(64);
+  // 주소의 토큰이 먼저 — 주소창에서 지운다.
+  assert.deepEqual(entryToken(`?t=${a}`, b), { token: a, clean: true });
+  // 주소에 없으면 탭에 저장된 값.
+  assert.deepEqual(entryToken("", b), { token: b, clean: false });
+  // 꼴이 틀린 주소 토큰은 쓰지 않지만 지운다.
+  assert.deepEqual(entryToken("?t=xyz", null), { token: null, clean: true });
+  assert.deepEqual(entryToken("?t=xyz", b), { token: b, clean: true });
+  // 저장된 값도 꼴을 본다.
+  assert.deepEqual(entryToken("", "zz"), { token: null, clean: false });
+  assert.deepEqual(entryToken(undefined, null), { token: null, clean: false });
+  assert.match(DISCONNECTED, /트레이 아이콘 메뉴 '열기'/);
+});
+
+test("progressText — 보낸 글의 상대 차례 · 실행 상세 진행에도", () => {
+  const q = { state: "sent", progress: { state: "queued", ahead: 2 } };
+  assert.equal(progressText(q), "상대 PC 에 처리 중인 작업이 많아 응답을 기다립니다(앞에 2건)");
+  assert.equal(progressText({ state: "sent", progress: { state: "running", ahead: 0 } }), "처리 중");
+  assert.equal(progressText({ state: "sent", progress: null }), "");
+  assert.equal(progressText({ state: "done", progress: { state: "running", ahead: 0 } }), "", "답이 오면 지운다");
+  const req = { mine: true, created_at: 0, ...q };
+  assert.equal(runSteps({ request: req }).find((s) => s.key === "queue").meta, progressText(q));
+  const run = runSteps({ request: { ...req, progress: { state: "running", ahead: 0 } } });
+  assert.deepEqual(run.map((s) => s.state), ["done", "done", "now", "wait"]);
+});
+
+test("runsSummary — 이 PC 실행 머리 · 실행 중 먼저 · 대기 순번", () => {
+  const r = runsSummary({
+    cap: 1,
+    running: [{ conversation_id: 3, peer: "민수", agent: "review", text: "로그 봐줘" }],
+    waiting: [{ conversation_id: 5, peer: "지은", agent: "review", text: "a" }, { message_id: 9 }],
+  });
+  assert.equal(r.title, "이 PC 실행 — 실행 중 1 · 대기 2");
+  assert.deepEqual(r.rows, [
+    { label: "실행 중 · 민수/review", text: "로그 봐줘", href: "#c/3" },
+    { label: "대기 1 · 지은/review", text: "a", href: "#c/5" },
+    { label: "대기 2 · 알 수 없는 상대/에이전트", text: "", href: "" },
+  ]);
+  assert.equal(runsSummary({ cap: 2, running: [], waiting: [] }).title, "이 PC 실행 — 실행 중 0 · 대기 0");
+});
+
+test("portText — 웹UI 포트 · 피어 포트(고정 | 임의 — 잡은 프로세스) · 열린 연결", () => {
+  assert.deepEqual(portText({ ui_port: 51234, port: 47100, peer_port_fixed: true, peer_port_holder: null, open_connections: 2 }), {
+    ui: "51234",
+    peer: "47100(고정)",
+    conns: "2",
+  });
+  const busy = { ui_port: 51234, port: 50001, peer_port_fixed: false, peer_port_holder: { name: "python.exe", pid: 812 }, open_connections: 0 };
+  assert.equal(portText(busy).peer, "50001(임의 — 47100 사용 중: python.exe, PID 812)");
+  assert.equal(portText({ port: 50001, peer_port_fixed: false }).peer, "50001(임의)");
+  assert.equal(portText({ port: 50001 }).ui, "알 수 없음");
+});
+
+test("messagesSigOf — 진행만 바뀌어도(sent 그대로) 다시 그린다", () => {
+  const m = { id: 1, state: "sent", text: "q", done: false, refused: null };
+  const q1 = messagesSigOf("민수", [{ ...m, progress: { state: "queued", ahead: 1 } }]);
+  const q0 = messagesSigOf("민수", [{ ...m, progress: { state: "queued", ahead: 0 } }]);
+  const run = messagesSigOf("민수", [{ ...m, progress: { state: "running", ahead: 0 } }]);
+  assert.equal(new Set([messagesSigOf("민수", [m]), q1, q0, run]).size, 4);
+  assert.equal(messagesSigOf("민수", [{ ...m, saved: true }]), messagesSigOf("민수", [m]), "저장은 서명 밖");
+});
+
+test("outboxText · refusedText — 보관 중 · 보내지 못함(#1c)", () => {
+  assert.equal(outboxText({ outbox: { state: "inflight", tries: 0 } }), "보내는 중");
+  assert.equal(outboxText({ outbox: { state: "pending", tries: 3 } }), "보내는 중 — 상대에 닿지 않아 다시 보냄(3회)");
+  assert.equal(outboxText({ outbox: { state: "failed", tries: 9 } }), "", "포기는 거절 사유가 말한다");
+  assert.equal(outboxText({ outbox: null }), "");
+  assert.match(refusedText({ state: "error", refused: "unreachable" }), /^보내지 못함/);
+  const sent = { id: 1, state: "sent", text: "q", done: false, refused: null };
+  assert.notEqual(messagesSigOf("x", [{ ...sent, outbox: { state: "pending", tries: 1 } }]), messagesSigOf("x", [sent]), "닿으면 다시 그린다");
+});
+
+test("stepText · progressText — 처리 중 단계 요약(#1c)", () => {
+  const d = { turns: 2, tools: { Read: 3, Grep: 1 }, secs: 41 };
+  assert.equal(stepText(d), "2턴 · Read 3 · Grep 1 · 41초");
+  assert.equal(stepText({ turns: 0, tools: {}, secs: 0 }), "");
+  assert.equal(progressText({ state: "sent", progress: { state: "running", ahead: 0, detail: d } }), "처리 중 — 2턴 · Read 3 · Grep 1 · 41초");
+  assert.equal(progressText({ state: "sent", progress: { state: "running", ahead: 0, detail: null } }), "처리 중");
+});
+
+test("presence — 마지막 통신 n분 · n시간 · n일 전(#1c — 주기 확인 없음)", () => {
+  const now = 2_000_000;
+  assert.equal(presence({ seen_at: now - 74 }, now).text, "방금 통신");
+  assert.equal(presence({ seen_at: now - 75 }, now).text, "1분 전 통신");
+  assert.equal(presence({ seen_at: now - 3 * 3600 }, now).text, "3시간 전 통신");
+  assert.equal(presence({ seen_at: now - 2 * 86400 }, now).text, "2일 전 통신");
+  assert.equal(presence({ seen_at: now + 30 }, now).text, "방금 통신", "시계가 앞서도 음수 없음");
 });

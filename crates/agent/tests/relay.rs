@@ -190,14 +190,18 @@ async fn receiver_stop_refuses_agent_requests() {
         .send(
             b.addr,
             Some(peer.spki.clone()),
-            &ask("x1", Some("mine".into())),
+            &ask("00000000-0000-4000-8000-0000000000a1", Some("mine".into())),
         )
         .await
         .unwrap();
     assert_eq!(resp, Response::error("stopped"));
     let (resp, _) = a
         .node
-        .send(b.addr, Some(peer.spki.clone()), &ask("x2", None))
+        .send(
+            b.addr,
+            Some(peer.spki.clone()),
+            &ask("00000000-0000-4000-8000-0000000000a2", None),
+        )
         .await
         .unwrap();
     assert_eq!(resp, Response::Ok);
@@ -266,7 +270,7 @@ async fn remote_failure_stops_relay() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn late_reply_after_transport_error_accepted() {
-    // A 에이전트가 도는 동안 B 주소가 끊긴다 — 넘기기는 전송 오류(상대가 받았는지 모름).
+    // A 에이전트가 도는 동안 B 주소가 끊긴다 — 넘기기는 전송 오류(상대가 받았는지 모름). #1c: 멈추지 않고 보관 · 다시 보낸다.
     let (a, b, b_id) = two("lr", Duration::from_millis(400)).await;
     let (conv, _) = a
         .chat
@@ -280,20 +284,24 @@ async fn late_reply_after_transport_error_accepted() {
             [b_id],
         )
         .unwrap();
-    common::eventually(|| !relay_of(&a, conv.id).on).await;
+    common::eventually(|| {
+        chat::messages(&common::db(&a), conv.id)
+            .unwrap()
+            .pop()
+            .is_some_and(|m| m.mine && m.exec && a.chat.outbox_of(&m).is_some())
+    })
+    .await;
     let forwarded = chat::messages(&common::db(&a), conv.id)
         .unwrap()
         .pop()
         .unwrap();
-    assert_eq!(
-        (forwarded.mine, forwarded.exec, forwarded.state),
-        (true, true, State::Sent)
-    );
+    assert_eq!(forwarded.state, State::Sent);
+    assert!(relay_of(&a, conv.id).on, "전송 오류로 멈추지 않는다 — 닿으면 이어 간다");
     // 실제로는 B 가 받아 실행했고 답이 늦게 온다 — 받아야 한다.
     let pa = b.node.peers().unwrap().remove(0);
     let late = Request::Reply {
         conv: conv.uuid.clone(),
-        msg: "late".into(),
+        msg: "00000000-0000-4000-8000-0000000000b1".into(),
         reply_to: forwarded.uuid.clone(),
         text: "늦은 답".into(),
         ok: true,
@@ -316,8 +324,13 @@ async fn late_reply_after_transport_error_accepted() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn stop_during_run_then_resume() {
-    // A 에이전트가 도는 동안 A 가 멈춤 → 그 답은 넘기지 않음 → 재개하면 그 답을 넘긴다.
-    let (a, b, b_id) = two("sr", Duration::from_millis(400)).await;
+    // A 에이전트가 도는 동안 A 가 멈춤 → 그 답은 넘기지 않음 → 재개하면 그 답을 넘긴다. B 도 느리게 — 마지막 멈춤이 B 의 답보다 먼저 닿게
+    // (B 가 바로 답하면 멈춤과 답이 경주한다).
+    let a = common::side("sr-a", Duration::from_millis(400)).await;
+    let b = common::side("sr-b", Duration::from_millis(400)).await;
+    let (b_id, _) = common::pair(&a, &b).await;
+    agents::add(&common::db(&a), "mine", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
     let (conv, _) = a
         .chat
         .start_relay(b_id, "review", "mine", 10, "시작", None)
@@ -333,6 +346,13 @@ async fn stop_during_run_then_resume() {
     settled(&a, conv.id).await;
     let bc = b_conv(&b);
     settled(&b, bc.id).await;
+    // 양쪽 보내기 줄이 빌 때까지 — 미러 · 답은 줄로 간다(#1c).
+    let pa = b.node.peers().unwrap().remove(0).id;
+    common::eventually(|| {
+        an_core::outbox::head(&common::db(&a), b_id).unwrap().is_none()
+            && an_core::outbox::head(&common::db(&b), pa).unwrap().is_none()
+    })
+    .await;
     assert_eq!(
         uuids(&common::db(&a), conv.id),
         uuids(&common::db(&b), bc.id)
@@ -570,7 +590,7 @@ async fn mention_rejected_in_relay() {
     let peer = a.node.peers().unwrap().remove(0);
     let req = Request::Message {
         conv: conv.uuid.clone(),
-        msg: "mention-1".into(),
+        msg: "00000000-0000-4000-8000-0000000000c1".into(),
         agent: "review".into(),
         text: "@guide 봐".into(),
         lc: None,
@@ -587,7 +607,7 @@ async fn mention_rejected_in_relay() {
         .unwrap();
     assert_eq!(resp, Response::error("bad_request"));
     assert!(
-        chat::message_by_uuid(&common::db(&b), "mention-1")
+        chat::message_by_uuid(&common::db(&b), "00000000-0000-4000-8000-0000000000c1")
             .unwrap()
             .is_none()
     );

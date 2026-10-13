@@ -91,6 +91,10 @@ async fn settings_read_error_fails_run() {
     common::eventually(|| chat::messages(&a_db, conv.id).unwrap().len() == 2).await;
     let reply = chat::messages(&a_db, conv.id).unwrap().remove(1);
     assert_eq!(reply.state, State::Error);
-    assert!(reply.text.contains("settings"), "{}", reply.text);
+    // 상대에게는 정해진 문구만(1a A4), 원인(없는 표)은 내 쪽 글에.
+    assert_eq!(reply.text, "실행 실패: 받는 PC 기록 오류");
+    let b_conv = chat::list(&b_db).unwrap().remove(0);
+    let mine = chat::messages(&b_db, b_conv.id).unwrap().remove(1);
+    assert!(mine.text.contains("settings"), "{}", mine.text);
     assert!(b.runs.lock().unwrap().is_empty(), "실행하지 않는다");
 }

@@ -58,6 +58,7 @@
 | 경고 0 | `cargo clippy --workspace --all-targets -- -D warnings` | 매 stage · 종결 |
 | 웹UI 화면 로직 | `node --test --test-reporter=tap "crates/app/web/*.test.mjs"` — Node 22+(검증 환경 25.8.0), 개발 PC 에만 필요 | 매 stage · 종결 |
 | 문서 규약 | `python tools/check_ddd_docs.py` | 매 커밋 |
+| README 사용자 관점 (#1c) | `python tools/check_readme.py` — 상대 링크 존재 · 기술 절(통신 메커니즘 · 피어 프로토콜 · 빌드) 없음 · 목적 4문구 | README 를 바꾼 커밋 · 종결 |
 | 평가 항목 gate | `python tools/check_gates.py docs/tasks/{key}` | 구현 완료 시점 · 이후 코드 수정마다 |
 | 의존 경계 (`check_layers.py` 대체 — 비-Python) | `python tools/check_crates.py` — `cargo metadata` 로 워크스페이스 크레이트 · 내부 간선 실측, Layer 역방향 · 미분류 크레이트를 위반으로 센다 | 매 종결 |
 | 임계값 경계 (`check_thresholds.py` 대체 — 비-Python) | 경계 정확값·±1 단위 테스트(`cargo test --workspace` 안). `cargo-mutants` 도입은 첫 임계값 Task 에서 판단 | 도입 예정 — 첫 임계값 Task 부터 매 종결 |

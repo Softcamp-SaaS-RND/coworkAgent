@@ -18,6 +18,22 @@ use std::sync::Arc;
 use std::time::Duration;
 
 fn main() {
+    // Unix: 이 프로세스가 만드는 파일 · 폴더는 소유자만(0600 · 0700) — DB · 사본 · 회전 로그가 만든 뒤 교정을 기다리지 않게(1a A1).
+    #[cfg(unix)]
+    // SAFETY: 인자 하나짜리 프로세스 설정 호출, 포인터 없음.
+    unsafe {
+        libc::umask(0o077);
+    }
+    // 이름만으로 부르는 `LoadLibrary`(tao · muda 의 uxtheme.dll 등)도 System32 에서만 — 실행 파일 폴더에 심은 DLL 을 올리지 않는다
+    // (정적 import 는 `.cargo/config.toml` 의 DependentLoadFlags, 1a A13). 어떤 초기화보다 먼저.
+    #[cfg(windows)]
+    // SAFETY: 인자 하나짜리 프로세스 설정 호출, 포인터 없음.
+    unsafe {
+        use windows_sys::Win32::System::LibraryLoader::{
+            LOAD_LIBRARY_SEARCH_SYSTEM32, SetDefaultDllDirectories,
+        };
+        SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
+    }
     // AI 에이전트용 CLI — 트레이 · 잠금 · 로거를 거치지 않는다(주 인스턴스가 되지 않는다). 떠 있는 인스턴스에 요청만 한다.
     // `args()` 는 UTF-8 이 아닌 인자에서 패닉한다 — 트레이 시작까지 막지 않게 손실 변환.
     let args: Vec<String> = std::env::args_os()
@@ -30,7 +46,7 @@ fn main() {
     }
     let (tray, attention) = Tray::new();
     match start(attention) {
-        Ok(Some(app)) => tray.run(app.url, app.on_seen, app.on_quit),
+        Ok(Some(app)) => tray.run(app.url, app.note, app.on_seen, app.on_quit),
         Ok(None) => {}
         Err(e) => {
             log::error!("시작 실패: {e}");
@@ -45,6 +61,8 @@ fn main() {
 /// 시작이 끝난 주 인스턴스 — 트레이에 넘길 것.
 struct App {
     url: String,
+    /// 트레이 툴팁 덧붙임 — 피어 포트를 남이 잡았을 때.
+    note: Option<String>,
     on_seen: Box<dyn Fn()>,
     on_quit: Box<dyn FnOnce()>,
 }
@@ -69,6 +87,10 @@ fn start(attention: Attention) -> Result<Option<App>, Box<dyn Error>> {
         Acquired::Primary(lock) => lock,
         Acquired::Secondary => return hand_off(&paths).map(|()| None),
     };
+    // 주 인스턴스만 — 핸드오프로 뜨는 두 번째 실행이 매번 트리 전체에 권한을 다시 퍼뜨리지 않게.
+    if let Err(e) = paths.restrict() {
+        log::warn!("데이터 폴더 권한을 사용자 전용으로 맞추지 못했다: {e}");
+    }
 
     let conn = db::open(&paths.db_file())?;
     let db_status = format!("ok (스키마 {})", db::user_version(&conn)?);
@@ -86,7 +108,7 @@ fn start(attention: Attention) -> Result<Option<App>, Box<dyn Error>> {
         data_dir: paths.root().display().to_string(),
         db: db_status,
     };
-    let peer_listener = runtime.block_on(node::bind_peer_port())?;
+    let (peer_listener, peer_holder) = runtime.block_on(node::bind_peer_port())?;
     let me = Me {
         name: user_name(),
         host: host_name(),
@@ -98,6 +120,10 @@ fn start(attention: Attention) -> Result<Option<App>, Box<dyn Error>> {
         identity.fingerprint()
     );
     let node = Node::new(identity, conn, me);
+    if let Some(h) = peer_holder {
+        node.set_peer_holder(h);
+    }
+    let note = node.peer_port_note();
     let notifier = Notifier::new(db::open(&paths.db_file())?, move |n| attention.set(n))?;
     let on_event = notifier.clone();
     node.on_event(move |e| on_event.on_event(&e));
@@ -117,8 +143,8 @@ fn start(attention: Attention) -> Result<Option<App>, Box<dyn Error>> {
         }
     }
     runtime.spawn(node.clone().serve(peer_listener));
-    // 접속 상태 — 페어링된 상대를 주기적으로 확인(상대 집중 · 온라인 표시).
-    runtime.spawn(node.clone().watch_presence());
+    // 시작 알림(#1c) — 페어링된 상대마다 Ping 한 번(바뀐 주소 알림 · 집중). 주기 확인은 없다 — 접속 시각은 통신할 때만.
+    runtime.spawn(node.clone().announce());
 
     let open_url = url.clone();
     let app = server::router_with(
@@ -141,6 +167,7 @@ fn start(attention: Attention) -> Result<Option<App>, Box<dyn Error>> {
     let info_file = paths.instance_file();
     Ok(Some(App {
         url,
+        note,
         on_seen: Box::new(move || notifier.clear()),
         on_quit: Box::new(move || {
             log::info!("종료");

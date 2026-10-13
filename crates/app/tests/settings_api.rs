@@ -26,7 +26,7 @@ async fn web(n: Arc<Notifier>) -> (u16, (&'static str, String)) {
     };
     let app = server::router_with(port, token.clone(), status, || Ok(()), notify::routes(n));
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    (port, ("Cookie", format!("{}={token}", server::COOKIE)))
+    (port, ("Authorization", format!("Bearer {token}")))
 }
 
 fn body(raw: &str) -> serde_json::Value {

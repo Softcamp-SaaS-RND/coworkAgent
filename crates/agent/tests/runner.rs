@@ -37,7 +37,8 @@ fn args_follow_d22() {
     for flag in ["-p", "--restricted", "--strict-mcp-config"] {
         assert!(args.iter().any(|a| a == flag), "{flag} 없음: {args:?}");
     }
-    assert_eq!(value_of(&args, "--output-format"), Some("json"));
+    assert_eq!(value_of(&args, "--output-format"), Some("stream-json"));
+    assert!(args.iter().any(|a| a == "--verbose"), "stream-json 은 --verbose 필요");
     assert_eq!(value_of(&args, "--permission-prompts"), Some("none"));
     assert_eq!(value_of(&args, "--permission-mode"), Some("dontAsk"));
     assert_eq!(value_of(&args, "--tools"), Some("Read,Grep,Glob"));

@@ -23,7 +23,7 @@ async fn wrong_token_401() {
         r.port,
         "GET",
         "/api/status",
-        &[host(r.port), ("Cookie", format!("an_token={other}"))],
+        &[host(r.port), ("Authorization", format!("Bearer {other}"))],
     )
     .await;
     assert_eq!(code, 401);
@@ -34,7 +34,7 @@ async fn wrong_host_403() {
     let r = start().await;
     let headers = [
         ("Host", format!("evil.example:{}", r.port)),
-        ("Cookie", format!("an_token={}", r.token)),
+        ("Authorization", format!("Bearer {}", r.token)),
     ];
     let (code, _) = send(r.port, "GET", "/api/status", &headers).await;
     assert_eq!(code, 403);
@@ -60,7 +60,10 @@ async fn valid_200() {
         r.port,
         "GET",
         "/api/status",
-        &[host(r.port), ("Cookie", format!("an_token={}", r.token))],
+        &[
+            host(r.port),
+            ("Authorization", format!("Bearer {}", r.token)),
+        ],
     )
     .await;
     assert_eq!(code, 200);

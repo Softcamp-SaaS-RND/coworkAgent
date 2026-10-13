@@ -1,14 +1,18 @@
 //! 로컬 웹UI 서버(D9) — 127.0.0.1 전용 · 실행마다 바뀌는 토큰 · Host/Origin 검사.
+//! 토큰은 `Authorization: Bearer` 로만(탭 메모리 — 쿠키는 포트를 가리지 않아 같은 PC 의 다른 포트로도 실린다, 1a A2).
+//! 정적 자산은 공개(헤더를 못 싣는 `<script src>` · `import`), 모든 응답에 보안 헤더(A3).
 use axum::Router;
 use axum::extract::{Request, State};
-use axum::http::{HeaderMap, Method, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
-pub const COOKIE: &str = "an_token";
+/// 모든 응답의 CSP. `style-src 'unsafe-inline'` · `img-src data:` 는 HTML 본문 iframe(`srcdoc` 은 부모 CSP 를 물려받는다) · data: 아이콘 때문.
+/// `base-uri` · `form-action` 은 넣지 않는다 — `srcdoc` 이 물려받아 본문의 `<base target="_top">` 을 막는다.
+pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; object-src 'none'";
 
 /// 상태 페이지(T2)에 보이는 값.
 /// CLI 가 기대하는 로컬 API 판(`/api/status` 의 `cli_api`) — CLI 출처 표시(`via`)를 아는 주 인스턴스만 이 값을 낸다.
@@ -78,48 +82,62 @@ pub fn router_with(
         .layer(middleware::from_fn_with_state(state, guard))
 }
 
-/// 차례로: Host(DNS rebinding) → Origin(교차 출처) → 토큰. 진입 `/?t=` 는 쿠키를 심고 `/` 로 보낸다.
+/// 토큰 없이 주는 정적 자산(실행 파일에 박힌 상수 — 비밀 없음).
+const PUBLIC: [&str; 5] = ["/", "/app.js", "/view.js", "/app.css", "/favicon.ico"];
+
+/// 차례로: Host(DNS rebinding) → Origin(교차 출처) → 토큰. 응답에는 늘 보안 헤더.
 async fn guard(State(s): State<Arc<AppState>>, req: Request, next: Next) -> Response {
+    let res = match check(&s, &req) {
+        Ok(()) => next.run(req).await,
+        Err(code) => code.into_response(),
+    };
+    harden(res)
+}
+
+fn check(s: &AppState, req: &Request) -> Result<(), StatusCode> {
     let headers = req.headers();
     if header_str(headers, header::HOST) != Some(s.host.as_str()) {
-        return StatusCode::FORBIDDEN.into_response();
+        return Err(StatusCode::FORBIDDEN);
     }
     if headers.contains_key(header::ORIGIN)
         && header_str(headers, header::ORIGIN) != Some(s.origin.as_str())
     {
-        return StatusCode::FORBIDDEN.into_response();
+        return Err(StatusCode::FORBIDDEN);
     }
-    // 진입은 쿠키 검사보다 먼저 — 쿠키가 이미 있어도 주소창의 토큰을 지운다.
-    let entry = (req.uri().path() == "/")
-        .then(|| query_token(req.uri().query()))
-        .flatten();
-    if let Some(t) = entry {
-        if !ct_eq(t, &s.token) {
-            return StatusCode::UNAUTHORIZED.into_response();
-        }
-        let cookie = format!("{COOKIE}={}; HttpOnly; SameSite=Strict; Path=/", s.token);
-        return (
-            StatusCode::SEE_OTHER,
-            [
-                (header::LOCATION, "/".to_string()),
-                (header::SET_COOKIE, cookie),
-            ],
-        )
-            .into_response();
+    let path = req.uri().path();
+    let query = query_token(req.uri().query());
+    if req.method() == Method::GET && PUBLIC.contains(&path) {
+        // 진입 `/?t=` 는 페이지가 토큰을 탭 메모리로 가져간다 — 틀린 토큰은 여기서 끊는다.
+        return match query {
+            Some(t) if path == "/" && !ct_eq(t, &s.token) => Err(StatusCode::UNAUTHORIZED),
+            _ => Ok(()),
+        };
     }
-    if !presented_token(headers).is_some_and(|t| ct_eq(t, &s.token)) {
-        return StatusCode::UNAUTHORIZED.into_response();
+    // `EventSource` 는 헤더를 못 싣는다 — 알림 스트림만 쿼리 토큰.
+    let presented = bearer(headers).or(query.filter(|_| path == "/api/events"));
+    if presented.is_some_and(|t| ct_eq(t, &s.token)) {
+        Ok(())
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
     }
-    // 쿠키는 브라우저가 알아서 싣는다 — 상태를 바꾸는 요청은 우리 Origin 이 실려 있어야 한다(브라우저는 GET · HEAD 밖의
-    // 요청에 Origin 을 단다). Bearer(핸드오프)는 브라우저가 싣지 못하므로 예외.
-    let cookie_auth = bearer(headers).is_none();
-    if cookie_auth
-        && !matches!(*req.method(), Method::GET | Method::HEAD)
-        && !headers.contains_key(header::ORIGIN)
-    {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    next.run(req).await
+}
+
+fn harden(mut res: Response) -> Response {
+    let h = res.headers_mut();
+    h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    h.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    h.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
+    h.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(CSP),
+    );
+    res
 }
 
 fn header_str(headers: &HeaderMap, name: header::HeaderName) -> Option<&str> {
@@ -128,16 +146,6 @@ fn header_str(headers: &HeaderMap, name: header::HeaderName) -> Option<&str> {
 
 fn bearer(headers: &HeaderMap) -> Option<&str> {
     header_str(headers, header::AUTHORIZATION).and_then(|v| v.strip_prefix("Bearer "))
-}
-
-/// 쿠키 `an_token` 또는 `Authorization: Bearer`(핸드오프).
-fn presented_token(headers: &HeaderMap) -> Option<&str> {
-    if let Some(b) = bearer(headers) {
-        return Some(b);
-    }
-    header_str(headers, header::COOKIE)?
-        .split(';')
-        .find_map(|kv| kv.trim().strip_prefix(COOKIE)?.strip_prefix('='))
 }
 
 fn query_token(query: Option<&str>) -> Option<&str> {
@@ -155,7 +163,10 @@ fn ct_eq(a: &str, b: &str) -> bool {
 
 async fn index() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
         include_str!("../web/index.html"),
     )
 }

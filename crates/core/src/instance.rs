@@ -55,7 +55,23 @@ impl InstanceInfo {
         })
     }
 
+    /// 토큰이 든 파일 — Unix 는 0600 으로 만든다(Windows 는 데이터 루트의 소유자 전용 DACL 을 물려받는다, 1a A1).
     pub fn write(&self, path: &Path) -> io::Result<()> {
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(path)?;
+            // 이미 있던 파일은 mode 가 그대로라 다시 맞춘다.
+            f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+            f.write_all(self.to_json().as_bytes())
+        }
+        #[cfg(not(unix))]
         std::fs::write(path, self.to_json())
     }
 

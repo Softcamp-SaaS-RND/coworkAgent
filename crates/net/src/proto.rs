@@ -4,6 +4,32 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+/// 실행 중 단계 요약(#1c) — 받는 쪽이 `claude -p` 실시간 이벤트에서 센다. 받은 쪽은 이름을 다시 거른다([`StepDetail::cleaned`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StepDetail {
+    pub turns: u32,
+    pub tools: std::collections::BTreeMap<String, u32>,
+    pub secs: u32,
+}
+
+/// 받은 단계 요약의 도구 이름 수 · 이름 글자 수 상한.
+pub const MAX_STEP_TOOLS: usize = 16;
+pub const MAX_STEP_NAME: usize = 24;
+
+impl StepDetail {
+    /// 원격 값 정리 — 이름은 [`clean_name`] 뒤 24자 · 빈 이름 버림 · 16개까지.
+    pub fn cleaned(self) -> Self {
+        let tools = self
+            .tools
+            .into_iter()
+            .map(|(k, v)| (clean_name(&k).chars().take(MAX_STEP_NAME).collect::<String>(), v))
+            .filter(|(k, _)| !k.is_empty())
+            .take(MAX_STEP_TOOLS)
+            .collect();
+        StepDetail { tools, ..self }
+    }
+}
+
 /// 이보다 긴 프레임은 본문을 읽지 않고 끊는다.
 pub const MAX_FRAME: usize = 64 * 1024;
 /// 원격 메시지 본문 상한(바이트, R4).
@@ -29,7 +55,12 @@ pub enum Request {
         round: String,
     },
     Remove,
-    Ping,
+    /// 연결 확인 — 보낸 쪽 피어 수신 포트(`port`)를 싣는다. 받는 쪽은 페어링된 키면 (연결 출처 IP, `port`) 로 저장 주소를 맞춘다
+    /// (임의 포트 · 바뀐 IP 를 승인 초기화 없이 따라감, 1b). 0 = 주소를 바꾸지 않음.
+    Ping {
+        #[serde(default)]
+        port: u16,
+    },
     /// 상대 PC 의 에이전트 이름 목록(페어링된 상대만).
     Agents,
     /// 사람 → 원격 에이전트 메시지(페어링된 상대만). `conv` · `msg` 는 보낸 쪽이 만든 UUID.
@@ -114,6 +145,23 @@ pub enum Request {
         #[serde(default)]
         request: bool,
     },
+    /// 실행 진행 — 받는 쪽이 상대가 보낸 실행 요청 글(`msg`)의 차례를 알린다(1b). `state` = `queued`(실행 문에서 기다림, `ahead` = 앞 사람 수) |
+    /// `running`(실행 시작). 페어링된 상대만.
+    Progress {
+        conv: String,
+        msg: String,
+        state: String,
+        #[serde(default)]
+        ahead: u32,
+        /// 실행 중 단계 요약(#1c) — 턴 · 도구 이름별 횟수 · 경과 초만(입력 · 경로 · 모델 글 없음).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<StepDetail>,
+    },
+    /// 상태 질의(#1c) — 보낸 쪽이 자기 실행 요청 글(`msg`)의 지금 상태를 묻는다. 답 `Response::Status`. 페어링된 상대만.
+    Status {
+        conv: String,
+        msg: String,
+    },
     /// 요청 완료 표시 — 그 글을 받은 쪽이 바꾸고 쓴 쪽에 상태로 보낸다(쓴 쪽은 자기 요청 글에만 받는다). 페어링된 상대만.
     Done {
         conv: String,
@@ -141,8 +189,15 @@ pub enum Response {
     Agents {
         names: Vec<String>,
     },
+    /// `Status` 의 답 — `queued`(`ahead` = 앞 사람 수) · `running` · `done`(답을 보냈거나 보내는 중) · `unknown`.
+    Status {
+        state: String,
+        #[serde(default)]
+        ahead: u32,
+    },
     /// `not_paired` · `unknown` · `stale`(이전 세대 승인) · `busy` · `closed`(페어링 받기 창이 닫혔거나 초대 코드 불일치) ·
-    /// `bad_request` · `unknown_agent` · `unsupported`(받는 쪽에 처리기가 없음) · `focus`(받는 쪽이 집중 중 — 새 실행 요청 거부)
+    /// `bad_request` · `unknown_agent` · `unsupported`(받는 쪽에 처리기가 없음) · `focus`(받는 쪽이 집중 중 — 새 실행 요청 거부) ·
+    /// `invalid`(대화 요청의 id 가 [`is_uuid`] 꼴이 아님)
     Error {
         code: String,
     },
@@ -192,11 +247,59 @@ pub fn clean_code(code: &str) -> &str {
     if ok { code } else { "unknown" }
 }
 
-/// 제어 문자를 빼고 앞뒤 공백을 지운 뒤 `MAX_NAME_CHARS` 글자로 자른다. 비면 `?`.
+/// 제어 문자(Cc)와 서식 문자(Cf — 방향 바꾸기 · 폭 없는 글자 등, 이름 위장)를 빼고 앞뒤 공백을 지운 뒤 `MAX_NAME_CHARS` 글자로
+/// 자른다. 비면 `?`.
 pub fn clean_name(s: &str) -> String {
-    let kept: String = s.chars().filter(|c| !c.is_control()).collect();
+    let kept: String = s
+        .chars()
+        .filter(|&c| !c.is_control() && !is_format(c))
+        .collect();
     let cut: String = kept.trim().chars().take(MAX_NAME_CHARS).collect();
     if cut.is_empty() { "?".into() } else { cut }
+}
+
+/// 유니코드 일반 범주 Cf(서식 문자) — 표 출처 Unicode 15 `DerivedGeneralCategory`.
+pub fn is_format(c: char) -> bool {
+    matches!(c as u32,
+        0x00AD | 0x0600..=0x0605 | 0x061C | 0x06DD | 0x070F | 0x0890..=0x0891 | 0x08E2 | 0x180E
+        | 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x2064 | 0x2066..=0x206F | 0xFEFF
+        | 0xFFF9..=0xFFFB | 0x110BD | 0x110CD | 0x13430..=0x1343F | 0x1BCA0..=0x1BCA3
+        | 0x1D173..=0x1D17A | 0xE0001 | 0xE0020..=0xE007F)
+}
+
+/// 보낸 쪽이 만든 대화 · 글 id 꼴 — 소문자 hex 8-4-4-4-12(`an_agent::chat::new_uuid`).
+pub fn is_uuid(s: &str) -> bool {
+    s.len() == 36
+        && s.bytes().enumerate().all(|(i, b)| match i {
+            8 | 13 | 18 | 23 => b == b'-',
+            _ => b.is_ascii_digit() || (b'a'..=b'f').contains(&b),
+        })
+}
+
+impl Request {
+    /// 대화 요청의 id(`conv` · `msg` · `reply_to`)가 모두 [`is_uuid`] 꼴인가 — 처리기에 넘기기 전에 본다(원격 입력 총량 · 형식, 1a A8).
+    pub fn ids_ok(&self) -> bool {
+        match self {
+            Request::Message { conv, msg, .. }
+            | Request::Done { conv, msg, .. }
+            | Request::Progress { conv, msg, .. }
+            | Request::Status { conv, msg } => is_uuid(conv) && is_uuid(msg),
+            Request::Reply {
+                conv,
+                msg,
+                reply_to,
+                ..
+            } => is_uuid(conv) && is_uuid(msg) && is_uuid(reply_to),
+            Request::Post {
+                conv,
+                msg,
+                reply_to,
+                ..
+            } => is_uuid(conv) && is_uuid(msg) && reply_to.as_deref().is_none_or(is_uuid),
+            Request::Relay { conv, .. } => is_uuid(conv),
+            _ => true,
+        }
+    }
 }
 
 #[cfg(test)]

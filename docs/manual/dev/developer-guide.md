@@ -1,23 +1,24 @@
-# 개발자 가이드 — 프로세스 · 서비스 · 세션 · 저장소 · 워크플로우
+# 개발자 가이드 — 통신 구성 · 프로세스 · 서비스 · 세션 · 저장소 · 워크플로우 · 빌드 · 개발
 
 > 절차·운영 문서 — 모듈 매뉴얼 형식(개요 / 공개 계약 / 사용 예)의 예외다([매뉴얼 등록 규약](../README.md)).
 > 모듈별 API · 계약의 정본은 [an_core](an_core.md) · [an_net](an_net.md) · [an_agent](an_agent.md) · [an_app](an_app.md) 이고, 여기는
 > 그것들이 **실행 중에 어떻게 맞물리는지**를 적는다 — 어떤 프로세스가 생기고, 어떤 서비스가 무슨 역할을 하며, `claude -p` 헤드리스
-> 대화의 세션 · 저장소 · 흐름이 어떻게 이어지는가. 결정 번호(D · S)는 [masterPlan](../../masterPlan.md). 수치 · 경로는 스키마 12 ·
+> 대화의 세션 · 저장소 · 흐름이 어떻게 이어지는가. 결정 번호(D · S)는 [masterPlan](../../masterPlan.md). 수치 · 경로는 스키마 13 ·
 > 검증 환경 Windows 11 · Claude Code 2.1.296 기준. 쓰는 사람용 안내는 [사용자 가이드](../user/user-guide.md).
 
 ## 1. 한눈에 보기
 
 PC 마다 coworkAgent **주 인스턴스 하나**가 트레이에 상주하며 서버 · 클라이언트를 겸한다(D3). A 의 사람(또는 CLI)이 쓴 글은 B 로
-가서 B 의 대기열에 들어가고, B 가 자기 에이전트 폴더에서 `claude -p` 를 실행해 답을 A 로 돌려보낸다. 대화 이력은 전달에 성공하면
-**양쪽 SQLite 에 모두** 남고(답 전송 실패는 6.6), Claude 의 대화 맥락(세션)은 **에이전트를 실행한 PC 의 Claude Code 기록 파일에만**
+가서 B 의 대기열에 들어가고, B 가 자기 에이전트 폴더에서 `claude -p` 를 실행해 답을 A 로 돌려보낸다. 상대에게 가는 대화 프레임은
+보내는 PC 의 outbox 에 먼저 적고 응답을 받을 때까지 다시 보낸다(6.6) — 상대가 꺼져 있어도 켜지면 닿는다. 대화 이력은 전달에 성공하면
+**양쪽 SQLite 에 모두** 남고, Claude 의 대화 맥락(세션)은 **에이전트를 실행한 PC 의 Claude Code 기록 파일에만**
 있다 — coworkAgent 는 그 세션 ID 만 갖는다. PC 끼리는 LAN 으로 직접 잇지만, `claude -p` 는 질문과 도구가 읽은 파일 내용을 그 PC 의
 Claude 모델 서비스(Claude Code 가 쓰는 제공자 — Max 구독 로그인이면 Anthropic)로 보내 답을 만든다 — 답 생성은 사내망 밖을 거친다.
 
 ```mermaid
 flowchart LR
   subgraph PA["PC A — 묻는 쪽"]
-    BA["브라우저 웹UI"] -- "HTTP 127.0.0.1 · 쿠키 토큰" --> CA["coworkAgent 주 인스턴스"]
+    BA["브라우저 웹UI"] -- "HTTP 127.0.0.1 · Bearer 토큰" --> CA["coworkAgent 주 인스턴스"]
     CLIA["coworkAgent ask (CLI)"] -- "HTTP · Bearer 토큰" --> CA
     CA --- DBA[("coworkAgent.db")]
   end
@@ -31,25 +32,48 @@ flowchart LR
   CB -- "Reply" --> CA
 ```
 
-## 2. 저장소 구조 (코드)
+## 2. 저장소 구조 · 빌드 · 개발
+
+### 2.1 코드 구조
 
 | 경로 | 크레이트 · 산출 | Layer | 담는 것 |
 |---|---|---|---|
-| `crates/core` | `an-core` | base | 데이터 경로 · SQLite 스키마와 표 접근 · 로그 회전 · 단일 인스턴스 · 실행 옵션 · 화면 설정 검증 |
-| `crates/net` | `an-net` | comm | 신원(ed25519) · TLS 1.3 raw public key · 피어 프레임 · 피어 노드(수신 · 발신 · 페어링 · 접속 감시) · 초대 |
-| `crates/agent` | `an-agent` | domain | `claude -p` 실행기(`runner`) · 대화 조율(`chat` — 대기열 · 세션 · 자동 왕복 · 멘션 · 완료) |
+| `crates/core` | `an-core` | base | 데이터 경로 · SQLite 스키마와 표 접근(보내기 보관 `outbox` · CLI 트랜잭션 `cli_tx` 포함) · 로그 회전 · 단일 인스턴스 · 실행 옵션 · 화면 설정 검증 |
+| `crates/net` | `an-net` | comm | 신원(ed25519) · TLS 1.3 raw public key · 피어 프레임 · 피어 노드(수신 · 발신 · 페어링 · 시작 알림 · 통신 때 접속 시각) · 초대 |
+| `crates/agent` | `an-agent` | domain | `claude -p` 실행기(`runner` — stream-json 단계 요약) · 대화 조율(`chat` — 대기열 · 보내기 보관 · 상대별 보내기 줄 · 세션 · 자동 왕복 · 멘션 · 완료 · CLI 트랜잭션) |
 | `crates/app` | `coworkagent-app`(lib `an_app` · bin `coworkAgent`) | app | 시작 순서(`main.rs`) · 로컬 웹 서버 · API · CLI · 트레이 · 브라우저 열기 · 알림 |
 | `crates/app/web` | 실행 파일에 임베드 | app | 빌드 없는 웹UI — `index.html` · `app.js`(조립) · `view.js`(판단 로직, `node --test`) · `app.css` |
-| `tools/` | Python | — | 문서 규약 · gate · 크레이트 경계 체커 · 개발 PC 재빌드 실행(`rebuild_run.py`) |
+| `tools/` | Python | — | 문서 규약 · gate · 크레이트 경계 · README(`check_readme.py`) 체커 · 개발 PC 재빌드 실행(`rebuild_run.py`) · 포트 풀림 실측(`port_check.py`) |
 | `docs/` | Markdown | — | DDD 문서 체계(masterPlan · Task · 매뉴얼 · 원장) |
 
 - 의존 방향은 app → domain → comm → base 만(`tools/check_crates.py`). base 는 UI · HTTP · 트레이를 모른다.
-- 빌드 · 테스트 · 검사 명령의 정본은 루트 `PROJECT.md` "검증 명령". 자주 쓰는 셋:
+
+### 2.2 빌드 · 실행
+
+| 항목 | 내용 |
+|---|---|
+| 빌드 도구 | Rust stable(검증 `rustc 1.95.0` · `x86_64-pc-windows-msvc`) |
+| 웹UI 화면 로직 시험 | Node 22+ — 개발 PC 에만(웹UI 는 빌드 없는 ES 모듈이라 실행에는 필요 없다) |
 
 ```powershell
-cargo build --release -p coworkagent-app   # target\release\coworkAgent.exe — 콘솔 창 없는 트레이 앱
+cargo build --release -p coworkagent-app   # target\release\coworkAgent.exe — 설치 없는 단일 실행 파일 · 콘솔 창 없는 트레이 앱
+.\target\release\coworkAgent.exe           # 트레이에 상주 — 창은 뜨지 않는다(트레이 "열기" → 기본 브라우저에 웹UI)
 cargo run -p coworkagent-app               # 디버그 빌드 — 콘솔 창이 남는다(로그는 똑같이 파일로)
 python tools/rebuild_run.py                # 떠 있는 앱 강제 종료 → 위 릴리스 빌드 → 실행(빌드 실패면 꺼진 채)
+```
+
+- 이미 떠 있을 때 다시 실행하면 웹UI 만 열린다(보조 실행 — 3.1). 데이터는 `%LOCALAPPDATA%\coworkAgent\`(7.1).
+
+### 2.3 개발 — 검증 명령
+
+문서 주도 개발(DDD)로 진행한다 — 시작점은 루트 `CLAUDE.md`. 커밋 · 종결 전 검증(정본은 루트 `PROJECT.md` "검증 명령"):
+
+```powershell
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+node --test --test-reporter=tap "crates/app/web/*.test.mjs"
+python tools/check_ddd_docs.py
+python tools/check_crates.py
 ```
 
 - 자동 테스트는 실제 `claude` 를 부르지 않는다(수신 PC 구독 사용량) — `Chat::new` 의 `Run` 자리에 대역을 넣는다([an_agent](an_agent.md)).
@@ -64,7 +88,7 @@ python tools/rebuild_run.py                # 떠 있는 앱 강제 종료 → �
 |---|---|---|---|
 | `coworkAgent.exe`(인자 없음) — **주 인스턴스** | 사용자가 실행 | OS 사용자당 1개(`instance.lock`), 트레이 "종료" 까지 | 트레이 · 로컬 웹 서버 · 피어 노드 · 대화 엔진 · 실행기를 모두 담는다. 시작만으로는 브라우저를 열지 않는다(트레이 "열기") |
 | `coworkAgent.exe`(인자 없음) — 보조 실행 | 주 인스턴스가 이미 있을 때 다시 실행 | 보통 수 초(최악 약 53초) | `instance.json` 을 읽어 `POST /api/open`(브라우저 열기)을 넘기고 끝 — 300 ms 간격 최대 10번, 요청당 5초 |
-| `coworkAgent.exe <명령>` — CLI | 사용자 · 사용자 AI 에이전트가 `peers` · `ask` · `history` | 명령 하나(`ask` 는 답을 최대 30분 기다린다) | 트레이 · 잠금 · 로거 없이 주 인스턴스의 로컬 API 를 부르고 종료 코드로 끝 |
+| `coworkAgent.exe <명령>` — CLI | 사용자 · 사용자 AI 에이전트가 `peers` · `ask` · `wait` · `status` · `history` | 명령 하나(`ask` · `wait` 는 앱의 트랜잭션 판정 — 답 · 실패 · 멈춤까지, 안전판 24시간 — 8.7) | 트레이 · 잠금 · 로거 없이 주 인스턴스의 로컬 API 를 부르고 종료 코드로 끝 |
 | `claude --version` | `claude -p` 실행 직전마다 | 30초 상한 | 버전 확인 — 2.1.267(`MIN_CLAUDE`) 미만이면 실행하지 않는다 |
 | `claude -p …` | 대기열의 실행 요청 1건마다 | 끝날 때까지 · 30분 상한(`RUN_TIMEOUT`) | 에이전트 폴더(cwd)에서 답을 만든다. 콘솔 창 없음(`CREATE_NO_WINDOW`) |
 | `claude` 의 자손 | 도구 실행이 띄울 때 | `claude` 와 한 묶음 | Windows 는 kill-on-close Job Object, macOS 는 프로세스 그룹 — 끝나거나 시간 초과면 묶음째 종료 |
@@ -81,12 +105,13 @@ flowchart TB
     subgraph RT["tokio 다중 스레드 런타임"]
       WEB["로컬 웹 서버 127.0.0.1:임의 포트"]
       PEER["피어 수신 0.0.0.0:47100"]
-      PRES["접속 감시 — 30초마다 Ping"]
+      LANE["보내기 줄 — 상대마다 1개(outbox)"]
       CONV["대화별 작업 — 대화마다 1개"]
     end
     POOL["blocking 풀 — 실행 1건당 1개 + 입출력 스레드 3개"]
   end
   CONV --> POOL
+  CONV -- "답 · 진행" --> LANE
   POOL -- "spawn" --> VER["claude --version"]
   POOL -- "spawn · Job Object" --> RUN["claude -p"]
   CLI2["coworkAgent CLI"] -- "Bearer" --> WEB
@@ -106,10 +131,12 @@ flowchart TB
 | 트레이 | 메인 스레드 | 메뉴 "열기" · "종료". 새 요청 건수를 주황 점 · 툴팁 "coworkAgent — 새 요청 N건" 으로. 시작 실패면 오류 모드(붉은 아이콘 · "오류 보기" · "종료") | `app::tray` |
 | 로컬 웹 서버 | `127.0.0.1:{임의 포트}` | 웹UI 정적 파일 · `/api/*` · SSE `/api/events` · 핸드오프 `POST /api/open`. 실행마다 새 토큰, Host · Origin 검사(D9) | `app::server` · `*_api` |
 | 피어 수신 | `0.0.0.0:47100`(사용 중이면 OS 임의 포트) | 상대 요청 1건 = 연결 1개. TLS 1.3 상호 인증(서로 ed25519 키) → 인가(페어링 여부) → 처리기. 연결당 3초 · 동시 32 · 출처 IP 당 4 | `net::node::serve` |
-| 피어 발신 | 상대의 `peers.addr` | 요청마다 새 TCP + TLS 연결, 상대 키 고정, 요청 · 응답 전체 10초 상한 | `net::node::send` |
-| 접속 감시 | 시작 직후 + 30초마다 | 페어링된 상대마다 `Ping` → `Pong{focus}` 받은 시각을 `peers.seen_at` 에. 75초 안이면 온라인 | `node::watch_presence` |
-| 대화 엔진 | 피어 처리기 + 대화별 작업 | 받은 요청 검증 · 저장(= 대기열 등록) · 대화별 순차 실행 · 답 전송 · 자동 왕복 · 완료 동기화 · 멘션. 피어 처리기는 막히지 않는다 — 실행은 대기열로 | `agent::chat::Chat` |
-| 실행기 | blocking 풀 | `claude -p` 인자 · 표준 입력 · 시간 제한 · 출력(JSON) 읽기 | `agent::runner` |
+| 실행 문 | `Chat` 안 | PC 전체 `claude -p` 동시 실행 상한(기본 2 · 1 ~ 8, 설정 `max_runs`) — 넘으면 닿은 순서로 대기 · 상대에 `Progress` 알림(#1b) | `agent::gate` · `chat::admit` |
+| 피어 발신 | 상대의 `peers.addr` | 요청마다 새 TCP + TLS 연결, 상대 키 고정, 요청 · 응답 전체 10초 상한. 응답을 받으면 그 상대 `peers.seen_at` 갱신 | `net::node::send` |
+| 보내기 줄 | `Chat` 안, 상대마다 tokio 작업 1개 | 대화 프레임을 `outbox` 에 먼저 적고 id 순으로 하나씩 응답(ack)까지 다시 보낸다 — 5초부터 두 배 · 최대 5분, 24시간이면 포기(6.6). 한 상대가 막혀도 다른 상대 줄은 따로 간다 | `agent::chat`(`ship` · `enqueue` · `lane`) · `core::outbox` |
+| 접속 상태 | 통신할 때만(주기 확인 없음) | 보내기 성공 · 페어링된 상대의 요청 받기마다 `peers.seen_at`(10초에 한 번 쓰기). 시작 때 페어링된 상대마다 `Ping` 1회(`announce` — 주소 알림 · 집중), 웹UI 를 열 때 · 타일을 고를 때 ping(서버가 60초 안 통신이면 거름) — 8.8 | `node::announce` · `node::refresh` · `core::peers::touch` |
+| 대화 엔진 | 피어 처리기 + 대화별 작업 | 받은 요청 검증 · 저장(= 대기열 등록) · 대화별 순차 실행 · 답 보관 · 자동 왕복 · 완료 동기화 · 멘션 · 상태 질의 · CLI 트랜잭션. 피어 처리기는 막히지 않는다 — 실행은 대기열로 | `agent::chat::Chat` |
+| 실행기 | blocking 풀 | `claude -p` 인자 · 표준 입력 · 시간 제한 · 출력(stream-json 줄 — 단계 요약을 세고 마지막 `result` 줄만 남김) 읽기 | `agent::runner` |
 | 알림 | 노드 · 대화 엔진 이벤트 | 설정이 허락하면 건수 +1 → 트레이 표시 · SSE → 브라우저 알림(기본 꺼짐) | `app::notify` |
 | 로그 | `logs\coworkAgent.log` | 1 MiB 를 넘기 전에 `.1` 로 회전(1개 보관) | `core::log_file` |
 | 단일 인스턴스 | `instance.lock` · `instance.json` | OS 파일 잠금(프로세스가 죽으면 OS 가 푼다) · 핸드오프 정보(포트 · 토큰) | `core::instance` |
@@ -126,17 +153,50 @@ flowchart TB
 6. tokio 런타임 · 웹 포트(`127.0.0.1:0`) · 실행마다 새 토큰 · 피어 포트(47100, 사용 중이면 임의).
 7. 피어 노드 · 알림 · 대화 엔진 — 셋이 같은 DB 파일을 **각자 연결**로 연다(`busy_timeout` 5초). 실행기는 `claude` 를 실행마다 찾는다
    (`%USERPROFILE%\.local\bin\claude.exe`, 없으면 PATH) — 앱을 띄운 뒤 설치해도 된다.
-8. `chat.attach()`(노드 요청 처리기) → `chat.recover()`(남은 대기열 — 6.6).
-9. 피어 수신 루프 · 접속 감시 · 웹 서버를 띄우고 `instance.json` 을 쓴다 → 트레이 루프.
+8. `chat.attach()`(노드 요청 처리기 · `Ping` 받기 알림) → `chat.recover()`(남은 대기열 · 남은 outbox 의 상대 줄을 지금 다시 · 7일 지난 실패
+   보관 지움 — 6.6).
+9. 피어 수신 루프 · 시작 알림(`announce`) · 웹 서버를 띄우고 `instance.json` 을 쓴다 → 트레이 루프.
 10. 트레이 "종료": 런타임 정지(1초) → `instance.json` 삭제 → 잠금 해제(마지막 — 그 사이 뜬 새 프로세스는 보조 실행으로 남는다).
 
-## 5. 피어 통신 요약
+## 5. 통신 구성 · 피어 프로토콜
 
-- 프레임 = 4바이트 big-endian 길이 + JSON(최대 64 KiB), 글 본문은 16 KiB(`MAX_TEXT`). 요청 1건에 응답 1건, 그리고 연결을 닫는다.
-- 요청 종류(`proto::Request`): 페어링 `Hello` · `Approve` · `Remove` · 접속 `Ping` · 대화 `Agents` · `Message` · `Reply` · `Post` ·
-  `Relay` · `Done`. 응답: `Hello` · `Ok` · `Pong{focus}` · `Agents{names}` · `Error{code}`. 필드 정본은 [an_net](an_net.md).
+PC 마다 coworkAgent **주 인스턴스 하나**가 트레이에 상주하며 서버와 클라이언트를 겸한다. 웹UI 는 각자 자기 PC 의 앱에만 붙고,
+PC 사이는 앱끼리 직접 통신한다.
+
+![통신 구성 — 브라우저 · CLI · 앱 · claude -p · 모델 서비스](../../images/comm-overview.png)
+
+### 5.1 구간
+
+| 구간 | 전송 | 인증 · 보호 | 비고 |
+|---|---|---|---|
+| 브라우저 ↔ 내 앱 | HTTP `127.0.0.1:{임의 포트}` · 알림은 SSE `/api/events` | 실행마다 새 토큰 → 탭 메모리 · `Authorization: Bearer`(쿠키 없음), Host · Origin 검사 · 보안 헤더(CSP · X-Frame-Options) — 6.7 | 화면은 5초마다 새로 읽는다 |
+| CLI ↔ 내 앱 | 같은 로컬 API | `instance.json` 의 토큰을 `Authorization: Bearer` 로 | 앱이 꺼져 있으면 종료 코드 3 |
+| 내 앱 ↔ 상대 앱 | TCP `47100`(사용 중이면 임의 포트) 위 TLS 1.3 — 요청 1건 = 연결 1개 | 양쪽 ed25519 공개키(raw public key) 상호 인증, 페어링 때 상대 키 고정 | 요청 · 응답 전체 10초 상한. 대화 프레임은 outbox 에 먼저 적고 응답까지 다시 보낸다(6.6) |
+| 상대 앱 → `claude -p` | 자식 프로세스 표준 입력 → stream-json 출력(줄 단위 이벤트, 마지막 줄 `result`) | 에이전트 폴더(cwd) · 읽기 전용 도구 · 문의 응답 전용 지시 | 실행 1건 30분 상한, 대화마다 순서대로 |
+| `claude -p` → 모델 서비스 | HTTPS | 그 PC 의 Claude Code 로그인 | 질문 · 읽은 파일 내용이 사내망 밖으로 나간다 |
+
+### 5.2 피어 프로토콜
+
+- **프레임** = 4바이트 big-endian 길이 + JSON(최대 64 KiB), 글 본문은 16 KiB(`MAX_TEXT`). 요청 1건에 응답 1건, 그리고 연결을 닫는다.
+- **요청**(`proto::Request`): 페어링 `Hello` · `Approve` · `Remove` · 접속 `Ping` · 대화 `Agents` · `Message` · `Reply` · `Post` ·
+  `Relay` · `Done` · `Progress`(받는 쪽 차례 · 단계 요약) · `Status`(보낸 쪽 상태 질의). **응답**: `Hello` · `Ok` · `Pong{focus}` ·
+  `Agents{names}` · `Status{state, ahead}` · `Error{code}`. 필드 정본은 [an_net](an_net.md).
 - 미페어링 상대는 `Hello` · `Approve` · `Remove` 만. 대화 요청은 페어링(`my_ok ∧ their_ok`)된 키만 처리기로 간다(SC2).
+- 수신 제한 — 연결당 3초 · 동시 32 · 출처 IP 당 4.
 - 상대가 준 오류 코드는 영소문자 · `_` 1 ~ 32 자만 남긴다(그 밖 `unknown`) — 원격 문자열은 신뢰하지 않는 입력.
+- 응답 코드 `retry` — 받는 쪽이 처리 중 오류(DB 잠금 등)로 잠시 처리하지 못했다. 거절이 아니다 — 보낸 쪽은 전송 오류처럼 다시 보낸다.
+- **outbox 를 거치는 프레임**: `Message` · `Post` · `Reply` · `Done` · `Progress` · `Relay{on: false}`(받은 쪽 멈춤 알림). **바로 보내는 것**: `Hello` ·
+  `Approve` · `Remove` · `Agents` · `Ping` · `Status` · `Relay{on: true}`(연 쪽 재개) — 사람이 화면에서 결과를 바로 본다.
+
+### 5.3 순서 그림
+
+미리 그린 PNG 다 — 원본 mermaid 는 1장 · 8.1 · 8.2.
+
+![페어링 순서](../../images/comm-pairing.png)
+
+![질의 1왕복 순서](../../images/comm-query.png)
+
+- 질의 그림은 8.2 mermaid 를 그린 것이다(#1c — 보관(outbox) · 처리경과(`Progress`) 포함). 상태 질의(`Status`)는 8.7.
 
 ## 6. 세션 관리
 
@@ -174,28 +234,36 @@ flowchart TB
 - **대화별 실행 작업 하나**(`Chat::wake`) — DB 대기열(`messages.exec = 1 AND state IN ('queued', 'running')`)을 id 순으로 하나씩
   실행한다. 같은 세션이 동시에 재개되지 않는다(공식 문서: 동시 resume 은 잠금 없이 섞인다 — D19). 멘션 실행도 같은 대화 대기열이다.
 - **다른 대화끼리는 동시에** — PC 전체 동시 실행 상한 없음(D24 개정).
-- **보내는 쪽 대화 차례**(`Chat::turn`) — 사람 글의 저장 → 전송 → 응답까지 대화당 한 번에 하나(보낸 순서 = 상대 도착 순서). 받은
+- **보내는 쪽 대화 차례**(`Chat::turn`) — 사람 글의 저장 → 전송(또는 보관) → 응답까지 대화당 한 번에 하나(보낸 순서 = 상대 도착 순서). 받은
   요청의 완료 표시도 같은 차례 안에서 보낸다.
+- **보내기 줄 순서** — 같은 대화에 앞선(보내는 중 · 기다리는) outbox 행이 있거나 그 상대에 닿지 않고 있는(다시 보내기를 기다리는 행이 있는)
+  동안은 새 글도 바로 보내지 않고 줄 뒤에 선다. 상대 줄은 id 순으로 하나씩 — 앞 행이 못 가면 뒤 행도 기다린다. 진행(`Progress`) · 멈춤 알림
+  (`Relay{on: false}`)은 대화 안에서 앞질러도 된다(답보다 늦게 닿은 진행은 받는 쪽이 `unknown` 으로 버린다).
 - **양쪽 표시 순서** — 램포트 시계 `lc`(받은 글은 `observe` 로 맞춘다), 표시는 `(lc, uuid)` 순.
 
 ### 6.5 실행 입력 — 맥락 앞붙임
 
-본문은 **표준 입력으로만** 넘긴다(명령 인자 · 셸에 넣지 않는다). 지난 실행 요청 뒤에 실행 없는 사람 글이 있었거나 요청이 상대
-에이전트발(자동 왕복)이면 아래 꼴로 감싼다.
+본문은 **표준 입력으로만** 넘긴다(명령 인자 · 셸에 넣지 않는다). 늘 아래 꼴로 감싼다 — 원격 글이 프롬프트 맨 앞에 오지 않고, 틀 문구를
+꾸미지 못하게 원격 글 안의 구분자(`<원격 본문>` · `</원격 본문>` · `<대화 메모>` · `</대화 메모>`)는 지운다(1a). 메모(지난 실행 요청 뒤 실행 없는
+사람 글)는 있을 때만, 최근 20개 · 본문 합 32 KiB 까지(넘으면 오래된 것부터 버리고 "(앞의 메모 N개 생략)").
 
 ```text
 [대화 메모 — 실행 요청 아님]
+<대화 메모>
 - {발화자}: {글}
+</대화 메모>
 
 [요청 — {발화자}]
+<원격 본문>
 {본문}
+</원격 본문>
 ```
 
 발화자는 `이 PC 사용자` · `{상대 이름} · {PC 이름}` · `상대 에이전트({상대 이름} · {PC 이름})`. 실행 인자는 아래와 같다(정본
 `runner::claude_args`).
 
 ```text
-claude -p --output-format json --restricted --strict-mcp-config --permission-prompts none
+claude -p --output-format stream-json --verbose --restricted --strict-mcp-config --permission-prompts none
   --permission-mode dontAsk --tools <도구> --allowedTools <도구>
   --append-system-prompt <가드 + [수신자 추가 지시]> --system-prompt-snapshot off
   (--session-id <새 UUID> | --resume <세션 ID>) --model <모델> --effort <effort>
@@ -204,24 +272,54 @@ claude -p --output-format json --restricted --strict-mcp-config --permission-pro
 - 도구는 읽기 전용 목록(`Read` · `Grep` · `Glob` · `LS` · `NotebookRead`) 안의 프로필 값, 비면 `Read,Grep,Glob`(D22 · D31).
 - 모델 · effort 는 실행 직전에 정한다 — 그 상대 덮어쓰기 → 전역 설정 → `sonnet` · `high`. 설정을 못 읽으면 기본값으로 돌리지 않고 실패 답.
 - `--bare` 는 쓰지 않는다 — 구독 로그인을 읽지 않기 때문(D20).
+- **출력 = stream-json**(`-p` 에서는 `--verbose` 가 있어야 한다 — 2.1.296 확인). 실행기는 표준 출력을 줄마다 읽어 실시간 이벤트로 **단계
+  요약**(`StepDetail{turns, tools, secs}`)을 센다 — `assistant` 이벤트의 `tool_use` 이름별 횟수(`mcp__` 로 시작하면 `MCP` 로 묶음) · 턴(1 에서
+  시작, 도구 결과를 담은 `user` 이벤트마다 +1) · 실행 시작부터 초. 도구 입력 · 파일 경로 · 모델 글은 읽지 않는다. 결과 줄(`result`)과 JSON
+  아닌 줄만 남기고(이벤트는 쌓지 않는다) 마지막 JSON 줄을 결과로 읽는다(`parse_output`). 단계 요약을 상대에 알리는 일은 8.2.
 
 ### 6.6 실패 · 복구
 
 | 상황 | 결과 |
 |---|---|
-| 앱이 실행 도중 꺼짐 | 다시 켤 때 `recover`: `queued` 는 실행, `running` 은 실패 답 "실행 도중 상대 앱이 종료돼 결과가 없다 — 다시 보내 주세요" |
-| 30분 초과 | 자손까지 종료 → "실행 실패: 실행 시간 1800초 초과" |
-| Claude Code 버전 낮음 | 실행하지 않음 → "실행 실패: Claude Code x.y.z — 2.1.267 이상이 필요하다(`claude update`)" |
+| 앱이 실행 도중 꺼짐 | 다시 켤 때 `recover`: `queued` 는 실행, `running` 은 실패 답 "실행 도중 상대 앱이 종료돼 결과가 없다 — 다시 보내 주세요". 보내다 끊긴 outbox 행(`inflight`)은 `pending` 으로 되돌려 상대 줄을 지금 다시 보낸다 |
+| 30분 초과 | 자손까지 종료 → 내 쪽 "실행 실패: 실행 시간 1800초 초과" · 상대 "실행 실패: 받는 PC 의 시간 제한(30분)을 넘겼다" |
+| Claude Code 버전 낮음 | 실행하지 않음 → 내 쪽 "실행 실패: Claude Code x.y.z — 2.1.267 이상이 필요하다(`claude update`)" · 상대 "실행 실패: 받는 PC 의 Claude Code 버전이 낮다" |
+| 에이전트 폴더가 데이터 폴더를 품음 · 네트워크 경로 | 실행 직전 다시 거른다 — 실행하지 않음 → 상대 "실행 실패: 받는 PC 의 에이전트 폴더를 쓸 수 없다 — 받는 PC 에서 폴더를 바꿔야 한다" |
+| 그 밖 실행 오류 | 내 쪽에 원문(종료 상태 · stderr), 상대에게는 "실행 실패: 받는 PC 에서 실행하지 못했다 — 원인은 받는 PC 화면에 있다"(1a — stderr · 경로를 상대에게 보내지 않는다) |
 | 세션 기록 파일이 없음 | `--resume` 이 종료 1 · 표준 출력 비움 · stderr "No conversation found with session ID: …"(2.1.296 실측) → 실패 답. 세션 ID 는 남아 **그 대화의 다음 요청도 같은 실패** — [원장](../../overview/ledger.md) `#15 R2-F2r`(열림). 우회는 새 대화 |
-| 기록 트랜잭션 실패 | 요청 `error`, 답 "실행 실패: 받는 PC 기록 오류 — …" |
-| 답 전송 실패 | 받은 쪽 답이 `undelivered` — 재전송하지 않는다(오프라인 보관 · 재전송은 Phase 2, D7) |
-| 보내기 전송 오류 | 보낸 글은 `sent` 그대로 + "전달 확인 안 됨 … 답을 기다린 뒤 다시 보내세요" — 상대가 받았을 수 있으니 늦은 답을 받는다(중복 실행 방지) |
-| 상대 거절 | 보낸 글 `error` + 거절 코드(`messages.refused`). `focus` 면 "상대가 집중 중", 다시 보내면 코드를 지운다 |
+| 기록 트랜잭션 실패 | 요청 `error`, 내 쪽 답 "실행 실패: 받는 PC 기록 오류 — …" · 상대 "실행 실패: 받는 PC 기록 오류" |
+| 보내기 · 답 전송 오류(상대 꺼짐 · 네트워크) | 오류가 아니다 — outbox 에 보관하고 상대 줄이 다시 보낸다(아래). 글은 `sent` 그대로, 화면 "보내는 중". 같은 uuid 라 몇 번 다시 보내도 상대에서 한 번만 실행 |
+| 받는 쪽 처리 오류(DB 잠금 등) | 받는 쪽이 `Error{retry}` — 보낸 쪽은 거절로 확정하지 않고 전송 오류처럼 다시 보낸다 |
+| 24시간 닿지 않음 | 그 상대 줄의 행을 모두 실패 보관(`failed`). 내 실행 요청 · 실행 없는 글 · 자동 왕복 넘김은 `error` + 거절 코드 `unreachable`(화면 "보내지 못함 …" · 다시 보내기), 자동 왕복은 꺼지고 넘김이면 끝 사유 "상대에 닿지 않음". 답 · 내 에이전트 답 미러 · 상한 기록은 `undelivered`("답 미전달"). 그 밖(미러 · 완료 · 진행 · 멈춤 알림)은 로그만 |
+| 상대 거절 | 보낸 글 `error` + 거절 코드(`messages.refused`). `focus` 면 "상대가 집중 중", 다시 보내면 코드를 지운다. 답을 상대가 거절하면 `undelivered` |
+
+**보내기 보관(outbox, D7 — #1c)** — 대화 프레임은 `Chat::ship`(바로 한 번 시도) · `Chat::enqueue`(줄에만 — 진행)로 `outbox` 에 먼저 적는다.
+
+- **글과 행은 함께** — 사람 실행 요청 · 미러 · 답 · 자동 왕복 넘김은 글을 적는 DB 트랜잭션 안에서 행(`inflight`)을 적고 커밋 뒤 보낸다(`stage` ·
+  `dispatch`). 커밋 뒤 보내기 전에 꺼지면 다시 켤 때 `recover` 가 그 행을 보낸다. 완료 · 멈춤 알림 · 상한 기록은 따로 적는다(미조치 — 원장 #1c R1-T).
+- **바로 보내기** — 행을 `inflight` 로 넣고, 같은 대화에 앞선 행이 없고 그 상대에 닿지 않고 있지 않으면 바로 한 번 보낸다(화면이 거절을 바로
+  받는다). 응답이면 행을 지운다. 전송 오류 · 앞선 행이면 `pending` 으로 두고 상대 줄을 깨운다. 보내기 · 뒷정리는 따로 띄운 작업이 하므로
+  부른 HTTP 처리기가 취소돼도 행이 `inflight` 로 남지 않는다.
+- **상대 줄**(`lane`) — 상대마다 tokio 작업 하나가 맨 앞 `pending` 행을 `next_at` 에 보낸다. 응답(`Ok` 든 거절이든)을 받으면 행을 지우고 그 자리의
+  응답 처리와 같게 뒷일(`settle` — 거절이면 글 실패 · 자동 왕복 끔, 실행 없는 글 `Ok` 면 `done`).
+- **간격 · 한도** — 5초부터 두 배 · 최대 5분. 기다린 합(`waited`)에는 지난 시도부터 실제로 흐른 시간을 직전 간격까지만 더한다 — 앞당긴 재시도가
+  한도를 부풀리지 않고, 앱을 꺼 둔 시간은 세지 않는다. 합이 24시간이면 포기(위 표). 시험용 `Chat::set_retry(base, max, give_up)`.
+- **앞당기기** — 그 상대에서 무엇이든 받으면(대화 요청 · `Ping`) · 상태 질의가 닿으면 · 앱을 다시 켜면 그 상대 줄을 지금 보낸다(`peer_back` ·
+  `outbox::hurry`). 보내는 중인 행은 표시만 하고 그 시도가 실패하면 바로 다시.
+- **키 합침** — 진행은 키 `progress:{글 uuid}` — 같은 키의 기다리는 행이 있으면 새 행 대신 프레임만 바꾼다(마지막 값만).
+- **실패 보관 정리** — 시작 때 7일 지난 `failed` 행을 지운다.
+
+**상태 질의(`Status`)** — 보낸 쪽이 자기 실행 요청 글의 지금 상태를 묻는다(바로 — 보관하지 않음, CLI 트랜잭션 감시가 쓴다 — 8.7). 받는 쪽은 그
+상대 대화의 상대 실행 요청 글이면 `queued`(`ahead` = 실행 대기 목록의 앞 사람 수) · `running` · `done`(끝남 — 그 상대에 남은 답이 있으면 지금
+보낸다), 그 밖 `unknown`.
 
 ### 6.7 웹UI · CLI 접속 세션
 
-- **웹UI** — 실행마다 새 토큰(32바이트 hex). 트레이 "열기" URL `/?t={토큰}` → 쿠키 `an_token`(HttpOnly · SameSite=Strict) 심고 `/` 로
-  303. 쿠키 인증의 상태 변경 요청은 Origin 필수. 앱을 다시 켜면 이전 탭의 쿠키는 맞지 않는다(401) — 트레이 "열기" 로 다시 연다.
+- **웹UI** — 실행마다 새 토큰(32바이트 hex). 트레이 "열기" URL `/?t={토큰}` → 페이지가 토큰을 **탭 메모리**(sessionStorage)로 가져가고
+  주소창에서 지운다(`history.replaceState`). `/api/*` 는 `Authorization: Bearer` 로만, 알림 스트림 `/api/events` 만 `?t=` 도 받는다(`EventSource`
+  는 헤더를 못 싣는다). **쿠키는 쓰지 않는다** — 쿠키는 포트를 가리지 않아 같은 PC 의 다른 `127.0.0.1` 포트로도 실린다(1a). 정적 자산(`/` ·
+  `app.js` · `view.js` · `app.css` · `favicon.ico`)은 토큰 없이(Host 검사만). 탭을 닫거나 새 탭을 손으로 열거나 앱을 다시 켜면 "연결이 끊겼습니다"
+  안내 — 트레이 "열기" 로 다시 연다.
 - **CLI** — `instance.json` 의 포트 · 토큰을 `Authorization: Bearer` 로. 보내기 전 `GET /api/status` 의 `cli_api` 로 출처 표시를 아는
   인스턴스인지 확인한다. 앱이 꺼져 파일이 없으면 종료 코드 3.
 
@@ -231,7 +329,7 @@ claude -p --output-format json --restricted --strict-mcp-config --permission-pro
 
 ```text
 %LOCALAPPDATA%\coworkAgent\              macOS: ~/Library/Application Support/coworkAgent/
-├── coworkAgent.db                      SQLite — 연결 · 에이전트 · 대화 · 글 · 설정(스키마 12)
+├── coworkAgent.db                      SQLite — 연결 · 에이전트 · 대화 · 글 · 설정 · 보내기 보관 · CLI 트랜잭션(스키마 13)
 ├── coworkAgent.db.v{N}.bak             스키마 N 에서 올리기 직전 사본(VACUUM INTO, 버전마다 한 번)
 ├── identity.key                        설치 신원 ed25519(PKCS#8) — 리포 · 로그 · UI 로 내보내지 않는다
 ├── instance.lock                       단일 인스턴스 잠금
@@ -239,19 +337,24 @@ claude -p --output-format json --restricted --strict-mcp-config --permission-pro
 └── logs\coworkAgent.log(.1)            1 MiB 회전, 1개 보관
 ```
 
+폴더 권한(1a): 주 인스턴스가 시작할 때마다 루트를 **소유자 전용**으로 맞춘다 — Windows 보호 DACL(현재 사용자 · SYSTEM, 하위 상속, 상위 폴더의
+상속 끊음) · Unix 루트 · 하위 폴더 0700 + 파일 0600, 프로세스 `umask 077`(새 DB · 사본 · 회전 로그 — macOS 실동작 확인은 Phase 4). 실패하면 로그 경고 후 계속. 확인: `icacls "%LOCALAPPDATA%\coworkAgent\identity.key"` → 두 줄(사용자 · SYSTEM).
+
 폴더 밖: 시작 실패 사유 `%TEMP%\coworkAgent-start-error.txt`, Claude Code 기록(7.4).
 
-### 7.2 DB 표 (스키마 12)
+### 7.2 DB 표 (스키마 13)
 
 | 표 | 한 행 | 주요 열 |
 |---|---|---|
-| `peers` | 연결한 PC | `spki`(공개키) · `name` · `host` · `addr` · `my_ok` · `their_ok` · `round`(페어링 세대) · `grp` · `model` · `effort` · `alias` · `icon` · `activity_seen_msg` · `activity_seen_event` · `seen_at`(마지막 `Pong`) · `focus` |
+| `peers` | 연결한 PC | `spki`(공개키) · `name` · `host` · `addr` · `my_ok` · `their_ok` · `round`(페어링 세대) · `grp` · `model` · `effort` · `alias` · `icon` · `activity_seen_msg` · `activity_seen_event` · `seen_at`(마지막 통신 — 보내기 성공 · 요청 받기 · `Pong`) · `focus`(마지막 `Pong` · 집중 거절 때 값) |
 | `settings` | 키 · 값 | 아래 키 |
 | `agents` | 내 에이전트 | `name`(UNIQUE — 상대가 부르는 이름, 바꾸지 않는다) · `folder` · `tools` · `prompt` · `grp` · `uid`(세대) |
 | `conversations` | 대화 | `uuid` · `peer_id` · `agent`(대화 에이전트) · `dir`(`out` 내가 엶 · `in` 상대가 엶) · `session` · `relay_agent` · `relay_cap` · `relay_count` · `relay_on` · `relay_blocked` · `title` · `starred_at` · `read_id` |
 | `messages` | 사람 글 · 에이전트 답 | `uuid` · `conversation_id` · `author`(`human` · `agent`) · `text` · `state` · `reply_to` · `turns` · `duration_ms` · `mine` · `exec`(실행 요청) · `lc` · `via`(`cli`) · `saved_at` · `model` · `effort` · `request` · `done_at` · `agent`(멘션) · `refused` |
 | `relay_events` | 자동 왕복 시작 · 끝 · 내 글이 실패로 바뀐 순간 | `conversation_id` · `kind` · `detail` · `message_id` |
 | `agent_sessions` | 대화 × 멘션 에이전트 세션 | (`conversation_id`, `agent`) → `session` |
+| `outbox` | 상대에게 보낼 대화 프레임 1개(#1c) | `peer_id` · `conv_id` · `msg_id` · `kind` · `frame`(직렬화한 요청 JSON) · `key`(진행 합침) · `state`(`pending` 기다림 · `inflight` 보내는 중 · `failed` 실패 보관) · `tries` · `waited`(기다린 초 합) · `next_at` · `last_try` · `last_error` · `created_at`. 응답을 받으면 행을 지운다 |
+| `cli_tx` | CLI `ask` 트랜잭션 1개(#1c) | `key`(UNIQUE — `--id`) · `message_id`(보낸 실행 요청 글) · `created_at` · `asked_at`(마지막 상태 질의) · `unreachable_since` · `stalled_at` |
 
 - 글 상태 `state`: `sent` 보냄 · `queued` 실행 대기 · `running` 실행 중 · `done` 끝 · `error` 실패 · `undelivered` 답을 상대에 못 보냄.
 - `settings` 키: `notify_inbound` · `notify_pair` · `notify_request` · `notify_reply` · `notify_relay` · `notify_preview` · `notify_paused` ·
@@ -263,7 +366,9 @@ claude -p --output-format json --restricted --strict-mcp-config --permission-pro
 |---|---|
 | 사람 글 · 에이전트 답 본문, 순서(`lc`), 질의 · 요청, 완료 표시, 멘션 이름, 출처(`via`), 답의 실행 정보(턴 · 시간 · model · effort) | 대화 제목 · ★ · 저장 · 읽음 · 내 활동 본 표시 · 타일 표시 이름 · 아이콘 · 그룹 · 상대별 model · effort · 알림 설정 · 집중 · 접속 상태 · **Claude 세션 ID** |
 
-답 전송에 실패하면 그 답은 실행한 PC 에만 `undelivered`(화면 "답 미전달")로 남고 다시 보내지 않는다 — 두 DB 가 달라진 채로 남는다(6.6).
+답이 상대에 닿지 않으면 실행한 PC 의 outbox 가 다시 보낸다. 상대가 답을 거절했거나 24시간 닿지 않아 포기한 답만 실행한 PC 에
+`undelivered`(화면 "답 미전달")로 남는다 — 그때는 두 DB 가 달라진 채로 남는다(6.6). 보내는 중인 글 · 실패 보관(`outbox`) · CLI 트랜잭션
+(`cli_tx`)은 이 PC 에만 있다.
 
 ### 7.4 Claude Code 쪽 기록 — 헤드리스 대화의 맥락
 
@@ -286,9 +391,9 @@ claude -p --output-format json --restricted --strict-mcp-config --permission-pro
 
 ### 7.5 스키마 올리기
 
-- DB 를 열 때 `PRAGMA user_version` 을 보고 순서대로 올린다 — v5 부터는 단계마다 한 트랜잭션이고, v2 ~ v4 는 트랜잭션 없이
+- DB 를 열 때 `PRAGMA user_version` 을 보고 순서대로 올린다 — v5 ~ v12 는 단계마다 한 트랜잭션이고, v2 ~ v4 · v13(`outbox` · `cli_tx`)은 트랜잭션 없이
   `CREATE TABLE IF NOT EXISTS` 묶음이라 중간에 끊겨도 다시 열면 이어서 끝난다. 올리기 전 **처음 버전**의 사본 하나(`.v{처음}.bak`)만
-  남긴다 — 10 → 12 를 한 번에 올리면 `.v10.bak` 하나.
+  남긴다 — 10 → 13 을 한 번에 올리면 `.v10.bak` 하나.
 - 이 실행 파일보다 새 스키마면 열지 않는다("DB 스키마 N 가 이 실행 파일(M)보다 새롭다" — 시작 실패). 이전 실행 파일로 돌아가려면
   앱을 끄고 사본을 `coworkAgent.db` 로 바꿔 쓴다 — 사본 뒤에 생긴 데이터는 잃으므로 지금 DB 를 먼저 다른 이름으로 보존한다.
 - 같은 버전의 사본이 이미 있으면 새로 뜨지 않는다(`backup_before_migration`) — 되돌린 뒤 다시 올려도 `.v{N}.bak` 은 처음 시점 그대로다.
@@ -336,21 +441,34 @@ sequenceDiagram
   participant B as B 앱
   participant C as claude -p(B)
   U->>A: 글 보내기
-  A->>A: 대화 차례 잠금 · 글 저장(sent)
+  A->>A: 대화 차례 잠금 · 한 트랜잭션 — 글 저장(sent) · outbox 행(inflight)
   A->>B: Message(conv · msg · agent · text · lc · request · mention)
-  B->>B: 검증(페어링 · 집중 · 에이전트 · 대화 소유) → 저장(queued) = 대기열 등록
+  Note over A: 전송 오류면 행을 pending 으로 — 상대 줄이 5초부터 두 배 간격으로 다시(화면 "보내는 중")
+  B->>B: 검증(페어링 · 집중 · 에이전트 · 대화 소유 · 같은 uuid 는 한 번만) → 저장(queued) = 대기열 등록
   B-->>A: Ok
-  B->>B: 대화별 작업 — running 표시
+  A->>A: outbox 행 지움
+  B->>B: 실행 문 · 대화별 작업 — running 표시
+  B->>A: Progress(queued · 앞 사람 수 → running) — B 의 outbox 줄로
   B->>C: stdin = 맥락 앞붙임 + 본문, cwd = 에이전트 폴더, --session-id 또는 --resume
-  C-->>B: JSON(result · session_id · num_turns · duration_ms)
-  B->>B: 한 트랜잭션 — 세션 · 요청 done/error · 답 저장
-  B->>A: Reply(reply_to · text · ok · turns · duration_ms · model · effort)
+  loop 실행 중 — 바뀐 단계 요약이 있으면 10초에 한 번 이하
+    C-->>B: stream-json 이벤트(assistant tool_use · user tool_result)
+    B->>A: Progress(running · detail{turns · tools · secs}) — outbox
+  end
+  C-->>B: 마지막 줄 result(result · session_id · num_turns · duration_ms)
+  B->>B: 한 트랜잭션 — 세션 · 요청 done/error · 답 저장 · outbox 행
+  B->>A: Reply(reply_to · text · ok · turns · duration_ms · model · effort) — outbox
   A->>A: 답 저장 · 요청 done/error · 알림
-  A-->>B: Ok (못 받으면 B 의 답은 undelivered)
+  A-->>B: Ok → B 의 outbox 행 지움(닿지 않으면 다시, 24시간이면 답 undelivered)
 ```
 
 - 받은 쪽 사람이 그 대화에 쓴 글(실행 없음)은 `Post` 로 상대 이력에 미러된다. 다음 실행 때 "대화 메모" 로 함께 넘어간다(6.5).
-- 상태 전이 — 보낸 쪽 글: `sent` → `done` | `error`(실패 답 · 상대 거절). 받은 쪽 요청: `queued` → `running` → `done` | `error`.
+- 상태 전이 — 보낸 쪽 글: `sent` → `done` | `error`(실패 답 · 상대 거절 · 24시간 닿지 않음 `unreachable`). 받은 쪽 요청: `queued` → `running` →
+  `done` | `error`.
+- **처리경과** — 받는 쪽 `Chat` 은 상대가 보낸 실행 요청일 때만 실행기 단계 요약(6.5)의 마지막 값을 두고, 작업 하나가 `step_every`(기본 10초)마다
+  바뀐 것만 `Progress{state: running, detail}` 로 보낸다(키 `progress:{글 uuid}` — 기다리는 진행은 마지막 값만). 10초 안에 끝난 실행은 단계 요약을
+  보내지 않는다. 보낸 쪽은 그 상대 대화의 내 실행 요청 · `sent` 글에만 받고(그 밖 `unknown`), 도구 이름을 `clean_name` 뒤 24자 · 16개까지로 줄여
+  메모리에 둔다(답이 오거나 앱을 다시 켜면 사라진다). 화면 · CLI 문구 "처리 중 — 2턴 · Read 3 · Grep 1 · 41초"(없는 값은 뺀다). 상대에게는 턴 ·
+  도구 이름별 횟수 · 초만 간다(입력 · 경로 · 모델 글 없음).
 
 ### 8.3 자동 왕복 (D24)
 
@@ -371,6 +489,8 @@ sequenceDiagram
 
 - 연 쪽이 구동한다. 상한 n = 양쪽 n 번씩(1 ~ 50, 기본 10). 어느 쪽이든 사람이 쓰거나 멈추면 멈추고, 받은 쪽이 멈추면 그 PC 는
   에이전트발 요청을 `stopped` 로 거절한다. 재개는 연 쪽만(카운트 0).
+- 넘김(`Message{by_agent}`)이 전송 오류여도 멈추지 않는다 — outbox 가 보관했다가 닿으면 이어 간다. 24시간 닿지 않으면 멈춤(끝 사유 "상대에
+  닿지 않음"). 재개(`Relay{on: true}`)는 바로 보낸다 — 닿지 않으면 재개 실패.
 
 ### 8.4 @멘션 (D19 보강)
 
@@ -403,10 +523,12 @@ sequenceDiagram
   participant A as A 앱(쓴 쪽)
   UB->>B: 완료 표시
   B->>B: 대화 차례 안에서 done_at 저장(저장 표시도 같은 트랜잭션)
-  B->>A: Done(conv · msg · done)
+  B->>A: Done(conv · msg · done) — outbox
   A->>A: 그 대화의 내 요청 사람 글이면 반영(그 밖 unknown)
-  A-->>B: Ok (실패면 B 에 경고 — B 값은 남고 다음에 바꿀 때 맞춰진다)
+  A-->>B: Ok (닿지 않으면 B 의 outbox 가 다시 보낸다 — 경고 없음)
 ```
+
+- 경고("이 PC 에는 표시했다 — 상대에 알리지 못했다 …")는 상대가 거절했거나 보관조차 못 했을 때만 뜬다. B 값은 남고 다음에 바꿀 때 맞춰진다.
 
 ### 8.7 CLI `ask` (D14 보강)
 
@@ -415,42 +537,71 @@ sequenceDiagram
   participant AI as 사용자 AI 에이전트
   participant CLI as coworkAgent ask
   participant A as 주 인스턴스 로컬 API
-  AI->>CLI: coworkAgent ask user-b "질문" --agent review
+  participant B as B 앱(상대)
+  AI->>CLI: coworkAgent ask user-b "질문" --agent review --id job-1
   CLI->>CLI: instance.json 에서 포트 · 토큰
   CLI->>A: GET /api/status(cli_api 확인) · GET /api/peers(상대 해석)
-  CLI->>A: POST /api/conversations(via = cli)
-  loop 1초마다 · 최대 30분
-    CLI->>A: GET /api/conversations/(id)/messages
+  CLI->>A: POST /api/conversations(via = cli · tx_key = --id)
+  A->>A: 같은 키의 트랜잭션이 있으면 보내지 않고 그 상태(200) / 없으면 보내고 cli_tx 생성(201 · tx)
+  loop 1초마다 — 답 · 실패 · 멈춤까지(안전판 24시간)
+    CLI->>A: GET /api/tx/(tx)
+    A->>B: Status(conv · msg) — 끝나지 않았고 마지막 질의가 60초 전일 때(같은 트랜잭션은 하나씩)
+    B-->>A: Status(queued · ahead | running | done | unknown)
+    Note over A: 닿으면 unreachable_since 지움 · 닿지 않음이 10분 이어지면 stalled_at
   end
   CLI-->>AI: 답 본문(--json 이면 JSON) + 종료 코드
 ```
 
-- `--conv N` 이면 그 대화에 이어 쓰고(`POST /api/conversations/{N}/messages`), `--agent X` 가 대화 에이전트가 아니면 멘션이다.
-- 종료 코드 0 · 2 사용법 · 3 실행 중 아님 · 4 API 거부/전달 불명(다시 보내지 말고 `history` 확인) · 5 답 실패 · 6 시간 초과.
+- `ask` 는 앱 DB 의 **트랜잭션**(`cli_tx`) 하나 — 앱이 주인이고 CLI 는 상태를 본다. `--id <키>`(1 ~ 64자 `[A-Za-z0-9._-]`, 이 PC 안에서 고유)로
+  다시 실행하면 새로 보내지 않고 그 트랜잭션의 결과를 받는다. CLI 가 죽어도 트랜잭션은 남는다 — `coworkAgent wait <tx>`(`POST /api/tx/{id}/resume`
+  으로 멈춤을 풀고 다시 판정) 로 이어 받고, `coworkAgent status <tx>` 는 지금 상태를 한 번 출력(평문 `{tx}\t{state}\t{진행}`).
+- **상태**(`GET /api/tx/{id}` 의 `state`) — 순서대로 답이 있으면 `answered` · 실패 답 · 글 실패면 `failed` · 멈췄으면 `stalled` · 실패 보관이면
+  `failed` · outbox 에 남았으면 `sending` · 그 밖 상대가 알려 준 진행 `queued` · `running` · 없으면 `sent`. 멈춘 뒤에 답이 오면 답이 이긴다.
+- **감시는 조회가 띄운다** — `sending` 이면 상태 질의 없이 그 상대 줄이 닿지 않고 있는지만 보고, 그 밖은 `Status` 를 보낸다. CLI 가 없으면 감시도
+  없다(앱이 상대를 계속 두드리지 않는다). 간격 60초 · 멈춤 10분(시험용 `Chat::set_watch(every, stall_after)`).
+- 진행이 바뀔 때마다 표준 오류에 한 줄 — "보내는 중 — 상대에 아직 닿지 않아 이 PC 에 보관했다(다시 보냄 n회)" · "대기 중 — 상대 PC 에 처리 중인
+  작업이 많다(앞에 k건)" · "처리 중 — 2턴 · Read 3 · 41초"(`--json` 이면 `{"progress":"sending"|"queued"|"running", …}`). `--json` 결과에 `tx`.
+- `--conv N` 이면 그 대화에 이어 쓰고(`POST /api/conversations/{N}/messages`), `--agent X` 가 대화 에이전트가 아니면 멘션이다. `--no-wait` 는
+  평문이면 대화 ID, `--json` 이면 `{conversation, asked, tx}`.
+- 종료 코드 0 · 2 사용법 · 3 실행 중 아님 · 4 API 거부/전달 불명(다시 보내지 말고 `history` 확인) · 5 답 실패 · 보내지 못함 · 6 안전판 24시간
+  초과 · 7 상대에 10분 닿지 않아 멈춤(`EXIT_STALLED` — 트랜잭션은 남는다, `wait <tx>` 로 이어 받기).
 
-### 8.8 접속 감시
+### 8.8 접속 상태 — 통신할 때만
 
 ```mermaid
 sequenceDiagram
   participant A as A 앱
   participant B as B 앱
-  loop 시작 직후 · 30초마다(페어링된 상대마다)
-    A->>B: Ping
-    B-->>A: Pong(focus)
-    A->>A: peers.seen_at = 지금 · focus 저장
-  end
-  Note over A: 화면 — seen_at 이 75초 안이면 온라인, 집중이면 집중 중
+  Note over A: 시작 — announce(페어링된 상대마다 한 번)
+  A->>B: Ping(port — A 의 피어 수신 포트)
+  B->>B: 페어링된 키면 (출처 IP, port) 가 저장 주소와 다를 때 바꿈(승인 그대로) · seen_at · A 에 남은 글 지금 보냄
+  B-->>A: Pong(focus)
+  A->>A: peers.seen_at = 지금 · focus 저장
+  Note over A,B: 그 뒤 — 대화 프레임을 주고받을 때만 양쪽 seen_at 갱신(주기 확인 없음)
 ```
+
+- **갱신** — 보내기에 응답을 받을 때(`Node::send`) · 페어링된 상대의 대화 요청 · `Ping` 을 받을 때 `peers::touch`(10초 안에 이미 적었으면 쓰지
+  않는다). `focus` 는 `Pong` · 집중 거절 때만 바뀐다. 유휴 상태에서는 피어 연결이 생기지 않는다.
+- **화면 확인** — 웹UI 를 열 때 페어링된 상대 모두 · 레일 타일을 고를 때 그 상대 · 연결 목록 "연결 확인" 이 `POST /api/peers/{id}/ping` →
+  `Node::refresh(id, 60)`(마지막 통신이 60초 안이면 보내지 않고 저장된 값). 대가: 상대가 집중을 바꾼 것은 60초 안에는 바로 보이지 않을 수 있다.
+- **표시** — 피어 JSON `seen_at`(유닉스 초) · `online`(75초 안) · `focus`(온라인일 때만). 화면이 직접 센다: "방금 통신"(75초 안) · "n분 전 통신" ·
+  "n시간 전 통신" · "n일 전 통신" · "통신 기록 없음". 방금 통신했을 때만 점이 켜지고 집중이면 "집중 중 · 방금 통신". 오래 통신이 없던 상대는
+  켜져 있어도 "n분 전 통신" 이다 — 보내기는 보관되므로 표시가 보내기를 막지 않는다.
+- 바뀐 포트 · IP 따라가기(#1b)는 시작 알림의 `Ping.port` 로 — 이 PC 가 다시 켜질 때 상대가 새 주소를 받는다.
 
 ## 9. 보안 경계 요약
 
 | 경계 | 막는 것 | 장치 |
 |---|---|---|
-| 브라우저 ↔ 로컬 서버 | 다른 사이트 · DNS rebinding | 127.0.0.1 · 실행마다 토큰 · 쿠키 HttpOnly · SameSite=Strict · Host · Origin 검사(D9) |
+| 브라우저 ↔ 로컬 서버 | 다른 사이트 · DNS rebinding · 같은 PC 의 다른 포트 · 클릭재킹 | 127.0.0.1 · 실행마다 토큰 · 탭 메모리 + `Authorization: Bearer`(쿠키 없음) · Host · Origin 검사 · 모든 응답 CSP(`frame-ancestors 'none'`) · `X-Frame-Options: DENY` · `nosniff` · `no-referrer`(D9 · 1a) |
+| 데이터 폴더 | 같은 PC 의 다른 주체(샌드박스 · 서비스 계정) | 소유자 전용 권한(7.1). 같은 사용자 권한 프로세스는 막지 않는다(한 PC 한 사용자 전제 — 1a) |
 | CLI ↔ 로컬 서버 | 토큰 없는 호출 | `instance.json` 토큰(Bearer). 같은 OS 사용자의 로컬 프로세스는 부를 수 있다 — 웹UI 와 같은 신뢰 경계(위험 수용, #16) |
-| PC ↔ PC | 미페어링 · 사칭 · 도청 | TLS 1.3 상호 인증(ed25519 공개키 고정), 페어링된 키만 대화 요청, 수신 3초 · 동시 32 · IP 당 4 · 미승인 32. 상대 주소가 사내망인지는 검사하지 않는다(`0.0.0.0` 수신 · 아무 주소로 발신) — 사내망 전제 |
+| PC ↔ PC | 미페어링 · 사칭 · 도청 · 초대 코드 추측 | TLS 1.3 상호 인증(ed25519 공개키 고정), 페어링된 키만 대화 요청(id 는 UUID 꼴만 — 아니면 `invalid`), 수신 3초 · 동시 32 · IP 당 4 · 미승인 32 · 한 창에서 IP 당 틀린 초대 코드 10회(넘으면 그 창 동안 거절) · 원격 이름의 제어 · 서식 문자(Cf) 제거. 상대 주소가 사내망인지는 검사하지 않는다(`0.0.0.0` 수신 · 아무 주소로 발신) — 사내망 전제 |
 | 원격 글 → 화면 | 스크립트 주입 | `textContent` 로만 그림 · markdown sanitize · HTML 은 sandbox iframe |
-| 원격 글 → `claude` | 수신 PC 작업 개입 | 표준 입력만 · 가드 프롬프트(D31) · 읽기 전용 도구 · 제한 옵션(D22) · 30분 상한 |
+| 원격 글 → `claude` | 수신 PC 작업 개입 · 비밀 읽기 · 틀 위장 | 표준 입력만 · 늘 구분자 틀(6.5) · 가드 프롬프트(D31) · 읽기 전용 도구 · `--restricted`(작업 폴더 밖 Read · Grep · Glob · junction 거부, 프로젝트 · 사용자 설정의 훅 · 스킬 미적용 — 2.1.296 실측) · 데이터 폴더를 품는 에이전트 폴더 거부(등록 · 수정 · 실행 직전) · 30분 상한 |
+| 실패 → 상대 | 경로 · 계정 · 버전 노출 | 상대에게는 정해진 실패 문구만(6.6), 원인은 내 쪽 글 · 로그 |
+| 처리경과 → 상대 | 도구 입력 · 파일 경로 · 모델 글 노출 | 단계 요약은 턴 · 도구 이름별 횟수 · 초만(`count_step` 은 입력 · 내용을 읽지 않음), 받은 쪽은 이름을 `clean_name` · 24자 · 16개로(8.2) |
+| 실행 파일 | DLL 심기 | 정적 C 런타임(`+crt-static`) · DependentLoadFlags 0x800 · `SetDefaultDllDirectories(System32)` |
 | 자격 증명 | 토큰 수집 · 중개 | coworkAgent 는 Claude 자격 증명을 읽거나 저장하지 않는다 — `claude` 가 그 PC 의 로그인을 스스로 쓴다 |
 | 답 생성 → 모델 서비스 | (막지 않음) | `claude -p` 가 질문 · 맥락 · 도구가 읽은 파일 내용을 그 PC 의 Claude 모델 서비스로 보낸다 — 사내망 밖 전송, 보존 · 처리는 그 PC 의 Claude 계정 정책 |
 
@@ -458,13 +609,31 @@ sequenceDiagram
 (D24 개정) · 초대 메시지가 새면 5분 창 안에서 제3자가 등록된다(D8 개정) · 수신 포트를 인터넷에 열면 사내망 밖에서도 붙는다(LAN 검사 없음) ·
 답을 만들 때 질문 · 읽은 파일 내용이 Claude 모델 서비스(사내망 밖)로 나간다.
 
+**보안 회귀 검사(개발 PC)**
+
+```powershell
+# --restricted 가 여전히 작업 폴더 밖 읽기 · 프로젝트 훅을 막는지(실제 claude · 사용량 조금) — Claude Code 를 올린 뒤
+cargo test -p an-agent --test restricted_canary -- --ignored --nocapture   # canary leak=0 denied=1 hook=0 control_hook=1
+# 릴리스 exe 가 VCRUNTIME 을 가져오지 않는지 · DependentLoadFlags
+python tools/pe_imports.py target/release/coworkAgent.exe                   # vcruntime=0 dependent_load_flag=0x800
+```
+
+- `.cargo/config.toml` 의 `rustflags` 는 환경 변수 `RUSTFLAGS` · `CARGO_ENCODED_RUSTFLAGS` 가 있으면 **통째로 무시된다** — 릴리스를 만든 뒤 위
+  `pe_imports.py` 로 확인한다.
+
 ## 10. 디버깅 · 운영
 
 - **로그** `logs\coworkAgent.log` — "시작 — 127.0.0.1:{port}" · "피어 수신 0.0.0.0:{port} · 지문 …" · "남은 대화 대기열 N건 복구" · 답
-  전달 실패 등. 비밀키 · 초대 코드는 싣지 않는다.
-- **실행 실패 원문**은 답 본문("실행 실패: …")에 있다 — `claude` 의 종료 상태 · stderr 를 포함한다.
+  전달 실패 · "상대 {id} 에 {n}초 동안 닿지 않아 보내기 포기 — {k}건" · "CLI 트랜잭션 {id} — 상대에 {n}초 닿지 않아 멈춤" 등. 비밀키 · 초대 코드는 싣지 않는다.
+- **보관 · 트랜잭션 들여다보기** — `SELECT id, peer_id, kind, state, tries, waited, next_at, last_error FROM outbox;` ·
+  `SELECT * FROM cli_tx ORDER BY id DESC LIMIT 5;`(7.6 처럼 읽기 전용으로).
+- **실행 실패 원문**은 **답하는 PC** 의 답 본문("실행 실패: …")에 있다 — `claude` 의 종료 상태 · stderr 를 포함한다. 묻는 PC 에는 정해진
+  문구만 간다(6.6).
 - **세션 추적** — DB `conversations.session` · `agent_sessions.session` → 7.6 으로 Claude Code 기록 파일을 찾는다.
-- **포트** — 피어 수신이 47100 을 못 잡으면 임의 포트로 뜬다. 지금 값은 웹UI 설정 → 내 정보 "수신 주소" 와 로그.
+- **포트** — 피어 수신이 47100 을 못 잡으면 임의 포트로 뜨고 잡은 프로세스(이름 · PID)를 로그 · 트레이 툴팁 · 웹UI 설정 → 내 정보
+  "피어 포트" 에 보인다(`/api/me` 의 `peer_port_*` · `open_connections`). 페어링된 상대는 시작 알림(`announce`) `Ping` 의 `port` 로 새 주소를 따라온다(8.8). 강제 종료 뒤
+  포트 풀림 · 남은 `instance.json` 으로 다시 띄우기는 `python tools/port_check.py`(떠 있는 앱을 강제 종료한다 · `--occupy` 는 47100 을 먼저 잡고
+  잡은 프로세스 표시를 잰다).
 - **두 번째 실행이 아무것도 안 하는 것 같다** — 핸드오프로 기존 인스턴스의 브라우저 열기를 부르고 끝난 것이다. 옛 빌드가 떠 있으면
   새 빌드를 실행해도 옛 인스턴스가 응답한다 — 트레이 "종료" 후 새 빌드를 실행한다.
 
@@ -472,5 +641,5 @@ sequenceDiagram
 
 - 모듈 계약: [an_core](an_core.md) · [an_net](an_net.md) · [an_agent](an_agent.md) · [an_app](an_app.md)
 - 결정 · 명세: [masterPlan](../../masterPlan.md) — D3(단일 실행 파일 서버 · 클라이언트) · D9(로컬 웹UI) · D15(저장 경로) · D16(`claude -p`) ·
-  D19(이어서 작업 · 멘션 세션) · D22 · D31(실행 권한 · 문의 응답 전용) · D24(자동 왕복 · 시간 제한) · D17(집중)
+  D19(이어서 작업 · 멘션 세션) · D22 · D31(실행 권한 · 문의 응답 전용) · D24(자동 왕복 · 시간 제한) · D17(집중) · D7(피어 연결 · 오프라인 상대 보관 · 재전송) · D14(CLI)
 - 제품 규칙 정본: 루트 `PRODUCT.md` "도메인 규칙" · 미조치: [원장](../../overview/ledger.md)

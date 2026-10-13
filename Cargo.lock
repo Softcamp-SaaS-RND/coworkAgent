@@ -30,6 +30,7 @@ dependencies = [
  "dirs",
  "log",
  "rusqlite",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -278,6 +279,7 @@ dependencies = [
  "embed-resource",
  "futures-util",
  "getrandom 0.4.3",
+ "libc",
  "log",
  "serde",
  "serde_json",

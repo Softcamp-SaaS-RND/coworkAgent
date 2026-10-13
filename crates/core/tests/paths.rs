@@ -39,7 +39,7 @@ fn db_schema_version_kept_on_reopen() {
     let root = temp_root("dbver");
     let paths = Paths::under(&root);
     paths.ensure().unwrap();
-    assert_eq!(db::SCHEMA_VERSION, 12);
+    assert_eq!(db::SCHEMA_VERSION, 13);
     {
         // 00 이 남긴 스키마 1 파일 — 열면 2 로 오른다.
         let conn = rusqlite::Connection::open(paths.db_file()).unwrap();
@@ -47,13 +47,13 @@ fn db_schema_version_kept_on_reopen() {
     }
     {
         let conn = db::open(&paths.db_file()).unwrap();
-        assert_eq!(db::user_version(&conn).unwrap(), 12);
+        assert_eq!(db::user_version(&conn).unwrap(), 13);
         assert!(an_core::peers::list(&conn).unwrap().is_empty());
         assert_eq!(an_core::settings::get(&conn, "x").unwrap(), None);
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 12);
-    conn.pragma_update(None, "user_version", 13).unwrap();
+    assert_eq!(db::user_version(&conn).unwrap(), 13);
+    conn.pragma_update(None, "user_version", 14).unwrap();
     drop(conn);
     assert!(
         db::open(&paths.db_file()).is_err(),
@@ -75,7 +75,7 @@ fn schema5_migration_survives_partial_state() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 12);
+    assert_eq!(db::user_version(&conn).unwrap(), 13);
     let cols: Vec<String> = conn
         .prepare("SELECT name FROM pragma_table_info('messages')")
         .unwrap()
@@ -137,7 +137,7 @@ fn schema6_fills_mine_exec() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 12);
+    assert_eq!(db::user_version(&conn).unwrap(), 13);
     let flags = |conv| -> Vec<(bool, bool)> {
         an_core::chat::messages(&conn, conv)
             .unwrap()
@@ -165,7 +165,7 @@ fn schema7_relay_columns() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 12);
+    assert_eq!(db::user_version(&conn).unwrap(), 13);
     let c = an_core::chat::by_id(&conn, 1).unwrap().unwrap();
     assert_eq!(
         (c.relay, c.relay_blocked),
@@ -209,7 +209,7 @@ fn schema8_via_column() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 12);
+    assert_eq!(db::user_version(&conn).unwrap(), 13);
     assert_eq!(
         an_core::chat::messages(&conn, 1).unwrap()[0].via,
         None,
@@ -238,7 +238,7 @@ fn schema9_group_model_columns() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 12);
+    assert_eq!(db::user_version(&conn).unwrap(), 13);
     assert!(
         db::backup_path(&paths.db_file(), 8).exists(),
         "올리기 전 사본"
@@ -308,7 +308,7 @@ fn schema10_title_alias_icon() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 12);
+    assert_eq!(db::user_version(&conn).unwrap(), 13);
     assert!(
         db::backup_path(&paths.db_file(), 9).exists(),
         "올리기 전 사본"
@@ -476,7 +476,7 @@ fn schema12_focus_mention() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 12);
+    assert_eq!(db::user_version(&conn).unwrap(), 13);
     assert!(
         db::backup_path(&paths.db_file(), 11).exists(),
         "올리기 전 사본"

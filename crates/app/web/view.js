@@ -348,16 +348,82 @@ export function profileMenu(paused, focus) {
   ];
 }
 
-/// 상대 접속 상태(`GET /api/peers` 의 `online` · `focus`) — 레일 점 · 사이드바 머리 · 대화 머리글. 오프라인이면 집중은 보이지 않는다.
-export function presence(p) {
-  if (!p?.online) return { key: "offline", text: "오프라인" };
-  return p.focus ? { key: "focus", text: "집중 중" } : { key: "online", text: "온라인" };
+/// 상대 접속 상태(`GET /api/peers` 의 `seen_at` · `focus`, #1c — 통신할 때만 갱신) — 레일 점 · 사이드바 머리 · 대화 머리글. "방금 통신"(75초 안) ·
+/// "n분 · n시간 · n일 전 통신" · "통신 기록 없음". 방금 통신했을 때만 점이 켜지고 집중이 앞에 붙는다.
+export function presence(p, now = Math.floor(Date.now() / 1000)) {
+  const at = p?.seen_at;
+  if (at == null) return { key: "offline", text: "통신 기록 없음" };
+  const ago = Math.max(0, now - at);
+  const when =
+    ago < 75
+      ? "방금 통신"
+      : ago < 3600
+        ? `${Math.floor(ago / 60)}분 전 통신`
+        : ago < 86400
+          ? `${Math.floor(ago / 3600)}시간 전 통신`
+          : `${Math.floor(ago / 86400)}일 전 통신`;
+  if (ago >= 75) return { key: "offline", text: when };
+  return p.focus ? { key: "focus", text: `집중 중 · ${when}` } : { key: "online", text: when };
 }
 
 /// 상대가 거절한 내 글의 사유(`refused`) — 실패 상태일 때만. 집중이면 "상대가 집중 중", 그 밖은 코드 그대로.
 export function refusedText(m) {
   if (!m.refused || m.state !== "error") return "";
+  if (m.refused === "unreachable") return "보내지 못함 — 상대에 오래 닿지 않았다(다시 보내기로 다시 보낼 수 있다)";
   return m.refused === "focus" ? "상대가 집중 중" : `상대가 거절(${m.refused})`;
+}
+
+/// 상대가 알려 준 내 실행 요청의 차례(`progress`) — 답을 기다리는(`sent`) 글만. 대기면 앞 사람 수, 실행이 시작되면 "처리 중".
+export function progressText(m) {
+  if (m.state !== "sent" || !m.progress) return "";
+  if (m.progress.state === "queued") return `상대 PC 에 처리 중인 작업이 많아 응답을 기다립니다(앞에 ${m.progress.ahead}건)`;
+  if (m.progress.state !== "running") return "";
+  const step = stepText(m.progress.detail);
+  return step ? `처리 중 — ${step}` : "처리 중";
+}
+
+/// 실행 중 단계 요약(#1c) — `{turns, tools: {이름: 횟수}, secs}` → "2턴 · Read 3 · Grep 1 · 41초"(없는 값은 뺀다).
+export function stepText(d) {
+  if (!d) return "";
+  const tools = Object.entries(d.tools ?? {}).map(([name, n]) => `${name} ${n}`);
+  return [d.turns ? `${d.turns}턴` : "", ...tools, d.secs ? `${d.secs}초` : ""].filter(Boolean).join(" · ");
+}
+
+/// 보관 중인 내 글(#1c — 상대에 아직 닿지 않음). 포기한 글은 거절 사유(`refusedText`)가 말한다.
+export function outboxText(m) {
+  const o = m.outbox;
+  if (!o || o.state === "failed") return "";
+  return o.tries > 0 ? `보내는 중 — 상대에 닿지 않아 다시 보냄(${o.tries}회)` : "보내는 중";
+}
+
+/// 대화 글 서명 — 바뀐 것이 없으면 다시 그리지 않는다(HTML 본문 · 스크롤 상태가 5초마다 풀리지 않게). 상대 표시 이름 · 요청 완료 · 거절 사유 ·
+/// 상대가 알려 준 진행(대기 · 앞 사람 수 · 처리 중 — 글 상태는 `sent` 그대로)이 바뀌면 다시. 저장 여부는 넣지 않는다 — 저장 단추가 그 글자만 바꾼다.
+export function messagesSigOf(peerName, ms) {
+  return [peerName, ...ms.map((m) => `${m.id}:${m.state}:${m.text.length}:${m.done ? 1 : 0}:${m.refused ?? ""}:${progressText(m)}:${outboxText(m)}`)].join(",");
+}
+
+/// 이 PC 실행 문(`GET /api/runs`) → 실행 상세 '이 PC 실행' 머리 문구 · 줄(실행 중 먼저, 닿은 순서). 줄 = `{label, text, href}` — 누르면 그 대화.
+export function runsSummary(r) {
+  const row = (x, label) => ({
+    label: `${label} · ${x.peer ?? "알 수 없는 상대"}/${x.agent ?? "에이전트"}`,
+    text: x.text ?? "",
+    href: x.conversation_id != null ? `#c/${x.conversation_id}` : "",
+  });
+  return {
+    title: `이 PC 실행 — 실행 중 ${r.running.length} · 대기 ${r.waiting.length}`,
+    rows: [...r.running.map((x) => row(x, "실행 중")), ...r.waiting.map((x, i) => row(x, `대기 ${i + 1}`))],
+  };
+}
+
+/// 내 정보 포트 줄(`GET /api/me`) — 웹UI 포트 · 피어 포트(고정 | 임의 — 잡은 프로세스) · 열린 피어 연결 수.
+export function portText(me) {
+  const holder = me.peer_port_holder;
+  const peer = me.peer_port_fixed
+    ? `${me.port}(고정)`
+    : holder
+      ? `${me.port}(임의 — 47100 사용 중: ${holder.name}, PID ${holder.pid})`
+      : `${me.port}(임의)`;
+  return { ui: me.ui_port != null ? String(me.ui_port) : "알 수 없음", peer, conns: String(me.open_connections ?? 0) };
 }
 
 /// 입력 중인 멘션 — 커서(`caret`) 바로 앞이 `@…`(앞이 글 머리 · 공백, 그 뒤에 공백 없음)면 `{start: @ 자리, query: @ 뒤 글자}`, 아니면 `null`.
@@ -497,19 +563,19 @@ export function enterSends(ev) {
 }
 
 /// 실행 상세 '진행' — 고른 요청(`timeline()` 항목)의 단계: 요청 → 대기열 → 실행 → 응답, 단계 상태 = done · now · wait · fail. 대기 시작 · 끝 시각은
-/// 남지 않아 시각은 요청 · 응답 때만(HH:MM:SS). 보낸 쪽은 상대의 대기 · 실행을 모르므로(상태 프레임 없음) 답이 오기 전까지 대기열에 둔다.
+/// 남지 않아 시각은 요청 · 응답 때만(HH:MM:SS). 보낸 쪽은 상대가 알려 준 진행(`progress`)으로 대기 · 실행을 가른다(없으면 답이 오기 전까지 대기열).
 /// 실행 줄 = 답의 `{model} · {effort} · {n}턴 · {시간}`(없는 값은 뺀다). 상대가 보낸 요청이면 "요청 받음" · "응답 보냄".
 export function runSteps({ request, reply }) {
   const mine = request.mine !== false;
   const failed = reply ? reply.state === "error" : request.state === "error";
   const done = reply != null && !failed;
-  const running = !reply && request.state === "running";
+  const running = !reply && (request.state === "running" || (request.state === "sent" && request.progress?.state === "running"));
   const meta = reply
     ? [reply.model, reply.effort, reply.turns != null ? `${reply.turns}턴` : "", formatDuration(reply.duration_ms)].filter(Boolean).join(" · ")
     : "";
   return [
     { key: "request", title: mine ? "요청 보냄" : "요청 받음", at: formatClock(request.created_at), state: "done" },
-    { key: "queue", title: "대기열", at: "", state: reply || running || failed ? "done" : "now" },
+    { key: "queue", title: "대기열", at: "", state: reply || running || failed ? "done" : "now", meta: progressText(request) },
     {
       key: "run",
       title: failed ? "실패" : done ? "실행 완료" : running ? "실행 중" : "실행",
@@ -669,3 +735,14 @@ export function markdownBlocks(text) {
 export const READ_ONLY_TOOLS = ["Read", "Grep", "Glob", "LS", "NotebookRead"];
 /// `claude --effort` 값(an_core `run_opts::EFFORTS` 와 같다).
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+
+/// 탭 메모리 토큰(1a — 쿠키 없음). 주소의 `t`(64 hex)가 있으면 그것, 없으면 탭에 저장된 값. `clean` = 주소창에서 `t` 를 지울지.
+export function entryToken(search, stored) {
+  const hex = (t) => typeof t === "string" && /^[0-9a-f]{64}$/.test(t);
+  const t = new URLSearchParams(search ?? "").get("t");
+  if (hex(t)) return { token: t, clean: true };
+  return { token: hex(stored) ? stored : null, clean: t !== null };
+}
+
+/// 토큰이 없거나 거절됐을 때 화면 위 안내.
+export const DISCONNECTED = "연결이 끊겼습니다 — 트레이 아이콘 메뉴 '열기' 로 다시 여세요";

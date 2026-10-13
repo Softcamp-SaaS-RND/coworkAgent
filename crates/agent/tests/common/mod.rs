@@ -30,7 +30,7 @@ pub fn fake_run(runs: Arc<Mutex<Vec<RunInput>>>, delay: Duration) -> Run {
             Session::New(id) | Session::Resume(id) => id.clone(),
         };
         Ok(RunOutput {
-            text: format!("답: {}", input.text),
+            text: format!("답: {}", body(&input.text)),
             session,
             is_error: input.text.contains("실패하라"),
             turns: Some(2),
@@ -39,7 +39,20 @@ pub fn fake_run(runs: Arc<Mutex<Vec<RunInput>>>, delay: Duration) -> Run {
     })
 }
 
+/// 실행 입력의 원격 본문(`<원격 본문>` 구분자 안) — 대역이 본문만 되돌려 기존 단정("답: 안녕")을 지킨다.
+pub fn body(prompt: &str) -> &str {
+    prompt
+        .rsplit_once("<원격 본문>\n")
+        .and_then(|(_, r)| r.strip_suffix("\n</원격 본문>"))
+        .unwrap_or(prompt)
+}
+
 pub async fn side(tag: &str, delay: Duration) -> Side {
+    side_with(tag, |runs| fake_run(runs, delay)).await
+}
+
+/// `side` + 실행기를 고른다(`runs` 에 입력을 모으는 것은 실행기 몫).
+pub async fn side_with(tag: &str, make: impl FnOnce(Arc<Mutex<Vec<RunInput>>>) -> Run) -> Side {
     let root = std::env::temp_dir().join(format!("an-agent-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let paths = Paths::under(&root);
@@ -62,7 +75,7 @@ pub async fn side(tag: &str, delay: Duration) -> Side {
     let chat = Chat::new(
         db::open(&paths.db_file()).unwrap(),
         node.clone(),
-        fake_run(runs.clone(), delay),
+        make(runs.clone()),
     );
     chat.attach();
     tokio::spawn(node.clone().serve(listener));

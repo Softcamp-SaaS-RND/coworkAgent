@@ -2,6 +2,8 @@
 // 에이전트) · 메인(대화 / 보낸 메시지 · 내 활동 · 저장된 항목 · 에이전트 · 설정 트리) · 실행 상세. 값은 textContent 로만 넣는다(HTML 주입
 // 없음) — 원격에서 온 이름 · 본문도 같다. HTML 문서 본문만 sandbox iframe(srcdoc · CSP)으로. 판단 로직은 view.js(node 테스트).
 import {
+  entryToken,
+  DISCONNECTED,
   stateText,
   peerState,
   convLabel,
@@ -41,6 +43,11 @@ import {
   lastRun,
   presence,
   refusedText,
+  progressText,
+  outboxText,
+  runsSummary,
+  portText,
+  messagesSigOf,
   askTag,
   mentionQuery,
   mentionTarget,
@@ -53,14 +60,32 @@ import {
 
 const $ = (id) => document.getElementById(id);
 
+// 탭 메모리 토큰 — 트레이 "열기" 가 준 `/?t=` 를 가져가고 주소창에서 지운다(쿠키 없음: 쿠키는 포트를 가리지 않는다).
+const TOKEN_KEY = "an_token";
+const entry = entryToken(location.search, sessionStorage.getItem(TOKEN_KEY));
+if (entry.clean) history.replaceState(null, "", "/" + location.hash);
+if (entry.token) sessionStorage.setItem(TOKEN_KEY, entry.token);
+const token = entry.token;
+
+/// 토큰이 없거나 거절됨 — 화면 위에 다시 열기 안내(한 번만).
+function disconnected() {
+  if ($("disconnected")) return;
+  document.body.prepend(el("div", { id: "disconnected", class: "disconnected", role: "alert", text: DISCONNECTED }));
+}
+if (!token) {
+  disconnected();
+  throw new Error("토큰 없음");
+}
+
 /// JSON 을 받거나, 실패 사유를 담은 Error 를 던진다.
 async function api(method, path, body) {
-  const init = { method, headers: {} };
+  const init = { method, headers: { Authorization: `Bearer ${token}` } };
   if (body !== undefined) {
     init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(body);
   }
   const res = await fetch(path, init);
+  if (res.status === 401) disconnected();
   const text = await res.text();
   let data = null;
   try {
@@ -205,9 +230,13 @@ async function showMe() {
     $("me_host").textContent = me.host;
     $("me_fingerprint").textContent = me.fingerprint;
     $("me_addrs").textContent = me.addrs.length ? me.addrs.join(", ") : "포트 " + me.port;
+    const ports = portText(me);
+    $("me_ui_port").textContent = ports.ui;
+    $("me_peer_port").textContent = ports.peer;
+    $("me_conns").textContent = ports.conns;
     renderSideHead();
   } catch (e) {
-    for (const id of ["me_name", "me_host", "me_fingerprint", "me_addrs", "side_name"]) $(id).textContent = "오류: " + e.message;
+    for (const id of ["me_name", "me_host", "me_fingerprint", "me_addrs", "me_ui_port", "me_peer_port", "me_conns", "side_name"]) $(id).textContent = "오류: " + e.message;
   }
 }
 
@@ -253,7 +282,7 @@ function renderRail() {
     closeTileEdit(); // 그 상대에 묶인 편집
   }
   const unread = unreadByPeer(state.convs);
-  const sig = [state.railPeer, state.settings.me_alias, state.settings.me_icon, paired.map((p) => [p.id, displayName(p), p.host, p.icon, unread.get(p.id) ?? 0, p.online, p.focus])];
+  const sig = [state.railPeer, state.settings.me_alias, state.settings.me_icon, paired.map((p) => [p.id, displayName(p), p.host, p.icon, unread.get(p.id) ?? 0, presence(p).text])];
   if (unchanged($("rail"), JSON.stringify(sig))) return;
   const me = $("rail_me");
   me.setAttribute("aria-pressed", String(state.railPeer == null));
@@ -281,6 +310,12 @@ function renderRail() {
 }
 
 /// 레일 선택 — 다른 PC 를 고르면 열린 대화를 놓는다(입력창이 이전 상대를 가리킨 채 남지 않게). 화면 이동은 부른 쪽이.
+/// 상대 연결 확인 — 끝나면 접속 상태를 다시 읽는다(실패는 조용히 — 표시가 "n분 전 통신" 으로 남는다).
+function pingPeers(ids) {
+  if (!ids.length) return;
+  Promise.allSettled(ids.map((id) => api("POST", `/api/peers/${id}/ping`))).then(() => loadPeers());
+}
+
 function pickRail(id) {
   const changed = state.railPeer !== id;
   if (changed) closeTileEdit();
@@ -292,6 +327,8 @@ function pickRail(id) {
   if (changed) state.unseen = 0; // 새 범위의 수는 곧 다시 읽는다
   renderSideNav();
   if (id != null && !state.peerAgents.has(id) && state.peers.some((x) => x.id === id && x.paired)) loadPeerAgents(id);
+  // 그 상대 연결 확인(#1c — 주기 확인 없음, 60초 안에 통신했으면 서버가 보내지 않는다).
+  if (changed && id != null) pingPeers([id]);
   renderSideAgents();
   if (changed) loadCounts();
 }
@@ -892,6 +929,48 @@ function showDetail() {
   $("detail").hidden = !(state.detailOpen && !$("conversation").hidden);
   $("detail_btn").setAttribute("aria-pressed", String(state.detailOpen));
   renderDetail();
+  if (!$("detail").hidden) loadRuns();
+}
+
+/// 이 PC 실행 문(`GET /api/runs`) — 실행 상세가 열려 있을 때만 읽는다(새로 고침 주기).
+async function loadRuns() {
+  try {
+    state.runs = await api("GET", "/api/runs");
+  } catch (e) {
+    state.runs = null;
+    $("status_msg").textContent = "실행 목록 오류: " + e.message;
+  }
+  renderRuns();
+}
+
+function renderRuns() {
+  const r = state.runs ? runsSummary(state.runs) : null;
+  $("detail_runs_title").textContent = r ? r.title : "이 PC 실행";
+  if (unchanged($("detail_runs"), JSON.stringify(r))) return;
+  $("detail_runs").replaceChildren(
+    ...(!r
+      ? [el("li", { class: "hint", text: "불러오는 중 …" })]
+      : r.rows.length
+        ? r.rows.map((x) =>
+            el(
+              "li",
+              {},
+              el(
+                "a",
+                {
+                  href: x.href || "#",
+                  onclick: (ev) => {
+                    ev.preventDefault();
+                    if (x.href) go(x.href);
+                  },
+                },
+                el("span", { class: "sub", text: x.label }),
+                el("span", { class: "text", text: preview(x.text) }),
+              ),
+            ),
+          )
+        : [el("li", { class: "hint", text: "실행 · 대기 없음" })]),
+  );
 }
 
 /// 그린 뒤 초점 — 메뉴로 온 화면의 첫 칸(접힌 `<details>` 안이면 편다).
@@ -995,7 +1074,9 @@ function messageEl(conv, m) {
   const who = authorLabel(conv, m, state.peerNames.get(conv.peer_id));
   const running = m.state === "running";
   const meta = [formatTime(m.created_at)];
-  if (m.state !== "done" && !running) meta.push(stateText(m.state));
+  const progress = outboxText(m) || progressText(m);
+  if (progress) meta.push(progress);
+  else if (m.state !== "done" && !running) meta.push(stateText(m.state));
   meta.push(refusedText(m));
   if (m.author === "agent" && (m.turns != null || m.duration_ms != null)) {
     meta.push([m.turns != null ? `${m.turns}턴` : "", formatDuration(m.duration_ms)].filter(Boolean).join(" · "));
@@ -1082,10 +1163,8 @@ function messageAct(m, key) {
   }
 }
 
-/// 대화 글 서명 — 바뀐 것이 없으면 다시 그리지 않는다(HTML 본문 · 스크롤 상태가 5초마다 풀리지 않게). 상대 표시 이름 · 요청 완료 · 거절 사유가
-/// 바뀌면 다시. 저장 여부는 넣지 않는다 — 저장 단추가 그 글자만 바꾼다.
 function messagesSig(conv, ms) {
-  return [state.peerNames.get(conv.peer_id), ...ms.map((m) => `${m.id}:${m.state}:${m.text.length}:${m.done ? 1 : 0}:${m.refused ?? ""}`)].join(",");
+  return messagesSigOf(state.peerNames.get(conv.peer_id), ms);
 }
 
 /// 그 글로 — 가운데로 스크롤해 잠깐 강조하고 실행 상세의 '진행' 을 그 요청으로(`#c/{대화}/m/{글}`).
@@ -1876,6 +1955,26 @@ for (const key of PREFS) {
   });
 }
 
+// 동시 실행 상한 — 설정 저장소가 아니라 실행 문(`PUT /api/runs`)에. 실패하면 서버 값으로 되돌린다.
+$("max_runs").addEventListener("change", () => {
+  const input = $("max_runs");
+  input.disabled = true;
+  act("동시 실행 상한", async () => {
+    try {
+      const r = await api("PUT", "/api/runs", { cap: Number(input.value) });
+      input.value = String(r.cap);
+      state.runs = r;
+      renderRuns();
+      return `동시 실행 상한 ${r.cap}`;
+    } catch (e) {
+      input.value = String((await api("GET", "/api/runs").catch(() => ({ cap: "" }))).cap);
+      throw e;
+    } finally {
+      input.disabled = false;
+    }
+  });
+});
+
 async function showSettings() {
   const box = $("notify_inbound");
   try {
@@ -1884,6 +1983,7 @@ async function showSettings() {
     fillPrefs(s);
     // 폭은 시작할 때만 — 다른 설정 저장 응답(fillPrefs)이 막 끈 폭을 이전 값으로 되돌리지 않게.
     setSideWidth(s.ui_side_width ?? 272);
+    $("max_runs").value = String((await api("GET", "/api/runs")).cap);
   } catch (e) {
     $("status_msg").textContent = "설정 오류: " + e.message;
   }
@@ -1930,6 +2030,8 @@ async function refresh() {
   if (r.view === "activity") await loadActivity();
   if (r.view === "saved") await loadSaved();
   if (r.view === "peer") await loadPeerMessages(r.id);
+  if (!$("detail").hidden) await loadRuns();
+  if (r.view === "settings") await showMe(); // 열린 피어 연결 수
   await loadCounts();
 }
 
@@ -1938,7 +2040,7 @@ const PAIRING_KINDS = new Set(["pair_request", "auto_paired", "approved"]);
 
 /// 서버 → 웹UI 알림 스트림. 붙는 순간 트레이 "새 요청" 이 지워진다. 원격 이름은 텍스트로만(브라우저 알림 본문도 텍스트).
 function listen() {
-  const es = new EventSource("/api/events");
+  const es = new EventSource(`/api/events?t=${encodeURIComponent(token)}`);
   // 붙은 뒤 "봤다" 를 알린다(트레이 새 요청 지움) — 상태 변경은 POST 로만.
   es.onopen = () => api("POST", "/api/seen").catch(() => {});
   es.onmessage = (ev) => {
@@ -2228,6 +2330,8 @@ renderTree();
 window.addEventListener("hashchange", render);
 await showSettings(); // 테마 · 기본값을 먼저 — 연결 목록의 "기본값(…)" 문구가 쓴다
 await Promise.all([showStatus(), showMe(), loadPeers(), loadAgents(), loadConvs()]);
+// 웹UI 를 열 때 페어링된 상대 연결 확인 한 번(#1c).
+pingPeers(state.peers.filter((p) => p.paired).map((p) => p.id));
 await render();
 await loadCounts();
 listen();

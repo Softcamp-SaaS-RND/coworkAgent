@@ -46,7 +46,7 @@ async fn web(node: Arc<Node>) -> (u16, (&'static str, String)) {
         peers_api::routes(node),
     );
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    (port, ("Cookie", format!("{}={token}", server::COOKIE)))
+    (port, ("Authorization", format!("Bearer {token}")))
 }
 
 fn json(raw: &str) -> serde_json::Value {

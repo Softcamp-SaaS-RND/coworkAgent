@@ -1,0 +1,4 @@
+# 릴리스 exe 의 DLL 심기 방어(1a A13) — C 런타임을 정적으로(VCRUNTIME140.dll 을 실행 폴더에서 찾지 않는다) · 링커가 기록하는
+# DependentLoadFlags 0x800(LOAD_LIBRARY_SEARCH_SYSTEM32) — 정적 import DLL 을 System32 에서만.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=/DEPENDENTLOADFLAG:0x800"]

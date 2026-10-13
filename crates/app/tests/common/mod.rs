@@ -80,8 +80,10 @@ pub async fn send_body(
         .await
         .unwrap();
     s.write_all(req.as_bytes()).await.unwrap();
-    let mut out = String::new();
-    s.read_to_string(&mut out).await.unwrap();
+    // 본문이 그림(favicon)일 수 있다 — 바이트로 읽어 글자로 바꾼다.
+    let mut raw = Vec::new();
+    s.read_to_end(&mut raw).await.unwrap();
+    let out = String::from_utf8_lossy(&raw).into_owned();
     let code = out.split_whitespace().nth(1).unwrap().parse().unwrap();
     (code, out)
 }

@@ -11,5 +11,8 @@ dirs = "7.0.0"
 log = { version = "0.4.34", features = ["std"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading"] }
+
 [dev-dependencies]
 rusqlite = "0.40.2"

@@ -2,15 +2,19 @@
 
 ## 개요
 
-`an-core`(`crates/core`) — base Layer. 데이터 경로 · SQLite 열기 · 파일 로그 회전 · 단일 인스턴스 잠금 · 핸드오프 정보.
+`an-core`(`crates/core`) — base Layer. 데이터 경로 · SQLite 열기 · 파일 로그 회전 · 단일 인스턴스 잠금 · 핸드오프 정보 · 보내기 보관(outbox) ·
+CLI 트랜잭션 표.
 OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
 
 ## 공개 계약
 
 - `paths::Paths` — `legacy_root()` · `adopt_legacy(legacy)`(개명 전 이름 `LEGACY_APP_DIR` 의 데이터를 첫 실행 때 이어받음 — 옛 `instance.lock` 을 잡고 항목별로 옮김 · 옛 DB · 로그는 새 이름, 옛 앱 실행 중 · 두 루트 모두 데이터면 오류로 시작 멈춤, 다시 불러도 안전) · `default_root()`(Windows `%LOCALAPPDATA%\coworkAgent` · macOS `~/Library/Application Support/coworkAgent`) ·
-  `under(root)` · `db_file` · `log_dir` · `log_file` · `lock_file` · `instance_file` · `identity_file` · `ensure()`. 경로 API 는 루트를 인자로
-  받는다 — 환경변수 스위치 없음.
-- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(12)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
+  `under(root)` · `db_file` · `log_dir` · `log_file` · `lock_file` · `instance_file` · `identity_file` · `ensure()` · `restrict()`(#1a — 루트를 소유자
+  전용으로, 주 인스턴스가 잠금 뒤 매 시작). 경로 API 는 루트를 인자로 받는다 — 환경변수 스위치 없음. `paths::protected_roots()` ·
+  `agent_folder_problem(folder) -> Option<이유>`(데이터 루트를 품음 · 그 안 · 네트워크 경로 — 등록 · 수정 · 실행 직전) · `folder_blocked(folder, roots)`.
+- `owner_only::restrict(dir)`(#1a) — Windows 보호 DACL(토큰 사용자 SID · SYSTEM, `FILE_ALL_ACCESS`, 하위 상속) · Unix 0700.
+- `sync::lock(&Mutex<T>)`(#1a) — 오염된 잠금도 안의 값을 꺼내 계속 쓴다(warn). 원시 `.lock().expect(` 는 쓰지 않는다.
+- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(13)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
   `messages` 에 `reply_to` · `turns` · `duration_ms` — 한 트랜잭션, 있는 열은 건너뜀). 더 새 스키마면 오류. 올리기 전 `{db}.v{버전}.bak`
   사본(`db::backup_path`, `VACUUM INTO`) — 이전 실행 파일로 롤백할 때 DB 를 이 사본으로 바꿔 쓴다. → 6 `messages` 에 `mine` ·
   `exec` · `lc`(이전 이력은 방향 · id 로 채움). → 7 `conversations` 에 `relay_agent` · `relay_cap` · `relay_count` · `relay_on` ·
@@ -19,12 +23,14 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   `model` · `effort`, `peers` 에 `activity_seen_msg` · `activity_seen_event`(내 활동을 본 마지막 글 · 기록 id), `relay_events` 표(자동 왕복 시작 ·
   끝 + 내 글이 실패로 바뀐 순간 `failed` · `message_id`), 색인 `messages_by_conv` · `relay_events_by_conv` · `relay_events_by_message`(이전 대화는 다
   읽은 것 · 이전 활동은 본 것으로 채움). → 12 `messages` 에 `request` · `done_at` · `agent` · `refused`, `peers` 에 `seen_at` · `focus`,
-  `agent_sessions` 표(대화 × 에이전트 세션 — 멘션). `busy_timeout` 5초(여러 연결이 같은 파일).
+  `agent_sessions` 표(대화 × 에이전트 세션 — 멘션). → 13 `outbox` 표(보내기 보관) · 색인 `outbox_peer` · `cli_tx` 표(CLI 트랜잭션 — #1c,
+  `CREATE TABLE IF NOT EXISTS` 묶음). `busy_timeout` 5초(여러 연결이 같은 파일).
   `db::user_version(conn)`.
   `db::Connection` · `db::Error` 재노출.
 - `peers` — `Peer { id, spki, name, host, addr, my_ok, their_ok, round, group, model, effort, alias, icon, seen_at, focus }` · `paired()` ·
-  `online(now)`(마지막 `Pong` 이 `ONLINE_WITHIN` 75초 안 — 받은 시각이 지금보다 뒤면 오프라인) · `set_presence(id, focus)`(받은 시각 = 지금 — `Pong` ·
-  집중 거절 둘 다). `upsert(…, round)`(있으면 승인 초기화) ·
+  `online(now)`(마지막 통신 `seen_at` 이 `ONLINE_WITHIN` 75초 안 — 받은 시각이 지금보다 뒤면 오프라인) · `set_presence(id, focus)`(시각 = 지금 +
+  집중 — `Pong` · 집중 거절 둘 다) · `touch(conn, spki)`(#1c — 통신 성공: 그 키의 `seen_at` = 지금, 집중은 그대로, 없는 키면 아무 일도 없음. 10초
+  안에 이미 적었으면 쓰지 않는다 — 읽기로 먼저 걸러 다른 연결의 쓰기를 막지 않게) · `set_addr(id, addr)`. `upsert(…, round)`(있으면 승인 초기화) ·
   `by_spki` · `by_id` · `list` · `count_unapproved` · `set_my_ok` · `set_their_ok(spki, round)`(같은 세대 · 실제 전이만 true) ·
   `remove` · `remove_spki` · `set_meta(id, group, model, effort)` · `set_tile(id, alias, icon)`(통째로 바꿈, `None` = 지움 — 이 PC 만의 표시 ·
   실행 설정).
@@ -56,6 +62,18 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   상대 거절 코드). `set_request(id, bool)` · `set_done(id, bool)`(이미 완료면 처음 시각) · `set_agent(id, Option)` · `set_refused(id, Option)`(다시
   보내면 `None`) · `message_by_id` · `agent_session(conv, agent)` · `set_agent_session(conv, agent, session)` · `ActivityFilter::Query` · `Request`
   (상대 쪽 사람 글 — '내게 요청된 목록').
+- `outbox`(#1c — D7 보내기 보관) — 상대에게 가는 대화 프레임 1개 = 행 1개(프레임 내용은 모른다 — 직렬화된 JSON 그대로). `Item{id, peer_id, conv_id,
+  msg_id, kind, frame, key, state, tries, waited, next_at, last_error, due_in}`(`state` = `pending` · `inflight` · `failed`, `due_in` = 다음 시각까지
+  남은 초). `add(conn, peer, conv?, msg?, kind, frame, key?, state)`(`key` 가 같은 `pending` 행이 그 상대에 있으면 그 행의 프레임만 바꿈 — 마지막
+  값만) · `head(peer)`(줄 맨 앞 — `pending` · `inflight` 중 가장 오래된 것) · `has_before(conv, id, except)`(같은 대화에 앞선 행 — `except` 종류는
+  세지 않음) · `failing(peer)`(시도 1번 이상인 `pending` 이 있나 — 닿지 않고 있음) · `get` · `set_state` · `retry(id, delay, cap, error) -> 기다린
+  합`(줄로 되돌림 · `tries` +1 · 지난 시도부터 실제로 흐른 시간을 `cap` 까지만 `waited` 에 더함 · 보내는 동안 `hurry` 를 받았으면 지금 다시) ·
+  `queued_for(peer)`(기다리는 `pending` 행 — 포기 대상, 보내는 중은 빼고) · `prune_failed(days)` · `hurry(peer)`(지금 보내게 — `inflight` 는 표시만) · `fail(id, error)` · `remove` · `pending_peers()`(남은
+  `inflight` 를 `pending` 으로 되돌리고 보낼 것이 남은 상대) · `for_message(msg)`(그 글의 최근 행 — 화면 표시) · `clear_failed(msg)`.
+- `cli_tx`(#1c — CLI 트랜잭션) — `Tx{id, key, message_id, created_at, asked_at, unreachable_since, stalled_at}`. `key_ok(key)`(1 ~ 64자
+  `[A-Za-z0-9._-]`) · `create(key?, message_id)`(키 UNIQUE — 같은 키 두 번은 오류) · `by_id` · `by_key` · `by_message(message_id)` · `due(id, every)`(아직 묻지 않았거나 마지막
+  질의가 `every` 초 전) · `asked(id)` · `reached(id)`(닿지 않음 시작을 지움 — 멈춘 뒤면 그대로) · `unreachable(id, stall_after) -> 멈췄나`(처음이면
+  시작 시각, `stall_after` 초 지나면 `stalled_at`) · `resume(id)`(멈춤 · 닿지 않음 · 질의 시각을 지우고 다시 판정 — `wait`).
 - `run_opts` — 실행 옵션 · 화면 설정의 검증과 기본값 단일 지점. `DEFAULT_MODEL`(`sonnet`) · `DEFAULT_EFFORT`(`high`) · `EFFORTS` ·
   설정 키 `MODEL_KEY` · `EFFORT_KEY` · `THEME_KEY` · `SIDE_WIDTH_KEY` · `ME_ALIAS_KEY` · `ME_ICON_KEY` · `valid_model`(1 ~ 64자, `-` 로 시작 금지) ·
   `valid_effort` · `clean_group` · `clean_alias` · `clean_title` · `clean_icon`(PNG data URL) · `defaults` · `resolve(conn, peer)`(상대 덮어쓰기 →

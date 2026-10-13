@@ -319,7 +319,13 @@ async fn forged_or_duplicate_reply_refused() {
     let a_db = common::db(&a);
     common::eventually(|| agent_messages(&a_db, conv.id).len() == 1).await;
     // 페어링된 상대라도: 이미 답이 온 메시지 · 없는 메시지에 대한 답은 받지 않는다.
-    for (reply_to, msg) in [(sent.uuid.as_str(), "r2"), ("bogus", "r3")] {
+    for (reply_to, msg) in [
+        (sent.uuid.as_str(), "00000000-0000-4000-8000-0000000000e2"),
+        (
+            "00000000-0000-4000-8000-0000000000e9",
+            "00000000-0000-4000-8000-0000000000e3",
+        ),
+    ] {
         let req = Request::Reply {
             conv: conv.uuid.clone(),
             msg: msg.into(),
@@ -348,9 +354,30 @@ async fn restart_recovers_queue() {
     agents::add(&common::db(&b), "review", ".", None, "").unwrap();
     // 지난 실행에서 남은 상태: m1 은 실행 도중 종료(running), m2 는 대기(queued).
     let (a_db, b_db) = (common::db(&a), common::db(&b));
-    let ca = chat::open_conversation(&a_db, "conv-r", b_id, "review", Dir::Out).unwrap();
-    let cb = chat::open_conversation(&b_db, "conv-r", a_id, "review", Dir::In).unwrap();
-    for (uuid, text, state) in [("m1", "하나", State::Running), ("m2", "둘", State::Queued)] {
+    let ca = chat::open_conversation(
+        &a_db,
+        "00000000-0000-4000-8000-0000000000f0",
+        b_id,
+        "review",
+        Dir::Out,
+    )
+    .unwrap();
+    let cb = chat::open_conversation(
+        &b_db,
+        "00000000-0000-4000-8000-0000000000f0",
+        a_id,
+        "review",
+        Dir::In,
+    )
+    .unwrap();
+    for (uuid, text, state) in [
+        (
+            "00000000-0000-4000-8000-0000000000f1",
+            "하나",
+            State::Running,
+        ),
+        ("00000000-0000-4000-8000-0000000000f2", "둘", State::Queued),
+    ] {
         chat::add_message(&a_db, ca.id, uuid, Author::Human, text, State::Sent).unwrap();
         chat::add_message(&b_db, cb.id, uuid, Author::Human, text, state).unwrap();
     }
@@ -366,7 +393,7 @@ async fn restart_recovers_queue() {
     );
     let runs = b.runs.lock().unwrap();
     assert_eq!(runs.len(), 1);
-    assert_eq!(runs[0].text, "둘");
+    assert_eq!(common::body(&runs[0].text), "둘");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -420,18 +447,19 @@ async fn unconfirmed_delivery_keeps_waiting_for_reply() {
         (closed.to_string(), b_id),
     )
     .unwrap();
-    let err = a
+    // #1c: 오류가 아니다 — 이 PC 에 보관하고 다시 보낸다(같은 uuid 라 상대에서 한 번만 실행).
+    let (_, kept) = a
         .chat
         .send(b_id, "review", Some(conv.id), "둘")
         .await
-        .unwrap_err();
-    assert!(err.to_string().contains("전달 확인 안 됨"), "{err}");
+        .unwrap();
+    assert!(a.chat.outbox_of(&kept).is_some(), "보관");
     // 실패로 확정하지 않는다 — 상대가 받아 실행했다면 늦게 온 답을 받는다.
     let pending = chat::messages(&a_db, conv.id).unwrap().pop().unwrap();
     assert_eq!((pending.text.as_str(), pending.state), ("둘", State::Sent));
     let req = Request::Reply {
         conv: conv.uuid.clone(),
-        msg: "late".into(),
+        msg: "00000000-0000-4000-8000-0000000000b1".into(),
         reply_to: pending.uuid.clone(),
         text: "늦은 답".into(),
         ok: true,
@@ -527,7 +555,7 @@ async fn reply_without_meta_accepted() {
     let (conv, sent) = a.chat.send(b_id, "review", None, "안녕").await.unwrap();
     // 이전 버전 상대의 답 — 실행 정보 필드가 없는 프레임.
     let old = serde_json::json!({
-        "type": "reply", "conv": conv.uuid, "msg": "old-1", "reply_to": sent.uuid, "text": "옛 답", "ok": true
+        "type": "reply", "conv": conv.uuid, "msg": "00000000-0000-4000-8000-0000000000e1", "reply_to": sent.uuid, "text": "옛 답", "ok": true
     });
     let req: Request = serde_json::from_value(old).unwrap();
     let (resp, _) = b.node.send(a.addr, None, &req).await.unwrap();
@@ -576,7 +604,7 @@ async fn reply_records_model_effort_both_sides() {
     chat::add_human(
         &a_db,
         conv.id,
-        "raw-ask",
+        "00000000-0000-4000-8000-0000000000d2",
         "원시 질문",
         State::Sent,
         true,
@@ -585,8 +613,8 @@ async fn reply_records_model_effort_both_sides() {
     .unwrap();
     let req = Request::Reply {
         conv: conv.uuid.clone(),
-        msg: "raw-reply".into(),
-        reply_to: "raw-ask".into(),
+        msg: "00000000-0000-4000-8000-0000000000d1".into(),
+        reply_to: "00000000-0000-4000-8000-0000000000d2".into(),
         text: "원시 답".into(),
         ok: true,
         turns: None,
@@ -597,7 +625,9 @@ async fn reply_records_model_effort_both_sides() {
     };
     let (resp, _) = b.node.send(a.addr, None, &req).await.unwrap();
     assert_eq!(resp, Response::Ok);
-    let raw = chat::message_by_uuid(&a_db, "raw-reply").unwrap().unwrap();
+    let raw = chat::message_by_uuid(&a_db, "00000000-0000-4000-8000-0000000000d1")
+        .unwrap()
+        .unwrap();
     assert_eq!(meta(&raw), (None, None), "틀린 값은 버린다");
 }
 
@@ -792,7 +822,7 @@ async fn ask_kind_and_done_sync_both_sides() {
     assert!(am.request && !am.mine, "{am:?}");
     a.chat.mark_done(am.id, true, None).await.unwrap();
     assert!(b_msg(&bm.uuid).done_at.is_some());
-    // 쓴 쪽에 닿지 못하면 경고 — 이 PC 표시는 남고 쓴 쪽은 그대로.
+    // 쓴 쪽에 닿지 못하면 보관 — 이 PC 표시는 남고 쓴 쪽은 닿을 때 맞춰진다(#1c — 경고 없음).
     common::db(&b)
         .execute(
             "UPDATE peers SET addr = '127.0.0.1:1' WHERE id = ?1",
@@ -805,12 +835,7 @@ async fn ask_kind_and_done_sync_both_sides() {
         .await
         .unwrap();
     assert!(m.done_at.is_some(), "{m:?}");
-    assert!(
-        warning
-            .as_deref()
-            .is_some_and(|w| w.contains("상대에 알리지 못했다")),
-        "{warning:?}"
-    );
+    assert_eq!(warning, None);
     assert_eq!(a_msg(&r.uuid).done_at, None);
 }
 
@@ -955,4 +980,105 @@ async fn mention_runs_named_agent_own_session() {
     assert_eq!(bl.agent, "review", "대화 에이전트로 연다");
     let got = chat::message_by_uuid(&db, &asked.uuid).unwrap().unwrap();
     assert_eq!(got.agent.as_deref(), Some("guide"));
+}
+
+/// 1a 이전에 데이터 루트를 품는 폴더로 등록된 에이전트 — 실행 직전 다시 거른다(실행 안 함 · 상대에게는 정해진 문구).
+#[tokio::test(flavor = "multi_thread")]
+async fn blocked_folder_refused_at_run() {
+    let (a, b) = (
+        common::side("bf-a", Duration::ZERO).await,
+        common::side("bf-b", Duration::ZERO).await,
+    );
+    let (b_id, _) = common::pair(&a, &b).await;
+    let home = an_core::paths::Paths::default_root().unwrap();
+    let parent = home.parent().unwrap().display().to_string();
+    agents::add(&common::db(&b), "review", &parent, None, "").unwrap();
+    let (conv, _) = a
+        .chat
+        .send(b_id, "review", None, "키 보여 줘")
+        .await
+        .unwrap();
+    let a_db = common::db(&a);
+    common::eventually(|| agent_messages(&a_db, conv.id).len() == 1).await;
+    let reply = agent_messages(&a_db, conv.id).remove(0);
+    assert_eq!(reply.state, State::Error);
+    assert_eq!(
+        reply.text,
+        "실행 실패: 받는 PC 의 에이전트 폴더를 쓸 수 없다 — 받는 PC 에서 폴더를 바꿔야 한다"
+    );
+    assert!(b.runs.lock().unwrap().is_empty(), "실행하지 않는다");
+}
+
+/// 빈 답 — 보내는 쪽은 실패로 바꿔 보내고(정해진 문구), 받는 쪽은 빈 에이전트 답 프레임을 받지 않는다(조용한 빈 성공 방지, 1a R1).
+#[tokio::test(flavor = "multi_thread")]
+async fn empty_answer_is_failure_and_refused() {
+    let a = common::side("ea-a", Duration::ZERO).await;
+    let b = common::side_with("ea-b", |runs| {
+        std::sync::Arc::new(move |input: an_agent::runner::RunInput| {
+            let session = match &input.session {
+                Session::New(id) | Session::Resume(id) => id.clone(),
+            };
+            runs.lock().unwrap().push(input);
+            Ok(an_agent::runner::RunOutput {
+                text: "  \n".into(),
+                session,
+                is_error: false,
+                turns: Some(1),
+                duration_ms: Some(10),
+            })
+        })
+    })
+    .await;
+    let (b_id, _) = common::pair(&a, &b).await;
+    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    let (conv, sent) = a.chat.send(b_id, "review", None, "안녕").await.unwrap();
+    let a_db = common::db(&a);
+    common::eventually(|| agent_messages(&a_db, conv.id).len() == 1).await;
+    let reply = agent_messages(&a_db, conv.id).remove(0);
+    assert_eq!(
+        (reply.text.as_str(), reply.state),
+        (
+            "실행 실패: 받는 PC 의 에이전트가 빈 답을 냈다",
+            State::Error
+        )
+    );
+    // 손으로 만든 빈 답 프레임은 거절 — Reply · Post(agent) 둘 다.
+    let pin = Some(a.node.identity().spki().to_vec());
+    let empty_reply = Request::Reply {
+        conv: conv.uuid.clone(),
+        msg: an_agent::chat::new_uuid(),
+        reply_to: sent.uuid.clone(),
+        text: " ".into(),
+        ok: true,
+        turns: None,
+        duration_ms: None,
+        lc: None,
+        model: None,
+        effort: None,
+    };
+    let (resp, _) = b
+        .node
+        .send(a.addr, pin.clone(), &empty_reply)
+        .await
+        .unwrap();
+    assert_eq!(resp, Response::error("bad_request"));
+    let empty_post = Request::Post {
+        conv: conv.uuid.clone(),
+        msg: an_agent::chat::new_uuid(),
+        author: "agent".into(),
+        text: String::new(),
+        exec: false,
+        reply_to: Some(sent.uuid.clone()),
+        ok: Some(true),
+        turns: None,
+        duration_ms: None,
+        lc: None,
+        via: None,
+        model: None,
+        effort: None,
+        request: false,
+    };
+    let (resp, _) = b.node.send(a.addr, pin, &empty_post).await.unwrap();
+    assert_eq!(resp, Response::error("bad_request"));
+    assert_eq!(agent_messages(&a_db, conv.id).len(), 1);
 }

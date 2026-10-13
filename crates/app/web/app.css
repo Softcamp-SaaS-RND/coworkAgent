@@ -446,3 +446,6 @@ details { margin: 8px 0; }
   form.grid, .form-grid { grid-template-columns: 1fr; }
   form.grid > button { grid-column: 1; }
 }
+
+/* 토큰 없음 · 거절 — 다시 열기 안내(1a) */
+.disconnected { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; padding: 10px 16px; background: var(--danger); color: var(--on-dark); font-weight: 600; text-align: center; }

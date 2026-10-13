@@ -16,7 +16,15 @@ fn echo() -> Run {
             Session::New(id) | Session::Resume(id) => id.clone(),
         };
         Ok(RunOutput {
-            text: format!("답: {}", input.text),
+            text: format!(
+                "답: {}",
+                // 실행 입력의 원격 본문(`<원격 본문>` 구분자 안)만 되돌린다.
+                input
+                    .text
+                    .rsplit_once("<원격 본문>\n")
+                    .and_then(|(_, r)| r.strip_suffix("\n</원격 본문>"))
+                    .unwrap_or(&input.text)
+            ),
             session,
             is_error: false,
             turns: Some(2),
@@ -82,7 +90,7 @@ async fn web(chat: Arc<Chat>) -> (u16, Vec<(&'static str, String)>) {
     let headers = vec![
         common::host(port),
         common::origin(port),
-        ("Cookie", format!("{}={token}", server::COOKIE)),
+        ("Authorization", format!("Bearer {token}")),
         ("Content-Type", "application/json".to_string()),
     ];
     (port, headers)

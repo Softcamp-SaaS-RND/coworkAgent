@@ -20,12 +20,12 @@ pub struct Peer {
     /// 이 PC 에서 부르는 표시 이름(별칭) · 타일 아이콘(PNG data URL) — 없으면 `None`.
     pub alias: Option<String>,
     pub icon: Option<String>,
-    /// 접속 상태 — 마지막 `Pong` 을 받은 시각(유닉스 초, 없으면 아직) · 그때 상대의 집중.
+    /// 접속 상태 — 마지막으로 주고받기에 성공한 시각(유닉스 초, 없으면 아직 — #1c) · 마지막 `Pong` · 거절 때 상대의 집중.
     pub seen_at: Option<i64>,
     pub focus: bool,
 }
 
-/// 온라인으로 보는 마지막 `Pong` 이후 시간(초) — 확인 주기(`PRESENCE_EVERY` 30초)의 두 번 반.
+/// "방금 통신" 으로 보는 마지막 통신 이후 시간(초). 주기 확인은 없다(#1c) — 통신할 때만 갱신.
 pub const ONLINE_WITHIN: i64 = 75;
 
 impl Peer {
@@ -33,7 +33,7 @@ impl Peer {
         self.my_ok && self.their_ok
     }
 
-    /// 마지막 `Pong` 이 `now` 에서 [`ONLINE_WITHIN`] 초 안이면 온라인. 받은 시각이 `now` 보다 뒤(시계를 되돌림)면 오프라인으로 본다.
+    /// 마지막 통신이 `now` 에서 [`ONLINE_WITHIN`] 초 안이면 온라인. 받은 시각이 `now` 보다 뒤(시계를 되돌림)면 오프라인으로 본다.
     pub fn online(&self, now: i64) -> bool {
         self.seen_at
             .is_some_and(|t| (0..=ONLINE_WITHIN).contains(&(now - t)))
@@ -145,12 +145,33 @@ pub fn remove_spki(conn: &Connection, spki: &[u8]) -> rusqlite::Result<bool> {
     Ok(conn.execute("DELETE FROM peers WHERE spki = ?1", [spki])? == 1)
 }
 
+/// 상대 수신 주소를 바꾼다(승인 · 세대 그대로) — 페어링된 키가 다른 출처 · 포트로 `Ping` 했을 때(1b).
+pub fn set_addr(conn: &Connection, id: i64, addr: &str) -> rusqlite::Result<bool> {
+    Ok(conn.execute("UPDATE peers SET addr = ?2 WHERE id = ?1", params![id, addr])? == 1)
+}
+
 /// 접속 상태 — 상대가 지금 응답했다(`Pong` · 실행 요청 거절), 그때의 집중과 함께. 없는 상대면 `false`.
 pub fn set_presence(conn: &Connection, id: i64, focus: bool) -> rusqlite::Result<bool> {
     Ok(conn.execute(
         "UPDATE peers SET seen_at = unixepoch(), focus = ?2 WHERE id = ?1",
         params![id, focus],
     )? == 1)
+}
+
+/// 통신 성공 — 그 키의 상대가 응답했거나 요청을 보냈다(집중은 그대로, #1c). 없는 키면 아무 일도 없다. 10초 안에 이미 적었으면 쓰지 않는다
+/// (프레임마다 쓰기 잠금을 잡아 다른 연결의 트랜잭션을 막지 않게 — 읽기만으로 거른다).
+pub fn touch(conn: &Connection, spki: &[u8]) -> rusqlite::Result<()> {
+    let fresh: Option<bool> = conn
+        .query_row(
+            "SELECT coalesce(seen_at > unixepoch() - 10, 0) FROM peers WHERE spki = ?1",
+            [spki],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if fresh == Some(false) {
+        conn.execute("UPDATE peers SET seen_at = unixepoch() WHERE spki = ?1", [spki])?;
+    }
+    Ok(())
 }
 
 /// 표시 이름 · 타일 아이콘을 통째로 바꾼다(`None` = 지움). 값 검증은 [`crate::run_opts`].

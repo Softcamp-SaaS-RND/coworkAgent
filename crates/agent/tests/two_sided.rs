@@ -103,17 +103,23 @@ async fn notes_prepended_to_run() {
     a.chat.post(conv.id, "둘째 요청", true).await.unwrap();
     common::eventually(|| b.runs.lock().unwrap().len() == 2).await;
     let runs = b.runs.lock().unwrap();
-    // 첫 실행은 본문 그대로, 둘째는 그 사이 사람 글이 발화자와 함께 앞에.
-    assert_eq!(runs[0].text, "첫 요청");
+    // 첫 실행은 메모 없이 본문만(틀 안), 둘째는 그 사이 사람 글이 발화자와 함께 앞에.
+    assert_eq!(
+        runs[0].text,
+        "[요청 — 상대(user-np-a · PC-np-a)]\n<원격 본문>\n첫 요청\n</원격 본문>"
+    );
     let input = &runs[1].text;
-    assert!(input.starts_with("[대화 메모 — 실행 요청 아님]"), "{input}");
     assert!(
-        input.contains("- user-np-a · PC-np-a: A 의 메모"),
+        input.starts_with("[대화 메모 — 실행 요청 아님]\n<대화 메모>\n"),
+        "{input}"
+    );
+    assert!(
+        input.contains("- 상대(user-np-a · PC-np-a): A 의 메모"),
         "{input}"
     );
     assert!(input.contains("- 이 PC 사용자: B 의 메모"), "{input}");
     assert!(
-        input.ends_with("[요청 — user-np-a · PC-np-a]\n둘째 요청"),
+        input.ends_with("[요청 — 상대(user-np-a · PC-np-a)]\n<원격 본문>\n둘째 요청\n</원격 본문>"),
         "{input}"
     );
 }
@@ -149,13 +155,33 @@ async fn post_refused_when_foreign() {
     // 없는 대화 · 이상한 작성자.
     let (r, _) = a
         .node
-        .send(b.addr, None, &post("nope", "p1", "human", false, None))
+        .send(
+            b.addr,
+            None,
+            &post(
+                "00000000-0000-4000-8000-000000000101",
+                "00000000-0000-4000-8000-000000000111",
+                "human",
+                false,
+                None,
+            ),
+        )
         .await
         .unwrap();
     assert_eq!(r, Response::error("unknown"));
     let (r, _) = a
         .node
-        .send(b.addr, None, &post(&conv.uuid, "p2", "robot", false, None))
+        .send(
+            b.addr,
+            None,
+            &post(
+                &conv.uuid,
+                "00000000-0000-4000-8000-000000000112",
+                "robot",
+                false,
+                None,
+            ),
+        )
         .await
         .unwrap();
     assert_eq!(r, Response::error("bad_request"));
@@ -165,14 +191,30 @@ async fn post_refused_when_foreign() {
         .send(
             b.addr,
             None,
-            &post(&conv.uuid, "p3", "agent", false, Some(sent.uuid.clone())),
+            &post(
+                &conv.uuid,
+                "00000000-0000-4000-8000-000000000113",
+                "agent",
+                false,
+                Some(sent.uuid.clone()),
+            ),
         )
         .await
         .unwrap();
     assert_eq!(r, Response::error("bad_request"));
     let (r, _) = a
         .node
-        .send(b.addr, None, &post(&conv.uuid, "p4", "human", true, None))
+        .send(
+            b.addr,
+            None,
+            &post(
+                &conv.uuid,
+                "00000000-0000-4000-8000-000000000114",
+                "human",
+                true,
+                None,
+            ),
+        )
         .await
         .unwrap();
     assert_eq!(r, Response::error("bad_request"));
@@ -182,7 +224,13 @@ async fn post_refused_when_foreign() {
         .send(
             a.addr,
             None,
-            &post(&conv.uuid, "p5", "agent", false, Some(sent.uuid.clone())),
+            &post(
+                &conv.uuid,
+                "00000000-0000-4000-8000-000000000115",
+                "agent",
+                false,
+                Some(sent.uuid.clone()),
+            ),
         )
         .await
         .unwrap();
@@ -191,7 +239,17 @@ async fn post_refused_when_foreign() {
     for _ in 0..2 {
         let (r, _) = a
             .node
-            .send(b.addr, None, &post(&conv.uuid, "p6", "human", false, None))
+            .send(
+                b.addr,
+                None,
+                &post(
+                    &conv.uuid,
+                    "00000000-0000-4000-8000-000000000116",
+                    "human",
+                    false,
+                    None,
+                ),
+            )
             .await
             .unwrap();
         assert_eq!(r, Response::Ok);
@@ -215,7 +273,17 @@ async fn post_refused_when_foreign() {
         },
     );
     let (r, _) = stranger
-        .send(b.addr, None, &post(&conv.uuid, "p7", "human", false, None))
+        .send(
+            b.addr,
+            None,
+            &post(
+                &conv.uuid,
+                "00000000-0000-4000-8000-000000000117",
+                "human",
+                false,
+                None,
+            ),
+        )
         .await
         .unwrap();
     assert_eq!(r, Response::error("not_paired"));
@@ -282,9 +350,10 @@ async fn own_run_not_failed_by_mirror() {
         (closed.to_string(), a_id),
     )
     .unwrap();
-    // 내 에이전트 실행은 받아들였으니 성공 + 경고(실패로 돌려주면 다시 보내 두 번 실행된다).
+    // 내 에이전트 실행은 받아들였고, 미러는 보관 · 다시 보낸다(#1c — 경고 없음).
     let (_, m, warning) = b.chat.post(bc, "B 질문", true).await.unwrap();
-    assert!(warning.unwrap().contains("다시 보내지"), "경고");
+    assert_eq!(warning, None);
+    assert!(b.chat.outbox_of(&m).is_some(), "미러 보관");
     common::eventually(|| b.runs.lock().unwrap().len() == 2).await;
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(b.runs.lock().unwrap().len(), 2, "한 번만 실행");
@@ -315,5 +384,8 @@ async fn late_queued_request_not_skipped() {
     chat::set_state(&b_db, low.id, State::Queued).unwrap();
     b.chat.recover().unwrap();
     common::eventually(|| b.runs.lock().unwrap().len() == 3).await;
-    assert_eq!(b.runs.lock().unwrap()[2].text, "늦게 대기열에");
+    assert_eq!(
+        common::body(&b.runs.lock().unwrap()[2].text),
+        "늦게 대기열에"
+    );
 }

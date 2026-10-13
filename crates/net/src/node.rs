@@ -22,8 +22,6 @@ use tokio_rustls::{TlsAcceptor, TlsConnector};
 pub const PEER_PORT: u16 = 47100;
 /// 발신 연결 1개(TLS 포함 요청·응답 전체)의 상한.
 pub const IO_DEADLINE: Duration = Duration::from_secs(10);
-/// 접속 상태 확인 주기 — 페어링된 상대마다 `Ping`(앱 시작 직후 한 번).
-pub const PRESENCE_EVERY: Duration = Duration::from_secs(30);
 /// 수신 연결 1개의 상한 — 인증 전 느린 연결이 자리를 오래 붙잡지 못하게 발신보다 짧다.
 pub const INBOUND_DEADLINE: Duration = Duration::from_secs(3);
 /// 동시에 처리하는 수신 연결 수. 넘치면 accept 를 멈추지 않고 바로 끊는다.
@@ -34,6 +32,8 @@ pub const MAX_CONNS_PER_IP: usize = 4;
 pub const MAX_UNAPPROVED: i64 = 32;
 /// 웹UI "페어링 받기" 가 여는 창의 길이.
 pub const PAIRING_WINDOW: Duration = Duration::from_secs(300);
+/// 한 창에서 출처 IP 하나가 틀릴 수 있는 초대 코드 수(1a A5) — 넘으면 그 창 동안 그 IP 의 처음 보는 키 hello 를 거절한다.
+pub const MAX_CODE_MISSES: u32 = 10;
 
 /// 상대에게 알리는 나.
 #[derive(Debug, Clone)]
@@ -89,6 +89,8 @@ pub enum MessageKind {
 type EventSink = Box<dyn Fn(PeerEvent) + Send + Sync>;
 /// 페어링된 상대의 `agents` · `message` · `reply` 처리기 — 막히면 안 된다(느린 일은 큐로).
 type RequestHandler = Box<dyn Fn(&Peer, Request) -> Response + Send + Sync>;
+/// 페어링된 상대의 `Ping` 을 받았을 때(상대 id) — 막히면 안 된다.
+type SeenHandler = Box<dyn Fn(i64) + Send + Sync>;
 
 pub struct Node {
     id: Identity,
@@ -97,8 +99,16 @@ pub struct Node {
     me: Me,
     /// 처음 보는 키의 hello 를 1건 받아 줄 (마감 시각, 초대 코드). 코드가 맞는 hello 를 받으면 닫힌다(P8).
     window: Mutex<Option<(Instant, String)>>,
+    /// 지금 창에서 출처 IP 별 틀린 초대 코드 수 — [`MAX_CODE_MISSES`] 에 닿으면 그 IP 는 창이 끝날 때까지 거절(1a A5).
+    misses: Mutex<HashMap<IpAddr, u32>>,
+    /// 피어 수신 전체 자리([`MAX_CONNS`]) — 쓰는 수 = 열린 연결 수(1b A9).
+    slots: Arc<Semaphore>,
     events: OnceLock<EventSink>,
     requests: OnceLock<RequestHandler>,
+    /// 페어링된 상대가 `Ping` 했다(돌아온 증거, #1c) — 바깥 층이 그 상대에 남은 글을 지금 보낸다.
+    seen: OnceLock<SeenHandler>,
+    /// 시작 때 피어 포트를 잡고 있던 프로세스(임의 포트로 열었을 때만, 1b A6).
+    holder: OnceLock<Holder>,
 }
 
 /// 출처 IP 별 수신 연결 수 — 놓으면 줄어든다.
@@ -109,7 +119,7 @@ struct IpSlot {
 
 impl IpSlot {
     fn take(counts: &Arc<Mutex<HashMap<IpAddr, usize>>>, ip: IpAddr) -> Option<Self> {
-        let mut m = counts.lock().expect("IP 표 잠금이 오염됐다");
+        let mut m = an_core::sync::lock(counts);
         let n = m.entry(ip).or_insert(0);
         if *n >= MAX_CONNS_PER_IP {
             return None;
@@ -124,7 +134,7 @@ impl IpSlot {
 
 impl Drop for IpSlot {
     fn drop(&mut self) {
-        let mut m = self.counts.lock().expect("IP 표 잠금이 오염됐다");
+        let mut m = an_core::sync::lock(&self.counts);
         if let Some(n) = m.get_mut(&self.ip) {
             *n -= 1;
             if *n == 0 {
@@ -134,14 +144,84 @@ impl Drop for IpSlot {
     }
 }
 
-/// `0.0.0.0:47100`, 사용 중이면 OS 임의 포트.
-pub async fn bind_peer_port() -> io::Result<TcpListener> {
-    match TcpListener::bind(("0.0.0.0", PEER_PORT)).await {
-        Ok(l) => Ok(l),
-        Err(e) => {
-            log::warn!("피어 포트 {PEER_PORT} 사용 불가({e}) — 임의 포트로 연다");
-            TcpListener::bind(("0.0.0.0", 0)).await
+/// `0.0.0.0:47100`, 사용 중이면 OS 임의 포트 — 돌려주는 값의 둘째는 47100 을 잡은 프로세스(임의 포트로 열었을 때만).
+pub async fn bind_peer_port() -> io::Result<(TcpListener, Option<Holder>)> {
+    bind_peer_port_on(PEER_PORT).await
+}
+
+/// 포트를 잡은 프로세스(1b A6). 찾지 못하면 이름 `알 수 없음` · PID 0.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Holder {
+    pub name: String,
+    pub pid: u32,
+}
+
+/// `bind_peer_port` 의 포트 지정판 — 못 열면 임의 포트로 연다. 남이 쓰는 중(`AddrInUse`)일 때만 잡은 쪽을 찾는다(예약 포트 · 권한은 로그만).
+pub async fn bind_peer_port_on(port: u16) -> io::Result<(TcpListener, Option<Holder>)> {
+    match TcpListener::bind(("0.0.0.0", port)).await {
+        Ok(l) => Ok((l, None)),
+        Err(e) if e.kind() != io::ErrorKind::AddrInUse => {
+            log::warn!("피어 포트 {port} 를 열 수 없다({e}) — 임의 포트로 연다");
+            Ok((TcpListener::bind(("0.0.0.0", 0)).await?, None))
         }
+        Err(e) => {
+            let holder = port_holder(port).unwrap_or(Holder {
+                name: "알 수 없음".into(),
+                pid: 0,
+            });
+            log::warn!(
+                "피어 포트 {port} 사용 불가({e}) — {}(PID {}) 가 잡고 있다 · 임의 포트로 연다",
+                holder.name,
+                holder.pid
+            );
+            Ok((TcpListener::bind(("0.0.0.0", 0)).await?, Some(holder)))
+        }
+    }
+}
+
+/// TCP `port` 를 듣는(LISTEN) 프로세스 — Windows `netstat -ano` + `tasklist`, Unix `lsof`. 못 찾으면 `None`.
+pub fn port_holder(port: u16) -> Option<Holder> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let run = |prog: &str, args: &[&str]| {
+            std::process::Command::new(prog)
+                .args(args)
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+                .ok()
+                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        };
+        // "  TCP    0.0.0.0:47100    0.0.0.0:0    LISTENING    1234" — 상태 글자는 언어에 따라 다를 수 있어 원격 주소 :0 으로 듣기를 가린다.
+        let out = run("netstat", &["-ano", "-p", "TCP"])?;
+        let pid: u32 = out.lines().find_map(|l| {
+            let f: Vec<&str> = l.split_whitespace().collect();
+            let local_port = f.get(1)?.rsplit(':').next()?;
+            (f.first() == Some(&"TCP") && local_port == port.to_string() && f.get(2)?.ends_with(":0"))
+                .then(|| f.last()?.parse().ok())
+                .flatten()
+        })?;
+        let csv = run("tasklist", &["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])?;
+        let name = csv
+            .lines()
+            .find_map(|l| l.strip_prefix('"')?.split('"').next().map(str::to_string))
+            .unwrap_or_else(|| "알 수 없음".into());
+        Some(Holder { name, pid })
+    }
+    #[cfg(unix)]
+    {
+        let out = std::process::Command::new("lsof")
+            .args(["-nP", &format!("-iTCP:{port}"), "-sTCP:LISTEN", "-Fpc"])
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        let pid = text.lines().find_map(|l| l.strip_prefix('p')?.parse().ok())?;
+        let name = text
+            .lines()
+            .find_map(|l| l.strip_prefix('c').map(str::to_string))
+            .unwrap_or_else(|| "알 수 없음".into());
+        Some(Holder { name, pid })
     }
 }
 
@@ -198,16 +278,14 @@ fn not_found(id: i64) -> io::Error {
     io::Error::new(io::ErrorKind::NotFound, format!("피어 {id} 없음"))
 }
 
+/// 거절 응답 → 오류. 코드는 정해진 꼴만(`clean_code`) — 지문을 고정하지 않은 주소 추가에서는 임의 서버의 글자가 화면에 닿는다.
 fn refused(resp: Response) -> io::Error {
     match resp {
         Response::Error { code } => io::Error::new(
             io::ErrorKind::PermissionDenied,
-            format!("상대가 거절: {code}"),
+            format!("상대가 거절: {}", crate::proto::clean_code(&code)),
         ),
-        other => io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("예상하지 못한 응답: {other:?}"),
-        ),
+        _ => io::Error::new(io::ErrorKind::InvalidData, "예상하지 못한 응답"),
     }
 }
 
@@ -220,8 +298,12 @@ impl Node {
             db: Mutex::new(db),
             me,
             window: Mutex::new(None),
+            misses: Mutex::new(HashMap::new()),
+            slots: Arc::new(Semaphore::new(MAX_CONNS)),
             events: OnceLock::new(),
             requests: OnceLock::new(),
+            seen: OnceLock::new(),
+            holder: OnceLock::new(),
         })
     }
 
@@ -229,6 +311,13 @@ impl Node {
     pub fn on_request(&self, f: impl Fn(&Peer, Request) -> Response + Send + Sync + 'static) {
         if self.requests.set(Box::new(f)).is_err() {
             log::warn!("요청 처리기는 한 번만 설정한다");
+        }
+    }
+
+    /// 페어링된 상대의 `Ping` 을 받을 때 부를 함수(#1c — 한 번만 설정).
+    pub fn on_seen(&self, f: impl Fn(i64) + Send + Sync + 'static) {
+        if self.seen.set(Box::new(f)).is_err() {
+            log::warn!("Ping 처리기는 한 번만 설정한다");
         }
     }
 
@@ -250,13 +339,24 @@ impl Node {
     /// 지금부터 `d` 동안, 돌려준 초대 코드를 담은 처음 보는 키의 hello 1건을 받는다(P8). 다시 부르면 새 코드로 바뀐다.
     pub fn open_window(&self, d: Duration) -> String {
         let code = new_code();
-        *self.window.lock().expect("창 잠금이 오염됐다") = Some((Instant::now() + d, code.clone()));
+        // 창 잠금 안에서 셈을 비운다 — 진행 중인 `take_window` 가 옛 창의 셈을 새 창으로 넘기지 않게.
+        let mut w = an_core::sync::lock(&self.window);
+        an_core::sync::lock(&self.misses).clear();
+        *w = Some((Instant::now() + d, code.clone()));
         code
     }
 
-    /// 창이 열려 있고 코드가 맞으면 닫고 true. 틀린 코드는 창을 닫지 않는다(선점 불가).
-    fn take_window(&self, code: Option<&str>) -> bool {
-        let mut w = self.window.lock().expect("창 잠금이 오염됐다");
+    /// 창이 열려 있고 코드가 맞으면 닫고 true. 틀린 코드는 창을 닫지 않는다(선점 불가) — 대신 출처 IP 별로 세어 [`MAX_CODE_MISSES`]
+    /// 번 틀린 IP 는 코드를 보지 않고 거절한다(추측 — 응답은 창 닫힘과 같아 상한을 알리지 않는다).
+    fn take_window(&self, ip: IpAddr, code: Option<&str>) -> bool {
+        // 셈 확인 · 증가는 창 잠금을 쥔 채로 — 같은 IP 의 동시 연결이 상한 경계를 넘어 더 추측하지 못하게(잠금 순서: window → misses).
+        let mut w = an_core::sync::lock(&self.window);
+        if an_core::sync::lock(&self.misses)
+            .get(&ip)
+            .is_some_and(|&n| n >= MAX_CODE_MISSES)
+        {
+            return false;
+        }
         let Some((until, want)) = w.as_ref() else {
             return false;
         };
@@ -266,10 +366,35 @@ impl Node {
         }
         let given = normalize_code(code.unwrap_or(""));
         if !ct_eq(given.as_bytes(), normalize_code(want).as_bytes()) {
+            *an_core::sync::lock(&self.misses).entry(ip).or_insert(0) += 1;
             return false;
         }
         *w = None;
         true
+    }
+
+    /// `bind_peer_port` 가 알려 준 잡은 프로세스를 기록한다(한 번).
+    pub fn set_peer_holder(&self, h: Holder) {
+        let _ = self.holder.set(h);
+    }
+
+    pub fn peer_holder(&self) -> Option<&Holder> {
+        self.holder.get()
+    }
+
+    /// 트레이 · 내 정보 문구 — 피어 포트를 남이 잡아 임의 포트로 받을 때만.
+    pub fn peer_port_note(&self) -> Option<String> {
+        self.holder.get().map(|h| {
+            format!(
+                "피어 포트 {PEER_PORT} 사용 중 — {}(PID {}) · 임의 포트 {} 로 받는다",
+                h.name, h.pid, self.me.port
+            )
+        })
+    }
+
+    /// 지금 열린 피어 수신 연결 수.
+    pub fn open_connections(&self) -> usize {
+        MAX_CONNS - self.slots.available_permits()
     }
 
     pub fn identity(&self) -> &Identity {
@@ -281,7 +406,7 @@ impl Node {
     }
 
     fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.db.lock().expect("DB 잠금이 오염됐다")
+        an_core::sync::lock(&self.db)
     }
 
     pub fn peers(&self) -> io::Result<Vec<Peer>> {
@@ -296,7 +421,7 @@ impl Node {
 
     /// 수신 루프 — 돌아오지 않는다.
     pub async fn serve(self: Arc<Self>, listener: TcpListener) {
-        let slots = Arc::new(Semaphore::new(MAX_CONNS));
+        let slots = self.slots.clone();
         let per_ip = Arc::new(Mutex::new(HashMap::new()));
         loop {
             let (tcp, remote) = match listener.accept().await {
@@ -361,10 +486,19 @@ impl Node {
                 | Request::Post { .. }
                 | Request::Relay { .. }
                 | Request::Done { .. }
+                | Request::Progress { .. }
+                | Request::Status { .. }
         ) {
             let peer = peers::by_spki(&self.db(), spki).map_err(db_err)?;
             let resp = match (peer, self.requests.get()) {
-                (Some(p), Some(h)) if p.paired() => h(&p, req),
+                (Some(p), _) if p.paired() && !req.ids_ok() => Response::error("invalid"),
+                (Some(p), Some(h)) if p.paired() => {
+                    // 받기도 통신 증거(#1c — 주기 확인 대신). 기록 실패는 받기를 막지 않는다.
+                    if let Err(e) = peers::touch(&self.db(), spki) {
+                        log::debug!("접속 시각 기록 실패: {e}");
+                    }
+                    h(&p, req)
+                }
                 (Some(p), None) if p.paired() => Response::error("unsupported"),
                 _ => Response::error("not_paired"),
             };
@@ -386,7 +520,7 @@ impl Node {
                 } else if !known && peers::count_unapproved(&db).map_err(db_err)? >= MAX_UNAPPROVED
                 {
                     Response::error("busy")
-                } else if !known && !self.take_window(code.as_deref()) {
+                } else if !known && !self.take_window(ip, code.as_deref()) {
                     Response::error("closed")
                 } else {
                     let addr = SocketAddr::new(ip, port).to_string();
@@ -448,11 +582,24 @@ impl Node {
                 peers::remove_spki(&db, spki).map_err(db_err)?;
                 Response::Ok
             }
-            Request::Ping => {
-                let paired = peers::by_spki(&db, spki)
+            Request::Ping { port } => {
+                let peer = peers::by_spki(&db, spki)
                     .map_err(db_err)?
-                    .is_some_and(|p| p.paired());
-                if paired {
+                    .filter(|p| p.paired());
+                if let Some(p) = peer {
+                    // 페어링된 키(TLS 인증) — 출처 IP · 알려 준 포트가 저장 주소와 다르면 따라간다(승인 그대로, 1b A7).
+                    let now = SocketAddr::new(ip, port).to_string();
+                    if port != 0 && now != p.addr {
+                        peers::set_addr(&db, p.id, &now).map_err(db_err)?;
+                        log::info!("피어 {} 주소 {} → {now}", p.name, p.addr);
+                    }
+                    // 받기도 통신 증거 · 돌아온 상대에 남은 글을 지금(#1c).
+                    if let Err(e) = peers::touch(&db, spki) {
+                        log::debug!("접속 시각 기록 실패: {e}");
+                    }
+                    if let Some(f) = self.seen.get() {
+                        f(p.id);
+                    }
                     // 못 읽으면 꺼짐으로 답한다 — 연결을 끊으면 상대가 이 PC 를 오프라인으로 본다(받기 판정도 못 읽으면 받는다).
                     let focus = an_core::settings::focus(&db).unwrap_or_else(|e| {
                         log::warn!("집중 설정 읽기 실패 — 꺼짐으로 답한다: {e}");
@@ -469,7 +616,9 @@ impl Node {
             | Request::Reply { .. }
             | Request::Post { .. }
             | Request::Relay { .. }
-            | Request::Done { .. } => Response::error("bad_request"),
+            | Request::Done { .. }
+            | Request::Progress { .. }
+            | Request::Status { .. } => Response::error("bad_request"),
         };
         Ok((resp, event))
     }
@@ -481,8 +630,14 @@ impl Node {
         pinned: Option<Vec<u8>>,
         req: &Request,
     ) -> io::Result<(Response, Vec<u8>)> {
-        self.exchange(addr, pinned.map_or(Pin::Any, Pin::Key), req)
-            .await
+        let got = self
+            .exchange(addr, pinned.map_or(Pin::Any, Pin::Key), req)
+            .await?;
+        // 응답을 받았다 = 통신 성공(#1c — 주기 확인 대신). 모르는 키면 아무 일도 없다 · 기록 실패는 보내기를 실패로 만들지 않는다.
+        if let Err(e) = peers::touch(&self.db(), &got.1) {
+            log::debug!("접속 시각 기록 실패: {e}");
+        }
+        Ok(got)
     }
 
     async fn exchange(
@@ -659,11 +814,27 @@ impl Node {
         }
     }
 
+    /// 화면이 여는 연결 확인(#1c) — 마지막 통신이 `within` 초 안이면 보내지 않고 저장된 집중을, 아니면 [`ping`](Self::ping).
+    pub async fn refresh(&self, id: i64, within: i64) -> io::Result<bool> {
+        let peer = self.peer(id)?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
+        if peer.seen_at.is_some_and(|t| (0..within).contains(&(now - t))) {
+            return Ok(peer.focus);
+        }
+        self.ping(id).await
+    }
+
     /// 연결 확인 — 상대가 집중 중인가를 돌려주고, 받은 `Pong` 을 접속 상태로 남긴다(거절 · 전송 오류는 남기지 않는다).
     pub async fn ping(&self, id: i64) -> io::Result<bool> {
         let peer = self.peer(id)?;
         match self
-            .send(parse_addr(&peer.addr)?, Some(peer.spki), &Request::Ping)
+            .send(
+                parse_addr(&peer.addr)?,
+                Some(peer.spki),
+                &Request::Ping { port: self.me.port },
+            )
             .await?
         {
             (Response::Pong { focus }, _) => {
@@ -674,22 +845,17 @@ impl Node {
         }
     }
 
-    /// 접속 상태 — 시작 직후와 [`PRESENCE_EVERY`] 마다 페어링된 상대 모두에 [`ping`](Self::ping)(상대별 작업, 실패는 넘어간다).
-    pub async fn watch_presence(self: Arc<Self>) {
-        let mut tick = tokio::time::interval(PRESENCE_EVERY);
-        // 절전에서 깨어나도 놓친 주기를 몰아 보내지 않는다(상대의 연결 수 제한을 채우지 않게).
-        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            tick.tick().await;
-            let Ok(peers) = self.peers() else {
-                continue;
-            };
-            for p in peers.into_iter().filter(Peer::paired) {
-                let me = self.clone();
-                tokio::spawn(async move {
-                    let _ = me.ping(p.id).await;
-                });
-            }
+    /// 시작 알림(#1c) — 페어링된 상대 모두에 [`ping`](Self::ping) 한 번(상대별 작업, 실패는 넘어간다). 내 수신 포트를 실어 상대가 바뀐 주소를
+    /// 따라오게 하고 집중을 받는다. 주기 확인은 없다 — 접속 시각은 통신할 때만 갱신.
+    pub async fn announce(self: Arc<Self>) {
+        let Ok(peers) = self.peers() else {
+            return;
+        };
+        for p in peers.into_iter().filter(Peer::paired) {
+            let me = self.clone();
+            tokio::spawn(async move {
+                let _ = me.ping(p.id).await;
+            });
         }
     }
 }

@@ -17,7 +17,7 @@ async fn web(n: Arc<Notifier>) -> (u16, (&'static str, String)) {
     };
     let app = server::router_with(port, token.clone(), status, || Ok(()), notify::routes(n));
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    (port, ("Cookie", format!("{}={token}", server::COOKIE)))
+    (port, ("Authorization", format!("Bearer {token}")))
 }
 
 fn notifier(tag: &str, marks: Arc<Mutex<Vec<usize>>>) -> Arc<Notifier> {
@@ -108,27 +108,4 @@ async fn seen_post_clears() {
     assert_eq!(code, 204, "{raw}");
     assert_eq!(*marks.lock().unwrap(), vec![1, 0]);
     assert_eq!(n.pending(), 0);
-}
-
-#[tokio::test]
-async fn cookie_post_without_origin_403() {
-    let marks = Arc::new(Mutex::new(Vec::new()));
-    let n = notifier("csrf", marks.clone());
-    n.set_enabled(true).unwrap();
-    n.on_event(&PeerEvent::Approved {
-        name: "a".into(),
-        host: "b".into(),
-    });
-    let (port, cookie) = web(n.clone()).await;
-    // 쿠키만 실린(Origin 없는) 상태 변경 — 다른 loopback 포트 페이지의 폼 · no-cors 요청 꼴.
-    for (method, path) in [("POST", "/api/seen"), ("PUT", "/api/settings")] {
-        let (code, _) =
-            common::send(port, method, path, &[common::host(port), cookie.clone()]).await;
-        assert_eq!(code, 403, "{method} {path}");
-    }
-    assert_eq!(n.pending(), 1, "지워지지 않았다");
-    assert!(n.enabled());
-    // 쿠키 GET 은 그대로 된다(읽기).
-    let (code, _) = common::send(port, "GET", "/api/settings", &[common::host(port), cookie]).await;
-    assert_eq!(code, 200);
 }

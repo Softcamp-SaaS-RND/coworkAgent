@@ -16,13 +16,20 @@ fn echo() -> Run {
         let session = match &input.session {
             Session::New(id) | Session::Resume(id) => id.clone(),
         };
-        if input.text.starts_with("느림") {
+        // 실행 입력의 원격 본문(`<원격 본문>` 구분자 안)만 본다.
+        let body = input
+            .text
+            .rsplit_once("<원격 본문>\n")
+            .and_then(|(_, r)| r.strip_suffix("\n</원격 본문>"))
+            .unwrap_or(&input.text)
+            .to_string();
+        if body.starts_with("느림") {
             std::thread::sleep(Duration::from_secs(2));
         }
         Ok(RunOutput {
-            text: format!("답: {}", input.text),
+            text: format!("답: {body}"),
             session,
-            is_error: input.text.starts_with("실패"),
+            is_error: body.starts_with("실패"),
             turns: Some(1),
             duration_ms: Some(10),
         })
@@ -281,7 +288,12 @@ async fn ask_remote_failure_exit_code() {
     let file = web(&a).await;
     let r = run(&file, &["ask", "user-b", "실패해"], WAIT).await;
     assert_eq!(r.code, cli::EXIT_REPLY_FAILED, "{}", r.out);
-    assert!(r.err.contains("답: 실패해"), "{}", r.err);
+    // 상대 실행 오류의 원문은 상대 PC 에만 — 이쪽에는 정해진 문구(1a A4).
+    assert!(
+        r.err.contains("받는 PC 의 에이전트가 오류로 끝났다"),
+        "{}",
+        r.err
+    );
     // 없는 에이전트 — 상대가 거절(로컬 API 4xx · 5xx).
     let r = run(&file, &["ask", "user-b", "q", "--agent", "없음"], WAIT).await;
     assert_eq!(r.code, cli::EXIT_API, "{}", r.err);

@@ -271,6 +271,9 @@
                 <tr><th scope="row">PC 이름</th><td><span id="me_host">…</span> <span class="ro">읽기 전용</span></td></tr>
                 <tr><th scope="row">지문</th><td><span id="me_fingerprint" class="mono">…</span> <span class="ro">읽기 전용</span></td></tr>
                 <tr><th scope="row">수신 주소</th><td><span id="me_addrs" class="mono">…</span> <span class="ro">읽기 전용</span></td></tr>
+                <tr><th scope="row">웹UI 포트</th><td><span id="me_ui_port" class="mono">…</span> <span class="ro">읽기 전용</span></td></tr>
+                <tr><th scope="row">피어 포트</th><td><span id="me_peer_port" class="mono">…</span> <span class="ro">읽기 전용</span></td></tr>
+                <tr><th scope="row">열린 피어 연결</th><td><span id="me_conns">…</span> <span class="ro">읽기 전용</span></td></tr>
                 <tr><th scope="row">버전</th><td><span id="version">…</span> <span class="ro">읽기 전용</span></td></tr>
                 <tr><th scope="row">데이터 경로</th><td><span id="data_dir" class="mono">…</span> <span class="ro">읽기 전용</span></td></tr>
                 <tr><th scope="row">DB</th><td><span id="db">…</span> <span class="ro">읽기 전용</span></td></tr>
@@ -365,9 +368,12 @@
               <input id="claude_model" list="model_names" maxlength="64">
               <label for="claude_effort">effort</label>
               <select id="claude_effort"></select>
+              <label for="max_runs">동시 실행 상한</label>
+              <input type="number" id="max_runs" min="1" max="8">
             </div>
             <datalist id="model_names"><option value="sonnet"><option value="opus"><option value="haiku"></datalist>
-            <p class="hint">받은 요청 실행(<span class="mono">claude -p</span>)의 기본값입니다. 상대별로 덮어쓰려면 연결 목록에서 그 상대를 펼치세요.</p>
+            <p class="hint">받은 요청 실행(<span class="mono">claude -p</span>)의 기본값입니다. 상대별로 덮어쓰려면 연결 목록에서 그 상대를 펼치세요.
+              동시 실행 상한(1 ~ 8, 이 PC)을 넘는 요청은 거절하지 않고 닿은 순서로 기다립니다.</p>
           </section>
 
           <section id="screen" class="card">
@@ -420,6 +426,10 @@
         </button>
       </header>
       <div class="detail-body">
+        <section class="detail-sec">
+          <h3 id="detail_runs_title">이 PC 실행</h3>
+          <ol id="detail_runs" class="saved-list"></ol>
+        </section>
         <section class="detail-sec">
           <h3>진행</h3>
           <ol id="detail_steps" class="steps"></ol>

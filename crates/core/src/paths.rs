@@ -115,6 +115,66 @@ impl Paths {
     pub fn ensure(&self) -> io::Result<()> {
         std::fs::create_dir_all(self.log_dir())
     }
+
+    /// 루트를 이 PC 사용자 전용 권한으로 맞춘다(매 시작 — 기존 설치도, 1a A1). 로그를 연 뒤 부른다 — 실패는 경고로 남기고 계속한다
+    /// (데이터는 이미 상속 권한으로 있었다).
+    pub fn restrict(&self) -> io::Result<()> {
+        crate::owner_only::restrict(&self.root)
+    }
+}
+
+/// 데이터 루트(지금 · 옛 이름) — 에이전트 폴더가 품으면 안 되는 곳.
+pub fn protected_roots() -> Vec<PathBuf> {
+    [Paths::default_root(), Paths::legacy_root()]
+        .into_iter()
+        .flatten()
+        .collect()
+}
+
+/// 에이전트 폴더로 쓸 수 없는 이유 — 원격 문의의 읽기 범위에 키 · 다른 상대와의 대화 DB 가 들어가거나(데이터 루트를 품음 · 그 안),
+/// 네트워크 경로(정규화가 로컬 경로와 맞지 않는다)면. 등록 · 수정 · 실행 직전에 같은 규칙(1a A7).
+pub fn agent_folder_problem(folder: &Path) -> Option<&'static str> {
+    use std::path::{Component, Prefix};
+    let unc = |p: &Path| {
+        matches!(
+            p.components().next(),
+            Some(Component::Prefix(x)) if matches!(x.kind(), Prefix::UNC(..) | Prefix::VerbatimUNC(..))
+        )
+    };
+    if unc(folder) || unc(&norm_path(folder)) {
+        return Some("네트워크 경로는 에이전트 폴더로 쓸 수 없다");
+    }
+    if folder_blocked(folder, &protected_roots()) {
+        return Some("데이터 폴더를 포함하는 폴더는 에이전트 폴더로 쓸 수 없다");
+    }
+    None
+}
+
+/// `folder` 가 `protected` 중 하나와 같거나 그 조상이거나 그 안인가. 있는 부분까지 정규화하고(링크 · `..`) 대소문자는 가리지 않는다.
+pub fn folder_blocked(folder: &Path, protected: &[PathBuf]) -> bool {
+    let f = path_key(folder);
+    protected.iter().any(|r| {
+        let r = path_key(r);
+        f.starts_with(&r) || r.starts_with(&f)
+    })
+}
+
+fn path_key(p: &Path) -> Vec<String> {
+    norm_path(p)
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+        .collect()
+}
+
+/// 있으면 정규화, 없으면 있는 조상까지 정규화하고 나머지를 붙인다(아직 없는 옛 루트).
+fn norm_path(p: &Path) -> PathBuf {
+    if let Ok(c) = std::fs::canonicalize(p) {
+        return c;
+    }
+    match (p.parent(), p.file_name()) {
+        (Some(d), Some(n)) => norm_path(d).join(n),
+        _ => p.to_path_buf(),
+    }
 }
 
 /// 항목 하나를 옮긴다 — 폴더끼리면 안의 것을 하나씩, 이미 있는 대상은 덮어쓰지 않는다(로그 · 사본만 남는다).

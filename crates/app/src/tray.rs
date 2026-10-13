@@ -72,10 +72,11 @@ impl Tray {
         (Self { event_loop }, Attention(proxy))
     }
 
-    /// 정상 모드 — "열기" 는 웹UI 를 열고 `on_seen` 을 부른다(새 요청 표시 지움). "종료" 는 `on_quit` 후 끝.
+    /// 정상 모드 — "열기" 는 웹UI 를 열고 `on_seen` 을 부른다(새 요청 표시 지움). "종료" 는 `on_quit` 후 끝. `note` 는 툴팁 둘째 줄(피어 포트 등).
     pub fn run(
         self,
         url: String,
+        note: Option<String>,
         on_seen: impl Fn() + 'static,
         on_quit: impl FnOnce() + 'static,
     ) -> ! {
@@ -92,7 +93,7 @@ impl Tray {
                 // macOS 는 이벤트 루프가 돈 뒤에 트레이를 만들어야 한다.
                 Event::NewEvents(StartCause::Init) => {
                     if let Some((open, quit)) = menu.take() {
-                        match build(&[&open, &quit], "coworkAgent", icon(Mark::None)) {
+                        match build(&[&open, &quit], &tip(0, note.as_deref()), icon(Mark::None)) {
                             Ok(t) => tray = Some(t),
                             Err(e) => {
                                 // 트레이 없이는 쓸 수 없다 — 사유를 보이고 정리 뒤 끝낸다(조용히 사라지지 않는다).
@@ -107,11 +108,8 @@ impl Tray {
                 }
                 Event::UserEvent(TrayEvent::Attention(n)) => {
                     if let Some(t) = &tray {
-                        let (mark, tip) = if n > 0 {
-                            (Mark::Attention, format!("coworkAgent — 새 요청 {n}건"))
-                        } else {
-                            (Mark::None, "coworkAgent".to_string())
-                        };
+                        let mark = if n > 0 { Mark::Attention } else { Mark::None };
+                        let tip = tip(n, note.as_deref());
                         if let Err(e) = t.set_icon(Some(icon(mark))) {
                             log::warn!("트레이 아이콘 갱신 실패(새 요청 {n}건): {e}");
                         }
@@ -186,6 +184,30 @@ impl Tray {
     }
 }
 
+/// 툴팁 — "coworkAgent"(새 요청이 있으면 " — 새 요청 n건") + 덧붙임 줄. Windows 툴팁은 UTF-16 128 칸(끝 NUL 포함)이라 넘으면 "…" 로 자른다.
+pub fn tip(n: usize, note: Option<&str>) -> String {
+    let head = if n > 0 {
+        format!("coworkAgent — 새 요청 {n}건")
+    } else {
+        "coworkAgent".to_string()
+    };
+    let full = match note {
+        Some(note) => format!("{head}\n{note}"),
+        None => head,
+    };
+    if full.encode_utf16().count() <= 127 {
+        return full;
+    }
+    let mut cut = String::new();
+    for c in full.chars() {
+        if cut.encode_utf16().count() + c.len_utf16() > 126 {
+            break;
+        }
+        cut.push(c);
+    }
+    cut + "…"
+}
+
 fn build(items: &[&MenuItem], tooltip: &str, icon: Icon) -> Result<TrayIcon, String> {
     let menu = Menu::new();
     for item in items {
@@ -245,4 +267,16 @@ fn icon(mark: Mark) -> Icon {
         }
     }
     Icon::from_rgba(rgba, N, N).expect("고정 크기 아이콘")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn tip_lines_and_windows_limit() {
+        assert_eq!(super::tip(0, None), "coworkAgent");
+        assert_eq!(super::tip(2, Some("둘째")), "coworkAgent — 새 요청 2건\n둘째");
+        let long = super::tip(1, Some(&"가".repeat(200)));
+        assert_eq!(long.encode_utf16().count(), 127);
+        assert!(long.ends_with('…'));
+    }
 }

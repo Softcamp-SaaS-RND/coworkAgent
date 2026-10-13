@@ -1,6 +1,6 @@
 //! 에이전트 프로필 · 대화 API(S1 · S3 · D21) — `server::router_with` 의 guard 뒤에 붙는다. 원격 답 본문은 웹UI 가 textContent 로만 그린다.
 use crate::peers_api::PeerView;
-use an_agent::chat::{Chat, Compose, default_relay_cap};
+use an_agent::chat::{Chat, Compose, TxView, default_relay_cap};
 use an_core::agents::{self, Agent};
 use an_core::chat::{self, ActivityFilter, Author, Conversation, Message, Summary};
 use axum::extract::{Path, Query, State};
@@ -52,6 +52,9 @@ struct NewConversation {
     /// 첫 글의 종류 — 참 = 요청(건의), 없거나 거짓 = 질의.
     #[serde(default)]
     request: bool,
+    /// CLI 트랜잭션 키(#1c, `via: cli` 일 때만) — 같은 키가 이미 있으면 보내지 않고 그 트랜잭션을 돌려준다.
+    #[serde(default)]
+    tx_key: Option<String>,
 }
 
 /// `PATCH /api/conversations/{id}` — 이 PC 에서 붙이는 표시만, 준 항목만: 제목(빈 문자열 = 지움 → 첫 사람 글 앞부분) · ★.
@@ -194,6 +197,9 @@ struct NewMessage {
     /// 멘션 — 보낸 대화(자동 왕복 아님)에서 부를 상대 PC 에이전트 이름. 대화 에이전트면 멘션이 아니고, 받은 대화 · 자동 왕복 · 빈 이름은 400.
     #[serde(default)]
     agent: Option<String>,
+    /// [`NewConversation::tx_key`] 와 같다.
+    #[serde(default)]
+    tx_key: Option<String>,
 }
 
 pub fn routes(chat: Arc<Chat>) -> Router {
@@ -223,6 +229,9 @@ pub fn routes(chat: Arc<Chat>) -> Router {
             "/api/conversations/{id}/messages",
             get(list_messages).post(continue_conversation),
         )
+        .route("/api/runs", get(list_runs).put(set_runs))
+        .route("/api/tx/{id}", get(get_tx))
+        .route("/api/tx/{id}/resume", axum::routing::post(resume_tx))
         .route(
             "/api/conversations/{id}/relay",
             axum::routing::post(switch_relay),
@@ -270,11 +279,15 @@ fn agent_json(a: Agent) -> Value {
     json!({ "id": a.id, "name": a.name, "folder": a.folder, "tools": a.tools, "prompt": a.prompt, "group": a.group })
 }
 
-/// 폴더는 있는 절대 경로만 — 상대 경로는 앱의 현재 폴더 기준이 되어 의도와 달라진다.
+/// 폴더는 있는 절대 경로만 — 상대 경로는 앱의 현재 폴더 기준이 되어 의도와 달라진다. 데이터 루트를 품거나 네트워크 경로면 거부
+/// ([`an_core::paths::agent_folder_problem`], 1a A7).
 fn checked_folder(folder: &str) -> Result<String, String> {
     let folder = std::path::Path::new(folder.trim());
     if !folder.is_absolute() || !folder.is_dir() {
         return Err("폴더는 이 PC 에 있는 절대 경로여야 한다".into());
+    }
+    if let Some(why) = an_core::paths::agent_folder_problem(folder) {
+        return Err(why.into());
     }
     Ok(folder.display().to_string())
 }
@@ -440,15 +453,73 @@ async fn list_conversations(State(chat): State<Arc<Chat>>) -> Response {
 }
 
 async fn list_messages(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) -> Response {
-    let db = chat.db();
-    match chat::by_id(&db, id) {
-        Ok(Some(_)) => {}
-        Ok(None) => return fail(io::Error::new(io::ErrorKind::NotFound, "없는 대화")),
-        Err(e) => return db_fail(e),
-    }
-    match chat::messages(&db, id) {
-        Ok(ms) => Json(ms.iter().map(message_json).collect::<Vec<_>>()).into_response(),
+    // DB 잠금은 글을 읽는 동안만 — 아래 보관 상태 조회가 같은 잠금을 다시 잡는다.
+    let read = {
+        let db = chat.db();
+        match chat::by_id(&db, id) {
+            Ok(Some(_)) => {}
+            Ok(None) => return fail(io::Error::new(io::ErrorKind::NotFound, "없는 대화")),
+            Err(e) => return db_fail(e),
+        }
+        chat::messages(&db, id)
+    };
+    match read {
+        Ok(ms) => Json(
+            ms.iter()
+                .map(|m| {
+                    let mut v = message_json(m);
+                    v["progress"] = chat.progress_of(m).map_or(Value::Null, |p| {
+                        json!({ "state": p.state, "ahead": p.ahead, "detail": p.detail })
+                    });
+                    // 보관(#1c) — 상대에 아직 닿지 않았거나(`pending` · `inflight`) 포기한(`failed`) 내 글.
+                    v["outbox"] = chat.outbox_of(m).map_or(Value::Null, |o| {
+                        json!({ "state": o.state, "tries": o.tries, "error": o.last_error })
+                    });
+                    v
+                })
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
         Err(e) => db_fail(e),
+    }
+}
+
+/// 실행 목록 항목 — 받은 글 · 대화 · 상대 · 에이전트 · 앞부분 40자. 그새 지워진 글은 id 만.
+fn run_json(db: &an_core::db::Connection, id: i64) -> Result<Value, an_core::db::Error> {
+    let Some(m) = chat::message_by_id(db, id)? else {
+        return Ok(json!({ "message_id": id }));
+    };
+    let conv = chat::by_id(db, m.conversation_id)?;
+    let peer = match &conv {
+        Some(c) => an_core::peers::by_id(db, c.peer_id)?,
+        None => None,
+    };
+    Ok(json!({
+        "message_id": id, "conversation_id": m.conversation_id, "peer_id": conv.as_ref().map(|c| c.peer_id),
+        "peer": peer.map(|p| p.name), "agent": m.agent.or_else(|| conv.map(|c| c.agent)),
+        "text": m.text.chars().take(40).collect::<String>(),
+    }))
+}
+
+/// 이 PC 실행 문 — 상한 · 실행 중 · 기다림(닿은 순서).
+async fn list_runs(State(chat): State<Arc<Chat>>) -> Response {
+    let (cap, running, waiting) = chat.run_queue();
+    let db = chat.db();
+    let items = |ids: Vec<i64>| ids.into_iter().map(|id| run_json(&db, id)).collect::<Result<Vec<_>, _>>();
+    match (items(running), items(waiting)) {
+        (Ok(r), Ok(w)) => Json(json!({ "cap": cap, "running": r, "waiting": w })).into_response(),
+        (Err(e), _) | (_, Err(e)) => db_fail(e),
+    }
+}
+
+/// 동시 실행 상한(1 ~ 8) — 이 PC 에 저장하고 문에 바로. 정수가 아니거나 범위 밖이면 400.
+async fn set_runs(State(chat): State<Arc<Chat>>, Json(req): Json<Value>) -> Response {
+    let Some(cap) = req["cap"].as_u64().and_then(|n| usize::try_from(n).ok()) else {
+        return bad("cap 은 1 ~ 8 정수");
+    };
+    match chat.set_max_runs(cap) {
+        Ok(()) => list_runs(State(chat)).await,
+        Err(e) => fail(e),
     }
 }
 
@@ -502,14 +573,6 @@ async fn list_across(State(chat): State<Arc<Chat>>, Query(q): Query<MessageQuery
     Json(out).into_response()
 }
 
-/// 보냄(201) — 보냈지만 덧붙은 일이 어긋났으면 `warning`.
-fn sent(conv: Conversation, msg: Message, warning: Option<String>) -> Response {
-    let mut v = json!({ "conversation": conversation_json(&conv), "message": message_json(&msg) });
-    if let Some(w) = warning {
-        v["warning"] = json!(w);
-    }
-    (StatusCode::CREATED, Json(v)).into_response()
-}
 
 async fn start_conversation(
     State(chat): State<Arc<Chat>>,
@@ -528,6 +591,18 @@ async fn start_conversation(
         Some(Ok(t)) => t,
         Some(Err(m)) => return bad(&m),
     };
+    let key = match tx_key_of(&req.tx_key, via) {
+        Ok(k) => k,
+        Err(m) => return bad(m),
+    };
+    // 같은 키는 확인부터 보내기까지 한 줄로 — 동시에 두 번 불러도 한 번만 보낸다(#1c).
+    let _keyed = match key {
+        Some(_) => Some(chat.keyed().await),
+        None => None,
+    };
+    if let Some(again) = tx_again(&chat, key) {
+        return again;
+    }
     let started = match req.relay_agent.as_deref().map(str::trim) {
         Some(mine) if !mine.is_empty() && via.is_some() => {
             return bad("자동 왕복 시작에는 via 를 쓰지 않는다");
@@ -551,6 +626,7 @@ async fn start_conversation(
         _ => {
             let opts = Compose {
                 via,
+                tx_key: key,
                 title: title.as_deref(),
                 request: req.request,
                 ..Compose::default()
@@ -560,7 +636,7 @@ async fn start_conversation(
         }
     };
     match started {
-        Ok((c, m)) => sent(c, m, None),
+        Ok((c, m)) => sent_tx(&chat, c, m, None, via),
         Err(e) => fail(e),
     }
 }
@@ -801,14 +877,106 @@ async fn continue_conversation(
         Ok(v) => v,
         Err(m) => return bad(m),
     };
+    let key = match tx_key_of(&req.tx_key, via) {
+        Ok(k) => k,
+        Err(m) => return bad(m),
+    };
+    let _keyed = match key {
+        Some(_) => Some(chat.keyed().await),
+        None => None,
+    };
+    if let Some(again) = tx_again(&chat, key) {
+        return again;
+    }
     let opts = Compose {
         via,
+        tx_key: key,
         request: req.request,
         mention: req.agent.as_deref(),
         ..Compose::default()
     };
     match chat.post_with(id, &req.text, true, opts).await {
-        Ok((c, m, warning)) => sent(c, m, warning),
+        Ok((c, m, warning)) => sent_tx(&chat, c, m, warning, via),
         Err(e) => fail(e),
     }
+}
+
+/// 트랜잭션 키 — CLI 글(`via: cli`)에만, 규칙은 [`an_core::cli_tx::key_ok`].
+fn tx_key_of<'a>(key: &'a Option<String>, via: Option<&str>) -> Result<Option<&'a str>, &'static str> {
+    match key.as_deref() {
+        None => Ok(None),
+        Some(_) if via.is_none() => Err("tx_key 는 via: cli 에만"),
+        Some(k) if an_core::cli_tx::key_ok(k) => Ok(Some(k)),
+        Some(_) => Err("tx_key 는 1 ~ 64자 영문 · 숫자 · . _ -"),
+    }
+}
+
+/// 같은 키의 트랜잭션이 있으면 보내지 않고 그것을(200).
+fn tx_again(chat: &Chat, key: Option<&str>) -> Option<Response> {
+    let found = chat.tx_by_key(key?).and_then(|t| match t {
+        Some(t) => chat.tx_view(t.id),
+        None => Ok(None),
+    });
+    match found {
+        Ok(Some(view)) => Some(Json(tx_json(&chat_conv(chat, &view), &view)).into_response()),
+        Ok(None) => None,
+        Err(e) => Some(fail(e)),
+    }
+}
+
+fn chat_conv(chat: &Chat, view: &TxView) -> Value {
+    chat::by_id(&chat.db(), view.message.conversation_id)
+        .ok()
+        .flatten()
+        .map_or(Value::Null, |c| conversation_json(&c))
+}
+
+/// 보냄(201) — 보냈지만 덧붙은 일이 어긋났으면 `warning`, CLI 글이면 트랜잭션(`tx`, #1c).
+fn sent_tx(
+    chat: &Chat,
+    conv: Conversation,
+    msg: Message,
+    warning: Option<String>,
+    via: Option<&str>,
+) -> Response {
+    // CLI 글의 트랜잭션은 글과 같은 DB 트랜잭션에서 만들었다(#1c) — 없으면 그 사실을 감추지 않는다.
+    let tx = match via.map(|_| chat.tx_of_message(msg.id)) {
+        None => None,
+        Some(Ok(Some(t))) => Some(t.id),
+        Some(Ok(None)) => return fail(io::Error::other("CLI 트랜잭션이 없다")),
+        Some(Err(e)) => return fail(e),
+    };
+    let mut v = json!({ "conversation": conversation_json(&conv), "message": message_json(&msg), "tx": tx });
+    if let Some(w) = warning {
+        v["warning"] = json!(w);
+    }
+    (StatusCode::CREATED, Json(v)).into_response()
+}
+
+/// 트랜잭션 JSON — `{tx, state, conversation, message, reply, progress, outbox, again}`.
+fn tx_json(conv: &Value, view: &TxView) -> Value {
+    json!({
+        "tx": view.tx.id, "key": view.tx.key, "state": view.state, "conversation": conv,
+        "message": message_json(&view.message),
+        "reply": view.reply.as_ref().map_or(Value::Null, message_json),
+        "progress": view.progress.as_ref().map_or(Value::Null, |p| json!({ "state": p.state, "ahead": p.ahead, "detail": p.detail })),
+        "outbox": view.outbox.as_ref().map_or(Value::Null, |o| json!({ "state": o.state, "tries": o.tries, "error": o.last_error })),
+        "stalled": view.tx.stalled_at.is_some(),
+    })
+}
+
+async fn get_tx(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) -> Response {
+    match chat.tx_view(id) {
+        Ok(Some(view)) => Json(tx_json(&chat_conv(&chat, &view), &view)).into_response(),
+        Ok(None) => fail(io::Error::new(io::ErrorKind::NotFound, "없는 트랜잭션")),
+        Err(e) => fail(e),
+    }
+}
+
+/// 이어 받기 — 멈춤을 풀고 지금 상태.
+async fn resume_tx(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) -> Response {
+    if let Err(e) = chat.tx_resume(id) {
+        return fail(e);
+    }
+    get_tx(State(chat), Path(id)).await
 }

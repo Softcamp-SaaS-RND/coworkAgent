@@ -67,7 +67,7 @@ async fn unpaired_ping_rejected() {
     let stranger = common::start("unp-c").await;
     let (resp, _) = stranger
         .node
-        .send(b.addr, None, &Request::Ping)
+        .send(b.addr, None, &Request::Ping { port: 0 })
         .await
         .unwrap();
     assert_eq!(resp, Response::error("not_paired"));
@@ -79,7 +79,7 @@ async fn unpaired_ping_rejected() {
         .send(
             b.addr,
             Some(b.node.identity().spki().to_vec()),
-            &Request::Ping,
+            &Request::Ping { port: 0 },
         )
         .await
         .unwrap();
@@ -121,7 +121,7 @@ async fn removed_peer_rejected_again() {
         .send(
             b.addr,
             Some(b.node.identity().spki().to_vec()),
-            &Request::Ping,
+            &Request::Ping { port: 0 },
         )
         .await
         .unwrap();
@@ -133,21 +133,20 @@ async fn removed_peer_rejected_again() {
     assert!(!pb.paired() && !b.only_peer().paired());
 }
 
-/// `Pong` 에 상대의 집중(설정 `focus`)을 싣고, Ping 한 쪽은 받은 시각 · 집중을 남긴다(접속 상태). 거절된 Ping 은 남기지 않는다.
+/// `Pong` 에 상대의 집중(설정 `focus`)을 싣고, Ping 한 쪽은 받은 시각 · 집중을 남긴다(접속 상태).
 #[tokio::test]
 async fn pong_carries_focus_and_presence() {
     let (a, b) = (common::start("pong-a").await, common::start("pong-b").await);
     let code = b.open();
     let pb = a.node.add(b.addr, code).await.unwrap();
     a.node.approve(pb.id).await.unwrap();
-    assert_eq!(a.only_peer().seen_at, None, "아직 Ping 전");
-    // 주기 확인은 시작 직후 한 번 — 다음은 30초 뒤라 아래 단정과 겹치지 않는다.
-    tokio::spawn(a.node.clone().watch_presence());
+    // 시작 알림(#1c) — 페어링된 상대마다 Ping 한 번(주기 확인 없음). 승인 왕복도 통신이라 접속 시각이 이미 있을 수 있다.
+    tokio::spawn(a.node.clone().announce());
     let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while a.only_peer().seen_at.is_none() {
         assert!(
             std::time::Instant::now() < until,
-            "watch_presence 가 Ping 하지 않았다"
+            "announce 가 Ping 하지 않았다"
         );
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }

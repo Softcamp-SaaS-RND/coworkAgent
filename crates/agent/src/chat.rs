@@ -1,16 +1,17 @@
 //! 대화 왕복 조율(S1 · D17 · D19) — 보내기(사람 → 원격 에이전트), 받기(대기열 → `claude -p` → 답 되돌리기), 답 받기.
 //! 원격에서 온 것은 신뢰하지 않는 입력: 페어링 확인은 `Node`, 에이전트 이름 · 본문 크기 · 대화 소유는 여기서 본다.
-use crate::runner::{RunInput, RunOutput, Session};
-use an_core::agents;
+use crate::runner::{RunInput, RunOutput, Session, StepSink};
 use an_core::chat::{self, Author, Conversation, Dir, Message, State};
+use an_core::{agents, cli_tx, outbox};
 use an_core::db::Connection;
 use an_core::peers::Peer;
 use an_net::node::{MessageKind, Node, PeerEvent};
-use an_net::proto::{MAX_TEXT, Request, Response};
+use an_net::proto::{MAX_TEXT, Request, Response, StepDetail};
 use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 /// 에이전트 실행 — 운영은 `runner::run_claude`, 테스트는 대역. `spawn_blocking` 안에서 불린다.
@@ -36,11 +37,103 @@ pub fn default_relay_cap(conn: &Connection) -> Result<i64, an_core::db::Error> {
         .unwrap_or(DEFAULT_RELAY_CAP))
 }
 
+/// PC 전체 `claude -p` 동시 실행 상한(1b, D24 개정) — 설정 키 · 기본값 · 범위.
+pub const MAX_RUNS_KEY: &str = "max_runs";
+pub const DEFAULT_MAX_RUNS: usize = 2;
+pub const MAX_RUNS: usize = 8;
+
+/// 동시 실행 상한 — 설정이 없거나 범위 밖이면 `DEFAULT_MAX_RUNS`. DB 오류는 기본값으로 감추지 않는다.
+pub fn max_runs(conn: &Connection) -> Result<usize, an_core::db::Error> {
+    Ok(an_core::settings::get(conn, MAX_RUNS_KEY)?
+        .and_then(|v| v.parse().ok())
+        .filter(|v| (1..=MAX_RUNS).contains(v))
+        .unwrap_or(DEFAULT_MAX_RUNS))
+}
+
+/// 상대가 알려 준 내 실행 요청의 차례(1b) — `queued`(앞 사람 수) | `running`(+ 단계 요약, #1c).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Progress {
+    pub state: String,
+    pub ahead: u32,
+    pub detail: Option<StepDetail>,
+}
+
+/// outbox 행 종류(#1c) — ack 뒤 처리([`Chat::settle`]) · 포기 처리([`Chat::give_up`])를 가른다.
+const MESSAGE: &str = "message";
+const RELAY_OPEN: &str = "relay_open";
+const RELAY_STEP: &str = "relay_step";
+/// 실행 없는 사람 글의 미러(상대가 받으면 내 글 `done`).
+const NOTE: &str = "note";
+/// 받은 쪽 실행 요청 사람 글의 미러(내 실행과 무관).
+const MIRROR: &str = "mirror";
+const REPLY: &str = "reply";
+const REPLY_POST: &str = "reply_post";
+const RELAY_LAST: &str = "relay_last";
+const DONE: &str = "done";
+const RELAY: &str = "relay";
+const PROGRESS: &str = "progress";
+
+/// 다시 보내기를 포기한 내 글의 거절 코드 — 화면 "보내지 못함".
+pub const UNREACHABLE: &str = "unreachable";
+
+/// 받는 쪽이 잠시 처리하지 못했다(거절 아님 — 보낸 쪽이 다시 보낸다, #1c).
+pub const RETRY: &str = "retry";
+
+/// 보내기 결과 — 상대 응답 또는 보관(전송 오류 · 앞선 행이 있어 줄에 섬 — 사유는 outbox 행에).
+enum Shipped {
+    Answered(Response),
+    Kept,
+}
+
+/// CLI 트랜잭션 보기(#1c) — `state` = `sending`(이 PC 에 보관 — 아직 상대에 닿지 않음) · `sent` · `queued` · `running` · `answered` · `failed` ·
+/// `stalled`(상대에 정해진 시간 닿지 않음 — `wait` 으로 이어 받는다).
+#[derive(Debug, Clone)]
+pub struct TxView {
+    pub tx: cli_tx::Tx,
+    pub state: &'static str,
+    pub message: Message,
+    pub reply: Option<Message>,
+    pub progress: Option<Progress>,
+    pub outbox: Option<outbox::Item>,
+}
+
+/// 상대 보내기 줄 — 깨우기 · 작업(끝났으면 다시 띄운다).
+type Lane = (Arc<tokio::sync::Notify>, tokio::task::JoinHandle<()>);
+
+/// CLI 트랜잭션 감시(초) — 상태를 묻는 간격 · 닿지 않음이 이만큼 이어지면 멈춤. 운영 60초 · 10분(#1c 결정 6), 시험은 [`Chat::set_watch`].
+#[derive(Clone, Copy)]
+struct Watch {
+    every: i64,
+    stall_after: i64,
+}
+
+/// 다시 보내기 간격 · 포기 한도(초) — 운영 5초 · 5분 · 24시간(#1c 결정 7), 시험은 [`Chat::set_retry`].
+#[derive(Clone, Copy)]
+struct Retry {
+    base: i64,
+    max: i64,
+    give_up: i64,
+}
+
 /// 알림 미리 보기 길이(글자).
 const PREVIEW_CHARS: usize = 80;
 
 /// 앱이 실행 도중 끝나 결과가 없는 메시지에 돌려줄 답.
 const INTERRUPTED: &str = "실행 도중 상대 앱이 종료돼 결과가 없다 — 다시 보내 주세요";
+/// 실행 입력에 붙이는 메모 상한 — 개수 · 본문 바이트 합(1a A8).
+pub const MAX_NOTES: usize = 20;
+pub const MAX_NOTES_BYTES: usize = 32 * 1024;
+/// 실행 입력의 구분자 — 원격 글 안에서는 지운다.
+const FRAMES: [&str; 4] = ["</원격 본문>", "<원격 본문>", "</대화 메모>", "<대화 메모>"];
+
+/// 원격 글에서 구분자 글자를 지운다(지운 자리에 새 구분자가 생기지 않을 때까지).
+fn unframe(text: &str) -> String {
+    let mut t = text.to_string();
+    while let Some(f) = FRAMES.iter().find(|f| t.contains(**f)) {
+        t = t.replace(f, "");
+    }
+    t
+}
 
 pub struct Chat {
     db: Mutex<Connection>,
@@ -52,11 +145,31 @@ pub struct Chat {
     /// 대화별 보내기 잠금 — 저장 순서 = 상대 도착 순서(동시 보내기가 상대 세션에서 뒤바뀌지 않게).
     // ponytail: 대화마다 잠금 하나를 계속 둔다 — `queues` 와 같은 상한.
     outbound: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>,
+    /// 실행 문 — PC 전체 동시 실행 상한(1b).
+    gate: Arc<crate::gate::Gate>,
+    /// 상대가 알려 준 내 실행 요청의 차례(메시지 id → 진행). 진행 표시일 뿐 — 다시 켜면 사라진다.
+    // ponytail: 답이 온 글의 항목은 읽을 때 지운다 — 읽지 않는 글이 많아지면 답 받을 때 지우기로.
+    progress: Mutex<HashMap<i64, Progress>>,
+    /// 상대별 보내기 줄 깨우기(#1c) — 상대마다 tokio 작업 하나가 outbox 를 id 순으로 보낸다. 응답 없는 상대가 다른 상대를 막지 않는다.
+    // ponytail: 상대마다 작업 하나를 계속 둔다 — 상대 수(사람 수)만큼이라 정리하지 않는다.
+    lanes: Mutex<HashMap<i64, Lane>>,
+    retry: Mutex<Retry>,
+    watch: Mutex<Watch>,
+    /// 실행 중 단계 요약을 보낸 쪽에 알리는 간격(#1c — 기본 10초, 그 사이 바뀐 것은 마지막 값 하나로 합친다).
+    step_every: Mutex<std::time::Duration>,
+    /// 키 있는 CLI 보내기 줄 세우기 — 같은 키를 동시에 두 번 보내도 확인 · 보내기 사이에 끼어들지 못하게.
+    // ponytail: 키 있는 CLI 보내기 전체를 한 줄로 — 동시 CLI 가 많아지면 키별 잠금으로.
+    keyed: tokio::sync::Mutex<()>,
+    /// 지금 상대에 상태를 묻고 있는 트랜잭션(같은 것을 겹쳐 묻지 않게).
+    watching: Mutex<std::collections::HashSet<i64>>,
+    /// 줄 작업을 띄울 때 쓰는 자기 참조.
+    me: Weak<Chat>,
 }
 
 fn db_err(e: an_core::db::Error) -> io::Error {
     io::Error::other(e)
 }
+
 
 /// UUID v4 문자열 — `claude --session-id` 는 유효한 UUID 만 받는다.
 pub fn new_uuid() -> String {
@@ -107,6 +220,8 @@ fn run_meta(model: Option<String>, effort: Option<String>) -> (Option<String>, O
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Compose<'a> {
     pub via: Option<&'a str>,
+    /// CLI 트랜잭션 키(`ask --id`, #1c) — `via` 가 있으면 글과 같은 DB 트랜잭션에서 `cli_tx` 를 만든다(키가 겹치면 글도 남지 않는다).
+    pub tx_key: Option<&'a str>,
     pub title: Option<&'a str>,
     pub request: bool,
     pub mention: Option<&'a str>,
@@ -134,6 +249,44 @@ struct Ran {
     effort: String,
 }
 
+/// 실행 실패 — 내 쪽 행 · 로그에 남길 상세와 상대에게 보내는 정해진 문구(stderr · 경로 · DB 오류를 싣지 않는다, 1a A4).
+struct Failure {
+    detail: String,
+    public: &'static str,
+}
+
+impl Failure {
+    /// 실행기 오류 — 종류로 문구를 고른다.
+    fn run(e: &std::io::Error) -> Self {
+        let public = match e.kind() {
+            std::io::ErrorKind::TimedOut => "실행 실패: 받는 PC 의 시간 제한(30분)을 넘겼다",
+            std::io::ErrorKind::Unsupported => "실행 실패: 받는 PC 의 Claude Code 버전이 낮다",
+            std::io::ErrorKind::NotFound => "실행 실패: 받는 PC 에서 Claude Code 를 찾지 못했다",
+            _ => RUN_FAILED,
+        };
+        Failure {
+            detail: e.to_string(),
+            public,
+        }
+    }
+
+    /// 받는 PC 의 기록 · 조회 오류.
+    fn record(e: impl std::fmt::Display) -> Self {
+        Failure {
+            detail: format!("받는 PC 기록 오류 — {e}"),
+            public: RECORD_FAILED,
+        }
+    }
+}
+
+const RUN_FAILED: &str = "실행 실패: 받는 PC 에서 실행하지 못했다 — 원인은 받는 PC 화면에 있다";
+const RECORD_FAILED: &str = "실행 실패: 받는 PC 기록 오류";
+const RESULT_ERROR: &str =
+    "실행 실패: 받는 PC 의 에이전트가 오류로 끝났다 — 원인은 받는 PC 화면에 있다";
+const EMPTY_ANSWER: &str = "실행 실패: 받는 PC 의 에이전트가 빈 답을 냈다";
+const FOLDER_BLOCKED: &str =
+    "실행 실패: 받는 PC 의 에이전트 폴더를 쓸 수 없다 — 받는 PC 에서 폴더를 바꿔야 한다";
+
 /// 집중 거절 코드(D17 개정 — 사용자가 켠 집중 중에는 새 실행 요청을 거부).
 const FOCUS: &str = "focus";
 
@@ -147,10 +300,8 @@ fn refused(resp: Response) -> io::Error {
             io::ErrorKind::PermissionDenied,
             format!("상대가 거절: {}", an_net::proto::clean_code(&code)),
         ),
-        other => io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("예상하지 못한 응답: {other:?}"),
-        ),
+        // 내용은 싣지 않는다 — 상대가 고른 글자(최대 64 KiB)가 화면 · CLI 오류로 간다.
+        _ => io::Error::new(io::ErrorKind::InvalidData, "예상하지 못한 응답"),
     }
 }
 
@@ -166,19 +317,655 @@ fn addr(peer: &Peer) -> io::Result<SocketAddr> {
 impl Chat {
     /// `conn` 은 피어 노드와 같은 DB 파일의 다른 연결.
     pub fn new(conn: Connection, node: Arc<Node>, run: Run) -> Arc<Self> {
-        Arc::new(Self {
+        // 못 읽으면 기본값 — 시작을 막지 않는다(설정 화면이 같은 오류를 보인다).
+        let cap = max_runs(&conn).unwrap_or_else(|e| {
+            log::warn!("동시 실행 상한 읽기 실패 — 기본 {DEFAULT_MAX_RUNS}: {e}");
+            DEFAULT_MAX_RUNS
+        });
+        Arc::new_cyclic(|me| Self {
             db: Mutex::new(conn),
             node,
             run,
             queues: Mutex::new(HashMap::new()),
             outbound: Mutex::new(HashMap::new()),
+            gate: crate::gate::Gate::new(cap),
+            progress: Mutex::new(HashMap::new()),
+            lanes: Mutex::new(HashMap::new()),
+            retry: Mutex::new(Retry {
+                base: 5,
+                max: 300,
+                give_up: 24 * 3600,
+            }),
+            watch: Mutex::new(Watch {
+                every: 60,
+                stall_after: 600,
+            }),
+            step_every: Mutex::new(std::time::Duration::from_secs(10)),
+            keyed: tokio::sync::Mutex::new(()),
+            watching: Mutex::new(std::collections::HashSet::new()),
+            me: me.clone(),
         })
     }
+
+    /// 실행 문 — (상한, 실행 중 메시지 id, 기다리는 메시지 id). 기다림 = 문의 줄(닿은 순서) 뒤에, 같은 대화의 앞 실행을 기다려 아직 문에
+    /// 닿지 않은 실행 요청(DB `queued`, id 순).
+    pub fn run_queue(&self) -> (usize, Vec<i64>, Vec<i64>) {
+        let (cap, running, mut waiting) = self.gate.snapshot();
+        let db = self.db();
+        let blocked = chat::pending_conversations(&db).and_then(|cs| {
+            let mut ids = Vec::new();
+            for c in cs {
+                ids.extend(
+                    chat::pending(&db, c)?
+                        .into_iter()
+                        .filter(|m| m.state == State::Queued)
+                        .map(|m| m.id),
+                );
+            }
+            Ok(ids)
+        });
+        match blocked {
+            Ok(mut ids) => {
+                ids.retain(|id| !running.contains(id) && !waiting.contains(id));
+                ids.sort_unstable();
+                waiting.extend(ids);
+            }
+            Err(e) => log::warn!("실행 목록 — 대화 대기열 읽기 실패: {e}"),
+        }
+        (cap, running, waiting)
+    }
+
+    /// 같은 대화의 앞 실행 때문에 기다리는 상대 실행 요청 — 닿자마자 `queued` 를 알린다(대화 작업이 문에 데려가기 전에는 문이 모른다).
+    /// 앞 사람 수 = 같은 대화의 앞 요청 + 지금 문 줄.
+    fn tell_waiting(&self, conversation_id: i64, uuid: &str) {
+        let found = {
+            let db = self.db();
+            chat::by_id(&db, conversation_id).and_then(|c| Ok((c, chat::pending(&db, conversation_id)?)))
+        };
+        let (Some(conv), pending) = (match found {
+            Ok(x) => x,
+            Err(e) => return log::info!("대화 {conversation_id} 대기 알림 — 읽기 실패: {e}"),
+        }) else {
+            return;
+        };
+        let Some(i) = pending.iter().position(|m| m.uuid == uuid) else {
+            return;
+        };
+        if i == 0 || conv.dir != Dir::In || pending[i].mine {
+            return;
+        }
+        let ahead = i + self.gate.snapshot().2.len();
+        self.send_progress(&conv, &pending[i], "queued", ahead);
+    }
+
+    /// 동시 실행 상한을 바꾸고 이 PC 에 저장한다(1 ~ `MAX_RUNS`).
+    pub fn set_max_runs(&self, n: usize) -> io::Result<()> {
+        if !(1..=MAX_RUNS).contains(&n) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("동시 실행 상한은 1 ~ {MAX_RUNS}"),
+            ));
+        }
+        an_core::settings::set(&self.db(), MAX_RUNS_KEY, &n.to_string()).map_err(db_err)?;
+        self.gate.set_cap(n);
+        Ok(())
+    }
+
+    /// 상대가 알려 준 차례 — 아직 답을 기다리는(`sent`) 글만. 답이 온 글의 항목은 여기서 지운다.
+    pub fn progress_of(&self, m: &Message) -> Option<Progress> {
+        let mut p = an_core::sync::lock(&self.progress);
+        if m.state != State::Sent {
+            p.remove(&m.id);
+            return None;
+        }
+        p.get(&m.id).cloned()
+    }
+
+    /// 실행 문을 지난다(PC 전체 동시 실행 상한, 1b) — 상대가 보낸 실행 요청이면 차례를 알린다(기다리면 `queued` → `running`, 바로면 `running`).
+    async fn admit(&self, conversation_id: i64, asked: &Message) -> crate::gate::Ticket {
+        let conv = chat::by_id(&self.db(), conversation_id).ok().flatten();
+        let remote = conv.filter(|c| c.dir == Dir::In && !asked.mine);
+        let (mut ticket, ahead) = self.gate.enter(asked.id);
+        if let Some(k) = ahead {
+            if let Some(c) = &remote {
+                self.send_progress(c, asked, "queued", k);
+            }
+            ticket.ready().await;
+        }
+        if let Some(c) = &remote {
+            self.send_progress(c, asked, "running", 0);
+        }
+        ticket
+    }
+
+    /// 상대 실행 요청의 차례를 보낸 쪽에 알린다 — 그 상대 보내기 줄에(같은 글의 기다리는 진행은 마지막 값으로 바꾼다, #1c). 답과 같은 줄이라
+    /// 순서가 지켜지고, 닿지 않으면 다시 보낸다.
+    fn send_progress(&self, conv: &Conversation, asked: &Message, state: &str, ahead: usize) {
+        self.send_step(conv, asked, state, ahead, None);
+    }
+
+    fn send_step(
+        &self,
+        conv: &Conversation,
+        asked: &Message,
+        state: &str,
+        ahead: usize,
+        detail: Option<StepDetail>,
+    ) {
+        let req = Request::Progress {
+            conv: conv.uuid.clone(),
+            msg: asked.uuid.clone(),
+            state: state.into(),
+            ahead: u32::try_from(ahead).unwrap_or(u32::MAX),
+            detail,
+        };
+        let key = format!("progress:{}", asked.uuid);
+        self.enqueue(conv, None, PROGRESS, &req, Some(&key));
+    }
+
+    /// CLI 트랜잭션 감시 설정 — 시험용(상태를 묻는 간격 · 멈춤까지, 초).
+    pub fn set_watch(&self, every: i64, stall_after: i64) {
+        *an_core::sync::lock(&self.watch) = Watch { every, stall_after };
+    }
+
+    pub fn tx_by_key(&self, key: &str) -> io::Result<Option<cli_tx::Tx>> {
+        cli_tx::by_key(&self.db(), key).map_err(db_err)
+    }
+
+    /// 글의 CLI 트랜잭션.
+    pub fn tx_of_message(&self, message_id: i64) -> io::Result<Option<cli_tx::Tx>> {
+        cli_tx::by_message(&self.db(), message_id).map_err(db_err)
+    }
+
+    /// 키 있는 CLI 보내기 잠금 — 같은 키 확인부터 보내기까지 잡는다.
+    pub async fn keyed(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.keyed.lock().await
+    }
+
+    /// 이어 받기(`wait`) — 멈춤을 풀고 다시 감시한다.
+    pub fn tx_resume(&self, id: i64) -> io::Result<()> {
+        cli_tx::resume(&self.db(), id).map_err(db_err)
+    }
+
+    /// 트랜잭션의 지금 상태 — 끝나지 않았고 물을 때면 상대에 상태를 묻는 작업을 띄운다(돌아오기를 기다리지 않음 — 다음 조회가 결과를 본다).
+    pub fn tx_view(&self, id: i64) -> io::Result<Option<TxView>> {
+        let found = {
+            let db = self.db();
+            let Some(tx) = cli_tx::by_id(&db, id).map_err(db_err)? else {
+                return Ok(None);
+            };
+            let Some(message) = chat::message_by_id(&db, tx.message_id).map_err(db_err)? else {
+                return Ok(None);
+            };
+            let reply = chat::messages(&db, message.conversation_id)
+                .map_err(db_err)?
+                .into_iter()
+                .find(|r| r.author == Author::Agent && r.reply_to == Some(message.id));
+            (tx, message, reply)
+        };
+        let (tx, message, reply) = found;
+        let outbox = self.outbox_of(&message);
+        let progress = self.progress_of(&message);
+        let state = match (&reply, &outbox) {
+            (Some(r), _) if r.state == State::Done => "answered",
+            (Some(r), _) if r.state == State::Error => "failed",
+            _ if message.state == State::Error => "failed",
+            _ if tx.stalled_at.is_some() => "stalled",
+            (_, Some(o)) if o.state == "failed" => "failed",
+            (_, Some(_)) => "sending",
+            _ => match progress.as_ref().map(|p| p.state.as_str()) {
+                Some("queued") => "queued",
+                Some("running") => "running",
+                _ => "sent",
+            },
+        };
+        if matches!(state, "sending" | "sent" | "queued" | "running") {
+            self.watch_tx(&tx, &message, state == "sending");
+        }
+        Ok(Some(TxView {
+            tx,
+            state,
+            message,
+            reply,
+            progress,
+            outbox,
+        }))
+    }
+
+    /// 상대에 닿는지 본다 — 보관 중이면 그 상대 줄이 닿지 않고 있는지, 아니면 상태 질의. 닿으면 닿지 않음을 지우고, 아니면 시작 시각부터
+    /// 멈춤까지 센다.
+    fn watch_tx(&self, tx: &cli_tx::Tx, message: &Message, sending: bool) {
+        let w = *an_core::sync::lock(&self.watch);
+        let due = cli_tx::due(&self.db(), tx.id, w.every);
+        if !matches!(due, Ok(true)) || !an_core::sync::lock(&self.watching).insert(tx.id) {
+            return;
+        }
+        let Some(me) = self.me.upgrade() else {
+            return;
+        };
+        let _ = cli_tx::asked(&self.db(), tx.id);
+        let (id, message) = (tx.id, message.clone());
+        tokio::spawn(async move {
+            let reached = if sending {
+                let peer = chat::by_id(&me.db(), message.conversation_id)
+                    .ok()
+                    .flatten()
+                    .map(|c| c.peer_id);
+                peer.is_some_and(|p| matches!(outbox::failing(&me.db(), p), Ok(false)))
+            } else {
+                me.ask_status(&message).await.is_ok()
+            };
+            let marked = if reached {
+                cli_tx::reached(&me.db(), id).map(|_| false)
+            } else {
+                cli_tx::unreachable(&me.db(), id, w.stall_after)
+            };
+            match marked {
+                Ok(true) => log::info!("CLI 트랜잭션 {id} — 상대에 {}초 닿지 않아 멈춤", w.stall_after),
+                Ok(false) => {}
+                Err(e) => log::warn!("CLI 트랜잭션 {id} 감시 기록 실패: {e}"),
+            }
+            an_core::sync::lock(&me.watching).remove(&id);
+        });
+    }
+
+    /// 단계 요약 간격 — 시험용.
+    pub fn set_step_every(&self, every: std::time::Duration) {
+        *an_core::sync::lock(&self.step_every) = every;
+    }
+
+    /// 보내기 설정 — 시험용(재시도 첫 간격 · 최대 간격 · 포기 한도, 초).
+    pub fn set_retry(&self, base: i64, max: i64, give_up: i64) {
+        *an_core::sync::lock(&self.retry) = Retry { base, max, give_up };
+    }
+
+    /// 보내기 행을 적는다(#1c, `inflight` — 곧 [`Chat::dispatch`] 가 보낸다. 그 전에 꺼지면 다시 켤 때 줄이 보낸다). `conn` 은 글을 적는 트랜잭션일
+    /// 수 있다 — 글과 행이 함께 남거나 함께 없다.
+    fn stage(
+        conn: &Connection,
+        conv: &Conversation,
+        msg_id: Option<i64>,
+        kind: &'static str,
+        req: &Request,
+    ) -> io::Result<i64> {
+        let frame = serde_json::to_string(req).map_err(io::Error::other)?;
+        outbox::add(conn, conv.peer_id, Some(conv.id), msg_id, kind, &frame, None, "inflight")
+            .map_err(db_err)
+    }
+
+    /// 상대에게 대화 프레임을 보낸다(#1c) — outbox 에 먼저 적고, 그 상대 줄에 앞선 행이 없으면 바로 한 번. 응답이면 행을 지우고 응답을, 전송
+    /// 오류 · 앞선 행이면 줄에 남기고 `Kept`(상대 줄이 ack 까지 다시 보내고 [`settle`](Self::settle) 이 뒷일을 한다).
+    async fn ship(
+        &self,
+        conv: &Conversation,
+        msg_id: Option<i64>,
+        kind: &'static str,
+        req: &Request,
+    ) -> io::Result<Shipped> {
+        let id = Self::stage(&self.db(), conv, msg_id, kind, req)?;
+        self.dispatch(conv, id, req).await
+    }
+
+    /// [`stage`](Self::stage) 로 이미 적은 행을 보낸다 — 글과 행을 한 DB 트랜잭션으로 적은 곳(사람 요청 · 답)이 커밋 뒤 부른다.
+    async fn dispatch(&self, conv: &Conversation, id: i64, req: &Request) -> io::Result<Shipped> {
+        let peer_id = conv.peer_id;
+        let behind = {
+            let db = self.db();
+            // 같은 대화 순서만 지킨다. 진행 · 멈춤 알림은 앞질러도 된다 — 답보다 늦게 닿은 진행은 받는 쪽이 버린다(`unknown`).
+            // 닿지 않고 있는 상대면 바로 보내지 않는다 — 화면이 연결 시간 초과(최대 10초)를 기다리지 않게, 상대가 돌아오면(Ping · 요청) 줄이 보낸다.
+            outbox::has_before(&db, conv.id, id, &[PROGRESS, RELAY]).map_err(db_err)?
+                || outbox::failing(&db, peer_id).map_err(db_err)?
+        };
+        let me = self.me.upgrade().filter(|_| !behind);
+        let Some(me) = me else {
+            outbox::set_state(&self.db(), id, "pending").map_err(db_err)?;
+            self.kick(peer_id);
+            return Ok(Shipped::Kept);
+        };
+        // 보내기 · 뒷정리는 따로 띄운 작업에서 — 부른 쪽(HTTP 처리기 등)이 기다리다 취소돼도 행이 `inflight` 로 남지 않는다.
+        let req = req.clone();
+        let sent = tokio::spawn(async move {
+            let got = me.send_to(peer_id, &req).await;
+            match &got {
+                Ok(_) => {
+                    if let Err(e) = outbox::remove(&me.db(), id) {
+                        log::warn!("보낸 글 {id} 지우기 실패: {e}");
+                    }
+                }
+                Err(e) => me.backoff(id, e),
+            }
+            // 그새 뒤에 선 행은 줄이 이어 보낸다.
+            me.kick(peer_id);
+            got
+        })
+        .await;
+        Ok(match sent {
+            Ok(Ok(resp)) => Shipped::Answered(resp),
+            _ => Shipped::Kept,
+        })
+    }
+
+    /// 줄에만 넣는다(바로 보내지 않음) — `key` 가 같은 기다리는 행이 있으면 그 행을 바꾼다(진행 — 마지막 값만).
+    fn enqueue(
+        &self,
+        conv: &Conversation,
+        msg_id: Option<i64>,
+        kind: &'static str,
+        req: &Request,
+        key: Option<&str>,
+    ) {
+        let added = serde_json::to_string(req)
+            .map_err(io::Error::other)
+            .and_then(|frame| {
+                let db = self.db();
+                outbox::add(&db, conv.peer_id, Some(conv.id), msg_id, kind, &frame, key, "pending")
+                    .map_err(db_err)
+            });
+        match added {
+            Ok(_) => self.kick(conv.peer_id),
+            Err(e) => log::warn!("보낼 글 보관 실패({kind}): {e}"),
+        }
+    }
+
+    /// 페어링된 상대에 요청 하나(키 고정) — 응답 내용은 부르는 쪽이 본다.
+    async fn send_to(&self, peer_id: i64, req: &Request) -> io::Result<Response> {
+        let peer = self.paired_peer(peer_id)?;
+        match self.node.send(addr(&peer)?, Some(peer.spki), req).await?.0 {
+            // 상대가 잠시 처리하지 못했다(DB 잠금 등) — 거절이 아니라 다시 보낼 일.
+            Response::Error { code } if code == RETRY => Err(io::Error::other(
+                "상대가 잠시 처리하지 못했다 — 다시 보낸다",
+            )),
+            resp => Ok(resp),
+        }
+    }
+
+    /// 전송 오류 — 간격을 늘려 줄로 되돌리거나, 기다림 합이 한도를 넘으면 실패 보관 + [`give_up`](Self::give_up).
+    fn backoff(&self, id: i64, e: &io::Error) {
+        let r = *an_core::sync::lock(&self.retry);
+        let item = match outbox::get(&self.db(), id) {
+            Ok(Some(it)) => it,
+            Ok(None) => return,
+            Err(err) => return log::warn!("보낼 글 {id} 읽기 실패: {err}"),
+        };
+        let delay = r
+            .base
+            .saturating_mul(1i64 << item.tries.clamp(0, 20))
+            .min(r.max);
+        // 직전 간격까지만 센다(앞당긴 재시도 · 앱을 꺼 둔 시간은 한도에 넣지 않는다).
+        let prev = r
+            .base
+            .saturating_mul(1i64 << (item.tries - 1).clamp(0, 20))
+            .min(r.max);
+        let why = e.to_string();
+        let waited = match outbox::retry(&self.db(), id, delay, prev, &why) {
+            Ok(w) => w,
+            Err(err) => return log::warn!("보낼 글 {id} 재시도 기록 실패: {err}"),
+        };
+        if waited < r.give_up {
+            return;
+        }
+        // 그 상대에 한도만큼 닿지 않았다 — 줄에 기다리는 글도 함께 포기한다(뒤 글이 하나씩 24시간을 다시 기다리지 않게). 지금 보내는 중
+        // (`inflight`)인 글은 그 결과가 정한다 — 닿은 글을 "보내지 못함" 으로 덮지 않게(적대적 평가 라운드 2).
+        let queued = outbox::queued_for(&self.db(), item.peer_id).unwrap_or_default();
+        log::warn!(
+            "상대 {} 에 {waited}초 동안 닿지 않아 보내기 포기 — {}건: {why}",
+            item.peer_id,
+            queued.len()
+        );
+        for it in queued {
+            if let Err(err) = outbox::fail(&self.db(), it.id, &why) {
+                log::warn!("보낼 글 {} 실패 보관 기록 실패: {err}", it.id);
+            }
+            self.give_up(&it);
+        }
+    }
+
+    /// 상대 줄을 깨운다(없으면 띄운다 — 상대마다 tokio 작업 하나).
+    fn kick(&self, peer_id: i64) {
+        let Some(me) = self.me.upgrade() else {
+            return;
+        };
+        let mut lanes = an_core::sync::lock(&self.lanes);
+        // 줄 작업이 끝났으면(panic) 다시 띄운다 — 죽은 작업을 깨우며 그 상대가 멈추지 않게.
+        if lanes.get(&peer_id).is_none_or(|(_, h)| h.is_finished()) {
+            let wake = Arc::new(tokio::sync::Notify::new());
+            let handle = tokio::spawn(me.lane(peer_id, wake.clone()));
+            lanes.insert(peer_id, (wake, handle));
+        }
+        if let Some((wake, _)) = lanes.get(&peer_id) {
+            wake.notify_one();
+        }
+    }
+
+    /// 상대 줄 — 맨 앞 행부터 하나씩(앞 행이 못 가면 뒤도 기다린다 — 대화 순서 보존). 바로 보내는 중(`inflight`)이면 끝나고 깨울 때까지.
+    async fn lane(self: Arc<Self>, peer_id: i64, wake: Arc<tokio::sync::Notify>) {
+        loop {
+            let head = outbox::head(&self.db(), peer_id);
+            let item = match head {
+                Ok(Some(it)) if it.state == "pending" => it,
+                Ok(_) => {
+                    wake.notified().await;
+                    continue;
+                }
+                Err(e) => {
+                    log::warn!("상대 {peer_id} 보낼 글 읽기 실패: {e}");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+            if item.due_in > 0 {
+                let wait = Duration::from_secs(item.due_in.unsigned_abs());
+                tokio::select! {
+                    _ = tokio::time::sleep(wait) => {}
+                    _ = wake.notified() => {}
+                }
+                continue;
+            }
+            self.deliver(item).await;
+        }
+    }
+
+    async fn deliver(&self, item: outbox::Item) {
+        let req: Request = match serde_json::from_str(&item.frame) {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!("보낼 글 {} 프레임 형식 오류 — 보관: {e}", item.id);
+                let _ = outbox::fail(&self.db(), item.id, "프레임 형식 오류");
+                return;
+            }
+        };
+        // 결과를 먼저 받는다 — `if let` 조건의 DB 잠금은 블록 끝까지 살아 있다(await 를 넘기면 안 된다).
+        let marked = outbox::set_state(&self.db(), item.id, "inflight");
+        if let Err(e) = marked {
+            log::warn!("보낼 글 {} 상태 기록 실패: {e}", item.id);
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            return;
+        }
+        match self.send_to(item.peer_id, &req).await {
+            Ok(resp) => {
+                if let Err(e) = outbox::remove(&self.db(), item.id) {
+                    log::warn!("보낸 글 {} 지우기 실패: {e}", item.id);
+                }
+                self.settle(&item, &resp);
+            }
+            Err(e) => self.backoff(item.id, &e),
+        }
+    }
+
+    /// 글이 속한 대화.
+    fn conv_of(&self, msg_id: i64) -> Option<Conversation> {
+        let db = self.db();
+        let m = chat::message_by_id(&db, msg_id).ok().flatten()?;
+        chat::by_id(&db, m.conversation_id).ok().flatten()
+    }
+
+    /// ack 뒤 처리 — 줄이 나중에 보낸 글의 응답을 그 자리의 처리와 같게(거절이면 글 실패 · 자동 왕복 끔, 미러 `Ok` 면 완료).
+    fn settle(&self, item: &outbox::Item, resp: &Response) {
+        let ok = matches!(resp, Response::Ok);
+        let Some(msg_id) = item.msg_id else {
+            if !ok {
+                log::info!("상대 {} 가 {} 를 받지 않았다: {resp:?}", item.peer_id, item.kind);
+            }
+            return;
+        };
+        match (item.kind.as_str(), ok) {
+            (MESSAGE | RELAY_OPEN | RELAY_STEP, false) => {
+                self.refused_by_peer(msg_id, item.peer_id, resp);
+                if item.kind == MESSAGE {
+                    return;
+                }
+                if let Some(conv) = self.conv_of(msg_id) {
+                    let _ = chat::relay_on(&self.db(), conv.id, false, false);
+                    if item.kind == RELAY_STEP {
+                        let focus = matches!(resp, Response::Error { code } if code == FOCUS);
+                        self.relay_end(
+                            &conv,
+                            if focus {
+                                "상대가 집중 중"
+                            } else {
+                                "상대가 거절"
+                            },
+                        );
+                    }
+                }
+            }
+            (NOTE, true) => {
+                let _ = chat::set_state(&self.db(), msg_id, State::Done);
+            }
+            (NOTE, false) => {
+                let _ = chat::set_state(&self.db(), msg_id, State::Error);
+            }
+            (REPLY | REPLY_POST | RELAY_LAST, false) => {
+                let _ = chat::set_state(&self.db(), msg_id, State::Undelivered);
+            }
+            (_, false) => log::info!("상대 {} 가 {} 를 받지 않았다: {resp:?}", item.peer_id, item.kind),
+            _ => {}
+        }
+    }
+
+    /// 다시 보내기 포기(한도) — 내 글은 "보내지 못함"(실패 + `unreachable`), 답은 "답 미전달", 자동 왕복은 멈춘다.
+    fn give_up(&self, item: &outbox::Item) {
+        let Some(msg_id) = item.msg_id else {
+            return;
+        };
+        match item.kind.as_str() {
+            MESSAGE | RELAY_OPEN | RELAY_STEP | NOTE => {
+                {
+                    let db = self.db();
+                    let _ = chat::set_state(&db, msg_id, State::Error);
+                    let _ = chat::set_refused(&db, msg_id, Some(UNREACHABLE));
+                }
+                let relay = matches!(item.kind.as_str(), RELAY_OPEN | RELAY_STEP);
+                if let Some(conv) = self.conv_of(msg_id).filter(|_| relay) {
+                    let _ = chat::relay_on(&self.db(), conv.id, false, false);
+                    if item.kind == RELAY_STEP {
+                        self.relay_end(&conv, "상대에 닿지 않음");
+                    }
+                }
+            }
+            REPLY | REPLY_POST | RELAY_LAST => {
+                let _ = chat::set_state(&self.db(), msg_id, State::Undelivered);
+            }
+            _ => {}
+        }
+    }
+
+    /// 상대에서 무엇이든 받았다 — 그 상대 줄에 남은 글을 지금 보낸다(돌아온 증거).
+    fn peer_back(&self, peer_id: i64) {
+        let waiting = outbox::head(&self.db(), peer_id);
+        match waiting {
+            Ok(Some(_)) => {
+                let hurried = outbox::hurry(&self.db(), peer_id);
+                if let Err(e) = hurried {
+                    log::warn!("상대 {peer_id} 보낼 글 앞당기기 실패: {e}");
+                }
+                self.kick(peer_id);
+            }
+            Ok(None) => {}
+            Err(e) => log::warn!("상대 {peer_id} 보낼 글 읽기 실패: {e}"),
+        }
+
+    }
+
+    /// 내 글의 보관 상태(웹UI — 보내는 중 · 보내지 못함). 상대에 닿은 글은 `None`.
+    pub fn outbox_of(&self, m: &Message) -> Option<outbox::Item> {
+        if !m.mine {
+            return None;
+        }
+        outbox::for_message(&self.db(), m.id).ok().flatten()
+    }
+
+    /// 상태 질의(#1c) — 보낸 쪽이 자기 실행 요청의 지금 상태를 상대에 묻는다(바로 — 보관하지 않음). `queued` · `running` 이면 진행을 갱신한다.
+    pub async fn ask_status(&self, m: &Message) -> io::Result<Response> {
+        let conv = chat::by_id(&self.db(), m.conversation_id)
+            .map_err(db_err)?
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "없는 대화"))?;
+        let req = Request::Status {
+            conv: conv.uuid.clone(),
+            msg: m.uuid.clone(),
+        };
+        let resp = self.send_to(conv.peer_id, &req).await?;
+        self.peer_back(conv.peer_id);
+        if let Response::Status { state, ahead } = &resp
+            && matches!(state.as_str(), "queued" | "running")
+            && m.state == State::Sent
+        {
+            let mut p = an_core::sync::lock(&self.progress);
+            let detail = p.get(&m.id).and_then(|x| x.detail.clone());
+            p.insert(
+                m.id,
+                Progress {
+                    state: state.clone(),
+                    ahead: if state == "running" { 0 } else { *ahead },
+                    detail: if state == "running" { detail } else { None },
+                },
+            );
+        }
+        Ok(resp)
+    }
+
+    /// 상대가 묻는 자기 실행 요청의 상태 — 그 상대 대화의 상대 실행 요청 글만. 끝났으면 `done`(그 상대에 남은 답이 있으면 지금 보낸다).
+    fn inbound_status(&self, peer: &Peer, conv: String, msg: String) -> io::Result<Response> {
+        let found = {
+            let db = self.db();
+            match chat::find(&db, &conv, peer.id).map_err(db_err)? {
+                Some(c) => chat::message_by_uuid(&db, &msg)
+                    .map_err(db_err)?
+                    .filter(|m| m.conversation_id == c.id && !m.mine && m.exec),
+                None => None,
+            }
+        };
+        let Some(m) = found else {
+            return Ok(Response::Status {
+                state: "unknown".into(),
+                ahead: 0,
+            });
+        };
+        let (state, ahead) = match m.state {
+            State::Queued => {
+                let (_, _, waiting) = self.run_queue();
+                let ahead = waiting.iter().position(|&id| id == m.id).unwrap_or(0);
+                ("queued", u32::try_from(ahead).unwrap_or(u32::MAX))
+            }
+            State::Running => ("running", 0),
+            _ => {
+                self.peer_back(peer.id);
+                ("done", 0)
+            }
+        };
+        Ok(Response::Status {
+            state: state.into(),
+            ahead,
+        })
+    }
+
 
     /// 노드의 대화 요청 처리기로 붙는다.
     pub fn attach(self: &Arc<Self>) {
         let me = self.clone();
         self.node.on_request(move |peer, req| me.handle(peer, req));
+        let me = self.clone();
+        self.node.on_seen(move |peer_id| me.peer_back(peer_id));
     }
 
     /// 시작 시 — 지난 실행에서 남은 `queued` 는 실행하고, `running`(실행 도중 종료)은 오류 답으로 끝낸다. tokio 런타임 안에서 부른다.
@@ -187,12 +974,22 @@ impl Chat {
         for &id in &ids {
             self.wake(id);
         }
+        // 지난 실행에서 보내지 못한 글 — 상대 줄을 다시 띄운다(#1c). 7일 지난 실패 보관은 지운다.
+        if let Err(e) = outbox::prune_failed(&self.db(), 7) {
+            log::warn!("오래된 실패 보관 지우기 실패: {e}");
+        }
+        let peers = outbox::pending_peers(&self.db()).map_err(db_err)?;
+        for p in peers {
+            // 다시 켰다 — 기다리던 간격과 무관하게 지금 한 번.
+            outbox::hurry(&self.db(), p).map_err(db_err)?;
+            self.kick(p);
+        }
         Ok(ids.len())
     }
 
     /// 대화 DB — await 를 넘겨 쥐지 않는다.
     pub fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.db.lock().expect("대화 DB 잠금이 오염됐다")
+        an_core::sync::lock(&self.db)
     }
 
     fn paired_peer(&self, peer_id: i64) -> io::Result<Peer> {
@@ -408,43 +1205,41 @@ impl Chat {
                 chat::set_agent(&tx, msg.id, opts.mention).map_err(db_err)?;
                 msg.agent = opts.mention.map(str::to_string);
             }
+            if via.is_some() {
+                cli_tx::create(&tx, opts.tx_key, msg.id).map_err(db_err)?;
+            }
+            let req = Request::Message {
+                conv: conv.uuid.clone(),
+                msg: msg.uuid.clone(),
+                agent: conv.agent.clone(),
+                text: text.to_string(),
+                lc: Some(msg.lc),
+                by_agent: None,
+                relay: relay.clone(),
+                via: msg.via.clone(),
+                request: msg.request,
+                mention: msg.agent.clone(),
+            };
+            let kind = if relay.is_some() { RELAY_OPEN } else { MESSAGE };
+            // 보내기 행도 같은 트랜잭션 — 글만 남고 보낼 행이 없는 채로 꺼지지 않게(#1c).
+            let staged = Self::stage(&tx, &conv, Some(msg.id), kind, &req)?;
             tx.commit().map_err(db_err)?;
-            msg
+            (msg, req, staged)
         };
+        let (msg, req, staged) = msg;
         let starts_relay = relay.is_some();
-        let req = Request::Message {
-            conv: conv.uuid.clone(),
-            msg: msg.uuid.clone(),
-            agent: conv.agent.clone(),
-            text: text.to_string(),
-            lc: Some(msg.lc),
-            by_agent: None,
-            relay,
-            via: msg.via.clone(),
-            request: msg.request,
-            mention: msg.agent.clone(),
-        };
-        match self
-            .node
-            .send(addr(peer)?, Some(peer.spki.clone()), &req)
-            .await
-        {
-            Ok((Response::Ok, _)) => Ok((conv, msg)),
+        let _ = peer;
+        match self.dispatch(&conv, staged, &req).await? {
+            // 상대가 받았거나, 닿지 않아 이 PC 에 보관했다(#1c — 줄이 다시 보낸다, 같은 uuid 라 상대에서 한 번만 실행).
+            Shipped::Answered(Response::Ok) | Shipped::Kept => Ok((conv, msg)),
             // 명시적 거절만 실패로 확정한다. 자동 왕복을 여는 글이면 켜짐도 거둔다(상대에 그 대화가 없다 — 재개가 갈 곳이 없다).
-            Ok((other, _)) => {
+            Shipped::Answered(other) => {
                 self.refused_by_peer(msg.id, conv.peer_id, &other);
                 if starts_relay {
                     let _ = chat::relay_on(&self.db(), conv.id, false, false);
                 }
                 Err(refused(other))
             }
-            // 전송 오류는 상대가 받았는지 모른다 — `sent` 로 두어 늦게 온 답을 받고, 같은 일을 새로 보내 중복 실행하지 않게 알린다.
-            Err(e) => Err(io::Error::new(
-                e.kind(),
-                format!(
-                    "전달 확인 안 됨({e}) — 상대가 받았을 수 있다. 답을 기다린 뒤 다시 보내세요"
-                ),
-            )),
         }
     }
 
@@ -538,29 +1333,33 @@ impl Chat {
             }
             chat::set_request(&tx, msg.id, opts.request).map_err(db_err)?;
             msg.request = opts.request;
+            if via.is_some() {
+                cli_tx::create(&tx, opts.tx_key, msg.id).map_err(db_err)?;
+            }
+            let req = Request::Post {
+                conv: conv.uuid.clone(),
+                msg: msg.uuid.clone(),
+                author: "human".into(),
+                text: text.to_string(),
+                exec: to_agent,
+                reply_to: None,
+                ok: None,
+                turns: None,
+                duration_ms: None,
+                lc: Some(msg.lc),
+                via: msg.via.clone(),
+                model: None,
+                effort: None,
+                request: msg.request,
+            };
+            let kind = if to_agent { MIRROR } else { NOTE };
+            // 보내기 행도 같은 트랜잭션(#1c).
+            let staged = Self::stage(&tx, &conv, Some(msg.id), kind, &req)?;
             tx.commit().map_err(db_err)?;
-            msg
+            (msg, req, staged)
         };
-        let req = Request::Post {
-            conv: conv.uuid.clone(),
-            msg: msg.uuid.clone(),
-            author: "human".into(),
-            text: text.to_string(),
-            exec: to_agent,
-            reply_to: None,
-            ok: None,
-            turns: None,
-            duration_ms: None,
-            lc: Some(msg.lc),
-            via: msg.via.clone(),
-            model: None,
-            effort: None,
-            request: msg.request,
-        };
-        let sent = match addr(&peer) {
-            Ok(a) => self.node.send(a, Some(peer.spki.clone()), &req).await,
-            Err(e) => Err(e),
-        };
+        let (msg, req, staged) = msg;
+        let sent = self.dispatch(&conv, staged, &req).await;
         if to_agent {
             // 내 에이전트는 미러 결과와 무관하게 실행한다.
             let _ = chat::set_state(&self.db(), msg.id, State::Queued);
@@ -570,13 +1369,18 @@ impl Chat {
             .map_err(db_err)?
             .unwrap_or(msg);
         let mirror_failed = match sent {
-            Ok((Response::Ok, _)) => {
+            Ok(Shipped::Answered(Response::Ok)) => {
                 if !to_agent {
                     let _ = chat::set_state(&self.db(), msg.id, State::Done);
                 }
+                let msg = chat::message_by_id(&self.db(), msg.id)
+                    .map_err(db_err)?
+                    .unwrap_or(msg);
                 return Ok((conv, msg, None));
             }
-            Ok((other, _)) => {
+            // 닿지 않아 보관 — 줄이 다시 보낸다(#1c). 실행 없는 글은 상대에 닿으면 `done`.
+            Ok(Shipped::Kept) => return Ok((conv, msg, None)),
+            Ok(Shipped::Answered(other)) => {
                 if !to_agent {
                     let _ = chat::set_state(&self.db(), msg.id, State::Error);
                     return Err(refused(other));
@@ -585,10 +1389,7 @@ impl Chat {
             }
             Err(e) => {
                 if !to_agent {
-                    return Err(io::Error::new(
-                        e.kind(),
-                        format!("상대 이력에 남았는지 확인 안 됨({e}) — 내 이력에는 남았다"),
-                    ));
+                    return Err(e);
                 }
                 e.to_string()
             }
@@ -605,6 +1406,7 @@ impl Chat {
 
     /// 페어링된 상대의 요청 — 막히지 않는다(실행은 대기열로).
     fn handle(self: &Arc<Self>, peer: &Peer, req: Request) -> Response {
+        self.peer_back(peer.id);
         let result = match req {
             Request::Agents => self.agents(),
             Request::Message {
@@ -628,13 +1430,22 @@ impl Chat {
             ),
             Request::Relay { conv, on } => self.inbound_relay(peer, conv, on),
             Request::Done { conv, msg, done } => self.inbound_done(peer, conv, msg, done),
+            Request::Progress {
+                conv,
+                msg,
+                state,
+                ahead,
+                detail,
+            } => self.inbound_progress(peer, conv, msg, state, (ahead, detail)),
+            Request::Status { conv, msg } => self.inbound_status(peer, conv, msg),
             reply @ Request::Reply { .. } => self.inbound_reply(peer, reply),
             post @ Request::Post { .. } => self.inbound_post(peer, post),
             _ => Ok(Response::error("bad_request")),
         };
+        // 처리 중 오류(DB 잠금 등)는 거절이 아니다 — 보낸 쪽이 다시 보내게 `retry`(#1c).
         result.unwrap_or_else(|e| {
             log::warn!("대화 요청 처리 실패: {e}");
-            Response::error("bad_request")
+            Response::error(RETRY)
         })
     }
 
@@ -731,6 +1542,7 @@ impl Chat {
             c.id
         };
         self.wake(conversation_id);
+        self.tell_waiting(conversation_id, &msg);
         // 알림의 에이전트 = 실행할 에이전트(멘션이면 부른 이름).
         self.notify(
             conversation_id,
@@ -765,7 +1577,9 @@ impl Chat {
             return Ok(Response::error("bad_request"));
         };
         let (model, effort) = run_meta(model, effort);
-        if text.len() > MAX_TEXT || msg.is_empty() {
+        // 에이전트 답은 비어 있으면 받지 않는다 — 조용한 빈 성공 · 자동 왕복의 빈 입력(1a R1).
+        if text.len() > MAX_TEXT || msg.is_empty() || (author == "agent" && text.trim().is_empty())
+        {
             return Ok(Response::error("bad_request"));
         }
         let mut kind = MessageKind::Request;
@@ -921,9 +1735,7 @@ impl Chat {
 
     /// 대화 단위 차례 — 저장부터 상대 응답까지 한 번에 하나(사람 글 · 완료 표시).
     fn turn(&self, conversation_id: i64) -> Arc<tokio::sync::Mutex<()>> {
-        self.outbound
-            .lock()
-            .expect("보내기 잠금이 오염됐다")
+        an_core::sync::lock(&self.outbound)
             .entry(conversation_id)
             .or_default()
             .clone()
@@ -973,16 +1785,10 @@ impl Chat {
             msg: m.uuid.clone(),
             done,
         };
-        let sent = match self.paired_peer(conv.peer_id) {
-            Ok(peer) => match addr(&peer) {
-                Ok(a) => self.node.send(a, Some(peer.spki.clone()), &req).await,
-                Err(e) => Err(e),
-            },
-            Err(e) => Err(e),
-        };
-        let warning = match sent {
-            Ok((Response::Ok, _)) => None,
-            Ok((other, _)) => Some(refused(other).to_string()),
+        // 닿지 않으면 보관 — 줄이 다시 보낸다(#1c). 상대가 거절했거나 보관조차 못 했을 때만 경고.
+        let warning = match self.ship(&conv, None, DONE, &req).await {
+            Ok(Shipped::Answered(Response::Ok) | Shipped::Kept) => None,
+            Ok(Shipped::Answered(other)) => Some(refused(other).to_string()),
             Err(e) => Some(e.to_string()),
         }
         .map(|e| {
@@ -1017,6 +1823,38 @@ impl Chat {
             return Ok(Response::error("unknown"));
         };
         chat::set_done(&db, m.id, done).map_err(db_err)?;
+        Ok(Response::Ok)
+    }
+
+    /// 상대가 알려 준 내 실행 요청의 차례 — 그 상대 소유 대화의 내 실행 요청 글 · 아직 답을 기다리는 것만(1b).
+    fn inbound_progress(
+        &self,
+        peer: &Peer,
+        conv: String,
+        msg: String,
+        state: String,
+        (ahead, detail): (u32, Option<StepDetail>),
+    ) -> io::Result<Response> {
+        if !matches!(state.as_str(), "queued" | "running") {
+            return Ok(Response::error("bad_request"));
+        }
+        let db = self.db();
+        let Some(c) = chat::find(&db, &conv, peer.id).map_err(db_err)? else {
+            return Ok(Response::error("unknown"));
+        };
+        let mine = chat::message_by_uuid(&db, &msg)
+            .map_err(db_err)?
+            .filter(|m| m.conversation_id == c.id && m.mine && m.exec && m.state == State::Sent);
+        let Some(m) = mine else {
+            return Ok(Response::error("unknown"));
+        };
+        let running = state == "running";
+        let progress = Progress {
+            ahead: if running { 0 } else { ahead },
+            detail: detail.filter(|_| running).map(StepDetail::cleaned),
+            state,
+        };
+        an_core::sync::lock(&self.progress).insert(m.id, progress);
         Ok(Response::Ok)
     }
 
@@ -1055,9 +1893,8 @@ impl Chat {
             conv: conv.uuid.clone(),
             on: false,
         };
-        if let Ok(a) = addr(peer) {
-            let _ = self.node.send(a, Some(peer.spki.clone()), &req).await;
-        }
+        let _ = peer;
+        let _ = self.ship(conv, None, RELAY, &req).await;
     }
 
     /// 자동 왕복 멈춤 · 재개(D24). 연 쪽: 끄기 / 켜기(카운트 0, 받은 쪽 거절 해제, 아직 넘기지 않은 상대 답이 있으면 바로 넘김).
@@ -1163,7 +2000,7 @@ impl Chat {
             return Ok(Response::error("bad_request"));
         };
         let (model, effort) = run_meta(model, effort);
-        if text.len() > MAX_TEXT || msg.is_empty() {
+        if text.len() > MAX_TEXT || msg.is_empty() || text.trim().is_empty() {
             return Ok(Response::error("bad_request"));
         }
         let (cid, agent) = {
@@ -1246,7 +2083,7 @@ impl Chat {
 
     /// 대화 작업을 깨운다 — 없으면 만든다(대화 안에서는 DB 순서대로 하나씩).
     fn wake(self: &Arc<Self>, conversation_id: i64) {
-        let mut queues = self.queues.lock().expect("대기열 잠금이 오염됐다");
+        let mut queues = an_core::sync::lock(&self.queues);
         let tx = queues.entry(conversation_id).or_insert_with(|| {
             let (tx, mut rx) = mpsc::unbounded_channel::<()>();
             let me = self.clone();
@@ -1281,6 +2118,8 @@ impl Chat {
 
     /// 사람 메시지 하나 — 실행 → 기록(한 트랜잭션) → 답 보내기. 기록이 실패하면 성공 답을 보내지 않는다.
     async fn process(&self, conversation_id: i64, asked: Message) {
+        // 실행 문 — 먼저 줄을 서고, 차례가 온 뒤의 대화 · 에이전트 · 멈춤 상태로 판단한다(기다리는 동안 바뀐 것을 따른다).
+        let ticket = self.admit(conversation_id, &asked).await;
         let loaded = {
             let db = self.db();
             chat::by_id(&db, conversation_id).and_then(|c| {
@@ -1312,30 +2151,45 @@ impl Chat {
         } else {
             agent
         };
+        // 실패는 (내 쪽 글, 상대에게 보낼 글) 둘 — 중단 · 에이전트 삭제는 상대도 알아도 되는 사실이라 같은 글.
         let result = if asked.state == State::Running {
-            Err(INTERRUPTED.to_string())
+            let t = format!("실행 실패: {INTERRUPTED}");
+            Err((t.clone(), t))
         } else if let Some(agent) = agent {
-            self.execute(&conv, agent, &asked).await
+            self.execute(&conv, agent, &asked)
+                .await
+                .map_err(|f| (format!("실행 실패: {}", f.detail), f.public.to_string()))
         } else {
-            Err(format!(
-                "에이전트 {} 가 삭제됐다",
+            let t = format!(
+                "실행 실패: 에이전트 {} 가 삭제됐다",
                 asked.agent.as_deref().unwrap_or(&conv.agent)
-            ))
+            );
+            Err((t.clone(), t))
         };
-        let (text, ok, run) = match result {
-            Ok(ran) => (ran.out.text.clone(), !ran.out.is_error, Some(ran)),
-            Err(e) => (format!("실행 실패: {e}"), false, None),
+        drop(ticket);
+        let (text, public, ok, run) = match result {
+            // 빈 답은 실패로 — 받는 쪽이 받지 않는다.
+            Ok(ran) if ran.out.text.trim().is_empty() => (
+                EMPTY_ANSWER.to_string(),
+                Some(EMPTY_ANSWER.to_string()),
+                false,
+                Some(ran),
+            ),
+            // claude 가 오류로 끝난 결과(`is_error`)는 원문을 내 쪽에만 — 인증 · 사용량 · 경로가 실릴 수 있다(1a R1).
+            Ok(ran) if ran.out.is_error => (
+                ran.out.text.clone(),
+                Some(RESULT_ERROR.to_string()),
+                false,
+                Some(ran),
+            ),
+            Ok(ran) => (ran.out.text.clone(), None, true, Some(ran)),
+            Err((mine, theirs)) => (mine, Some(theirs), false, None),
         };
         let mut text = fit(text);
+        let mut public = public;
         let mut ok = ok;
         let reply_uuid = new_uuid();
         let state = if ok { State::Done } else { State::Error };
-        let recorded = self.record(&conv, &asked, run.as_ref(), &reply_uuid, &text, state);
-        if let Err(e) = &recorded {
-            log::error!("대화 {} 기록 실패: {e}", conv.uuid);
-            let _ = chat::set_state(&self.db(), asked.id, State::Error);
-            (text, ok) = (format!("실행 실패: 받는 PC 기록 오류 — {e}"), false);
-        }
         let (turns, duration_ms) = (
             run.as_ref().and_then(|r| r.out.turns),
             run.as_ref().and_then(|r| r.out.duration_ms),
@@ -1344,6 +2198,66 @@ impl Chat {
             run.as_ref().map(|r| r.model.clone()),
             run.as_ref().map(|r| r.effort.clone()),
         );
+        // 상대의 실행 요청이면 답(`reply`), 이 PC 사람의 실행 요청이면 상대 이력에 미러(`post`).
+        let reply_req = |sent: String, lc: Option<i64>, ok: bool| {
+            if asked.mine {
+                Request::Post {
+                    conv: conv.uuid.clone(),
+                    msg: reply_uuid.clone(),
+                    author: "agent".into(),
+                    text: sent,
+                    exec: false,
+                    reply_to: Some(asked.uuid.clone()),
+                    ok: Some(ok),
+                    turns,
+                    duration_ms,
+                    lc,
+                    via: None,
+                    model: model.clone(),
+                    effort: effort.clone(),
+                    request: false,
+                }
+            } else {
+                Request::Reply {
+                    conv: conv.uuid.clone(),
+                    msg: reply_uuid.clone(),
+                    reply_to: asked.uuid.clone(),
+                    text: sent,
+                    ok,
+                    turns,
+                    duration_ms,
+                    lc,
+                    model: model.clone(),
+                    effort: effort.clone(),
+                }
+            }
+        };
+        let kind = if asked.mine { REPLY_POST } else { REPLY };
+        // 답과 보내기 행을 한 트랜잭션으로(#1c — 기록 뒤 보내기 전에 꺼져도 줄이 보낸다). 자동 왕복 넘김은 `relay_forward` 가 보낸다.
+        let outgoing = public.clone().unwrap_or_else(|| text.clone());
+        let staging = (!relaying).then_some((kind, |lc: i64| reply_req(outgoing.clone(), Some(lc), ok)));
+        let recorded = self.record(
+            &conv,
+            &asked,
+            run.as_ref(),
+            &reply_uuid,
+            (&text, state),
+            staging
+                .as_ref()
+                .map(|(k, f)| (*k, f as &dyn Fn(i64) -> Request)),
+        );
+        let (recorded, staged) = match recorded {
+            Ok((id, staged)) => (Ok(id), staged),
+            Err(e) => (Err(e), None),
+        };
+        if let Err(e) = &recorded {
+            log::error!("대화 {} 기록 실패: {e}", conv.uuid);
+            let _ = chat::set_state(&self.db(), asked.id, State::Error);
+            (text, ok) = (format!("실행 실패: 받는 PC 기록 오류 — {e}"), false);
+            public = Some(RECORD_FAILED.to_string());
+        }
+        // 상대에게 가는 글 — 실패면 정해진 문구.
+        let sent = public.unwrap_or_else(|| text.clone());
         let lc = recorded
             .as_ref()
             .ok()
@@ -1360,7 +2274,7 @@ impl Chat {
                 let _ = chat::set_flags(&self.db(), id, true, false, state);
             }
             return self
-                .relay_forward(&conv, recorded.ok(), ok, &text, lc, Some(&asked.uuid))
+                .relay_forward(&conv, recorded.ok(), ok, &sent, lc, Some(&asked.uuid))
                 .await;
         }
         // 받은 쪽: 자동 왕복 요청(에이전트발 · 자동 왕복을 연 첫 사람 요청)을 내 에이전트가 실패하면 자동 왕복이 끝난다.
@@ -1375,48 +2289,16 @@ impl Chat {
         if !ok && relay_request {
             self.relay_end(&conv, "내 에이전트 실행 실패");
         }
-        // 상대의 실행 요청이면 답(`reply`), 이 PC 사람의 실행 요청이면 상대 이력에 미러(`post`).
-        let req = if asked.mine {
-            Request::Post {
-                conv: conv.uuid.clone(),
-                msg: reply_uuid,
-                author: "agent".into(),
-                text,
-                exec: false,
-                reply_to: Some(asked.uuid.clone()),
-                ok: Some(ok),
-                turns,
-                duration_ms,
-                lc,
-                via: None,
-                model,
-                effort,
-                request: false,
-            }
-        } else {
-            Request::Reply {
-                conv: conv.uuid.clone(),
-                msg: reply_uuid,
-                reply_to: asked.uuid.clone(),
-                text,
-                ok,
-                turns,
-                duration_ms,
-                lc,
-                model,
-                effort,
-            }
+        // 닿지 않으면 보관 — 줄이 다시 보낸다(#1c). 상대가 거절했을 때만 지금 "답 미전달". 기록이 실패했으면(행 없음) 정해진 문구로 지금 적고 보낸다.
+        let req = reply_req(sent, lc, ok);
+        let shipped = match staged {
+            Some(id) => self.dispatch(&conv, id, &req).await,
+            None => self.ship(&conv, recorded.as_ref().ok().copied(), kind, &req).await,
         };
-        let delivered = match self.paired_peer(conv.peer_id) {
-            Ok(peer) => match addr(&peer) {
-                Ok(a) => matches!(
-                    self.node.send(a, Some(peer.spki.clone()), &req).await,
-                    Ok((Response::Ok, _))
-                ),
-                Err(_) => false,
-            },
-            Err(_) => false,
-        };
+        let delivered = matches!(
+            shipped,
+            Ok(Shipped::Answered(Response::Ok) | Shipped::Kept)
+        );
         if !delivered {
             log::warn!("대화 {} 답을 전달하지 못했다", conv.uuid);
             if let Ok(id) = recorded {
@@ -1481,30 +2363,14 @@ impl Chat {
                 effort: msg.effort.clone(),
                 request: false,
             };
-            let sent = match self.paired_peer(conv.peer_id) {
-                Ok(peer) => match addr(&peer) {
-                    Ok(a) => self.node.send(a, Some(peer.spki.clone()), &req).await,
-                    Err(e) => Err(e),
-                },
-                Err(e) => Err(e),
-            };
-            if !matches!(sent, Ok((Response::Ok, _))) {
+            let sent = self.ship(conv, Some(msg.id), RELAY_LAST, &req).await;
+            if !matches!(
+                sent,
+                Ok(Shipped::Answered(Response::Ok) | Shipped::Kept)
+            ) {
                 log::warn!("대화 {} 자동 왕복 마지막 답 기록 실패", conv.uuid);
                 let _ = chat::set_state(&self.db(), msg.id, State::Undelivered);
             }
-            return;
-        }
-        // 보내기 전에 `sent` 실행 요청으로 — 저장 못 하면 보내지 않는다(늦게 온 답을 받을 근거가 없다).
-        // 결과를 먼저 받는다 — `if let` 조건의 DB 잠금은 블록 끝까지 살아 있어(edition 2024) 안에서 다시 잠그면 멈춘다.
-        let flagged = {
-            let db = self.db();
-            chat::set_flags(&db, msg.id, true, true, State::Sent)
-                .and_then(|_| chat::set_refused(&db, msg.id, None))
-        };
-        if let Err(e) = flagged {
-            log::error!("대화 {} 자동 왕복 상태 저장 실패 — 멈춤: {e}", conv.uuid);
-            let _ = chat::relay_on(&self.db(), conv.id, false, false);
-            self.relay_end(conv, "상태 저장 실패");
             return;
         }
         let req = Request::Message {
@@ -1519,19 +2385,39 @@ impl Chat {
             request: false,
             mention: None,
         };
-        let sent = match self.paired_peer(conv.peer_id) {
-            Ok(peer) => match addr(&peer) {
-                Ok(a) => self.node.send(a, Some(peer.spki.clone()), &req).await,
-                Err(e) => Err(e),
-            },
-            Err(e) => Err(e),
+        // 보내기 전에 `sent` 실행 요청으로 — 저장 못 하면 보내지 않는다(늦게 온 답을 받을 근거가 없다). 보내기 행과 한 트랜잭션(#1c — `sent`
+        // 만 남고 보낼 행이 없는 채로 꺼져 자동 왕복이 멈추지 않게).
+        // 결과를 먼저 받는다 — `if let` 조건의 DB 잠금은 블록 끝까지 살아 있어(edition 2024) 안에서 다시 잠그면 멈춘다.
+        let flagged = {
+            let db = self.db();
+            db.unchecked_transaction().map_err(db_err).and_then(|tx| {
+                chat::set_flags(&tx, msg.id, true, true, State::Sent)
+                    .and_then(|_| chat::set_refused(&tx, msg.id, None))
+                    .map_err(db_err)?;
+                let staged = Self::stage(&tx, conv, Some(msg.id), RELAY_STEP, &req)?;
+                tx.commit().map_err(db_err)?;
+                Ok(staged)
+            })
         };
-        if !matches!(sent, Ok((Response::Ok, _))) {
+        let staged = match flagged {
+            Ok(id) => id,
+            Err(e) => {
+                log::error!("대화 {} 자동 왕복 상태 저장 실패 — 멈춤: {e}", conv.uuid);
+                let _ = chat::relay_on(&self.db(), conv.id, false, false);
+                self.relay_end(conv, "상태 저장 실패");
+                return;
+            }
+        };
+        // 닿지 않으면 보관 — 줄이 다시 보내고 닿으면 이어 간다(#1c). 명시적 거절 · 보관 실패만 멈춘다.
+        let sent = self.dispatch(conv, staged, &req).await;
+        if !matches!(
+            sent,
+            Ok(Shipped::Answered(Response::Ok) | Shipped::Kept)
+        ) {
             log::warn!("대화 {} 자동 왕복 전달 실패 — 멈춤", conv.uuid);
             let _ = chat::relay_on(&self.db(), conv.id, false, false);
-            // 명시적 거절만 실패로 확정한다. 전송 오류는 상대가 받았는지 모른다 — `sent` 로 두어 늦게 온 답을 받는다.
             match sent {
-                Ok((other, _)) => {
+                Ok(Shipped::Answered(other)) => {
                     let focus = matches!(&other, Response::Error { code } if code == FOCUS);
                     self.refused_by_peer(msg.id, conv.peer_id, &other);
                     self.relay_end(
@@ -1543,7 +2429,7 @@ impl Chat {
                         },
                     );
                 }
-                Err(_) => self.relay_end(conv, "전달 확인 안 됨"),
+                _ => self.relay_end(conv, "상태 저장 실패"),
             }
         }
     }
@@ -1587,12 +2473,20 @@ impl Chat {
         conv: &Conversation,
         agent: agents::Agent,
         asked: &Message,
-    ) -> Result<Ran, String> {
-        chat::set_state(&self.db(), asked.id, State::Running).map_err(|e| e.to_string())?;
+    ) -> Result<Ran, Failure> {
+        // 등록 · 수정 때 거른 규칙을 실행 직전에 다시 — 1a 이전에 등록된 폴더 · 등록 뒤 링크가 바뀐 폴더.
+        if let Some(why) = an_core::paths::agent_folder_problem(std::path::Path::new(&agent.folder))
+        {
+            return Err(Failure {
+                detail: format!("에이전트 {} 폴더 — {why}", agent.name),
+                public: FOLDER_BLOCKED,
+            });
+        }
+        chat::set_state(&self.db(), asked.id, State::Running).map_err(Failure::record)?;
         // 세션 — 대화 에이전트는 대화의 것, 멘션한 에이전트는 대화 × 에이전트(해석 3).
         let saved = match asked.agent.as_deref() {
             Some(name) => {
-                chat::agent_session(&self.db(), conv.id, name).map_err(|e| e.to_string())?
+                chat::agent_session(&self.db(), conv.id, name).map_err(Failure::record)?
             }
             None => conv.session.clone(),
         };
@@ -1602,70 +2496,128 @@ impl Chat {
         // 그 상대의 덮어쓰기 → 전역 설정 → 기본값.
         let (model, effort) = {
             let db = self.db();
-            let peer = an_core::peers::by_id(&db, conv.peer_id).map_err(|e| e.to_string())?;
-            an_core::run_opts::resolve(&db, peer.as_ref()).map_err(|e| e.to_string())?
+            let peer = an_core::peers::by_id(&db, conv.peer_id).map_err(Failure::record)?;
+            an_core::run_opts::resolve(&db, peer.as_ref()).map_err(Failure::record)?
         };
+        // 상대가 보낸 실행 요청이면 단계 요약을 `step_every` 에 한 번 이하로 보낸 쪽에 알린다(#1c) — 실행기는 바뀔 때마다 마지막 값을 두고,
+        // 이 작업이 그 사이 바뀐 것만 보낸다.
+        let latest: Arc<Mutex<Option<StepDetail>>> = Arc::default();
+        let remote = conv.dir == Dir::In && !asked.mine;
+        let steps = if remote {
+            let l = latest.clone();
+            StepSink::new(move |d| *an_core::sync::lock(&l) = Some(d.clone()))
+        } else {
+            StepSink::default()
+        };
+        let ticker = self.me.upgrade().filter(|_| remote).map(|me| {
+            let (conv, asked, every) = (
+                conv.clone(),
+                asked.clone(),
+                *an_core::sync::lock(&self.step_every),
+            );
+            let latest = Arc::downgrade(&latest);
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(every).await;
+                    let Some(latest) = latest.upgrade() else {
+                        return;
+                    };
+                    let step = an_core::sync::lock(&latest).take();
+                    if let Some(d) = step {
+                        me.send_step(&conv, &asked, "running", 0, Some(d));
+                    }
+                }
+            })
+        });
         let input = RunInput {
             agent: agent.clone(),
             session,
-            text: self.with_notes(conv, asked).map_err(|e| e.to_string())?,
+            text: self.with_notes(conv, asked).map_err(Failure::record)?,
             model: model.clone(),
             effort: effort.clone(),
+            steps,
         };
         let run = self.run.clone();
-        match tokio::task::spawn_blocking(move || run(input)).await {
+        let ran = tokio::task::spawn_blocking(move || run(input)).await;
+        if let Some(t) = ticker {
+            t.abort();
+        }
+        match ran {
             Ok(Ok(out)) => Ok(Ran {
                 out,
                 agent,
                 model,
                 effort,
             }),
-            Ok(Err(e)) => Err(e.to_string()),
-            Err(e) => Err(format!("실행 작업 실패: {e}")),
+            Ok(Err(e)) => Err(Failure::run(&e)),
+            Err(e) => Err(Failure {
+                detail: format!("실행 작업 실패: {e}"),
+                public: RUN_FAILED,
+            }),
         }
     }
 
-    /// 실행 입력 — 지난 실행 요청 뒤 그 사이 사람 글을 발화자와 함께 앞에 붙인다(없으면 요청 본문 그대로).
+    /// 실행 입력 — 지난 실행 요청 뒤 그 사이 사람 글(메모)을 발화자와 함께 앞에, 요청 본문은 늘 머리말 뒤 구분자 안에(1a A10).
+    /// 메모는 최근 [`MAX_NOTES`] 개 · 본문 합 [`MAX_NOTES_BYTES`] 까지(오래된 것부터 버린다, 1a A8). 본문 · 메모 안의 구분자 글자는
+    /// 지운다 — 원격 글이 틀을 일찍 닫고 이 PC 사용자 지시처럼 꾸미지 못하게.
     fn with_notes(
         &self,
         conv: &Conversation,
         asked: &Message,
     ) -> Result<String, an_core::db::Error> {
-        let notes = {
+        let mut notes = {
             let db = self.db();
             let after = chat::last_exec_before(&db, conv.id, asked)?;
             chat::notes_between(&db, conv.id, after.as_ref(), asked)?
         };
-        // 자동 왕복의 에이전트 글 = 상대 에이전트의 요청(D24) — 사람 요청과 구분해 표시한다.
-        let from_agent = asked.author == Author::Agent;
-        if notes.is_empty() && !from_agent {
-            return Ok(asked.text.clone());
-        }
+        let mut bytes = 0;
+        let keep = notes
+            .iter()
+            .rev()
+            .take_while(|n| {
+                bytes += n.text.len();
+                bytes <= MAX_NOTES_BYTES
+            })
+            .take(MAX_NOTES)
+            .count();
+        let dropped = notes.len() - keep;
+        notes.drain(..dropped);
         let peer_name = self
             .node
             .peers()
             .ok()
             .and_then(|ps| ps.into_iter().find(|p| p.id == conv.peer_id))
-            .map(|p| format!("{} · {}", p.name, p.host))
-            .unwrap_or_else(|| "상대".into());
+            .map(|p| unframe(&format!("{} · {}", p.name, p.host)))
+            .unwrap_or_default();
+        // 자동 왕복의 에이전트 글 = 상대 에이전트의 요청(D24) — 사람 요청과 구분해 표시한다. 상대 이름은 상대가 정한다 — 늘 `상대(…)` 안에
+        // 넣어 `이 PC 사용자` 를 흉내 내지 못하게 하고 구분자는 지운다.
         let who = |m: &Message| {
             if m.author == Author::Agent {
                 format!("상대 에이전트({peer_name})")
             } else if m.mine {
                 "이 PC 사용자".to_string()
             } else {
-                peer_name.clone()
+                format!("상대({peer_name})")
             }
         };
         let mut text = String::new();
         if !notes.is_empty() {
-            text.push_str("[대화 메모 — 실행 요청 아님]\n");
-            for n in &notes {
-                text.push_str(&format!("- {}: {}\n", who(n), n.text));
+            text.push_str("[대화 메모 — 실행 요청 아님]\n<대화 메모>\n");
+            if dropped > 0 {
+                text.push_str(&format!("(앞의 메모 {dropped}개 생략)\n"));
             }
-            text.push('\n');
+            for n in &notes {
+                // 메모 안 줄바꿈 뒤는 들여 쓴다 — 본문에 `- 이 PC 사용자: …` 줄을 꾸며 넣어도 발화자 줄과 구별된다.
+                let body = unframe(&n.text).replace('\n', "\n  ");
+                text.push_str(&format!("- {}: {body}\n", who(n)));
+            }
+            text.push_str("</대화 메모>\n\n");
         }
-        text.push_str(&format!("[요청 — {}]\n{}", who(asked), asked.text));
+        text.push_str(&format!(
+            "[요청 — {}]\n<원격 본문>\n{}\n</원격 본문>",
+            who(asked),
+            unframe(&asked.text)
+        ));
         Ok(text)
     }
 
@@ -1677,9 +2629,9 @@ impl Chat {
         asked: &Message,
         run: Option<&Ran>,
         reply_uuid: &str,
-        text: &str,
-        state: State,
-    ) -> Result<i64, an_core::db::Error> {
+        (text, state): (&str, State),
+        staging: Option<(&'static str, &dyn Fn(i64) -> Request)>,
+    ) -> Result<(i64, Option<i64>), an_core::db::Error> {
         let mut db = self.db();
         let tx = db.transaction()?;
         if let Some(ran) = run {
@@ -1707,7 +2659,16 @@ impl Chat {
         if asked.agent.is_some() {
             chat::set_agent(&tx, reply.id, asked.agent.as_deref())?;
         }
+        // 답을 보낼 행(#1c) — 답과 같은 트랜잭션.
+        let staged = match staging {
+            Some((kind, frame)) => {
+                let frame = serde_json::to_string(&frame(reply.lc))
+                    .map_err(|e| an_core::db::Error::ToSqlConversionFailure(Box::new(e)))?;
+                Some(outbox::add(&tx, conv.peer_id, Some(conv.id), Some(reply.id), kind, &frame, None, "inflight")?)
+            }
+            None => None,
+        };
         tx.commit()?;
-        Ok(reply.id)
+        Ok((reply.id, staged))
     }
 }
