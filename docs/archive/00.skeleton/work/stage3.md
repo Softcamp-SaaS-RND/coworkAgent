@@ -43,7 +43,7 @@ crates=2 edges=1 violations=0
 프로세스 agentNetwork.exe 1개
 %LOCALAPPDATA%\agentNetwork: agentNetwork.db · instance.json · instance.lock · logs\agentNetwork.log
 LISTEN 127.0.0.1:62905 (0.0.0.0 아님)
-GET /api/status (쿠키) → {"version":"0.1.0","data_dir":"C:\Users\tskim\AppData\Local\agentNetwork","db":"ok (스키마 1)"}
+GET /api/status (쿠키) → {"version":"0.1.0","data_dir":"%LOCALAPPDATA%\agentNetwork","db":"ok (스키마 1)"}
 GET /api/status (토큰 없음) → 401
 exe 폴더: agentNetwork.exe 하나
 로그: "INFO agentNetwork: 시작 — 127.0.0.1:62905"

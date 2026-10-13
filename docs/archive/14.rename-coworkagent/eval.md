@@ -32,7 +32,7 @@
 - [x] E4: A2 — 릴리스 실행 파일 이름
   CHECK: cargo build --release -p coworkagent-app --message-format short && cargo metadata --format-version 1 --no-deps
   EXPECT: "name":"coworkAgent"
-  EVIDENCE: {"packages":[{"name":"an-agent","version":"0.1.0","id":"path+file:///D:/dev/orca/agentNetwork-t14/crates/agent#an-agent@0.1.0","license":null,"license_file":null,"description":null,"source":null,"depe
+  EVIDENCE: {"packages":[{"name":"an-agent","version":"0.1.0","id":"path+file:///{저장소}/crates/agent#an-agent@0.1.0","license":null,"license_file":null,"description":null,"source":null,"depe
 
 - [x] E5: A3 — 화면 로직 node 테스트
   CHECK: node --test --test-reporter=tap "crates/app/web/*.test.mjs"

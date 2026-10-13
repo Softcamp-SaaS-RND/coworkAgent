@@ -58,7 +58,7 @@
 | axum | 0.8.9 | 로컬 웹UI 서버 | 컴파일 |
 | tokio | 1.53.2 | 런타임(`rt-multi-thread` · `net` · `macros`) | 컴파일 |
 | rusqlite | 0.40.2 `bundled` | SQLite 를 실행 파일에 포함 — 시스템 라이브러리 의존 없음(D2) | SQLite 3.53.2 빌드·실행 |
-| dirs | 7.0.0 | D15 경로 `data_local_dir()` | `C:\Users\…\AppData\Local` 반환 |
+| dirs | 7.0.0 | D15 경로 `data_local_dir()` | `%LOCALAPPDATA%` 반환 |
 | getrandom | 0.4.3 | 토큰 난수 `fill` | 실행 |
 | log | 0.4.34 | 로그 파사드(파일 로거는 자체 구현) | 컴파일 |
 

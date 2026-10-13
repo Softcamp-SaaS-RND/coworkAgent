@@ -7,12 +7,13 @@ Pillow 와 Windows 글꼴 Segoe UI Bold(`segoeuib.ttf`) 가 필요하다(개발 
     python tools/gen_icon.py
 """
 
+import os
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
 OUT = Path(__file__).resolve().parent.parent / "crates" / "app" / "assets"
-FONT = Path("C:/Windows/Fonts/segoeuib.ttf")
+FONT = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "segoeuib.ttf"  # Windows 기본 글꼴 폴더
 NAVY, RED = "#12224A", "#D93B2B"  # 기본 바탕 · 트레이 오류 모드 바탕
 BACK, FRONT = "#5B8CFF", "#FFFFFF"
 SS = 4  # 256 좌표계를 1024 로 그려 줄이며 앤티에일리어싱
