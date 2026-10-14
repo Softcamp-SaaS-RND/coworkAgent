@@ -32,23 +32,24 @@ async fn two(tag: &str, a_delay: Duration) -> (common::Side, common::Side, i64) 
         common::side(&format!("{tag}-b"), Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&a), "mine", ".", None, "").unwrap();
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&a), "mine", ".", "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     (a, b, b_id)
 }
 
-/// 더 늘지 않을 때까지(0.3초 동안 그대로) 기다린다.
+/// 더 늘지 않을 때까지(1.2초 — 0.3초씩 네 번 그대로) 기다린다. 0.3초 한 번은 부하 걸린 PC 에서 다음 차례가 오기 전에 "멈췄다" 로 잘못 본다.
 async fn settled(s: &common::Side, conv: i64) -> usize {
-    let mut n = usize::MAX;
-    for _ in 0..30 {
+    let (mut n, mut same) = (usize::MAX, 0);
+    for _ in 0..60 {
         tokio::time::sleep(Duration::from_millis(300)).await;
         let now = chat::messages(&common::db(s), conv).unwrap().len();
-        if now == n {
+        same = if now == n { same + 1 } else { 0 };
+        if same == 4 {
             return n;
         }
         n = now;
     }
-    panic!("9초 동안 멈추지 않았다({n}건)");
+    panic!("18초 동안 멈추지 않았다({n}건)");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -162,10 +163,13 @@ async fn receiver_stop_refuses_agent_requests() {
         "B 에이전트는 다시 돌지 않는다"
     );
     assert!(b_conv(&b).relay_blocked);
-    // 연 쪽은 알림으로 먼저 멈춰 넘기지 않았다(거절당한 오류가 아니다).
+    // 연 쪽 내 에이전트 답은 거절당한 오류가 아니다 — 멈춤 알림이 먼저 닿았든 넘김이 먼저 닿아 `stopped` 로 거절됐든 같다. B 사람 글과의 순서는
+    // 어느 쪽이 먼저 닿았느냐에 달려 내 답만 본다.
     let last = chat::messages(&common::db(&a), conv.id)
         .unwrap()
-        .pop()
+        .into_iter()
+        .rev()
+        .find(|m| m.author == Author::Agent && m.mine)
         .unwrap();
     assert_eq!(
         (last.author, last.mine, last.state),
@@ -329,8 +333,8 @@ async fn stop_during_run_then_resume() {
     let a = common::side("sr-a", Duration::from_millis(400)).await;
     let b = common::side("sr-b", Duration::from_millis(400)).await;
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&a), "mine", ".", None, "").unwrap();
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&a), "mine", ".", "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, _) = a
         .chat
         .start_relay(b_id, "review", "mine", 10, "시작", None)
@@ -564,7 +568,7 @@ async fn focus_stops_relay_both_sides() {
 #[tokio::test(flavor = "multi_thread")]
 async fn mention_rejected_in_relay() {
     let (a, b, b_id) = two("mr", Duration::ZERO).await;
-    agents::add(&common::db(&b), "guide", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "guide", ".", "").unwrap();
     let (conv, _) = a
         .chat
         .start_relay(b_id, "review", "mine", 1, "시작", None)

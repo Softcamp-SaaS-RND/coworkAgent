@@ -82,7 +82,7 @@ async fn pair(a: &Side, b: &Side, names: &[&str]) -> i64 {
     b.node.approve(pa.id).await.unwrap();
     let db = db::open(&b.paths.db_file()).unwrap();
     for n in names {
-        let _ = agents::add(&db, n, ".", None, "");
+        let _ = agents::add(&db, n, ".", "");
     }
     pb.id
 }

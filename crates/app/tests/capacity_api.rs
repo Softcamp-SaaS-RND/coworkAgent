@@ -84,7 +84,7 @@ async fn two(tag: &str) -> (Side, Side, i64) {
     let pa = b.node.peers().unwrap().remove(0);
     a.node.approve(pb.id).await.unwrap();
     b.node.approve(pa.id).await.unwrap();
-    agents::add(&db::open(&b.paths.db_file()).unwrap(), "review", ".", None, "").unwrap();
+    agents::add(&db::open(&b.paths.db_file()).unwrap(), "review", ".", "").unwrap();
     b.chat.set_max_runs(1).unwrap();
     (a, b, pb.id)
 }

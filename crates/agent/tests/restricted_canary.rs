@@ -12,7 +12,6 @@ fn agent(folder: &Path) -> Agent {
         id: 1,
         name: "canary".into(),
         folder: folder.display().to_string(),
-        tools: "Read,Grep,Glob".into(),
         prompt: String::new(),
         group: None,
         uid: String::new(),

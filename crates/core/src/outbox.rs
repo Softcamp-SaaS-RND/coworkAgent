@@ -22,8 +22,7 @@ pub struct Item {
     pub due_in: i64,
 }
 
-const COLS: &str =
-    "id, peer_id, conv_id, msg_id, kind, frame, key, state, tries, waited, next_at, last_error, max(next_at - unixepoch(), 0)";
+const COLS: &str = "id, peer_id, conv_id, msg_id, kind, frame, key, state, tries, waited, next_at, last_error, max(next_at - unixepoch(), 0)";
 
 fn row(r: &Row) -> rusqlite::Result<Item> {
     Ok(Item {
@@ -65,7 +64,10 @@ pub fn add(
             )
             .optional()?;
         if let Some(id) = same {
-            conn.execute("UPDATE outbox SET frame = ?2 WHERE id = ?1", params![id, frame])?;
+            conn.execute(
+                "UPDATE outbox SET frame = ?2 WHERE id = ?1",
+                params![id, frame],
+            )?;
             return Ok(id);
         }
     }
@@ -107,7 +109,11 @@ pub fn has_before(
         .map(|k| format!("'{k}'"))
         .collect::<Vec<_>>()
         .join(", ");
-    let skip = if skip.is_empty() { "''".to_string() } else { skip };
+    let skip = if skip.is_empty() {
+        "''".to_string()
+    } else {
+        skip
+    };
     conn.prepare(&format!(
         "SELECT 1 FROM outbox WHERE conv_id = ?1 AND id < ?2 AND state IN ('pending', 'inflight') AND kind NOT IN ({skip})"
     ))?
@@ -121,19 +127,32 @@ pub fn failing(conn: &Connection, peer_id: i64) -> rusqlite::Result<bool> {
 }
 
 pub fn get(conn: &Connection, id: i64) -> rusqlite::Result<Option<Item>> {
-    conn.query_row(&format!("SELECT {COLS} FROM outbox WHERE id = ?1"), [id], row)
-        .optional()
+    conn.query_row(
+        &format!("SELECT {COLS} FROM outbox WHERE id = ?1"),
+        [id],
+        row,
+    )
+    .optional()
 }
 
 pub fn set_state(conn: &Connection, id: i64, state: &str) -> rusqlite::Result<()> {
-    conn.execute("UPDATE outbox SET state = ?2 WHERE id = ?1", params![id, state])?;
+    conn.execute(
+        "UPDATE outbox SET state = ?2 WHERE id = ?1",
+        params![id, state],
+    )?;
     Ok(())
 }
 
 /// 전송 오류 — 다음 시각 · 기다린 합 · 사유를 남기고 줄로 되돌린다. 보내는 동안 [`hurry`] 를 받았으면(`next_at` 0) 지금 다시.
 /// 기다린 합에는 지난 시도부터 **실제로 흐른 시간**을 더하되 `cap`(직전 간격) 까지만 — 앞당긴 재시도가 한도를 부풀리지 않고, 앱을 꺼 둔 시간은
 /// 세지 않는다. 돌려주는 값: 새 기다린 합(초).
-pub fn retry(conn: &Connection, id: i64, delay: i64, cap: i64, error: &str) -> rusqlite::Result<i64> {
+pub fn retry(
+    conn: &Connection,
+    id: i64,
+    delay: i64,
+    cap: i64,
+    error: &str,
+) -> rusqlite::Result<i64> {
     conn.execute(
         "UPDATE outbox SET state = 'pending', tries = tries + 1,
          waited = waited + min(max(unixepoch() - coalesce(last_try, unixepoch()), 0), ?3),
@@ -141,7 +160,9 @@ pub fn retry(conn: &Connection, id: i64, delay: i64, cap: i64, error: &str) -> r
          last_try = unixepoch(), last_error = ?4 WHERE id = ?1",
         params![id, delay, cap, error],
     )?;
-    conn.query_row("SELECT waited FROM outbox WHERE id = ?1", [id], |r| r.get(0))
+    conn.query_row("SELECT waited FROM outbox WHERE id = ?1", [id], |r| {
+        r.get(0)
+    })
 }
 
 /// 그 상대 줄에 기다리는(`pending`) 행 — 줄 맨 앞을 포기할 때 함께 포기한다. 보내는 중(`inflight`)은 그 결과가 정한다.
@@ -186,16 +207,25 @@ pub fn remove(conn: &Connection, id: i64) -> rusqlite::Result<()> {
 
 /// 보낼 것이 남은 상대(시작 시 줄을 깨운다). `inflight` 는 지난 실행이 보내다 끊긴 것 — `pending` 으로 되돌린다.
 pub fn pending_peers(conn: &Connection) -> rusqlite::Result<Vec<i64>> {
-    conn.execute("UPDATE outbox SET state = 'pending' WHERE state = 'inflight'", [])?;
+    conn.execute(
+        "UPDATE outbox SET state = 'pending' WHERE state = 'inflight'",
+        [],
+    )?;
     conn.prepare("SELECT DISTINCT peer_id FROM outbox WHERE state = 'pending' ORDER BY peer_id")?
         .query_map([], |r| r.get(0))?
         .collect()
 }
 
-/// 그 글의 가장 최근 행(보관 상태 표시용).
+/// 편집 · 삭제를 상대 창에 반영하는 행 종류(#1f) — 그 글을 실어 나르는 행이 아니다.
+pub const EDIT: &str = "msg_edit";
+pub const DELETE: &str = "msg_delete";
+
+/// 그 글을 실어 나르는 가장 최근 행(보관 상태 표시 · 편집 가능 판정) — 편집 · 삭제 반영 행([`EDIT`] · [`DELETE`])은 뺀다.
 pub fn for_message(conn: &Connection, msg_id: i64) -> rusqlite::Result<Option<Item>> {
     conn.query_row(
-        &format!("SELECT {COLS} FROM outbox WHERE msg_id = ?1 ORDER BY id DESC LIMIT 1"),
+        &format!(
+            "SELECT {COLS} FROM outbox WHERE msg_id = ?1 AND kind NOT IN ('{EDIT}', '{DELETE}') ORDER BY id DESC LIMIT 1"
+        ),
         [msg_id],
         row,
     )

@@ -2,7 +2,9 @@
 use crate::peers_api::PeerView;
 use an_agent::chat::{Chat, Compose, TxView, default_relay_cap};
 use an_core::agents::{self, Agent};
-use an_core::chat::{self, ActivityFilter, Author, Conversation, Message, Summary};
+use an_core::chat::{
+    self, ActivityFilter, AskFilter, Author, Conversation, Message, ReqState, Summary,
+};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -18,13 +20,12 @@ use std::sync::Arc;
 /// 에이전트 이름 최대 글자 수.
 pub const MAX_AGENT_NAME: usize = 64;
 
+/// 도구는 받지 않는다(#1d — 모든 실행이 탐색 도구 전부, 모르는 필드는 422).
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct NewAgent {
     name: String,
     folder: String,
-    /// 비면 읽기 전용 기본값.
-    #[serde(default)]
-    tools: Option<String>,
     #[serde(default)]
     prompt: String,
 }
@@ -68,16 +69,39 @@ struct ConversationPatch {
     starred: Option<bool>,
 }
 
-/// `PATCH /api/messages/{id}` — 준 항목만: 저장된 항목(이 PC 에만) · 받은 요청의 완료 표시(쓴 쪽에 상태로 간다). 둘 다 없으면 400, 둘 다면 한
-/// 트랜잭션(완료 자격이 없으면 아무것도 쓰지 않는다). 응답도 준 항목만.
+/// `PATCH /api/messages/{id}` — 준 항목만: 저장된 항목(이 PC 에만) · 받은 요청의 상태 + 메모(#1d, 쓴 쪽에 간다) · 본문 편집(#1f). 모두 없으면
+/// 400, 저장 + 상태면 한 트랜잭션(상태를 바꿀 수 없으면 아무것도 쓰지 않는다). 편집은 다른 항목과 함께 쓰지 않는다. 응답도 준 항목만.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MessagePatch {
     #[serde(default)]
     saved: Option<bool>,
+    /// `accepted` | `rejected` | `done`(대기 → 수용 · 반려, 수용 → 완료).
     #[serde(default)]
-    done: Option<bool>,
+    req_state: Option<String>,
+    /// 한 줄 메모 — `req_state` 와 함께만.
+    #[serde(default)]
+    note: Option<String>,
+    /// 새 본문(#1f — 끝난 내 사람 글만, 실행 없음).
+    #[serde(default)]
+    text: Option<String>,
+    /// 편집을 상대 창에도 — `text` 와 함께만(없으면 이 PC 에만).
+    #[serde(default)]
+    mirror: Option<bool>,
 }
+
+/// `POST /api/messages/delete` — 끝난 내 사람 글 여러 개를 흔적 없이 지운다(#1f, 한 대화의 글만 · 하나라도 안 되면 아무것도 안 지움).
+/// `mirror` = 상대 창에도.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MessageDelete {
+    ids: Vec<i64>,
+    #[serde(default)]
+    mirror: bool,
+}
+
+/// 한 번에 지울 수 있는 글 수.
+pub const DELETE_MAX: usize = 200;
 
 /// `GET /api/search` — 통합 검색.
 #[derive(Deserialize)]
@@ -105,7 +129,7 @@ struct ReadUpto {
 struct ActivityQuery {
     #[serde(default)]
     peer: Option<i64>,
-    /// `all`(기본) | `human` | `agent` | `relay` | `failed` | `query` · `request`(상대 쪽 사람 글의 종류 — '내게 요청된 목록').
+    /// `all`(기본) | `human` | `agent` | `relay` | `failed`.
     #[serde(default)]
     kind: Option<String>,
     #[serde(default)]
@@ -144,9 +168,6 @@ struct AgentPatch {
     name: Option<Value>,
     #[serde(default)]
     folder: Option<String>,
-    /// 비면 읽기 전용 기본값.
-    #[serde(default)]
-    tools: Option<String>,
     #[serde(default)]
     prompt: Option<String>,
     /// 빈 문자열 = 그룹 없음.
@@ -169,6 +190,9 @@ struct MessageQuery {
     /// `query`(질의) | `request`(요청) — 사람 글의 종류, 건수 제한 전에 거른다. 없으면 모두.
     #[serde(default)]
     ask: Option<String>,
+    /// 요청 상태(#1d) `wait` | `accepted` | `rejected` | `done` — `ask=request` 와 함께만.
+    #[serde(default)]
+    req: Option<String>,
     #[serde(default)]
     limit: Option<i64>,
 }
@@ -208,6 +232,7 @@ pub fn routes(chat: Arc<Chat>) -> Router {
         .route("/api/agents/{id}", delete(remove_agent).patch(update_agent))
         .route("/api/messages", get(list_across))
         .route("/api/messages/{id}", axum::routing::patch(save_message))
+        .route("/api/messages/delete", axum::routing::post(delete_messages))
         .route("/api/search", get(search))
         .route("/api/activity", get(activity))
         .route("/api/activity/seen", axum::routing::post(activity_seen))
@@ -276,7 +301,7 @@ fn to_of(to: &Option<String>) -> Result<(), &'static str> {
 }
 
 fn agent_json(a: Agent) -> Value {
-    json!({ "id": a.id, "name": a.name, "folder": a.folder, "tools": a.tools, "prompt": a.prompt, "group": a.group })
+    json!({ "id": a.id, "name": a.name, "folder": a.folder, "prompt": a.prompt, "group": a.group })
 }
 
 /// 폴더는 있는 절대 경로만 — 상대 경로는 앱의 현재 폴더 기준이 되어 의도와 달라진다. 데이터 루트를 품거나 네트워크 경로면 거부
@@ -290,20 +315,6 @@ fn checked_folder(folder: &str) -> Result<String, String> {
         return Err(why.into());
     }
     Ok(folder.display().to_string())
-}
-
-/// 비면 `None`(읽기 전용 기본값). 원격 요청은 문의 응답 — 쓰기 · 실행 도구는 등록하지 않는다(D31).
-fn checked_tools(tools: Option<&str>) -> Result<Option<&str>, String> {
-    let tools = tools.map(str::trim).filter(|t| !t.is_empty());
-    let unknown = tools.map(agents::unknown_tools).unwrap_or_default();
-    if !unknown.is_empty() {
-        return Err(format!(
-            "읽기 전용 도구만({}) — 받을 수 없는 도구: {}",
-            agents::READ_ONLY_TOOLS.join(","),
-            unknown.join(",")
-        ));
-    }
-    Ok(tools)
 }
 
 fn conversation_json(c: &Conversation) -> Value {
@@ -320,7 +331,8 @@ fn message_json(m: &Message) -> Value {
         "id": m.id, "author": m.author.as_str(), "text": m.text, "state": m.state.as_str(), "created_at": m.created_at,
         "reply_to": m.reply_to, "turns": m.turns, "duration_ms": m.duration_ms, "mine": m.mine, "exec": m.exec,
         "via": m.via, "model": m.model, "effort": m.effort, "saved": m.saved_at.is_some(),
-        "request": m.request, "done": m.done_at.is_some(), "agent": m.agent, "refused": m.refused,
+        "request": m.request, "req_state": m.req_state.map(ReqState::as_str), "req_note": m.req_note, "req_at": m.req_at,
+        "agent": m.agent, "refused": m.refused, "edited_at": m.edited_at,
     })
 }
 
@@ -376,10 +388,6 @@ async fn add_agent(State(chat): State<Arc<Chat>>, Json(req): Json<NewAgent>) -> 
         Ok(f) => f,
         Err(m) => return bad(&m),
     };
-    let tools = match checked_tools(req.tools.as_deref()) {
-        Ok(t) => t,
-        Err(m) => return bad(&m),
-    };
     let db = chat.db();
     if matches!(agents::by_name(&db, name), Ok(Some(_))) {
         return fail(io::Error::new(
@@ -387,7 +395,7 @@ async fn add_agent(State(chat): State<Arc<Chat>>, Json(req): Json<NewAgent>) -> 
             format!("같은 이름의 에이전트가 있다: {name}"),
         ));
     }
-    match agents::add(&db, name, &folder, tools, req.prompt.trim()) {
+    match agents::add(&db, name, &folder, req.prompt.trim()) {
         Ok(a) => (StatusCode::CREATED, Json(agent_json(a))).into_response(),
         Err(e) => db_fail(e),
     }
@@ -412,18 +420,13 @@ async fn update_agent(
         Some(Ok(f)) => f,
         Some(Err(m)) => return bad(&m),
     };
-    let tools = match req.tools.as_deref().map(|t| checked_tools(Some(t))) {
-        None => now.tools,
-        Some(Ok(t)) => t.unwrap_or(agents::DEFAULT_TOOLS).to_string(),
-        Some(Err(m)) => return bad(&m),
-    };
     let prompt = req.prompt.map_or(now.prompt, |p| p.trim().to_string());
     let group = match req.group.as_deref().map(an_core::run_opts::clean_group) {
         None => now.group,
         Some(Ok(g)) => g,
         Some(Err(m)) => return bad(&m),
     };
-    match agents::update(&db, id, &folder, &tools, &prompt, group.as_deref()) {
+    match agents::update(&db, id, &folder, &prompt, group.as_deref()) {
         Ok(Some(a)) => Json(agent_json(a)).into_response(),
         Ok(None) => fail(io::Error::new(io::ErrorKind::NotFound, "없는 에이전트")),
         Err(e) => db_fail(e),
@@ -468,13 +471,17 @@ async fn list_messages(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) -> Re
             ms.iter()
                 .map(|m| {
                     let mut v = message_json(m);
-                    v["progress"] = chat.progress_of(m).map_or(Value::Null, |p| {
-                        json!({ "state": p.state, "ahead": p.ahead, "detail": p.detail })
-                    });
+                    v["progress"] = chat.progress_of(m).map_or(
+                        Value::Null,
+                        |p| json!({ "state": p.state, "ahead": p.ahead, "detail": p.detail }),
+                    );
                     // 보관(#1c) — 상대에 아직 닿지 않았거나(`pending` · `inflight`) 포기한(`failed`) 내 글.
-                    v["outbox"] = chat.outbox_of(m).map_or(Value::Null, |o| {
-                        json!({ "state": o.state, "tries": o.tries, "error": o.last_error })
-                    });
+                    v["outbox"] = chat.outbox_of(m).map_or(
+                        Value::Null,
+                        |o| json!({ "state": o.state, "tries": o.tries, "error": o.last_error }),
+                    );
+                    // 편집 모드 체크박스 · 연필(#1f) — 끝난 내 사람 글만.
+                    v["editable"] = json!(Chat::tidy_ok(&chat.db(), m).unwrap_or(false));
                     v
                 })
                 .collect::<Vec<_>>(),
@@ -505,7 +512,11 @@ fn run_json(db: &an_core::db::Connection, id: i64) -> Result<Value, an_core::db:
 async fn list_runs(State(chat): State<Arc<Chat>>) -> Response {
     let (cap, running, waiting) = chat.run_queue();
     let db = chat.db();
-    let items = |ids: Vec<i64>| ids.into_iter().map(|id| run_json(&db, id)).collect::<Result<Vec<_>, _>>();
+    let items = |ids: Vec<i64>| {
+        ids.into_iter()
+            .map(|id| run_json(&db, id))
+            .collect::<Result<Vec<_>, _>>()
+    };
     match (items(running), items(waiting)) {
         (Ok(r), Ok(w)) => Json(json!({ "cap": cap, "running": r, "waiting": w })).into_response(),
         (Err(e), _) | (_, Err(e)) => db_fail(e),
@@ -536,11 +547,17 @@ async fn list_across(State(chat): State<Arc<Chat>>, Query(q): Query<MessageQuery
         Some("agent") => Some(Author::Agent),
         Some(_) => return bad("kind 는 human 또는 agent"),
     };
-    let request = match q.ask.as_deref() {
+    let req = match q.req.as_deref().map(|s| ReqState::parse(s).ok_or(s)) {
         None => None,
-        Some("query") => Some(false),
-        Some("request") => Some(true),
-        Some(_) => return bad("ask 는 query 또는 request"),
+        Some(Ok(s)) => Some(s),
+        Some(Err(_)) => return bad("req 는 wait · accepted · rejected · done"),
+    };
+    let ask = match (q.ask.as_deref(), req) {
+        (None, None) => None,
+        (Some("query"), None) => Some(AskFilter::Query),
+        (Some("request"), s) => Some(AskFilter::Request(s)),
+        (Some("query") | None, Some(_)) => return bad("req 는 ask=request 와 함께"),
+        (Some(_), _) => return bad("ask 는 query 또는 request"),
     };
     let limit = q.limit.unwrap_or(MESSAGES_DEFAULT);
     if !(1..=MESSAGES_MAX).contains(&limit) {
@@ -548,7 +565,7 @@ async fn list_across(State(chat): State<Arc<Chat>>, Query(q): Query<MessageQuery
     }
     let text = q.q.as_deref().map(str::trim).filter(|t| !t.is_empty());
     let db = chat.db();
-    let ms = match chat::messages_across(&db, Some(mine), q.peer, author, request, text, limit) {
+    let ms = match chat::messages_across(&db, Some(mine), q.peer, author, ask, text, limit) {
         Ok(ms) => ms,
         Err(e) => return db_fail(e),
     };
@@ -572,7 +589,6 @@ async fn list_across(State(chat): State<Arc<Chat>>, Query(q): Query<MessageQuery
     }
     Json(out).into_response()
 }
-
 
 async fn start_conversation(
     State(chat): State<Arc<Chat>>,
@@ -657,7 +673,7 @@ async fn patch_conversation(
     let db = chat.db();
     // 둘 다 한 트랜잭션 — 하나만 바뀌지 않는다.
     let marks = (|| {
-        let tx = db.unchecked_transaction()?;
+        let tx = an_core::db::write_tx(&db)?;
         if chat::marks(&tx, id)?.is_none() {
             return Ok(None);
         }
@@ -697,20 +713,48 @@ async fn read_conversation(
     }
 }
 
-/// 메시지 저장 · 해제(이 PC 에만).
+/// 메시지 저장 · 해제(이 PC 에만) · 받은 요청 상태 · 본문 편집(#1f).
 async fn save_message(
     State(chat): State<Arc<Chat>>,
     Path(id): Path<i64>,
     Json(req): Json<MessagePatch>,
 ) -> Response {
-    if req.saved.is_none() && req.done.is_none() {
-        return bad("saved 나 done 이 필요하다");
+    if req.mirror.is_some() && req.text.is_none() {
+        return bad("mirror 는 text 와 함께");
+    }
+    if let Some(text) = req.text.as_deref() {
+        if req.saved.is_some() || req.req_state.is_some() || req.note.is_some() {
+            return bad("text 는 다른 항목과 함께 쓰지 않는다");
+        }
+        return match chat.edit_message(id, text, req.mirror == Some(true)).await {
+            Ok((m, warning)) => {
+                let mut out = json!({ "id": id, "text": m.text, "edited_at": m.edited_at });
+                if let Some(w) = warning {
+                    out["warning"] = json!(w);
+                }
+                Json(out).into_response()
+            }
+            Err(e) => fail(e),
+        };
+    }
+    if req.saved.is_none() && req.req_state.is_none() {
+        return bad("saved · req_state · text 중 하나가 필요하다");
+    }
+    if req.note.is_some() && req.req_state.is_none() {
+        return bad("note 는 req_state 와 함께");
     }
     let mut out = json!({ "id": id });
-    if let Some(done) = req.done {
-        match chat.mark_done(id, done, req.saved).await {
+    if let Some(state) = req.req_state.as_deref() {
+        let Some(state) = ReqState::parse(state).filter(|s| *s != ReqState::Wait) else {
+            return bad("req_state 는 accepted · rejected · done");
+        };
+        match chat
+            .set_req_state(id, state, req.note.as_deref().unwrap_or(""), req.saved)
+            .await
+        {
             Ok((m, warning)) => {
-                out["done"] = json!(m.done_at.is_some());
+                out["req_state"] = json!(m.req_state.map(ReqState::as_str));
+                out["req_note"] = json!(m.req_note);
                 if req.saved.is_some() {
                     out["saved"] = json!(m.saved_at.is_some());
                 }
@@ -728,6 +772,26 @@ async fn save_message(
         }
     }
     Json(out).into_response()
+}
+
+/// 끝난 내 사람 글 여러 개 지우기(#1f) — `{deleted, warning?}`.
+async fn delete_messages(
+    State(chat): State<Arc<Chat>>,
+    Json(req): Json<MessageDelete>,
+) -> Response {
+    if req.ids.is_empty() || req.ids.len() > DELETE_MAX {
+        return bad(&format!("ids 는 1 ~ {DELETE_MAX}개"));
+    }
+    match chat.delete_messages(&req.ids, req.mirror).await {
+        Ok((n, warning)) => {
+            let mut out = json!({ "deleted": n });
+            if let Some(w) = warning {
+                out["warning"] = json!(w);
+            }
+            Json(out).into_response()
+        }
+        Err(e) => fail(e),
+    }
 }
 
 /// 통합 검색 — 묶음별 `{messages, conversations, peers, agents}`. 에이전트 `owner` = `"me"` 또는 그 상대 id.
@@ -769,9 +833,7 @@ async fn activity(State(chat): State<Arc<Chat>>, Query(q): Query<ActivityQuery>)
         Some("agent") => ActivityFilter::Agent,
         Some("relay") => ActivityFilter::Relay,
         Some("failed") => ActivityFilter::Failed,
-        Some("query") => ActivityFilter::Query,
-        Some("request") => ActivityFilter::Request,
-        Some(_) => return bad("kind 는 all · human · agent · relay · failed · query · request"),
+        Some(_) => return bad("kind 는 all · human · agent · relay · failed"),
     };
     let limit = q.limit.unwrap_or(MESSAGES_DEFAULT);
     if !(0..=MESSAGES_MAX).contains(&limit) {
@@ -902,7 +964,10 @@ async fn continue_conversation(
 }
 
 /// 트랜잭션 키 — CLI 글(`via: cli`)에만, 규칙은 [`an_core::cli_tx::key_ok`].
-fn tx_key_of<'a>(key: &'a Option<String>, via: Option<&str>) -> Result<Option<&'a str>, &'static str> {
+fn tx_key_of<'a>(
+    key: &'a Option<String>,
+    via: Option<&str>,
+) -> Result<Option<&'a str>, &'static str> {
     match key.as_deref() {
         None => Ok(None),
         Some(_) if via.is_none() => Err("tx_key 는 via: cli 에만"),

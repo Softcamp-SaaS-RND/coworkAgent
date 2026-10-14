@@ -59,6 +59,16 @@ impl FileLogger {
         };
         log::set_boxed_logger(Box::new(logger)).map_err(io::Error::other)?;
         log::set_max_level(level);
+        // 패닉도 로그에 — 콘솔 없는 릴리스에서 비정상 종료 근거가 남는 곳은 여기뿐(#1e). 기본 훅(stderr)도 그대로 부른다.
+        let default = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let at = info
+                .location()
+                .map(|l| format!("{}:{}", l.file(), l.line()))
+                .unwrap_or_else(|| "?".into());
+            log::error!("패닉: {} — {at}", info.payload_as_str().unwrap_or("?"));
+            default(info);
+        }));
         Ok(())
     }
 }

@@ -84,6 +84,10 @@ pub enum MessageKind {
     RelayStep,
     /// 자동 왕복이 저절로 멈췄다(상한 · 실패 · 거절 · 상대 멈춤).
     RelayEnd,
+    /// 받은 요청(#1d — 실행 없음, 요청 목록).
+    Ask,
+    /// 내 요청의 상태가 바뀌었다(#1d — 상대가 수용 · 반려 · 완료).
+    AskState,
 }
 
 type EventSink = Box<dyn Fn(PeerEvent) + Send + Sync>;
@@ -198,11 +202,16 @@ pub fn port_holder(port: u16) -> Option<Holder> {
         let pid: u32 = out.lines().find_map(|l| {
             let f: Vec<&str> = l.split_whitespace().collect();
             let local_port = f.get(1)?.rsplit(':').next()?;
-            (f.first() == Some(&"TCP") && local_port == port.to_string() && f.get(2)?.ends_with(":0"))
-                .then(|| f.last()?.parse().ok())
-                .flatten()
+            (f.first() == Some(&"TCP")
+                && local_port == port.to_string()
+                && f.get(2)?.ends_with(":0"))
+            .then(|| f.last()?.parse().ok())
+            .flatten()
         })?;
-        let csv = run("tasklist", &["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])?;
+        let csv = run(
+            "tasklist",
+            &["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"],
+        )?;
         let name = csv
             .lines()
             .find_map(|l| l.strip_prefix('"')?.split('"').next().map(str::to_string))
@@ -216,7 +225,9 @@ pub fn port_holder(port: u16) -> Option<Holder> {
             .output()
             .ok()?;
         let text = String::from_utf8_lossy(&out.stdout);
-        let pid = text.lines().find_map(|l| l.strip_prefix('p')?.parse().ok())?;
+        let pid = text
+            .lines()
+            .find_map(|l| l.strip_prefix('p')?.parse().ok())?;
         let name = text
             .lines()
             .find_map(|l| l.strip_prefix('c').map(str::to_string))
@@ -485,9 +496,11 @@ impl Node {
                 | Request::Reply { .. }
                 | Request::Post { .. }
                 | Request::Relay { .. }
-                | Request::Done { .. }
+                | Request::ReqState { .. }
                 | Request::Progress { .. }
                 | Request::Status { .. }
+                | Request::Edit { .. }
+                | Request::Delete { .. }
         ) {
             let peer = peers::by_spki(&self.db(), spki).map_err(db_err)?;
             let resp = match (peer, self.requests.get()) {
@@ -616,9 +629,11 @@ impl Node {
             | Request::Reply { .. }
             | Request::Post { .. }
             | Request::Relay { .. }
-            | Request::Done { .. }
+            | Request::ReqState { .. }
             | Request::Progress { .. }
-            | Request::Status { .. } => Response::error("bad_request"),
+            | Request::Status { .. }
+            | Request::Edit { .. }
+            | Request::Delete { .. } => Response::error("bad_request"),
         };
         Ok((resp, event))
     }
@@ -820,7 +835,10 @@ impl Node {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
-        if peer.seen_at.is_some_and(|t| (0..within).contains(&(now - t))) {
+        if peer
+            .seen_at
+            .is_some_and(|t| (0..within).contains(&(now - t)))
+        {
             return Ok(peer.focus);
         }
         self.ping(id).await

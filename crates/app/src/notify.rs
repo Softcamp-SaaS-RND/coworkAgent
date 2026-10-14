@@ -35,6 +35,8 @@ pub struct Notice {
 }
 
 type Attention = Box<dyn Fn(usize) + Send + Sync>;
+/// 자동 시작 켜기(등록) · 끄기(지움) — 앱이 설치한다(디버그 빌드 · 시험은 없음).
+type AutostartHook = Box<dyn Fn(bool) -> io::Result<()> + Send + Sync>;
 
 /// 자동 왕복 알림 — 시작 · 끝만(기본) / 글마다 / 없음.
 pub const RELAY_MODES: [&str; 3] = ["start_end", "every", "off"];
@@ -91,7 +93,9 @@ impl Prefs {
             | PeerEvent::Approved { .. }
             | PeerEvent::AutoPaired { .. } => self.notify_pair,
             PeerEvent::Message { kind, .. } => match kind {
-                MessageKind::Request => self.notify_request,
+                MessageKind::Request | MessageKind::Ask | MessageKind::AskState => {
+                    self.notify_request
+                }
                 MessageKind::Reply => self.notify_reply,
                 MessageKind::RelayStart | MessageKind::RelayEnd => self.notify_relay != "off",
                 MessageKind::RelayStep => self.notify_relay == "every",
@@ -114,6 +118,7 @@ pub struct Notifier {
     tx: broadcast::Sender<Notice>,
     /// 트레이 표시 갱신(건수, 0 = 지움). 막히면 안 된다 — 운영은 이벤트 루프 프록시로 보낸다.
     attention: Attention,
+    autostart: Mutex<Option<AutostartHook>>,
 }
 
 fn db_err(e: an_core::db::Error) -> io::Error {
@@ -137,6 +142,7 @@ impl Notifier {
             db: Mutex::new(db),
             tx: broadcast::channel(BACKLOG).0,
             attention: Box::new(attention),
+            autostart: Mutex::new(None),
         }))
     }
 
@@ -163,6 +169,19 @@ impl Notifier {
         Ok(())
     }
 
+    /// `PUT /api/settings {autostart}` 가 저장 전에 부른다 — 실패하면 저장하지 않는다.
+    pub fn set_autostart_hook(
+        &self,
+        hook: impl Fn(bool) -> io::Result<()> + Send + Sync + 'static,
+    ) {
+        *an_core::sync::lock(&self.autostart) = Some(Box::new(hook));
+    }
+
+    /// 로그인 때 자동 시작 설정.
+    pub fn autostart(&self) -> io::Result<bool> {
+        settings::autostart(&an_core::sync::lock(&self.db)).map_err(db_err)
+    }
+
     pub fn prefs(&self) -> Prefs {
         self.status().prefs.clone()
     }
@@ -187,9 +206,10 @@ impl Notifier {
             .as_deref()
             .is_some_and(|m| !run_opts::valid_model(m))
         {
-            return Err(invalid(
-                "claude_model 은 1 ~ 64자 영문 · 숫자 · ._:[]- (- 로 시작하지 않음)",
-            ));
+            return Err(invalid(&format!(
+                "claude_model 은 {} 중 하나",
+                run_opts::MODELS.join(" · ")
+            )));
         }
         if patch
             .claude_effort
@@ -229,6 +249,12 @@ impl Notifier {
             .map(run_opts::clean_icon)
             .transpose()
             .map_err(|m| invalid(&m))?;
+        let folded = patch
+            .ui_folded
+            .as_deref()
+            .map(run_opts::clean_folded)
+            .transpose()
+            .map_err(|m| invalid(&m))?;
         let flag = |b: bool| if b { "1" } else { "0" }.to_string();
         let mut writes: Vec<(&str, String)> = Vec::new();
         // 지움 = 빈 값(읽을 때 없음으로 본다).
@@ -242,6 +268,9 @@ impl Notifier {
         }
         if let Some(w) = patch.ui_side_width {
             writes.push((run_opts::SIDE_WIDTH_KEY, w.to_string()));
+        }
+        if let Some(f) = folded {
+            writes.push((run_opts::FOLDED_KEY, f));
         }
         for (key, v) in [
             (run_opts::MODEL_KEY, &patch.claude_model),
@@ -273,19 +302,58 @@ impl Notifier {
         if let Some(on) = patch.notify_inbound {
             writes.push((NOTIFY_KEY, flag(on)));
         }
+        // 자동 시작 — 켜기는 OS 등록이 저장보다 먼저, 끄기는 저장 뒤에 OS 지우기. 어느 순간 중단돼도(강제 종료 · 전원) 남는 어긋남은 "OS 켜짐 ·
+        // 저장 꺼짐" 뿐이다 — 다음 로그인에 실행되고 시작 맞추기가 저장 값으로 고친다. "저장 켜짐 · OS 꺼짐"(실행 기회 자체가 없음)은 생기지 않는다.
+        // 훅 잠금을 끝까지 쥐어 동시 요청의 등록 순서 = 저장 순서. 반환된 실패는 되돌린다(되돌리기마저 실패하면 다음 시작이 맞춘다).
+        let hook = an_core::sync::lock(&self.autostart);
+        let auto = patch
+            .autostart
+            .and_then(|on| hook.as_ref().map(|h| (h, on)));
+        let before = match auto {
+            Some(_) => self.autostart()?,
+            None => true,
+        };
+        if let Some((h, true)) = auto {
+            h(true)?;
+        }
+        if let Some(on) = patch.autostart {
+            writes.push((settings::AUTOSTART_KEY, flag(on)));
+        }
         // 전체 켜짐까지 한 트랜잭션 · 한 상태 잠금 — 부분 저장도, 그 사이에 끼는 이벤트도 없다.
         let mut st = self.status();
-        let prefs = {
+        let saved = (|| {
             let db = an_core::sync::lock(&self.db);
-            let tx = db.unchecked_transaction().map_err(db_err)?;
+            let tx = an_core::db::write_tx(&db).map_err(db_err)?;
             for (key, v) in &writes {
                 settings::set(&tx, key, v).map_err(db_err)?;
             }
             let prefs = Prefs::load(&tx)?;
             tx.commit().map_err(db_err)?;
-            prefs
+            Ok::<_, io::Error>(prefs)
+        })();
+        let prefs = match saved {
+            Ok(prefs) => prefs,
+            Err(e) => {
+                if let Some((h, true)) = auto
+                    && let Err(u) = h(before)
+                {
+                    log::warn!("자동 시작 되돌리기 실패(다음 시작 때 맞춘다): {u}");
+                }
+                return Err(e);
+            }
         };
         st.prefs = prefs;
+        if let Some((h, false)) = auto
+            && let Err(e) = h(false)
+        {
+            // 지우지 못했다 — 저장을 되돌린다(이 사이 중단돼도 "OS 켜짐 · 저장 꺼짐" 이라 다음 시작이 다시 지운다).
+            let db = an_core::sync::lock(&self.db);
+            if let Err(u) = settings::set(&db, settings::AUTOSTART_KEY, flag(before).as_str()) {
+                log::warn!("자동 시작 설정 되돌리기 실패(다음 시작 때 맞춘다): {u}");
+            }
+            return Err(e);
+        }
+        drop(hook);
         if let Some(on) = patch.notify_inbound {
             st.enabled = on;
             if !on {
@@ -308,6 +376,11 @@ impl Notifier {
         let db = an_core::sync::lock(&self.db);
         let (alias, icon) = run_opts::me_tile(&db).map_err(db_err)?;
         Ok((run_opts::side_width(&db).map_err(db_err)?, alias, icon))
+    }
+
+    /// 접은 절 열쇠 목록(#1g).
+    pub fn folded(&self) -> io::Result<Vec<String>> {
+        run_opts::folded(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
 
     /// 자동 왕복 상한 기본값(설정).
@@ -390,6 +463,8 @@ pub fn notice_with(e: &PeerEvent, preview_on: bool) -> Notice {
                 MessageKind::Request | MessageKind::Reply => {
                     ("message", format!("메시지 — {agent}"))
                 }
+                MessageKind::Ask => ("message", format!("요청 받음 — {agent}")),
+                MessageKind::AskState => ("message", format!("요청 상태 — {agent}")),
             };
             // 끝 알림의 본문은 이 PC 가 만든 멈춘 사유라 미리보기 설정과 무관하게 보인다.
             let body = if preview_on || *kind == MessageKind::RelayEnd {
@@ -428,9 +503,13 @@ pub struct SettingsPatch {
     pub ui_theme: Option<String>,
     /// 사이드바(대화 목록) 폭(px, [`run_opts::SIDE_WIDTHS`]).
     pub ui_side_width: Option<i64>,
+    /// 접은 절 열쇠 목록(#1g, [`run_opts::clean_folded`]) — 통째로 바꾼다.
+    pub ui_folded: Option<Vec<String>>,
     /// '나' 타일 — 표시 이름 · 아이콘(PNG data URL). 빈 문자열 = 지움.
     pub me_alias: Option<String>,
     pub me_icon: Option<String>,
+    /// 로그인 때 자동 시작(이 PC).
+    pub autostart: Option<bool>,
 }
 
 /// `GET/PUT /api/settings` · `GET /api/events`(SSE) — `server::router_with` 의 guard 뒤에 붙는다.
@@ -454,6 +533,8 @@ fn settings_json(n: &Notifier) -> io::Result<serde_json::Value> {
     v["ui_side_width"] = json!(side);
     v["me_alias"] = json!(alias);
     v["me_icon"] = json!(icon);
+    v["ui_folded"] = json!(n.folded()?);
+    v["autostart"] = json!(n.autostart()?);
     Ok(v)
 }
 

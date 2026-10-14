@@ -6,7 +6,7 @@ use an_agent::runner::{find_claude, run_claude};
 use an_app::notify::{self, Notifier};
 use an_app::server::{self, Status};
 use an_app::tray::{Attention, Tray, write_start_error};
-use an_app::{browser, chat_api, cli, handoff, peers_api};
+use an_app::{autostart, browser, chat_api, cli, handoff, peers_api, watchdog};
 use an_core::db;
 use an_core::instance::{Acquired, InstanceInfo, InstanceLock};
 use an_core::log_file::FileLogger;
@@ -44,8 +44,19 @@ fn main() {
     if !args.is_empty() {
         std::process::exit(cli::main(&args));
     }
+    // 인자 없는 첫 실행 = 감시 프로세스 — 앱을 자식으로 띄우고 비정상 종료면 다시 띄운다(#1e). 감시는 로거 · DB · 잠금을 쓰지 않는다.
+    let Some(restarts) = watchdog::restarts() else {
+        if let watchdog::Outcome::GaveUp(why) =
+            watchdog::supervise(watchdog::spawn_app, watchdog::RESTART_DELAY)
+        {
+            let file = write_start_error(&why).unwrap_or_default();
+            let (tray, _) = Tray::new();
+            tray.run_error(&why, &file)
+        }
+        return;
+    };
     let (tray, attention) = Tray::new();
-    match start(attention) {
+    match start(attention, restarts) {
         Ok(Some(app)) => tray.run(app.url, app.note, app.on_seen, app.on_quit),
         Ok(None) => {}
         Err(e) => {
@@ -68,7 +79,7 @@ struct App {
 }
 
 /// `Ok(None)` = 이미 실행 중이라 핸드오프하고 끝.
-fn start(attention: Attention) -> Result<Option<App>, Box<dyn Error>> {
+fn start(attention: Attention, restarts: u32) -> Result<Option<App>, Box<dyn Error>> {
     let root = Paths::default_root().ok_or("사용자 데이터 경로를 찾지 못했다")?;
     let paths = Paths::under(root);
     // 개명 전 설치의 신원 · 피어 · 대화 · 설정을 이어받는다.
@@ -82,6 +93,9 @@ fn start(attention: Attention) -> Result<Option<App>, Box<dyn Error>> {
     }
     paths.ensure()?;
     FileLogger::install(&paths.log_file(), log::LevelFilter::Info)?;
+    if restarts > 0 {
+        log::info!("감시 프로세스가 다시 띄움({restarts}번째)");
+    }
 
     let lock = match InstanceLock::acquire(&paths.lock_file())? {
         Acquired::Primary(lock) => lock,
@@ -125,6 +139,19 @@ fn start(attention: Attention) -> Result<Option<App>, Box<dyn Error>> {
     }
     let note = node.peer_port_note();
     let notifier = Notifier::new(db::open(&paths.db_file())?, move |n| attention.set(n))?;
+    // 로그인 때 자동 시작(S7 · D13) — 시작마다 설정 값으로 맞춘다: 켜짐이면 등록 · 경로 고침, 꺼짐이면 지움(지난 실행에서 어긋난 것도 여기서
+    // 고친다). 실패해도 시작은 계속. 디버그 빌드는 개발 경로를 남기지 않게 건너뛴다.
+    if !cfg!(debug_assertions) {
+        notifier.set_autostart_hook(autostart::sync);
+        match notifier.autostart() {
+            Ok(on) => {
+                if let Err(e) = autostart::sync(on) {
+                    log::warn!("자동 시작 맞추기 실패(켜짐 {on}): {e}");
+                }
+            }
+            Err(e) => log::warn!("자동 시작 설정을 읽지 못했다: {e}"),
+        }
+    }
     let on_event = notifier.clone();
     node.on_event(move |e| on_event.on_event(&e));
     // 원격 메시지 → 프로필 폴더에서 `claude -p`(D20 · D22). 실행 파일은 실행마다 찾는다 — 앱을 띄운 뒤 설치해도 된다.

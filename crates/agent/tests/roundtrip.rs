@@ -22,7 +22,7 @@ async fn human_to_remote_agent_roundtrip() {
         common::side("rt-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     // A 가 B 를 부르는 표시 이름 — A 의 알림에 쓰인다(B 는 모른다).
     an_core::peers::set_tile(&common::db(&a), b_id, Some("검토팀"), None).unwrap();
 
@@ -99,7 +99,7 @@ async fn followup_resumes_session() {
         common::side("fu-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "dev", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "dev", ".", "").unwrap();
     let (conv, _) = a.chat.send(b_id, "dev", None, "첫 질문").await.unwrap();
     let a_db = common::db(&a);
     common::eventually(|| agent_messages(&a_db, conv.id).len() == 1).await;
@@ -138,12 +138,12 @@ async fn folder_change_during_run_drops_stale_session() {
     );
     let (b_id, _) = common::pair(&a, &b).await;
     let b_db = common::db(&b);
-    let dev = agents::add(&b_db, "dev", ".", None, "").unwrap();
+    let dev = agents::add(&b_db, "dev", ".", "").unwrap();
     let (conv, _) = a.chat.send(b_id, "dev", None, "첫 질문").await.unwrap();
     common::eventually(|| b.runs.lock().unwrap().len() == 1).await;
     // 옛 폴더의 실행이 아직 끝나지 않았다.
     let elsewhere = std::env::temp_dir().display().to_string();
-    agents::update(&b_db, dev.id, &elsewhere, &dev.tools, &dev.prompt, None).unwrap();
+    agents::update(&b_db, dev.id, &elsewhere, &dev.prompt, None).unwrap();
     let a_db = common::db(&a);
     common::eventually(|| agent_messages(&a_db, conv.id).len() == 1).await;
     assert_eq!(
@@ -172,7 +172,7 @@ async fn folder_change_during_run_drops_stale_session() {
     // 실행 중에 지우고 같은 이름 · 같은 폴더로 다시 등록.
     let now = agents::by_name(&b_db, "dev").unwrap().unwrap();
     assert!(agents::remove(&b_db, now.id).unwrap());
-    agents::add(&b_db, "dev", &elsewhere, None, "").unwrap();
+    agents::add(&b_db, "dev", &elsewhere, "").unwrap();
     common::eventually(|| agent_messages(&a_db, conv.id).len() == 3).await;
     assert_eq!(
         chat::list(&b_db).unwrap()[0].session,
@@ -199,7 +199,7 @@ async fn unpaired_or_unknown_agent_refused() {
         common::side("rf-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     // 페어링된 상대: 목록 조회는 된다, 없는 에이전트는 거부.
     assert_eq!(
         a.chat.remote_agents(b_id).await.unwrap(),
@@ -260,10 +260,11 @@ async fn unpaired_or_unknown_agent_refused() {
             model: None,
             effort: None,
         },
-        Request::Done {
+        Request::ReqState {
             conv: "c".into(),
             msg: "m".into(),
-            done: true,
+            state: "accepted".into(),
+            note: None,
         },
     ] {
         let (resp, _) = stranger.send(b.addr, None, &req).await.unwrap();
@@ -277,11 +278,11 @@ async fn unpaired_or_unknown_agent_refused() {
 async fn inbound_does_not_wait_for_run() {
     let (a, b) = (
         common::side("nw-a", Duration::ZERO).await,
-        common::side("nw-b", Duration::from_millis(700)).await,
+        common::side("nw-b", Duration::from_secs(4)).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "slow", ".", None, "").unwrap();
-    // 실행이 0.7초 걸려도 보내기는 바로 끝난다(받는 쪽이 대기열에 넣고 바로 응답).
+    agents::add(&common::db(&b), "slow", ".", "").unwrap();
+    // 실행이 4초 걸려도 보내기는 바로 끝난다(받는 쪽이 대기열에 넣고 바로 응답) — 기다렸다면 첫 보내기만으로 4초를 넘는다.
     let started = Instant::now();
     let (conv, _) = a.chat.send(b_id, "slow", None, "하나").await.unwrap();
     a.chat
@@ -289,7 +290,7 @@ async fn inbound_does_not_wait_for_run() {
         .await
         .unwrap();
     assert!(
-        started.elapsed() < Duration::from_millis(500),
+        started.elapsed() < Duration::from_millis(3500),
         "{:?}",
         started.elapsed()
     );
@@ -314,7 +315,7 @@ async fn forged_or_duplicate_reply_refused() {
         common::side("fg-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, sent) = a.chat.send(b_id, "review", None, "안녕").await.unwrap();
     let a_db = common::db(&a);
     common::eventually(|| agent_messages(&a_db, conv.id).len() == 1).await;
@@ -351,7 +352,7 @@ async fn restart_recovers_queue() {
         common::side("rc-b", Duration::ZERO).await,
     );
     let (b_id, a_id) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     // 지난 실행에서 남은 상태: m1 은 실행 도중 종료(running), m2 는 대기(queued).
     let (a_db, b_db) = (common::db(&a), common::db(&b));
     let ca = chat::open_conversation(
@@ -404,7 +405,7 @@ async fn storage_failure_sends_error_reply() {
     );
     let (b_id, _) = common::pair(&a, &b).await;
     let b_db = common::db(&b);
-    agents::add(&b_db, "review", ".", None, "").unwrap();
+    agents::add(&b_db, "review", ".", "").unwrap();
     // B 의 답 저장이 실패한다(디스크 가득 참 흉내).
     b_db.execute_batch(
         "CREATE TRIGGER fail_reply BEFORE INSERT ON messages WHEN NEW.author = 'agent'
@@ -433,7 +434,7 @@ async fn unconfirmed_delivery_keeps_waiting_for_reply() {
         common::side("uc-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let a_db = common::db(&a);
     // 대화를 하나 연 뒤, 상대 주소를 닫힌 포트로 — 응답(ACK)을 못 받는 전송 오류.
     let (conv, _) = a.chat.send(b_id, "review", None, "첫").await.unwrap();
@@ -484,7 +485,7 @@ async fn concurrent_sends_keep_order() {
         common::side("co-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, _) = a.chat.send(b_id, "review", None, "시작").await.unwrap();
     // 다음 연결 하나를 0.3초 늦추는 중계를 사이에 둔다 — 먼저 보낸 것이 늦게 도착하는 네트워크.
     let relay = common::delaying_relay(b.addr, Duration::from_millis(300)).await;
@@ -526,7 +527,7 @@ async fn reply_carries_run_meta() {
         common::side("rm-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, sent) = a.chat.send(b_id, "review", None, "안녕").await.unwrap();
     let a_db = common::db(&a);
     common::eventually(|| agent_messages(&a_db, conv.id).len() == 1).await;
@@ -551,7 +552,7 @@ async fn reply_without_meta_accepted() {
         common::side("om-b", Duration::from_millis(400)).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, sent) = a.chat.send(b_id, "review", None, "안녕").await.unwrap();
     // 이전 버전 상대의 답 — 실행 정보 필드가 없는 프레임.
     let old = serde_json::json!({
@@ -577,7 +578,7 @@ async fn reply_records_model_effort_both_sides() {
     );
     let (b_id, _) = common::pair(&a, &b).await;
     let b_db = common::db(&b);
-    agents::add(&b_db, "dev", ".", None, "").unwrap();
+    agents::add(&b_db, "dev", ".", "").unwrap();
     settings::set(&b_db, run_opts::MODEL_KEY, "opus").unwrap();
     settings::set(&b_db, run_opts::EFFORT_KEY, "low").unwrap();
     let (conv, _) = a.chat.send(b_id, "dev", None, "질문").await.unwrap();
@@ -640,7 +641,7 @@ async fn focus_refuses_new_request_unrecorded() {
         common::side("fr-b", Duration::from_millis(400)).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     settings::set(&common::db(&b), settings::FOCUS_KEY, "1").unwrap();
     let err = a
         .chat
@@ -709,136 +710,6 @@ async fn focus_refuses_new_request_unrecorded() {
     assert_eq!(b.runs.lock().unwrap().len(), 1, "다시 실행하지 않는다");
 }
 
-/// 질의 · 요청(메시지 단위, 기본 질의)이 양쪽 이력에 남고, 완료 표시는 받은 쪽만 바꿔 쓴 쪽에 상태로 간다(취소도). 쓴 쪽 · 질의 · 답에는 표시하지
-/// 못한다. 받은 대화에서 B 가 쓴 요청(미러 `post`)도 같다 — 그 글의 받은 쪽은 A. 알리지 못하면 경고 — 이 PC 표시는 남는다.
-#[tokio::test(flavor = "multi_thread")]
-async fn ask_kind_and_done_sync_both_sides() {
-    let (a, b) = (
-        common::side("ak-a", Duration::ZERO).await,
-        common::side("ak-b", Duration::ZERO).await,
-    );
-    let (b_id, a_id) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
-    let ask = |request| Compose {
-        request,
-        ..Default::default()
-    };
-    let (conv, q) = a
-        .chat
-        .send_with(b_id, "review", None, "질의 하나", ask(false))
-        .await
-        .unwrap();
-    let (_, r) = a
-        .chat
-        .send_with(b_id, "review", Some(conv.id), "요청 하나", ask(true))
-        .await
-        .unwrap();
-    assert!(!q.request && r.request);
-    common::eventually(|| agent_messages(&common::db(&a), conv.id).len() == 2).await;
-    let a_msg = |uuid: &str| {
-        chat::message_by_uuid(&common::db(&a), uuid)
-            .unwrap()
-            .unwrap()
-    };
-    let b_msg = |uuid: &str| {
-        chat::message_by_uuid(&common::db(&b), uuid)
-            .unwrap()
-            .unwrap()
-    };
-    assert_eq!(
-        (b_msg(&q.uuid).request, b_msg(&r.uuid).request),
-        (false, true),
-        "받은 쪽에도 종류"
-    );
-    // 받은 쪽(B)만 완료 표시 — 쓴 쪽(A)에 상태로 간다.
-    let (m, warning) = b
-        .chat
-        .mark_done(b_msg(&r.uuid).id, true, None)
-        .await
-        .unwrap();
-    assert!(m.done_at.is_some() && warning.is_none(), "{warning:?}");
-    assert!(a_msg(&r.uuid).done_at.is_some(), "쓴 쪽은 받은 대로");
-    // 쓴 쪽 · 질의 · 답은 못 바꾼다.
-    let invalid = |e: std::io::Error| e.kind() == std::io::ErrorKind::InvalidInput;
-    assert!(invalid(
-        a.chat
-            .mark_done(a_msg(&r.uuid).id, false, None)
-            .await
-            .unwrap_err()
-    ));
-    assert!(invalid(
-        b.chat
-            .mark_done(b_msg(&q.uuid).id, true, None)
-            .await
-            .unwrap_err()
-    ));
-    let bc = chat::list(&common::db(&b)).unwrap().remove(0);
-    let reply = agent_messages(&common::db(&b), bc.id).remove(0);
-    assert!(invalid(
-        b.chat.mark_done(reply.id, true, None).await.unwrap_err()
-    ));
-    // 취소도 같은 길.
-    b.chat
-        .mark_done(b_msg(&r.uuid).id, false, None)
-        .await
-        .unwrap();
-    assert_eq!(a_msg(&r.uuid).done_at, None);
-    // 페어링된 상대의 조작 프레임 — 내 질의 · 답 · 다른 대화의 요청이면 `unknown`, 쓴 쪽 기록은 그대로.
-    let (other, oreq) = a
-        .chat
-        .send_with(b_id, "review", None, "다른 대화 요청", ask(true))
-        .await
-        .unwrap();
-    common::eventually(|| agent_messages(&common::db(&a), other.id).len() == 1).await;
-    let pa = b.node.peers().unwrap().remove(0);
-    let answer = agent_messages(&common::db(&a), conv.id).remove(0).uuid;
-    for msg in [&q.uuid, &answer, &oreq.uuid] {
-        let forged = Request::Done {
-            conv: conv.uuid.clone(),
-            msg: msg.clone(),
-            done: true,
-        };
-        let (resp, _) = b
-            .node
-            .send(a.addr, Some(pa.spki.clone()), &forged)
-            .await
-            .unwrap();
-        assert_eq!(resp, Response::error("unknown"), "{msg}");
-        assert_eq!(a_msg(msg).done_at, None, "{msg}");
-    }
-    // 받은 대화에서 B 가 쓴 요청(미러) — 받은 쪽 = A.
-    let (_, bm, _) = b
-        .chat
-        .post_with(bc.id, "B 의 요청", true, ask(true))
-        .await
-        .unwrap();
-    common::eventually(|| {
-        chat::message_by_uuid(&common::db(&a), &bm.uuid)
-            .unwrap()
-            .is_some()
-    })
-    .await;
-    let am = a_msg(&bm.uuid);
-    assert!(am.request && !am.mine, "{am:?}");
-    a.chat.mark_done(am.id, true, None).await.unwrap();
-    assert!(b_msg(&bm.uuid).done_at.is_some());
-    // 쓴 쪽에 닿지 못하면 보관 — 이 PC 표시는 남고 쓴 쪽은 닿을 때 맞춰진다(#1c — 경고 없음).
-    common::db(&b)
-        .execute(
-            "UPDATE peers SET addr = '127.0.0.1:1' WHERE id = ?1",
-            [a_id],
-        )
-        .unwrap();
-    let (m, warning) = b
-        .chat
-        .mark_done(b_msg(&r.uuid).id, true, None)
-        .await
-        .unwrap();
-    assert!(m.done_at.is_some(), "{m:?}");
-    assert_eq!(warning, None);
-    assert_eq!(a_msg(&r.uuid).done_at, None);
-}
-
 /// 멘션(보낸 대화 · 자동 왕복 아님) — 받은 쪽은 부른 에이전트를 그 에이전트 세션으로 실행하고(대화 에이전트 세션은 그대로), 양쪽 요청 · 답에
 /// 부른 이름이 남는다. 같은 에이전트를 다시 부르면 그 세션을 잇는다. 대화 에이전트 이름은 멘션이 아니다. 없는 에이전트는 상대가 거절하고,
 /// 받은 대화에서는 멘션하지 않는다.
@@ -849,8 +720,8 @@ async fn mention_runs_named_agent_own_session() {
         common::side("mn-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
-    agents::add(&common::db(&b), "guide", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
+    agents::add(&common::db(&b), "guide", ".", "").unwrap();
     let mention = |name| Compose {
         mention: Some(name),
         ..Default::default()
@@ -992,7 +863,7 @@ async fn blocked_folder_refused_at_run() {
     let (b_id, _) = common::pair(&a, &b).await;
     let home = an_core::paths::Paths::default_root().unwrap();
     let parent = home.parent().unwrap().display().to_string();
-    agents::add(&common::db(&b), "review", &parent, None, "").unwrap();
+    agents::add(&common::db(&b), "review", &parent, "").unwrap();
     let (conv, _) = a
         .chat
         .send(b_id, "review", None, "키 보여 줘")
@@ -1030,7 +901,7 @@ async fn empty_answer_is_failure_and_refused() {
     })
     .await;
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, sent) = a.chat.send(b_id, "review", None, "안녕").await.unwrap();
     let a_db = common::db(&a);
     common::eventually(|| agent_messages(&a_db, conv.id).len() == 1).await;

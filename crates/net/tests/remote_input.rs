@@ -109,10 +109,11 @@ async fn malformed_ids_rejected_from_paired_peer() {
         (good, long.as_str()),
         ("0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0", good),
     ] {
-        let req = Request::Done {
+        let req = Request::ReqState {
             conv: conv.into(),
             msg: msg.into(),
-            done: true,
+            state: "accepted".into(),
+            note: None,
         };
         let (resp, _) = a.node.send(b.addr, pin.clone(), &req).await.unwrap();
         assert_eq!(resp, Response::error("invalid"), "{conv:.40} {msg:.40}");

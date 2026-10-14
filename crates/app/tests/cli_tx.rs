@@ -91,7 +91,7 @@ async fn two(tag: &str) -> (Side, Side, i64, PathBuf) {
     let pa = b.node.peers().unwrap().remove(0);
     a.node.approve(pb.id).await.unwrap();
     b.node.approve(pa.id).await.unwrap();
-    agents::add(&db::open(&b.paths.db_file()).unwrap(), "review", ".", None, "").unwrap();
+    agents::add(&db::open(&b.paths.db_file()).unwrap(), "review", ".", "").unwrap();
     let file = web(&a).await;
     (a, b, pb.id, file)
 }

@@ -10,7 +10,6 @@ fn claude_args_carry_model_effort() {
         id: 1,
         name: "review".into(),
         folder: "/work".into(),
-        tools: "Read".into(),
         prompt: String::new(),
         group: None,
         uid: String::new(),
@@ -31,7 +30,7 @@ async fn peer_override_then_default() {
         common::side("ro-b", Duration::ZERO).await,
     );
     let (b_id, a_id) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let ask = |n: usize| {
         let (a, b) = (&a, &b);
         async move {
@@ -84,7 +83,7 @@ async fn settings_read_error_fails_run() {
     );
     let (b_id, _) = common::pair(&a, &b).await;
     let b_db = common::db(&b);
-    agents::add(&b_db, "review", ".", None, "").unwrap();
+    agents::add(&b_db, "review", ".", "").unwrap();
     b_db.execute_batch("DROP TABLE settings").unwrap();
     let (conv, _) = a.chat.send(b_id, "review", None, "질문").await.unwrap();
     let a_db = common::db(&a);

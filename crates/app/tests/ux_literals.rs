@@ -163,12 +163,83 @@ fn focus_mention_labels() {
         "글 종류",
         "질의",
         "요청",
-        "요청 · 완료",
-        "완료 표시",
-        "완료 취소",
         "에이전트 멘션",
         "@ 로 상대 에이전트 부르기",
     ] {
         assert!(all.contains(label), "{label}");
+    }
+}
+
+/// #1d 의 화면 문구 — 요청 목록 · 상태 넷 · 입력창 안내 · 도구 안내 · 모델 드롭다운. 없어진 완료 표시 문구는 없다.
+#[test]
+fn request_list_labels() {
+    let all = [INDEX, APP, VIEW].concat();
+    for label in [
+        "받은 요청",
+        "보낸 요청",
+        r#"wait: "대기", accepted: "수용", rejected: "반려", done: "완료""#,
+        "실행 없이 상대 요청 목록에 등록 — 상대가 수용 · 반려합니다",
+        "탐색 도구(읽기 전용) 항상 사용",
+        r#"<select id="claude_model"></select>"#,
+        r#"export const MODELS = ["opus", "sonnet", "haiku"];"#,
+    ] {
+        assert!(all.contains(label), "{label}");
+    }
+    for gone in ["완료 표시", "완료 취소", "허용 도구", "model_names"] {
+        assert!(!all.contains(gone), "{gone}");
+    }
+}
+
+/// 이력 정리(#1f) — 복사 아이콘 · 입력창 위 "편집" · 편집 막대 · 반영 범위 세 선택지(intent 결정 literal).
+#[test]
+fn tidy_literals() {
+    let edit = INDEX.find(r#"id="edit_btn""#).expect("편집 단추");
+    let reply = INDEX.find(r#"<form id="reply_form""#).expect("입력창");
+    assert!(edit < reply, "편집 단추는 입력창 위");
+    for label in [
+        r#"aria-pressed="false" title="편집 모드 — 끝난 내 글을 골라 삭제 · 편집">편집</button>"#,
+        r#"<span id="edit_count">0개 선택</span>"#,
+        r#"<button id="edit_delete" type="button" class="danger" disabled>삭제</button>"#,
+        r#"<button id="edit_done" type="button" class="primary">완료</button>"#,
+        r#"<button value="mine">내 창에서만</button>"#,
+        r#"<button value="both">상대 창에도</button>"#,
+        r#"<button value="cancel">취소</button>"#,
+    ] {
+        assert!(INDEX.contains(label), "{label}");
+    }
+    for code in [
+        r#"iconButton(COPY_SVG, "복사""#,
+        r#""복사했다""#,
+        r#"iconButton(PENCIL_SVG, "본문 편집""#,
+    ] {
+        assert!(APP.contains(code), "{code}");
+    }
+    assert!(!VIEW.contains(r#"key: "copy""#), "작업 막대에 복사 없음");
+    assert!(VIEW.contains(r#""(편집됨)""#));
+}
+
+/// 레일 범위(#1g) — '나' 메뉴 6개 · 상대 타일 4개(intent 결정 literal), 사이드바 에이전트 절 · 내 활동 상대 거르기 칸 없음, 접힘 설정.
+#[test]
+fn rail_scope_literals() {
+    for code in [
+        r##"{ label: "요청", href: "#requests", count: waiting },"##,
+        r##"{ label: "저장된 항목", href: "#saved" },"##,
+        r##"{ label: "주고받은 글", href: tile == null ? "#p" : `#p/${tile}` },"##,
+        r##"{ label: "에이전트", href: "#agents" },"##,
+        r##"[{ label: "대화", href: "#" }, { label: "내 활동", href: "#activity", count: unseen }, ...scoped]"##,
+    ] {
+        assert!(VIEW.contains(code), "{code}");
+    }
+    for gone in [r#"id="side_agents""#, r#"id="act_peer""#] {
+        assert!(!INDEX.contains(gone), "{gone}");
+    }
+    assert!(!APP.contains("renderSideAgents"));
+    assert!(INDEX.contains(r#"<ol id="home_summary" class="rows"></ol>"#));
+    for code in [
+        "{ ui_folded: keys }",
+        "foldSaver.push([...state.folded])",
+        "`대기 요청 ${g.waiting}`",
+    ] {
+        assert!(APP.contains(code), "{code}");
     }
 }

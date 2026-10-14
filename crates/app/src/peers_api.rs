@@ -232,7 +232,10 @@ async fn patch(
         && !m.is_empty()
         && !run_opts::valid_model(m)
     {
-        return invalid("model 은 1 ~ 64자 영문 · 숫자 · ._:[]- (- 로 시작하지 않음)".into());
+        return invalid(format!(
+            "model 은 {} 중 하나(빈 값 = 기본값)",
+            run_opts::MODELS.join(" · ")
+        ));
     }
     if let Some(e) = req.effort.as_deref().map(str::trim)
         && !e.is_empty()

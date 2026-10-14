@@ -7,20 +7,12 @@ fn conn(tag: &str) -> db::Connection {
 }
 
 #[test]
-fn agent_defaults_read_only_tools() {
+fn agent_profile_store() {
     let c = conn("agents");
-    assert_eq!(agents::DEFAULT_TOOLS, "Read,Grep,Glob");
-    let a = agents::add(&c, "review", r"C:\work\proj", None, "").unwrap();
-    assert_eq!(a.tools, "Read,Grep,Glob");
-    let b = agents::add(&c, "dev", "/tmp/x", Some("Read,Edit"), "짧게 답해").unwrap();
-    assert_eq!(
-        (b.tools.as_str(), b.prompt.as_str()),
-        ("Read,Edit", "짧게 답해")
-    );
-    assert!(
-        agents::add(&c, "review", "/y", None, "").is_err(),
-        "이름은 유일"
-    );
+    let a = agents::add(&c, "review", r"C:\work\proj", "").unwrap();
+    let b = agents::add(&c, "dev", "/tmp/x", "짧게 답해").unwrap();
+    assert_eq!(b.prompt, "짧게 답해");
+    assert!(agents::add(&c, "review", "/y", "").is_err(), "이름은 유일");
     assert_eq!(
         agents::by_name(&c, "dev").unwrap().unwrap().folder,
         "/tmp/x"
@@ -270,26 +262,6 @@ fn human_posts_and_notes() {
         chat::pending(&c, conv.id).unwrap().len(),
         1,
         "실행 없는 글은 대기열에 없다"
-    );
-}
-
-#[test]
-fn read_only_tools_filter() {
-    assert_eq!(agents::read_only("Read, Grep,Edit,Bash,LS"), "Read,Grep,LS");
-    assert_eq!(
-        agents::read_only("Edit,Write,Bash"),
-        agents::DEFAULT_TOOLS,
-        "남는 것이 없으면 기본"
-    );
-    assert_eq!(agents::read_only(""), agents::DEFAULT_TOOLS);
-    assert_eq!(
-        agents::unknown_tools("Read,Edit, Bash ,Glob"),
-        ["Edit", "Bash"]
-    );
-    assert!(agents::unknown_tools("Read,Grep,Glob,LS,NotebookRead").is_empty());
-    assert!(
-        agents::unknown_tools("read").len() == 1,
-        "대소문자도 정확히"
     );
 }
 

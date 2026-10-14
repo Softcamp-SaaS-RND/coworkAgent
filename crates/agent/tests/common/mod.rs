@@ -103,11 +103,11 @@ pub fn db(s: &Side) -> db::Connection {
     db::open(&s.paths.db_file()).unwrap()
 }
 
-/// 조건이 참이 될 때까지(최대 5초) 기다린다.
+/// 조건이 참이 될 때까지(최대 15초 — 부하 걸린 시험 PC 에서도 정상 동작이 시간 밖으로 밀리지 않게, 맞으면 바로 끝난다) 기다린다.
 pub async fn eventually(mut f: impl FnMut() -> bool) {
-    let until = Instant::now() + Duration::from_secs(5);
+    let until = Instant::now() + Duration::from_secs(15);
     while !f() {
-        assert!(Instant::now() < until, "5초 안에 조건이 맞지 않았다");
+        assert!(Instant::now() < until, "15초 안에 조건이 맞지 않았다");
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 }

@@ -196,7 +196,7 @@ export function unlinkedReplies(messages) {
 }
 
 /// 화면 위치(해시) — `#c/{id}` 대화(`/m/{글}` = 그 글 위치) · `#s/{id}` 그 대화 상대에게 보낸 글 · `#p/{id}` 상대와 주고받은 글 ·
-/// `#activity` 내 활동 · `#saved` 저장된 항목 · `#agents` 에이전트 · `#settings`(`/{절}` = 그 절, 모르는 절은 처음) · `#me`(설정의 내 정보) ·
+/// `#activity` 내 활동 · `#requests` 요청 목록 · `#saved` 저장된 항목 · `#agents` 에이전트 · `#settings`(`/{절}` = 그 절, 모르는 절은 처음) · `#me`(설정의 내 정보) ·
 /// `#new` 새 대화. 그 밖은 안내 화면.
 export function route(hash) {
   const h = (hash ?? "").replace(/^#/, "");
@@ -204,9 +204,9 @@ export function route(hash) {
   if (m) return m[2] ? { view: "conversation", id: Number(m[1]), msg: Number(m[2]) } : { view: "conversation", id: Number(m[1]) };
   m = /^s\/(\d+)$/.exec(h);
   if (m) return { view: "sent", id: Number(m[1]) };
-  m = /^p\/(\d+)$/.exec(h);
-  if (m) return { view: "peer", id: Number(m[1]) };
-  if (["activity", "saved", "agents", "new"].includes(h)) return { view: h };
+  m = /^p(?:\/(\d+))?$/.exec(h);
+  if (m) return { view: "peer", id: m[1] ? Number(m[1]) : null };
+  if (["activity", "requests", "saved", "agents", "new"].includes(h)) return { view: h };
   m = /^settings(?:\/(\w+))?$/.exec(h);
   if (m) {
     const known = settingsTree().some((n) => n.id === m[1] || (n.children ?? []).some((c) => c.id === m[1]));
@@ -214,6 +214,44 @@ export function route(hash) {
   }
   if (h === "me") return { view: "settings", focus: "me" };
   return { view: "home" };
+}
+
+/// 배경 새로 고침을 미룰 초점 — 입력칸에서 쓰는 중일 때만(`tag` = 초점 요소 `tagName`). 상대별 절 머리(`summary`) · 단추에 초점이 남아도 다시
+/// 그린다(#1g 적대적 평가 라운드 1 — 절을 접은 뒤 목록이 멈췄다).
+export function holdsRender(tag) {
+  return ["INPUT", "TEXTAREA", "SELECT"].includes(tag);
+}
+
+/// 마지막 값만 보내기(#1g 적대적 평가 라운드 1) — 한 번에 하나만 보내고, 보내는 동안 들어온 값은 마지막 것만 이어서 보낸다(동시에 보낸 옛 값이 늦게
+/// 닿아 새 값을 덮지 않게). `send` 의 실패는 `send` 가 알린다 — 여기서는 다음 값을 막지 않는다.
+export class SendLatest {
+  constructor(send) {
+    this.send = send;
+    this.busy = false;
+    this.waiting = false;
+    this.next = undefined;
+  }
+  push(value) {
+    if (this.busy) {
+      this.waiting = true;
+      this.next = value;
+      return;
+    }
+    this.run(value);
+  }
+  async run(value) {
+    this.busy = true;
+    try {
+      await this.send(value);
+    } catch {
+      // `send` 가 알린다
+    }
+    this.busy = false;
+    if (this.waiting) {
+      this.waiting = false;
+      this.run(this.next);
+    }
+  }
 }
 
 /// 늦게 온 응답 판별 — 요청마다 `next()` 로 번호를 받고, 응답 때 `is(번호)` 가 거짓이면(그 뒤 다른 요청이 있었다) 버린다.
@@ -248,6 +286,7 @@ export function settingsTree() {
     { id: "agents", label: "내 에이전트" },
     { id: "run", label: "실행 — 모델 · effort" },
     { id: "screen", label: "화면 — 테마" },
+    { id: "startup", label: "시작 — 자동 실행" },
     { id: "notify", label: "알림" },
   ];
 }
@@ -298,6 +337,7 @@ export function inboxRows(messages, peerNames, { kind = "" } = {}) {
         preview: preview(m.text),
         at: m.created_at,
         href: `#c/${conv.id}`,
+        peer: conv.peer_id,
       };
     });
 }
@@ -315,16 +355,17 @@ export function preview(text) {
 
 // ---- 작업 화면 — 상단 바 · 사이드바 · 내 활동 · 대화 · 실행 상세 · 통합 검색 ----
 
-/// 사이드바 내비 — 고른 타일 범위(`tile` = 상대 id, `null` = '나' = 전부). 내 활동은 안 본 수(`count`), 주고받은 글은 상대 타일만.
-export function sideNav(tile, unseen = 0) {
-  const nav = [
-    { label: "대화", href: "#" },
-    { label: "내 활동", href: "#activity", count: unseen },
+/// 사이드바 내비(#1g) — '나'(`tile` = `null`) = 전부를 상대별로 묶어 보는 6개, 상대 타일 = 그 상대만 4개(대화는 아래 목록, 내 활동은 '나' 에만).
+/// 내 활동은 안 본 수(`count`), 요청은 받은 요청 중 대기 수(`waiting`).
+export function sideNav(tile, unseen = 0, waiting = 0) {
+  const scoped = [
+    { label: "요청", href: "#requests", count: waiting },
     { label: "저장된 항목", href: "#saved" },
+    { label: "주고받은 글", href: tile == null ? "#p" : `#p/${tile}` },
     { label: "에이전트", href: "#agents" },
   ];
-  if (tile != null) nav.push({ label: "주고받은 글", href: `#p/${tile}` });
-  return nav;
+  if (tile != null) return scoped;
+  return [{ label: "대화", href: "#" }, { label: "내 활동", href: "#activity", count: unseen }, ...scoped];
 }
 
 /// 상단 바 "+ 새로 만들기" 메뉴 — 각 화면과 그 화면에서 초점을 줄 칸.
@@ -368,6 +409,10 @@ export function presence(p, now = Math.floor(Date.now() / 1000)) {
 
 /// 상대가 거절한 내 글의 사유(`refused`) — 실패 상태일 때만. 집중이면 "상대가 집중 중", 그 밖은 코드 그대로.
 export function refusedText(m) {
+  if (reqResend(m))
+    return m.refused === "unreachable"
+      ? "요청자에게 상태를 알리지 못함 — 상대에 오래 닿지 않았다(다시 알리기)"
+      : `요청자에게 상태를 알리지 못함 — 상대가 받지 않았다(${m.refused}, 다시 알리기)`;
   if (!m.refused || m.state !== "error") return "";
   if (m.refused === "unreachable") return "보내지 못함 — 상대에 오래 닿지 않았다(다시 보내기로 다시 보낼 수 있다)";
   return m.refused === "focus" ? "상대가 집중 중" : `상대가 거절(${m.refused})`;
@@ -396,10 +441,16 @@ export function outboxText(m) {
   return o.tries > 0 ? `보내는 중 — 상대에 닿지 않아 다시 보냄(${o.tries}회)` : "보내는 중";
 }
 
-/// 대화 글 서명 — 바뀐 것이 없으면 다시 그리지 않는다(HTML 본문 · 스크롤 상태가 5초마다 풀리지 않게). 상대 표시 이름 · 요청 완료 · 거절 사유 ·
+/// 대화 글 서명 — 바뀐 것이 없으면 다시 그리지 않는다(HTML 본문 · 스크롤 상태가 5초마다 풀리지 않게). 상대 표시 이름 · 요청 상태 · 메모 · 거절 사유 ·
 /// 상대가 알려 준 진행(대기 · 앞 사람 수 · 처리 중 — 글 상태는 `sent` 그대로)이 바뀌면 다시. 저장 여부는 넣지 않는다 — 저장 단추가 그 글자만 바꾼다.
 export function messagesSigOf(peerName, ms) {
-  return [peerName, ...ms.map((m) => `${m.id}:${m.state}:${m.text.length}:${m.done ? 1 : 0}:${m.refused ?? ""}:${progressText(m)}:${outboxText(m)}`)].join(",");
+  return [
+    peerName,
+    ...ms.map(
+      (m) =>
+        `${m.id}:${m.state}:${m.text.length}:${m.req_state ?? ""}:${m.req_note ?? ""}:${m.refused ?? ""}:${progressText(m)}:${outboxText(m)}:${m.edited_at ?? ""}:${m.editable === true}`,
+    ),
+  ].join(",");
 }
 
 /// 이 PC 실행 문(`GET /api/runs`) → 실행 상세 '이 PC 실행' 머리 문구 · 줄(실행 중 먼저, 닿은 순서). 줄 = `{label, text, href}` — 누르면 그 대화.
@@ -461,17 +512,102 @@ export function mentionTarget(text, names) {
   return null;
 }
 
-/// 사람 글의 종류 태그 — 요청이면 "요청"(받은 쪽이 완료 표시하면 "요청 · 완료"), 질의 · 답은 없음.
+/// 요청 상태 문구(#1d — an_core `ReqState`).
+export const REQ_STATES = { wait: "대기", accepted: "수용", rejected: "반려", done: "완료" };
+
+/// 사람 글의 종류 태그 — 요청이면 "요청 · {상태}"(받은 쪽이 바꾼다), 질의 · 답은 없음.
 export function askTag(m) {
   if (m.author !== "human" || !m.request) return "";
-  return m.done ? "요청 · 완료" : "요청";
+  return `요청 · ${REQ_STATES[m.req_state] ?? REQ_STATES.wait}`;
 }
 
-/// 사이드바 대화 섹션 — ★ 켠 대화는 '★ 즐겨찾기' 에만 보인다(대화 섹션에서 빠진다). 즐겨찾기가 없으면 그 섹션도 없다.
-export function convSections(rows) {
+/// 받은 요청에 지금 할 수 있는 상태 바꾸기 — 대기 → 수용 · 반려, 수용 → 완료(내 요청 · 질의 · 답 · 끝난 요청은 없음).
+export function reqMoves(m) {
+  if (m.author !== "human" || m.mine !== false || !m.request) return [];
+  const from = m.req_state ?? "wait";
+  if (from === "wait") return [{ to: "accepted", label: "수용" }, { to: "rejected", label: "반려" }];
+  if (from === "accepted") return [{ to: "done", label: "완료" }];
+  return [];
+}
+
+/// 받은 요청의 상태를 요청자에 알리지 못했다(오래 닿지 않아 포기 · 요청자가 거절) — 같은 상태로 "다시 알리기"(#1d R1 · R2).
+export function reqResend(m) {
+  return m.author === "human" && m.mine === false && m.request === true && !!m.refused;
+}
+
+/// '요청' 화면 행 — 상대 · 대화 제목 · 상태 · 메모 · 본문 앞부분 · 시각, 누르면 그 글로. `moves` = 받은 요청에 할 수 있는 상태 바꾸기,
+/// `resend` = 알리지 못한 상태 다시 알리기.
+export function requestRows(messages, peerNames) {
+  return messages
+    .filter((m) => m.conversation && m.request)
+    .map((m) => {
+      const conv = m.conversation;
+      return {
+        id: m.id,
+        peer: conv.peer_id,
+        who: shortName(peerNames.get(conv.peer_id)),
+        title: convLabel(conv, peerNames).title,
+        state: REQ_STATES[m.req_state] ?? REQ_STATES.wait,
+        stateKey: m.req_state ?? "wait",
+        done: m.req_state === "done" || m.req_state === "rejected",
+        note: m.req_note ?? "",
+        preview: preview(m.text),
+        at: m.req_at ?? m.created_at,
+        href: `#c/${conv.id}/m/${m.id}`,
+        moves: reqMoves(m),
+        resend: reqResend(m),
+      };
+    });
+}
+
+/// 사이드바 대화 섹션 — ★ 켠 대화는 '★ 즐겨찾기' 에만 보인다(대화 섹션에서 빠진다). 즐겨찾기가 없으면 그 섹션도 없다. `paired`(레일 순서
+/// 상대 id)를 주면('나', #1g) ★ 아래를 상대별 절(`peer:{id}`)로 — 대화가 하나도 없으면 빈 '대화' 절 하나.
+export function convSections(rows, paired = null, peerNames = new Map()) {
   const starred = rows.filter((r) => r.c.starred);
   const rest = rows.filter((r) => !r.c.starred);
-  return [...(starred.length ? [{ key: "starred", title: "★ 즐겨찾기", rows: starred }] : []), { key: "convs", title: "대화", rows: rest }];
+  const head = starred.length ? [{ key: "starred", title: "★ 즐겨찾기", rows: starred }] : [];
+  if (paired == null) return [...head, { key: "convs", title: "대화", rows: rest }];
+  const groups = peerGroups(
+    rest.map((r) => ({ ...r, peer: r.c.peer_id })),
+    paired,
+    peerNames,
+  ).map((g) => ({ key: `peer:${g.peer}`, peer: g.peer, title: g.name, rows: g.rows }));
+  return [...head, ...(groups.length ? groups : [{ key: "convs", title: "대화", rows: [] }])];
+}
+
+/// 상대별 절(#1g, '나') — 행(`peer` = 상대 id)을 레일 순서(`paired`)로 묶고, 그 뒤 페어링이 풀린 상대를 id 순으로. 행 없는 상대는 뺀다.
+/// 절 안 순서는 들어온 순서(목록이 이미 최신순).
+export function peerGroups(rows, paired, peerNames) {
+  const rest = [...new Set(rows.map((r) => r.peer))].filter((id) => !paired.includes(id)).sort((a, b) => a - b);
+  return [...paired, ...rest]
+    .map((id) => ({ peer: id, name: shortName(peerNames.get(id)), rows: rows.filter((r) => r.peer === id) }))
+    .filter((g) => g.rows.length);
+}
+
+/// 받은 대기 요청 수를 상대별로(#1g — '대화' 요약 머리).
+export function waitingByPeer(messages) {
+  const n = new Map();
+  for (const m of messages) if (m.conversation) n.set(m.conversation.peer_id, (n.get(m.conversation.peer_id) ?? 0) + 1);
+  return n;
+}
+
+/// '나' 의 '대화' = 상대별 요약(#1g) — 페어링된 상대(레일 순서)는 대화가 없어도, 풀린 상대는 대화가 있을 때만. 대화 수 · 안 읽음 합 · 대기 요청 ·
+/// 최근 활동(`last_at` 최대, 없으면 `null`) · 그 상대 대화(최근 활동 순, 활동 없는 대화는 뒤로).
+export function peerSummary(convs, paired, peerNames, waiting = new Map()) {
+  const rest = [...new Set(convs.map((c) => c.peer_id))].filter((id) => !paired.includes(id)).sort((a, b) => a - b);
+  return [...paired, ...rest].map((id) => {
+    const rows = convs.filter((c) => c.peer_id === id).sort((a, b) => (b.last_at ?? -1) - (a.last_at ?? -1));
+    const ats = rows.map((c) => c.last_at).filter((t) => t != null);
+    return {
+      peer: id,
+      name: shortName(peerNames.get(id)),
+      convs: rows.length,
+      unread: rows.reduce((n, c) => n + (c.unread ?? 0), 0),
+      waiting: waiting.get(id) ?? 0,
+      last: ats.length ? Math.max(...ats) : null,
+      rows,
+    };
+  });
 }
 
 /// 대화 행 표시 — 둘째 줄 `{에이전트} · {상태}`(받은 대화의 에이전트는 내 것), 실행 중 표시, 자동 왕복 칩 "왕복 {n}/{상한}", 안 읽음.
@@ -504,6 +640,7 @@ export function activityRows(items, peerNames) {
       const m = a.message;
       const row = {
         key: `${a.kind}:${conv.id}:${m?.id ?? `${a.at}:${a.detail ?? ""}`}`,
+        peer: conv.peer_id,
         at: a.at,
         unseen: a.unseen === true,
         tag: conv.dir === "out" ? "보냄" : "받음",
@@ -513,6 +650,9 @@ export function activityRows(items, peerNames) {
         const kind = [kindText(m), askTag(m)].filter(Boolean).join(" · ");
         const label = a.kind === "failed" ? "실패" : m.state === "error" ? `${kind} · 실패` : kind;
         return { ...row, label, who: authorLabel(conv, m, peer), preview: preview(m.text), href: `#c/${conv.id}/m/${m.id}` };
+      }
+      if (a.kind === "sync_failed") {
+        return { ...row, label: `상대 반영 실패 — ${a.detail ?? ""}`, who: shortName(peer), preview: "", href: `#c/${conv.id}` };
       }
       const end = a.kind === "relay_end";
       return {
@@ -525,16 +665,26 @@ export function activityRows(items, peerNames) {
     });
 }
 
-/// 메시지 작업 막대 — 모두 "저장"(저장됨이면 "저장 해제") · "복사", 내 실행 요청만 "다시 보내기"(같은 대화 · 같은 대상에 새 요청),
-/// 받은 요청만 "완료 표시"(완료면 "완료 취소" — 쓴 쪽에 상태로 간다). 메시지별 편집 · 삭제 · 원문 버튼은 없다(원문 보기는 머리글 하나).
+/// 메시지 작업 막대 — 모두 "저장"(저장됨이면 "저장 해제"), 내 실행 요청 · 요청만 "다시 보내기"(같은 대화 · 같은 대상에 새 글 — 같은 종류),
+/// 받은 요청만 상태 바꾸기(`req:{상태}` — [`reqMoves`], 쓴 쪽에 간다). 복사는 말풍선 우상단 아이콘(#1f), 편집 · 삭제는 편집 모드(#1f) —
+/// 막대에는 없다. 원문 보기는 머리글 하나.
 export function messageActions(m) {
-  const acts = [
-    { key: "save", label: m.saved ? "저장 해제" : "저장" },
-    { key: "copy", label: "복사" },
-  ];
-  if (m.author === "human" && m.mine === true && m.exec !== false) acts.push({ key: "resend", label: "다시 보내기" });
-  if (m.author === "human" && m.mine === false && m.request) acts.push({ key: "done", label: m.done ? "완료 취소" : "완료 표시" });
+  const acts = [{ key: "save", label: m.saved ? "저장 해제" : "저장" }];
+  if (m.author === "human" && m.mine === true && (m.exec !== false || m.request)) acts.push({ key: "resend", label: "다시 보내기" });
+  for (const r of reqMoves(m)) acts.push({ key: `req:${r.to}`, label: r.label });
+  if (reqResend(m)) acts.push({ key: "req-again", label: "다시 알리기" });
   return acts;
+}
+
+/// 편집 표시(#1f) — 편집한 글이면 "(편집됨)".
+export function editedTag(m) {
+  return m.edited_at != null ? "(편집됨)" : "";
+}
+
+/// 편집 모드에서 고른 글(#1f) — 새로 읽은 글(`ms`) 중 아직 있고 편집할 수 있는 것만 남긴다(지워졌거나 · 다른 창에서 바뀐 글은 뺀다).
+export function keepPicked(picked, ms) {
+  const ok = new Set(ms.filter((m) => m.editable === true).map((m) => m.id));
+  return new Set([...picked].filter((id) => ok.has(id)));
 }
 
 /// 입력창 서식 버튼 — 고른 글자(`start` ~ `end`)에 markdown 표기: 굵게 `**…**` · 코드 `` `…` ``(여러 줄이면 코드 블록) · 목록(걸친 줄마다 머리에
@@ -731,8 +881,12 @@ export function markdownBlocks(text) {
   return blocks;
 }
 
-/// 내 에이전트 도구 — D31 읽기 전용 목록(an_core `READ_ONLY_TOOLS` 와 같다).
+/// 모든 실행의 도구 — 탐색(읽기 전용) 전부(an_core `READ_ONLY_TOOLS` 와 같다, #1d — 프로필마다 고르지 않는다).
 export const READ_ONLY_TOOLS = ["Read", "Grep", "Glob", "LS", "NotebookRead"];
+/// 에이전트 화면의 도구 안내 한 줄.
+export const TOOLS_NOTE = `탐색 도구(읽기 전용) 항상 사용 — ${READ_ONLY_TOOLS.join(" · ")}`;
+/// 고를 수 있는 모델(an_core `run_opts::MODELS` 와 같다).
+export const MODELS = ["opus", "sonnet", "haiku"];
 /// `claude --effort` 값(an_core `run_opts::EFFORTS` 와 같다).
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 

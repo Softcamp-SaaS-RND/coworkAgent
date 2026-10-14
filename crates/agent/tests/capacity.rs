@@ -17,7 +17,10 @@ struct Meter {
     order: Mutex<Vec<String>>,
 }
 
-fn metered(meter: Arc<Meter>, delay: Duration) -> impl FnOnce(Arc<Mutex<Vec<RunInput>>>) -> Run {
+/// 실행 시간은 본문으로 정한다(`delay(본문)`).
+type Delay = Arc<dyn Fn(&str) -> Duration + Send + Sync>;
+
+fn metered(meter: Arc<Meter>, delay: Delay) -> impl FnOnce(Arc<Mutex<Vec<RunInput>>>) -> Run {
     move |runs| {
         Arc::new(move |input: RunInput| {
             let n = meter.now.fetch_add(1, Ordering::SeqCst) + 1;
@@ -25,7 +28,7 @@ fn metered(meter: Arc<Meter>, delay: Duration) -> impl FnOnce(Arc<Mutex<Vec<RunI
             let body = common::body(&input.text).to_string();
             meter.order.lock().unwrap().push(body.clone());
             runs.lock().unwrap().push(input.clone());
-            std::thread::sleep(delay);
+            std::thread::sleep(delay(&body));
             meter.now.fetch_sub(1, Ordering::SeqCst);
             let session = match &input.session {
                 Session::New(id) | Session::Resume(id) => id.clone(),
@@ -43,11 +46,16 @@ fn metered(meter: Arc<Meter>, delay: Duration) -> impl FnOnce(Arc<Mutex<Vec<RunI
 
 /// a(묻는 쪽) · b(답하는 쪽, 계량 실행기) · a 쪽 b 의 id.
 async fn two(tag: &str, delay: Duration) -> (common::Side, common::Side, Arc<Meter>, i64) {
+    two_by(tag, Arc::new(move |_| delay)).await
+}
+
+/// [`two`] + 본문마다 다른 실행 시간.
+async fn two_by(tag: &str, delay: Delay) -> (common::Side, common::Side, Arc<Meter>, i64) {
     let meter = Arc::new(Meter::default());
     let a = common::side(&format!("{tag}-a"), Duration::ZERO).await;
     let b = common::side_with(&format!("{tag}-b"), metered(meter.clone(), delay)).await;
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     (a, b, meter, b_id)
 }
 
@@ -68,7 +76,17 @@ fn answered(a: &common::Side) -> usize {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn five_conversations_respect_cap_in_arrival_order() {
-    let (a, _b, meter, b_id) = two("cap5", Duration::from_millis(300)).await;
+    // 실행 시간을 엇갈려 자리가 하나씩 빈다(q0 3초 · q1 4초 · 나머지 2초) — 기다린 셋의 시작이 1초 넘게 떨어져 시작 기록 순서가 곧 들어간
+    // 순서다. 처음 둘은 보내기가 다 끝나기 전에 끝나지 않는다(부하 걸린 PC 에서 보내기가 느려도 상한 2 를 채운다).
+    let (a, _b, meter, b_id) = two_by(
+        "cap5",
+        Arc::new(|body: &str| match body {
+            "q0" => Duration::from_secs(3),
+            "q1" => Duration::from_secs(4),
+            _ => Duration::from_secs(2),
+        }),
+    )
+    .await;
     let asks: Vec<String> = (0..5).map(|i| format!("q{i}")).collect();
     for q in &asks {
         a.chat.send(b_id, "review", None, q).await.unwrap();
@@ -107,7 +125,7 @@ fn first(a: &common::Side, conv: i64) -> chat::Message {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn waiting_request_shows_queue_then_running_then_clears() {
-    let (a, b, _meter, b_id) = two("prog", Duration::from_millis(700)).await;
+    let (a, b, _meter, b_id) = two("prog", Duration::from_secs(2)).await;
     b.chat.set_max_runs(1).unwrap();
     let mut convs = Vec::new();
     for i in 0..3 {
@@ -123,13 +141,10 @@ async fn waiting_request_shows_queue_then_running_then_clears() {
             })
     })
     .await;
-    // 첫째는 바로 실행 — running.
-    assert_eq!(
-        a.chat.progress_of(&first(&a, convs[0])).map(|p| p.state),
-        Some("running".into())
-    );
+    // 첫째는 바로 실행 — running(대화마다 따로 오는 알림이라 셋째의 queued 보다 늦게 닿을 수 있다).
+    common::eventually(|| a.chat.progress_of(&first(&a, convs[0])).is_some_and(|p| p.state == "running")).await;
     // 셋째 차례가 오면 running, 답이 오면 지운다.
-    let until = std::time::Instant::now() + Duration::from_secs(5);
+    let until = std::time::Instant::now() + Duration::from_secs(15);
     loop {
         let p = a.chat.progress_of(&first(&a, convs[2]));
         if p.as_ref().is_some_and(|p| p.state == "running") {
@@ -147,10 +162,10 @@ async fn waiting_request_shows_queue_then_running_then_clears() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cap_bounds_and_queue_snapshot() {
-    let (a, b, _meter, b_id) = two("snap", Duration::from_millis(600)).await;
+    let (a, b, _meter, b_id) = two("snap", Duration::from_secs(4)).await;
     assert!(b.chat.set_max_runs(0).is_err() && b.chat.set_max_runs(9).is_err());
     b.chat.set_max_runs(1).unwrap();
-    let gone = agents::add(&common::db(&b), "gone", ".", None, "").unwrap();
+    let gone = agents::add(&common::db(&b), "gone", ".", "").unwrap();
     for i in 0..3 {
         a.chat.send(b_id, "review", None, &format!("q{i}")).await.unwrap();
     }
@@ -177,7 +192,7 @@ async fn cap_bounds_and_queue_snapshot() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn same_conversation_followup_is_queued_and_listed() {
-    let (a, b, _meter, b_id) = two("same", Duration::from_millis(800)).await;
+    let (a, b, _meter, b_id) = two("same", Duration::from_secs(2)).await;
     b.chat.set_max_runs(2).unwrap();
     let (conv, _) = a.chat.send(b_id, "review", None, "q0").await.unwrap();
     let (_, next) = a.chat.send(b_id, "review", Some(conv.id), "q1").await.unwrap();

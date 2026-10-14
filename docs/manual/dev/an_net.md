@@ -16,7 +16,9 @@
   (`Message` 에도 `lc?` — 양쪽 공통 순서 · `by_agent?` — 자동 왕복의 에이전트발 실행 요청, `relay?` — 자동 왕복을 여는 사람 요청(연 쪽 에이전트 이름 — 받은 쪽 기록 · 알림 묶기), `Relay{conv, on}` — 자동 왕복 멈춤 · 재개 알림, `Post` = 실행 없는 사람 글 · 받은 쪽 실행 요청과 그 답의 미러, `Message` · `Post` 의 `via?` — 글의 출처 `cli`, 이전 버전은 모르는 필드라 무시)(대화 요청은
   페어링된 상대만, `Reply` 실행 정보는 없으면 `None`. `Reply` · `Post` 의 `model?` · `effort?` — 답을 실행한 값, 받은 쪽은 `run_opts` 글자 규칙에 맞는
   것만 남긴다 · D32 이전 버전 대비 없음. #18: `Message` · `Post` 의 `request?`(사람 글 종류 — 요청), `Message.mention?`(멘션 — 부른 받는 PC 에이전트,
-  `agent` 는 늘 대화 에이전트), `Done{conv, msg, done}` — 받은 요청의 완료 표시를 쓴 쪽에, 페어링된 상대만. #1b: `Progress{conv, msg, state, ahead}` — 받는 쪽이 상대 실행 요청의
+  `agent` 는 늘 대화 에이전트), `ReqState{conv, msg, state, note?}`(#1d — `Done` 대체) — 받은 요청의 상태(`wait` · `accepted` · `rejected` ·
+  `done`) · 한 줄 메모를 쓴 쪽에, 페어링된 상대만. #1f: `Edit{conv, msg, text}` · `Delete{conv, msg}` — 쓴 쪽 사람이 자기 사람 글을 고쳤다 ·
+  지웠다(이력 정리 — 받는 쪽은 그 상대가 쓴 사람 글에만, 실행 · 알림 없음), 페어링된 상대만 · `ids_ok` 로 uuid 꼴 검사 · D32 이전 버전 대비 없음. #1b: `Progress{conv, msg, state, ahead}` — 받는 쪽이 상대 실행 요청의
   차례(`queued` · `running`)를 보낸 쪽에, 페어링된 상대만 · `Ping.port` — 보낸 쪽 피어 수신 포트, 0 = 주소 바꾸지 않음. #1c: `Progress.detail?` —
   `StepDetail{turns, tools: BTreeMap<이름, 횟수>, secs}` 실행 중 단계 요약(턴 · 도구 이름별 횟수 · 경과 초만 — 입력 · 경로 · 모델 글 없음),
   `StepDetail::cleaned()`(받은 쪽 — 이름 `clean_name` 뒤 `MAX_STEP_NAME` 24자 · 빈 이름 버림 · `MAX_STEP_TOOLS` 16개), `Status{conv, msg}` — 보낸 쪽이
@@ -37,7 +39,8 @@
   — 기록 실패는 보내기를 실패로 만들지 않음) · `on_request(f)`(대화 요청 처리기) · `on_seen(f)`(#1c — 페어링된 상대의 `Ping` 을 받을 때 상대 id 로
   부름 · 한 번만 설정 · 막히면 안 된다) · `on_event(f)` —
   `PeerEvent::{PairRequest{name,host,fingerprint}, AutoPaired{name,host,fingerprint}, Approved{name,host}, Message{name,host,agent,preview,kind}}`
-  (`MessageKind::{Request, Reply, RelayStart, RelayStep, RelayEnd}` — 알림 거르기용, `RelayEnd` 의 `preview` 는 멈춘 사유)
+  (`MessageKind::{Request, Reply, RelayStart, RelayStep, RelayEnd, Ask, AskState}` — 알림 거르기용, `RelayEnd` 의 `preview` 는 멈춘 사유, `Ask` =
+  받은 요청 · `AskState` = 내 요청의 상태가 바뀜 — #1d)
   를 응답 전에 부른다(콜백은 막히면 안 된다 — 느린 일은 큐로). `bind_peer_port() -> (listener, Option<Holder>)` — `0.0.0.0:47100`, 사용 중이면
   임의 포트 + 잡은 프로세스(`Holder{name, pid}`) · `bind_peer_port_on(port)` · `port_holder(port)`(Windows `netstat -ano -p TCP` + `tasklist`, Unix
   `lsof` — 못 찾으면 `None`, 부르는 쪽은 "알 수 없음" · PID 0) · `set_peer_holder(h)` · `peer_holder()` · `peer_port_note()`("피어 포트 47100 사용 중 —

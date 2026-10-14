@@ -20,7 +20,7 @@ async fn ask_via_cli_marks_both_sides() {
         common::side("cv-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, asked) = a
         .chat
         .send_via(b_id, "review", None, "질문", Some("cli"), None)
@@ -55,7 +55,7 @@ async fn say_via_cli_marks_both_sides() {
         common::side("cs-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, _) = a.chat.send(b_id, "review", None, "질문").await.unwrap();
     let a_db = common::db(&a);
     common::eventually(|| chat::messages(&a_db, conv.id).unwrap().len() == 2).await;

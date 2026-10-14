@@ -39,6 +39,8 @@ import {
   timeline,
   runSteps,
   messageActions,
+  editedTag,
+  keepPicked,
   searchGroups,
   lastRun,
   presence,
@@ -49,13 +51,20 @@ import {
   portText,
   messagesSigOf,
   askTag,
+  requestRows,
   mentionQuery,
   mentionTarget,
   hasMention,
   mentionToken,
   preview,
-  READ_ONLY_TOOLS,
+  TOOLS_NOTE,
+  MODELS,
   EFFORTS,
+  peerGroups,
+  peerSummary,
+  waitingByPeer,
+  SendLatest,
+  holdsRender,
 } from "/view.js";
 
 const $ = (id) => document.getElementById(id);
@@ -141,6 +150,10 @@ const state = {
   open: new Set(), // 펼쳐 둔 연결 · 에이전트(다시 그려도 유지)
   unseen: 0, // 안 본 내 활동 — 고른 타일 범위(사이드바 내비)
   unseenAll: 0, // 안 본 내 활동 — 전부(종 점)
+  reqWaiting: 0, // 받은 요청 중 대기 — 고른 타일 범위(사이드바 '요청')
+  waitingBy: new Map(), // 받은 요청 중 대기 — 상대별('나' 의 '대화' 요약, #1g)
+  folded: new Set(), // 접은 상대별 절 열쇠 `{화면}:{상대}`(#1g, 설정 `ui_folded` — 시작할 때 읽는다)
+  reqBox: "theirs", // '요청' 화면 탭 — 받은(`theirs`) · 보낸(`mine`)
   peerAgents: new Map(), // 상대 id → 그 PC 의 에이전트 이름(`null` = 받지 못함) — 타일을 고를 때 받는다(원격 왕복이라 새로 고침마다 묻지 않는다)
   detailOpen: window.innerWidth >= 1280, // 실행 상세 — 넓은 창이면 열고 시작(저장하지 않는다)
   focusAfter: null, // 다음 화면을 그린 뒤 초점을 줄 칸 id
@@ -151,6 +164,9 @@ const state = {
   focusMsg: null, // 대화를 그린 뒤 갈 글(`#c/{대화}/m/{글}`) — 늦게 그려져도 그때 간다
   mention: null, // 입력창 멘션 후보 — `{start, items, active}`(열려 있을 때만)
   mentionWarned: null, // 후보와 맞지 않는 멘션이라 한 번 막은 글 — 같은 글을 다시 보내면 멘션 없이 보낸다
+  editMode: false, // 편집 모드(#1f) — 열린 대화의 내 글 고르기 · 삭제 · 편집
+  picked: new Set(), // 편집 모드에서 고른 글 id
+  editing: null, // 본문을 고치는 중인 글 id — 그동안 대화를 다시 그리지 않는다
 };
 const latest = new Latest();
 
@@ -256,11 +272,11 @@ async function loadPeers(force = false) {
   state.peerNames = new Map(state.peers.map((p) => [p.id, `${displayName(p)} · ${p.host}`]));
   renderRail();
   renderSideHead();
-  renderSideAgents();
   renderPeerList(force);
   fillPeerSelects();
   // 표시 이름이 바뀌었을 수 있다 — 목록 · 열린 대화 머리글도 새 이름으로.
   renderConvList();
+  refreshHome();
   if (state.current && route(location.hash).view in PANELS) renderConvHead(state.current);
 }
 
@@ -326,19 +342,17 @@ function pickRail(id) {
   renderConvList();
   if (changed) state.unseen = 0; // 새 범위의 수는 곧 다시 읽는다
   renderSideNav();
-  if (id != null && !state.peerAgents.has(id) && state.peers.some((x) => x.id === id && x.paired)) loadPeerAgents(id);
   // 그 상대 연결 확인(#1c — 주기 확인 없음, 60초 안에 통신했으면 서버가 보내지 않는다).
   if (changed && id != null) pingPeers([id]);
-  renderSideAgents();
   if (changed) loadCounts();
 }
 
-/// 타일 누름 — 사이드바 = 그 타일의 대화 목록('나' = 전부). 열린 대화가 그 타일 것이면 그대로, 아니면 메인은 안내
-/// (목록에서 대화를 고르면 메인에 메시지). 상대 타일을 누르면 그 PC 의 에이전트 목록을 다시 받는다.
+/// 타일 누름 — 사이드바 = 그 타일의 대화 목록('나' = 상대별 절). 열린 대화가 그 타일 것이면 그대로, 아니면 메인은 '나' = 상대별 대화
+/// 요약, 상대 = 그 상대 주고받은 글(#1g). 상대 타일을 누르면 그 PC 의 에이전트 목록은 다음에 볼 때 다시 받는다.
 function pickTile(id) {
   if (id != null) state.peerAgents.delete(id);
   pickRail(id);
-  if (!tileKeeps(route(location.hash).view, state.current, id)) go("#");
+  if (!tileKeeps(route(location.hash).view, state.current, id)) go(id == null ? "#" : `#p/${id}`);
 }
 
 /// 해시로 이동 — 이미 그 해시면 hashchange 가 없으므로 바로 다시 그린다(빈 해시 = `#`).
@@ -370,9 +384,9 @@ function renderAvatar() {
 /// 사이드바 내비 — 고른 타일 범위(`view.js` `sideNav`), 지금 화면은 강조. '대화' 는 대화 · 보낸 메시지 화면에서도.
 function renderSideNav() {
   const view = route(location.hash).view;
-  if (unchanged($("side_nav"), JSON.stringify([view, state.railPeer, state.unseen]))) return;
+  if (unchanged($("side_nav"), JSON.stringify([view, state.railPeer, state.unseen, state.reqWaiting]))) return;
   $("side_nav").replaceChildren(
-    ...sideNav(state.railPeer, state.unseen).map((n) => {
+    ...sideNav(state.railPeer, state.unseen, state.reqWaiting).map((n) => {
       const target = route(n.href).view;
       const current = target === view || (target === "home" && (view === "conversation" || view === "sent"));
       return el(
@@ -389,36 +403,7 @@ function renderSideNav() {
   );
 }
 
-/// 사이드바 "{이름}의 에이전트" — '나' = 내 에이전트(누르면 설정), 상대 = 그 PC 의 에이전트(누르면 새 대화에 채움).
-function renderSideAgents() {
-  const p = state.peers.find((x) => x.id === state.railPeer);
-  $("side_agents_title").textContent = p ? `${displayName(p)}의 에이전트` : "내 에이전트";
-  // 5초 새로 고침이 링크를 다시 만들어 초점 · 누르는 중인 클릭을 빼앗지 않게 — 그리는 값이 같으면 둔다.
-  const names = p ? state.peerAgents.get(p.id) : state.agents.map((a) => a.name);
-  if (unchanged($("side_agents"), JSON.stringify([p?.id ?? null, names === undefined ? "…" : names]))) return;
-  const item = (name, props) =>
-    el("li", {}, el("a", props, el("span", { class: "agent-dot", "aria-hidden": "true" }), el("span", { class: "agent-name", text: name })));
-  let rows;
-  if (!p) {
-    rows = state.agents.map((a) => item(a.name, { href: "#settings/agents" }));
-  } else {
-    if (names === undefined) rows = [el("li", { class: "hint", text: "불러오는 중 …" })];
-    else if (names === null) rows = [el("li", { class: "hint", text: "목록을 받지 못했습니다" })];
-    else
-      rows = names.map((n) =>
-        item(n, {
-          href: "#new",
-          onclick: (ev) => {
-            ev.preventDefault();
-            newChat(p.id, n);
-          },
-        }),
-      );
-  }
-  $("side_agents").replaceChildren(...(rows.length ? rows : [el("li", { class: "hint", text: "에이전트 없음" })]));
-}
-
-/// 상대 PC 의 에이전트 이름 — 원격 왕복이라 타일을 고를 때만 묻는다.
+/// 상대 PC 의 에이전트 이름 — 원격 왕복이라 에이전트 화면 · 멘션이 없을 때만 묻는다.
 async function loadPeerAgents(id) {
   state.peerAgents.set(id, undefined); // 묻는 중 — 같은 상대를 겹쳐 묻지 않는다
   try {
@@ -426,7 +411,6 @@ async function loadPeerAgents(id) {
   } catch {
     state.peerAgents.set(id, null);
   }
-  if (state.railPeer === id) renderSideAgents();
   if (route(location.hash).view === "agents") renderAgentsView();
   if (state.current?.peer_id === id) renderMentionHint();
 }
@@ -587,9 +571,11 @@ function unchanged(box, sig) {
   return false;
 }
 
-/// 목록을 다시 그려도 되나 — 같은 값이면 건너뛰고, 사용자가 그 안에서 입력 중이면(배경 새로 고침) 미룬다. 저장 · 필터는 `force`.
+/// 목록을 다시 그려도 되나 — 같은 값이면 건너뛰고, 사용자가 그 안 입력칸에서 입력 중이면(배경 새로 고침) 미룬다. 저장 · 필터는 `force`.
+/// 입력칸만 본다 — 상대별 절 머리(`summary`)를 눌러 초점이 남아도 목록은 계속 새로 고친다(#1g).
 function needsRender(box, sig, force) {
-  if (!force && (box.dataset.sig === sig || box.contains(document.activeElement))) return false;
+  const typing = box.contains(document.activeElement) && holdsRender(document.activeElement.tagName);
+  if (!force && (box.dataset.sig === sig || typing)) return false;
   box.dataset.sig = sig;
   return true;
 }
@@ -609,7 +595,13 @@ function renderPeerList(force = false) {
         g,
         g.items.map((p) => {
           const group = el("input", { value: p.group ?? "", maxlength: "32", placeholder: "그룹 없음" });
-          const model = el("input", { value: p.model ?? "", list: "model_names", maxlength: "64", placeholder: `기본값(${defaults.claude_model ?? "sonnet"})` });
+          const model = el(
+            "select",
+            {},
+            el("option", { value: "", text: `기본값(${defaults.claude_model ?? "sonnet"})` }),
+            ...MODELS.map((m) => el("option", { value: m, text: m })),
+          );
+          model.value = p.model ?? "";
           const effort = el(
             "select",
             {},
@@ -629,7 +621,7 @@ function renderPeerList(force = false) {
           if (p.my_ok && !p.paired) actions.append(button("다시 알리기", () => peerAct("승인 재통지", () => api("POST", `/api/peers/${p.id}/approve`))));
           if (p.paired) actions.append(button("연결 확인", () => peerAct("연결 확인", () => api("POST", `/api/peers/${p.id}/ping`))));
           actions.append(
-            button("내 에이전트 도구 편집", () => goSettings("agents")),
+            button("내 에이전트 편집", () => goSettings("agents")),
             button(
               "삭제",
               () =>
@@ -713,25 +705,6 @@ $("add_form").addEventListener("submit", (ev) => {
 
 // ---- 내 에이전트 ----
 
-function toolChecks(selected) {
-  const set = new Set(selected.split(",").map((t) => t.trim()));
-  const boxes = READ_ONLY_TOOLS.map((t) => el("input", { type: "checkbox", value: t, checked: set.has(t) }));
-  const wrap = el("div", { class: "checks" }, ...boxes.map((b) => el("label", {}, b, " " + b.value)));
-  wrap.value = () =>
-    boxes
-      .filter((b) => b.checked)
-      .map((b) => b.value)
-      .join(",");
-  return wrap;
-}
-
-/// 고른 도구 — 하나도 없으면 서버가 조용히 기본값으로 바꾸므로 여기서 막는다.
-function chosenTools(checks) {
-  const v = checks.value();
-  if (!v) throw new Error("허용 도구를 하나 이상 고르세요");
-  return v;
-}
-
 async function loadAgents() {
   try {
     state.agents = await api("GET", "/api/agents");
@@ -748,7 +721,7 @@ async function loadAgents() {
   );
   if (state.agents.some((a) => a.name === keep)) relaySel.value = keep;
   renderAgentList(true);
-  renderSideAgents();
+  if (route(location.hash).view === "agents") renderAgentsView();
 }
 
 function renderAgentList(force = false) {
@@ -762,7 +735,6 @@ function renderAgentList(force = false) {
         g,
         g.items.map((a) => {
           const folder = el("input", { value: a.folder, class: "mono" });
-          const tools = toolChecks(a.tools);
           const prompt = el("textarea", { rows: "3" });
           prompt.value = a.prompt;
           const promptBox = el("div", { class: "field" }, prompt);
@@ -775,8 +747,8 @@ function renderAgentList(force = false) {
               "div",
               { class: "form-grid" },
               ...field("폴더(절대 경로)", folder),
-              el("span", { class: "label hint", text: "허용 도구" }),
-              tools,
+              el("span", { class: "label hint", text: "도구" }),
+              el("span", { class: "hint", text: TOOLS_NOTE }),
               ...field("추가 지시", prompt, promptBox),
               ...field("그룹", group),
             ),
@@ -788,7 +760,7 @@ function renderAgentList(force = false) {
                 () =>
                   act(
                     "에이전트 저장",
-                    () => api("PATCH", `/api/agents/${a.id}`, { folder: folder.value, tools: chosenTools(tools), prompt: prompt.value, group: group.value }),
+                    () => api("PATCH", `/api/agents/${a.id}`, { folder: folder.value, prompt: prompt.value, group: group.value }),
                     "agent_msg",
                     loadAgents,
                   ),
@@ -807,8 +779,7 @@ function renderAgentList(force = false) {
 
 for (const id of ["agent_group", "agent_q"]) $(id).addEventListener("input", () => renderAgentList(true));
 
-const newTools = toolChecks("Read,Grep,Glob");
-$("agent_tools").replaceWith(Object.assign(newTools, { id: "agent_tools" }));
+$("agent_tools").textContent = TOOLS_NOTE;
 
 $("agent_form").addEventListener("submit", (ev) => {
   ev.preventDefault();
@@ -820,7 +791,7 @@ $("agent_form").addEventListener("submit", (ev) => {
   act(
     "등록",
     async () => {
-      await api("POST", "/api/agents", { ...body, tools: chosenTools(newTools) });
+      await api("POST", "/api/agents", body);
       $("agent_form").reset();
     },
     "agent_msg",
@@ -840,6 +811,7 @@ async function loadConvs() {
   if (state.current) state.current = state.convs.find((c) => c.id === state.current.id) ?? state.current;
   renderConvList();
   renderRail();
+  refreshHome();
 }
 
 function tagEl(tag) {
@@ -878,22 +850,120 @@ function convItem({ c, label }) {
 function renderConvList() {
   const q = $("conv_search").value.trim();
   const rows = convRows(state.convs, state.peerNames, state.railPeer, q);
-  if (unchanged($("conv_sections"), JSON.stringify([q, state.railPeer, state.current?.id, rows]))) return;
+  const sections = convSections(rows, state.railPeer == null ? pairedIds() : null, state.peerNames);
+  if (unchanged($("conv_sections"), JSON.stringify([q, state.railPeer, state.current?.id, rows, sections.map((s) => s.title)]))) return;
   const empty = el("li", { class: "hint", text: q ? "맞는 대화 없음" : "대화 없음" });
+  const add = (peer) =>
+    el("a", {
+      href: "#new",
+      class: "side-add",
+      title: "새 대화",
+      "aria-label": "새 대화",
+      text: "+",
+      onclick:
+        peer == null
+          ? null
+          : (ev) => {
+              ev.preventDefault();
+              newChat(peer);
+            },
+    });
   $("conv_sections").replaceChildren(
-    ...convSections(rows).map((s) =>
-      el(
-        "section",
-        { class: "side-section" },
-        el(
-          "h2",
-          { class: "side-title" },
-          el("span", { text: s.title }),
-          s.key === "convs" ? el("a", { href: "#new", class: "side-add", title: "새 대화", "aria-label": "새 대화", text: "+" }) : "",
-        ),
-        el("ul", { class: "side-list" }, ...(s.rows.length ? s.rows.map(convItem) : rows.length ? [] : [empty])),
-      ),
-    ),
+    ...sections.map((s) => {
+      const list = el("ul", { class: "side-list" }, ...(s.rows.length ? s.rows.map(convItem) : rows.length ? [] : [empty]));
+      // '나' 의 상대별 절(#1g) — 접을 수 있고 접힘은 이 PC 에 남는다.
+      if (s.peer != null) return foldEl(`convs:${s.peer}`, [el("span", { text: s.title }), add(s.peer)], [list], "side-section", "side-title");
+      return el("section", { class: "side-section" }, el("h2", { class: "side-title" }, el("span", { text: s.title }), s.key === "convs" ? add(null) : ""), list);
+    }),
+  );
+}
+
+// ---- 상대별 절(#1g) — '나' 의 목록을 상대별로 묶는다 ----
+
+/// 페어링된 상대 id — 레일 순서.
+function pairedIds() {
+  return state.peers.filter((p) => p.paired).map((p) => p.id);
+}
+
+/// 접을 수 있는 절 — `<details>`(기본 펼침), 열쇠가 접힘 목록에 있으면 접혀 시작한다. 접거나 펴면 설정 `ui_folded` 에 남긴다.
+function foldEl(key, head, body, cls = "peer-fold", headCls = null) {
+  const d = el("details", { class: cls, open: !state.folded.has(key), "data-fold": key }, el("summary", { class: headCls }, ...head), ...body);
+  d.addEventListener("toggle", () => setFolded(key, !d.open));
+  return d;
+}
+
+/// 접힘 저장 — 한 번에 하나, 보내는 동안 바뀌면 마지막 목록만 이어서(`SendLatest`). 실패는 상태 줄에, 화면 접힘은 그대로.
+const foldSaver = new SendLatest((keys) =>
+  api("PUT", "/api/settings", { ui_folded: keys }).catch((e) => {
+    $("status_msg").textContent = "접힘 저장 실패: " + e.message;
+  }),
+);
+
+/// 접힘 바꾸기 — 바뀐 것이 있을 때만 목록을 통째로 저장.
+function setFolded(key, folded) {
+  if (state.folded.has(key) === folded) return;
+  if (folded) state.folded.add(key);
+  else state.folded.delete(key);
+  foldSaver.push([...state.folded]);
+}
+
+/// 목록 행 → 요소. '나' 면 상대별 절(`{화면}:{상대}`, 제목 = 상대 이름 · 건수), 상대 타일이면 그대로. `toEls` 는 빈 목록이면 안내 행을 준다.
+function grouped(screen, rows, toEls) {
+  if (state.railPeer != null || !rows.length) return toEls(rows);
+  return peerGroups(rows, pairedIds(), state.peerNames).map((g) =>
+    el("li", { class: "fold" }, foldEl(`${screen}:${g.peer}`, [`${g.name} · ${g.rows.length}`], [el("ol", { class: "rows" }, ...toEls(g.rows))])),
+  );
+}
+
+/// '나' 의 '대화' 화면이면 요약을 다시 그린다.
+function refreshHome() {
+  if (route(location.hash).view === "home") renderHome();
+}
+
+/// '나' 의 '대화' = 상대별 요약(#1g) — 머리(이름 · 접속 상태 · 대화 수 · 안 읽음 · 대기 요청 · 최근 활동) + 그 상대 대화(누르면 그 대화).
+/// 페어링된 상대가 없고 대화도 없으면 처음 안내.
+function renderHome() {
+  const groups = peerSummary(state.convs, pairedIds(), state.peerNames, state.waitingBy);
+  const peerOf = (id) => state.peers.find((x) => x.id === id);
+  const sig = JSON.stringify([groups.map(({ rows, ...g }) => [g, rows.map((c) => [c.id, c.title, c.last_state, c.unread, c.last_at, c.starred])]), groups.map((g) => presence(peerOf(g.peer)).text)]);
+  $("home_intro").hidden = groups.length > 0;
+  if (!needsRender($("home_summary"), sig, false)) return;
+  $("home_summary").replaceChildren(
+    ...groups.map((g) => {
+      const p = peerOf(g.peer);
+      const head = [
+        el("strong", { text: g.name }),
+        el("span", { class: "hint", text: p ? presence(p).text : "페어링 해제" }),
+        el("span", { text: `대화 ${g.convs}` }),
+        g.unread ? el("span", { class: "count", text: `안 읽음 ${g.unread}` }) : "",
+        g.waiting ? el("span", { class: "count", text: `대기 요청 ${g.waiting}` }) : "",
+        g.last != null ? el("span", { class: "hint", text: `최근 ${formatTime(g.last)}` }) : "",
+      ];
+      const rows = g.rows.length
+        ? g.rows.map((c) => {
+            const label = convLabel(c, state.peerNames);
+            const meta = convMeta(c);
+            return el(
+              "li",
+              { class: meta.unread ? "unseen" : null },
+              el(
+                "a",
+                { href: `#c/${c.id}` },
+                el(
+                  "span",
+                  { class: "meta" },
+                  tagEl(label.tag),
+                  el("strong", { text: label.title }),
+                  el("span", { text: meta.state ? `${meta.agent} · ${meta.state}` : meta.agent }),
+                  meta.unread ? el("span", { class: "count", text: `안 읽음 ${c.unread}` }) : "",
+                  c.last_at != null ? el("span", { text: formatTime(c.last_at) }) : "",
+                ),
+              ),
+            );
+          })
+        : [el("li", { class: "hint" }, "대화 없음 — ", p?.paired ? button("새 대화", () => newChat(g.peer), "small") : "")];
+      return el("li", { class: "fold" }, foldEl(`home:${g.peer}`, head, [el("ol", { class: "rows" }, ...rows)]));
+    }),
   );
 }
 
@@ -905,6 +975,7 @@ $("conv_search").addEventListener("input", renderConvList);
 const VIEW_EL = {
   home: "home",
   activity: "activity",
+  requests: "requests",
   saved: "saved",
   agents: "agents_view",
   peer: "peer",
@@ -1014,12 +1085,20 @@ async function render() {
     applyFocus();
     return;
   }
+  // 상대 타일인 채 '대화'(`#`)로 오면 그 상대 주고받은 글로 — 상대 타일에는 '대화' 메뉴가 없다(#1g).
+  if (r.view === "home" && state.railPeer != null) {
+    location.replace(`#p/${state.railPeer}`);
+    return;
+  }
   state.current = null;
-  // 뒤로 가기 등으로 온 상대 글 목록이면 레일도 맞춘다.
+  // 뒤로 가기 등으로 온 상대 글 목록이면 레일도 맞춘다. 내 활동 · 전체 주고받은 글(`#p`)은 '나' 에만(#1g).
   if (r.view === "peer" && state.railPeer !== r.id) pickRail(r.id);
+  if (r.view === "activity" && state.railPeer != null) pickRail(null);
   renderConvList();
   show(r.view);
+  if (r.view === "home") renderHome();
   if (r.view === "activity") await loadActivity(true);
+  if (r.view === "requests") await loadRequests(true);
   if (r.view === "saved") await loadSaved();
   if (r.view === "agents") loadAgentsView();
   if (r.view === "peer") await loadPeerMessages(r.id);
@@ -1081,9 +1160,24 @@ function messageEl(conv, m) {
   if (m.author === "agent" && (m.turns != null || m.duration_ms != null)) {
     meta.push([m.turns != null ? `${m.turns}턴` : "", formatDuration(m.duration_ms)].filter(Boolean).join(" · "));
   }
+  meta.push(editedTag(m));
+  const tidy = state.editMode && m.editable === true;
   const article = el(
     "article",
     { class: "msg " + m.author, "data-msg": String(m.id), tabindex: "0" },
+    tidy
+      ? el("input", {
+          type: "checkbox",
+          class: "msg-pick",
+          "aria-label": "이 글 고르기",
+          checked: state.picked.has(m.id),
+          onchange: (ev) => {
+            if (ev.target.checked) state.picked.add(m.id);
+            else state.picked.delete(m.id);
+            renderEditBar();
+          },
+        })
+      : "",
     el("div", { class: "avatar", "aria-hidden": "true", text: who.slice(0, 1) }),
     el(
       "div",
@@ -1093,10 +1187,17 @@ function messageEl(conv, m) {
         { class: "msg-meta" },
         el("strong", { text: who }),
         el("span", { class: "tag plain", text: kindText(m) }),
-        askTag(m) ? el("span", { class: m.done ? "tag ask done" : "tag ask", text: askTag(m) }) : "",
+        askTag(m) ? el("span", { class: ["done", "rejected"].includes(m.req_state) ? "tag ask done" : "tag ask", text: askTag(m) }) : "",
+        m.req_note ? el("span", { class: "hint", text: `메모: ${m.req_note}` }) : "",
         el("span", { text: meta.filter(Boolean).join(" · ") }),
         // 5초마다 바뀌는 경과는 읽어 주지 않는다(대화가 aria-live).
         running ? el("span", { class: "st-running", "data-since": String(m.created_at), "aria-live": "off", text: elapsed(m.created_at) }) : "",
+        el(
+          "span",
+          { class: "msg-icons" },
+          tidy ? iconButton(PENCIL_SVG, "본문 편집", () => editBody(m)) : "",
+          iconButton(COPY_SVG, "복사", (ev) => copyText(m, ev.currentTarget)),
+        ),
       ),
       ...bodyPair(m.text),
     ),
@@ -1112,7 +1213,7 @@ function messageEl(conv, m) {
     renderDetail();
   };
   article.addEventListener("click", (ev) => {
-    if (ev.target.closest(".msg-actions") || !window.getSelection().isCollapsed) return;
+    if (ev.target.closest(".msg-actions, .msg-icons, .msg-pick, .msg-edit") || !window.getSelection().isCollapsed) return;
     pick();
   });
   article.addEventListener("keydown", (ev) => {
@@ -1121,33 +1222,16 @@ function messageEl(conv, m) {
   return article;
 }
 
-/// 메시지 작업 — 저장 · 해제(이 PC 에만), 복사(본문을 클립보드로), 다시 보내기(같은 대화 · 같은 대상에 새 요청 — 같은 종류),
-/// 완료 표시 · 취소(받은 요청 — 쓴 쪽에 알린다, 알리지 못하면 경고).
+/// 메시지 작업 — 저장 · 해제(이 PC 에만), 다시 보내기(같은 대화 · 같은 대상에 새 글 — 같은 종류),
+/// 요청 상태 바꾸기(`req:{상태}` — 받은 요청, 메모 한 줄 칸을 열고 확인하면 쓴 쪽에 간다).
 function messageAct(m, key) {
-  if (key === "copy") {
-    act("복사", async () => {
-      await navigator.clipboard.writeText(m.text);
-      return "복사했다";
-    });
-  } else if (key === "resend") {
+  if (key === "resend") {
     sendText(m.text, { request: m.request === true, agent: m.agent });
-  } else if (key === "done") {
-    // 그 글의 태그 · 단추 · 실행 상세만 바꾸고 대화 서명을 맞춘다 — 대화를 다시 그리면 누른 단추의 초점이 사라지고 대화 전체를 다시 읽어 준다.
-    // 상대가 바꾼 완료는 서명이 달라 새로 고침이 그린다.
-    const cur = state.msgs.find((x) => x.id === m.id) ?? m;
-    const on = !cur.done;
-    act(on ? "완료 표시" : "완료 취소", async () => {
-      const r = await api("PATCH", `/api/messages/${m.id}`, { done: on });
-      cur.done = r.done;
-      const box = $("messages").querySelector(`[data-msg="${m.id}"]`);
-      if (box) {
-        box.querySelector('[data-act="done"]').textContent = messageActions(cur).find((a) => a.key === "done").label;
-        Object.assign(box.querySelector(".tag.ask"), { textContent: askTag(cur), className: cur.done ? "tag ask done" : "tag ask" });
-      }
-      if (state.msgs.includes(cur)) $("messages").dataset.sig = messagesSig(state.current, state.msgs);
-      renderDetail();
-      return r.warning ?? (on ? "완료 표시 — 쓴 쪽에 알렸다" : "완료 취소 — 쓴 쪽에 알렸다");
-    });
+  } else if (key === "req-again") {
+    resendState(m.id, m.req_state, m.req_note);
+  } else if (key.startsWith("req:")) {
+    const bar = $("messages").querySelector(`[data-msg="${m.id}"] .msg-actions`);
+    if (bar) noteForm(bar, m.id, key.slice(4), messageActions(m).find((a) => a.key === key).label);
   } else {
     // 저장 여부는 마지막으로 읽어 온 대화 기준. 바꾼 뒤 그 단추 글자 · 실행 상세만 — 대화를 다시 그리면 HTML 본문이 다시 읽힌다.
     const cur = state.msgs.find((x) => x.id === m.id) ?? m;
@@ -1161,6 +1245,180 @@ function messageAct(m, key) {
       return on ? "저장 — 저장된 항목에 모았다(이 PC 에만)" : "저장 해제";
     });
   }
+}
+
+// ---- 복사 아이콘 · 편집 모드(#1f) ----
+
+const COPY_SVG =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"></path></svg>';
+const PENCIL_SVG =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>';
+
+/// 말풍선 머리줄 아이콘 단추 — 그림은 고정 문자열(위 상수)만.
+function iconButton(svg, label, onClick) {
+  const b = el("button", { type: "button", class: "icon-btn msg-icon", title: label, "aria-label": label, onclick: onClick });
+  b.innerHTML = svg;
+  return b;
+}
+
+/// 복사 아이콘 — 본문 markdown 원문을 클립보드로, 아이콘 옆에 잠깐 "복사했다".
+async function copyText(m, btn) {
+  try {
+    await navigator.clipboard.writeText(m.text);
+    $("status_msg").textContent = "복사했다";
+    btn.classList.add("copied");
+    btn.title = "복사했다";
+    setTimeout(() => {
+      btn.classList.remove("copied");
+      btn.title = "복사";
+    }, 1500);
+  } catch (e) {
+    $("status_msg").textContent = "복사 실패: " + e.message;
+  }
+}
+
+/// 열린 대화의 글을 지금 상태(편집 모드 · 고른 글)로 다시 그린다.
+function redrawMessages() {
+  const conv = state.current;
+  const box = $("messages");
+  if (!conv || state.msgsOf !== conv.id) return;
+  box.dataset.sig = messagesSig(conv, state.msgs);
+  box.replaceChildren(...state.msgs.map((m) => messageEl(conv, m)));
+}
+
+/// 편집 모드 켜고 끄기 — 켜면 입력창 대신 "n개 선택 · 삭제 · 완료" 막대(보내기 없음), 끝난 내 글에 체크박스 · 연필.
+function setEditMode(on) {
+  state.editMode = on;
+  state.picked.clear();
+  state.editing = null;
+  $("edit_btn").setAttribute("aria-pressed", String(on));
+  $("reply_form").hidden = on;
+  $("edit_bar").hidden = !on;
+  renderEditBar();
+  redrawMessages();
+}
+
+function renderEditBar() {
+  const n = state.picked.size;
+  $("edit_count").textContent = `${n}개 선택`;
+  $("edit_delete").disabled = n === 0;
+}
+
+/// 반영 범위 묻기 — "내 창에서만" `mine` · "상대 창에도" `both` · 취소 `null`.
+function askScope(title) {
+  const d = $("scope_dialog");
+  $("scope_title").textContent = title;
+  d.returnValue = "";
+  return new Promise((resolve) => {
+    d.addEventListener("close", () => resolve(["mine", "both"].includes(d.returnValue) ? d.returnValue : null), { once: true });
+    d.showModal();
+  });
+}
+
+/// 고른 글 지우기 — 반영 범위를 묻고 한 번에(하나라도 지울 수 없으면 아무것도 지우지 않는다).
+async function deletePicked() {
+  const ids = [...state.picked];
+  if (!ids.length) return;
+  const scope = await askScope(`고른 ${ids.length}개 글 삭제`);
+  if (!scope) return;
+  await act(
+    "삭제",
+    async () => {
+      const res = await api("POST", "/api/messages/delete", { ids, mirror: scope === "both" });
+      state.picked.clear();
+      renderEditBar();
+      return res.warning ?? (scope === "both" ? `${res.deleted}개 삭제 — 상대 창에도` : `${res.deleted}개 삭제 — 이 PC 에서만`);
+    },
+    "status_msg",
+    refresh,
+  );
+}
+
+/// 본문 편집 — 그 말풍선 본문 자리에 입력칸 · 저장 · 취소. 저장하면 반영 범위를 묻는다.
+function editBody(m) {
+  const box = $("messages").querySelector(`[data-msg="${m.id}"] .msg-body`);
+  if (!box || state.editing != null) return;
+  state.editing = m.id;
+  const text = el("textarea", { rows: "4", "aria-label": "본문 편집" });
+  text.value = m.text;
+  const done = async () => {
+    state.editing = null;
+    await refresh();
+    redrawMessages();
+  };
+  const save = async (ev) => {
+    ev.preventDefault();
+    if (!text.value.trim()) {
+      $("status_msg").textContent = "저장하지 않음 — 내용이 비었습니다";
+      return;
+    }
+    if (text.value === m.text) return done();
+    const scope = await askScope("고친 본문 저장");
+    if (!scope) return;
+    await act(
+      "편집",
+      async () => {
+        const res = await api("PATCH", `/api/messages/${m.id}`, { text: text.value, mirror: scope === "both" });
+        return res.warning ?? (scope === "both" ? "편집 — 상대 창에도" : "편집 — 이 PC 에서만");
+      },
+      "status_msg",
+      done,
+    );
+  };
+  const form = el(
+    "form",
+    { class: "msg-edit", onsubmit: save },
+    text,
+    el("div", { class: "actions" }, el("button", { type: "submit", class: "primary", text: "저장" }), button("취소", done)),
+  );
+  for (const v of box.querySelectorAll(".body-view, .raw")) v.hidden = true;
+  box.append(form);
+  text.focus();
+}
+
+$("edit_btn").addEventListener("click", () => setEditMode(!state.editMode));
+$("edit_done").addEventListener("click", () => setEditMode(false));
+$("edit_delete").addEventListener("click", deletePicked);
+
+/// 요청 상태 바꾸기 — `box` 끝에 메모 한 줄 칸 + 확인 · 취소를 연다(이미 열려 있으면 바꾼다). 확인하면 `PATCH` 뒤 새로 고침(대화 · 요청 목록 · 배지).
+function noteForm(box, id, to, label) {
+  box.querySelector(".req-note")?.remove();
+  const note = el("input", { maxlength: "200", placeholder: "메모 한 줄(선택) — 요청자에게 보입니다", "aria-label": `${label} 메모` });
+  const form = el(
+    "form",
+    { class: "req-note" },
+    note,
+    el("button", { type: "submit", class: "primary", text: label }),
+    el("button", { type: "button", text: "취소", onclick: () => form.remove() }),
+  );
+  form.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    act(
+      `요청 ${label}`,
+      async () => {
+        const r = await api("PATCH", `/api/messages/${id}`, { req_state: to, note: note.value });
+        form.remove();
+        return r.warning ?? `요청 ${label} — 요청자에게 알렸다`;
+      },
+      "status_msg",
+      refresh,
+    );
+  });
+  box.append(form);
+  note.focus();
+}
+
+/// 알리지 못한 요청 상태를 같은 상태 · 메모로 다시 보낸다.
+function resendState(id, state, note) {
+  act(
+    "다시 알리기",
+    async () => {
+      const r = await api("PATCH", `/api/messages/${id}`, { req_state: state, note: note ?? "" });
+      return r.warning ?? "다시 알림 — 요청자에게 보냈다(닿지 않으면 보관했다가 보낸다)";
+    },
+    "status_msg",
+    refresh,
+  );
 }
 
 function messagesSig(conv, ms) {
@@ -1196,6 +1454,7 @@ async function openConversation(conv) {
     box.replaceChildren();
     box.dataset.sig = "";
     state.pickMsg = null;
+    if (state.editMode) setEditMode(false);
   }
   box.dataset.conv = conv.id;
   const ticket = latest.next();
@@ -1217,7 +1476,12 @@ async function openConversation(conv) {
   const sig = messagesSig(conv, ms);
   // 실행 중 경과는 다시 그리지 않고 글자만.
   for (const s of box.querySelectorAll("[data-since]")) s.textContent = elapsed(Number(s.dataset.since));
-  if (box.dataset.sig !== sig) {
+  // 편집 모드 — 고른 글은 아직 편집할 수 있는 것만. 본문을 고치는 중이면 다시 그리지 않는다(입력이 지워지지 않게).
+  if (state.editMode) {
+    state.picked = keepPicked(state.picked, ms);
+    renderEditBar();
+  }
+  if (box.dataset.sig !== sig && state.editing == null) {
     box.dataset.sig = sig;
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
     box.replaceChildren(...ms.map((m) => messageEl(conv, m)));
@@ -1362,14 +1626,14 @@ function renderDetail() {
     btn.textContent = relay.action === "resume" ? "재개" : "멈춤";
     btn.dataset.on = String(relay.action === "resume");
   }
-  // 요청 — 이 대화의 요청 글(최근 글부터, 완료 표시).
+  // 요청 — 이 대화의 요청 글(최근 글부터, 상태 · 메모).
   const peerName = state.peerNames.get(conv.peer_id);
   const reqs = ms.filter((m) => m.author === "human" && m.request).reverse();
   $("detail_req_n").textContent = reqs.length ? String(reqs.length) : "";
-  if (!unchanged($("detail_req"), JSON.stringify([conv.id, ready, peerName, reqs.map((m) => [m.id, m.done, m.text.length])])))
+  if (!unchanged($("detail_req"), JSON.stringify([conv.id, ready, peerName, reqs.map((m) => [m.id, m.req_state, m.req_note, m.text.length])])))
     $("detail_req").replaceChildren(
       ...(reqs.length
-        ? reqs.map((m) => detailItem(conv, m, `${askTag(m)} · ${authorLabel(conv, m, peerName)} · ${formatTime(m.created_at)}`))
+        ? reqs.map((m) => detailItem(conv, m, [askTag(m), m.req_note, authorLabel(conv, m, peerName), formatTime(m.created_at)].filter(Boolean).join(" · ")))
         : [el("li", { class: "hint", text: ready ? "요청 없음 — 입력창에서 '요청' 을 골라 보낸 글이 모입니다" : "불러오는 중 …" })]),
     );
   // 저장된 항목 — 이 대화에서 저장한 글(최근 글부터).
@@ -1451,6 +1715,16 @@ $("reply_form").addEventListener("submit", (ev) => {
   // 글 종류는 보낸 뒤 "질의" 로 돌아간다. 멘션 = 글의 첫 `@이름`(상대 PC 에이전트 목록에 있는 것).
   const ask = $("reply_form").elements.ask;
   const text = $("reply_text").value;
+  const reset = () => {
+    $("reply_text").value = "";
+    ask.value = "query";
+    renderMentionHint();
+  };
+  // 요청(#1d) — 실행이 없어 부를 에이전트(멘션)도 없다.
+  if (ask.value === "request") {
+    sendText(text, { request: true }, reset);
+    return;
+  }
   const conv = state.current;
   const names = mentionNames();
   const canMention = conv?.dir === "out" && !conv.relay_agent;
@@ -1470,11 +1744,7 @@ $("reply_form").addEventListener("submit", (ev) => {
     return;
   }
   state.mentionWarned = null;
-  const opts = { request: ask.value === "request", agent };
-  sendText(text, opts, () => {
-    $("reply_text").value = "";
-    ask.value = "query";
-  });
+  sendText(text, { request: false, agent }, reset);
 });
 
 /// 입력창 서식 버튼 — 고른 글자에 markdown 표기(`view.js` `insertMarkdown`).
@@ -1525,10 +1795,13 @@ $("reply_text").addEventListener("blur", closeMention);
 // 목록을 눌러도(스크롤바 포함) 입력창 초점을 뺏지 않는다 — 항목은 click 으로 넣는다.
 $("mention_box").addEventListener("mousedown", (ev) => ev.preventDefault());
 
-/// 멘션 힌트 — 후보(상대 PC 에이전트 목록)를 받은 대화에서만 보인다.
+/// 멘션 힌트 — 후보(상대 PC 에이전트 목록)를 받은 대화 · 질의에서만 보인다. 요청을 고르면 요청 안내.
 function renderMentionHint() {
-  $("mention_hint").hidden = mentionNames() == null;
+  const request = $("reply_form").elements.ask.value === "request";
+  $("mention_hint").hidden = request || mentionNames() == null;
+  $("ask_hint").hidden = !request;
 }
+for (const r of $("reply_form").elements.ask) r.addEventListener("change", renderMentionHint);
 
 /// 멘션 후보 — 열린 대화가 내가 연 대화(자동 왕복 아님)이고 상대 에이전트 목록을 받았으면 그 이름들, 아니면 `null`.
 function mentionNames() {
@@ -1638,12 +1911,7 @@ function activityEls(rows) {
   );
 }
 
-/// 내 활동 범위 — 고른 타일(상대 하나 · '나' = 전부). '나' 일 때만 상대 거르기를 쓴다.
-function activityPeer() {
-  return state.railPeer ?? ($("act_peer").value ? Number($("act_peer").value) : null);
-}
-
-/// 내 활동 — 열 때(`open`) 거르기를 처음으로 되돌리고(본 것으로 표시하는 범위 = 보이는 범위) 그 타일 범위를 본 것으로(탭이 보일 때만).
+/// 내 활동 — '나' 에만(#1g, 상대별 절). 열 때(`open`) 거르기를 처음으로 되돌리고(본 것으로 표시하는 범위 = 보이는 범위) 전부를 본 것으로(탭이 보일 때만).
 /// 그때 안 본 항목은 다시 그려도 강조를 남긴다. 여는 동안의 새로 고침은 건너뛴다(늦게 온 것으로 버려져 표시를 놓치지 않게).
 async function loadActivity(open = false) {
   if (!open && state.actOpening) return;
@@ -1651,13 +1919,9 @@ async function loadActivity(open = false) {
     state.actOpening = true;
     $("act_kind").value = "all";
     $("act_q").value = "";
-    $("act_peer").value = "";
   }
   try {
-    $("act_peer_box").hidden = state.railPeer != null;
     const params = new URLSearchParams({ kind: $("act_kind").value });
-    const peer = activityPeer();
-    if (peer != null) params.set("peer", peer);
     if ($("act_q").value.trim()) params.set("q", $("act_q").value.trim());
     const ticket = latest.next();
     let r;
@@ -1671,11 +1935,10 @@ async function loadActivity(open = false) {
     const rows = activityRows(r.items, state.peerNames);
     if (open) state.actFresh = new Set(rows.filter((x) => x.unseen).map((x) => x.key));
     for (const x of rows) x.unseen ||= state.actFresh.has(x.key);
-    if (needsRender($("act_list"), JSON.stringify(rows), open)) $("act_list").replaceChildren(...activityEls(rows));
+    if (needsRender($("act_list"), JSON.stringify([rows, state.peerNames.size]), open)) $("act_list").replaceChildren(...grouped("activity", rows, activityEls));
     if (open && document.visibilityState === "visible") {
-      // 받은 범위(`upto`)까지만 — 받은 뒤 온 것은 안 본 것으로 남게. `peer` 가 없으면 전부.
-      const seen = { ...r.upto, ...(state.railPeer != null ? { peer: state.railPeer } : {}) };
-      await api("POST", "/api/activity/seen", seen).catch(() => {});
+      // 받은 범위(`upto`)까지만 — 받은 뒤 온 것은 안 본 것으로 남게. `peer` 가 없으니 전부.
+      await api("POST", "/api/activity/seen", r.upto).catch(() => {});
       await loadCounts();
     }
   } finally {
@@ -1684,7 +1947,7 @@ async function loadActivity(open = false) {
 }
 
 let actTimer;
-for (const id of ["act_peer", "act_kind", "act_q"])
+for (const id of ["act_kind", "act_q"])
   $(id).addEventListener("input", () => {
     clearTimeout(actTimer);
     actTimer = setTimeout(() => loadActivity(), 250);
@@ -1699,12 +1962,88 @@ async function loadCounts() {
   } catch {
     return; // 다음 새로 고침에 다시
   }
+  let waiting = state.reqWaiting;
+  let by = null;
+  try {
+    const w = await api("GET", `/api/messages?side=theirs&ask=request&req=wait&limit=500${peer != null ? `&peer=${peer}` : ""}`);
+    waiting = w.length;
+    if (peer == null) by = waitingByPeer(w);
+  } catch {
+    // 다음 새로 고침에 다시
+  }
   if (state.railPeer !== peer) return; // 그 사이 다른 타일을 골랐다
+  state.reqWaiting = waiting;
+  if (by) {
+    state.waitingBy = by;
+    refreshHome();
+  }
   state.unseen = peer != null ? r.unseen : r.unseen_all;
   state.unseenAll = r.unseen_all;
   $("bell_dot").hidden = state.unseenAll === 0;
   renderSideNav();
 }
+
+/// '요청' 화면 — 받은 · 보낸 요청(고른 타일 범위, 상태 거르기), 최신부터. 받은 요청 행에는 상태 바꾸기(메모 한 줄).
+async function loadRequests(open = false) {
+  if (open) $("req_state").value = "";
+  const box = state.reqBox;
+  for (const b of ["theirs", "mine"]) $(`req_tab_${b}`).setAttribute("aria-current", b === box ? "page" : "false");
+  const params = new URLSearchParams({ side: box, ask: "request" });
+  if ($("req_state").value) params.set("req", $("req_state").value);
+  if (state.railPeer != null) params.set("peer", state.railPeer);
+  const ticket = latest.next();
+  let ms;
+  try {
+    ms = await api("GET", "/api/messages?" + params);
+  } catch (e) {
+    $("status_msg").textContent = "요청 목록 오류: " + e.message;
+    return;
+  }
+  if (!latest.is(ticket)) return;
+  const rows = requestRows(ms, state.peerNames);
+  if (needsRender($("req_list"), JSON.stringify([box, state.railPeer, rows]), open))
+    $("req_list").replaceChildren(...grouped(`requests`, rows, (rs) => requestEls(rs, box)));
+}
+
+function requestEls(rows, box) {
+  if (!rows.length) return [el("li", { class: "hint", text: box === "theirs" ? "받은 요청 없음" : "보낸 요청 없음 — 입력창에서 '요청' 을 골라 보냅니다" })];
+  return rows.map((r) => {
+    const li = el(
+      "li",
+      {},
+      el(
+        "a",
+        { href: r.href },
+        el(
+          "span",
+          { class: "meta" },
+          el("strong", { text: r.who }),
+          el("span", { class: r.done ? "tag ask done" : "tag ask", text: r.state }),
+          el("span", { text: formatTime(r.at) }),
+          el("span", { class: "hint", text: r.title }),
+        ),
+        el("span", { text: r.preview }),
+        r.note ? el("span", { class: "hint", text: `메모: ${r.note}` }) : "",
+        r.resend ? el("span", { class: "hint", text: "요청자에게 알리지 못함" }) : "",
+      ),
+    );
+    if (r.moves.length || r.resend) {
+      const bar = el("div", { class: "actions" });
+      for (const mv of r.moves) bar.append(button(mv.label, () => noteForm(bar, r.id, mv.to, mv.label)));
+      if (r.resend) bar.append(button("다시 알리기", () => resendState(r.id, r.stateKey, r.note)));
+      li.append(bar);
+    }
+    return li;
+  });
+}
+
+for (const b of ["theirs", "mine"])
+  $(`req_tab_${b}`).addEventListener("click", (ev) => {
+    ev.preventDefault();
+    state.reqBox = b;
+    loadRequests();
+  });
+$("req_state").addEventListener("input", () => loadRequests());
 
 /// 저장된 항목 — 고른 타일 범위, 저장 순 최신부터, 누르면 그 글로.
 async function loadSaved() {
@@ -1719,7 +2058,7 @@ async function loadSaved() {
   if (!latest.is(ticket)) return;
   const rows = inboxRows(ms, state.peerNames).map((r) => ({ ...r, href: `${r.href}/m/${r.id}` }));
   if (needsRender($("saved_list"), JSON.stringify([state.railPeer, rows]), false))
-    $("saved_list").replaceChildren(...rowEls(rows, "저장된 항목 없음 — 메시지 작업 '저장' 으로 모읍니다"));
+    $("saved_list").replaceChildren(...grouped("saved", rows, (rs) => rowEls(rs, "저장된 항목 없음 — 메시지 작업 '저장' 으로 모읍니다")));
 }
 
 /// 에이전트 화면 — 고른 타일 범위('나' = 내 에이전트 + 페어링된 상대 전부의 에이전트). 상대 목록은 원격 왕복이라 이 화면을 열 때 없는 것만 받는다.
@@ -1745,40 +2084,55 @@ function renderAgentsView() {
         el("span", { class: "hint", text: sub }),
       ),
     );
-  const rows = p ? [] : state.agents.map((a) => row(a.name, `내 에이전트 · ${a.folder}`, { href: "#settings/agents" }));
-  for (const x of peers) {
+  const peerRows = (x) => {
     const names = state.peerAgents.get(x.id);
-    if (names === undefined) rows.push(el("li", { class: "hint", text: `${displayName(x)} — 불러오는 중 …` }));
-    else if (names === null) rows.push(el("li", { class: "hint", text: `${displayName(x)} — 목록을 받지 못했습니다` }));
-    else
-      for (const n of names)
-        rows.push(
-          row(n, `${displayName(x)} 의 에이전트 — 누르면 새 대화`, {
-            href: "#new",
-            onclick: (ev) => {
-              ev.preventDefault();
-              newChat(x.id, n);
-            },
-          }),
-        );
+    if (names === undefined) return [el("li", { class: "hint", text: `${displayName(x)} — 불러오는 중 …` })];
+    if (names === null) return [el("li", { class: "hint", text: `${displayName(x)} — 목록을 받지 못했습니다` })];
+    return names.map((n) =>
+      row(n, `${displayName(x)} 의 에이전트 — 누르면 새 대화`, {
+        href: "#new",
+        onclick: (ev) => {
+          ev.preventDefault();
+          newChat(x.id, n);
+        },
+      }),
+    );
+  };
+  const none = [el("li", { class: "hint", text: "에이전트 없음" })];
+  if (p) {
+    const rows = peerRows(p);
+    $("agents_list").replaceChildren(...(rows.length ? rows : none));
+    return;
   }
-  $("agents_list").replaceChildren(...(rows.length ? rows : [el("li", { class: "hint", text: "에이전트 없음" })]));
+  // '나' = 절: 내 에이전트(맨 앞) · 상대마다 '{이름}의 에이전트'(#1g) — 에이전트가 없는 상대는 숨긴다(불러오는 중 · 실패는 보인다).
+  const mine = state.agents.map((a) => row(a.name, `내 에이전트 · ${a.folder}`, { href: "#settings/agents" }));
+  const sections = [
+    ...(mine.length ? [["agents:me", `내 에이전트 · ${mine.length}`, mine]] : []),
+    ...peers.map((x) => {
+      const names = state.peerAgents.get(x.id);
+      return [`agents:${x.id}`, `${displayName(x)}의 에이전트${Array.isArray(names) ? ` · ${names.length}` : ""}`, peerRows(x)];
+    }),
+  ].filter(([, , rows]) => rows.length);
+  $("agents_list").replaceChildren(
+    ...(sections.length ? sections.map(([key, title, rows]) => el("li", { class: "fold" }, foldEl(key, [title], [el("ol", { class: "rows" }, ...rows)]))) : none),
+  );
 }
 
+/// 주고받은 글 — 상대 하나, `id` = `null` 이면 '나' = 모든 상대를 상대별 절로(#1g).
 async function loadPeerMessages(id) {
   const p = state.peers.find((x) => x.id === id);
-  $("peer_title").textContent = p ? `${displayName(p)} · ${p.host}` : `상대 ${id}`;
+  $("peer_title").textContent = id == null ? "주고받은 글 — 모든 상대" : p ? `${displayName(p)} · ${p.host}` : `상대 ${id}`;
   const ticket = latest.next();
   let lists;
   try {
-    lists = await Promise.all(["theirs", "mine"].map((side) => api("GET", `/api/messages?side=${side}&peer=${id}`)));
+    lists = await Promise.all(["theirs", "mine"].map((side) => api("GET", `/api/messages?side=${side}${id == null ? "" : `&peer=${id}`}`)));
   } catch (e) {
     $("status_msg").textContent = "주고받은 글 오류: " + e.message;
     return;
   }
   if (!latest.is(ticket)) return;
   const rows = inboxRows(peerMessages(...lists), state.peerNames);
-  if (needsRender($("peer_list"), JSON.stringify([id, rows]), false)) $("peer_list").replaceChildren(...rowEls(rows, "주고받은 글 없음"));
+  if (needsRender($("peer_list"), JSON.stringify([id, rows]), false)) $("peer_list").replaceChildren(...grouped("peer", rows, (rs) => rowEls(rs, "주고받은 글 없음")));
 }
 
 async function openSent(conv) {
@@ -1819,10 +2173,6 @@ function fillPeerSelects() {
     ...paired.map((p) => el("option", { value: p.id, text: `${displayName(p)} · ${p.host}` })),
   );
   if (paired.some((p) => String(p.id) === keep)) sel.value = keep;
-  const actSel = $("act_peer");
-  const keepAct = actSel.value;
-  actSel.replaceChildren(el("option", { value: "", text: "전체" }), ...state.peers.map((p) => el("option", { value: p.id, text: `${displayName(p)} · ${p.host}` })));
-  if (state.peers.some((p) => String(p.id) === keepAct)) actSel.value = keepAct;
 }
 
 const agentsAsk = new Latest();
@@ -1858,6 +2208,10 @@ $("chat_form").addEventListener("submit", (ev) => {
   };
   if (!body.text.trim()) {
     $("chat_msg").textContent = "보내지 않음 — 내용이 비었습니다";
+    return;
+  }
+  if (body.request && $("chat_relay_agent").value) {
+    $("chat_msg").textContent = "보내지 않음 — 요청은 실행이 없어 자동 왕복을 열지 않습니다";
     return;
   }
   if ($("chat_relay_agent").value) {
@@ -1910,6 +2264,7 @@ const PREFS = [
   "claude_model",
   "claude_effort",
   "ui_theme",
+  "autostart",
 ];
 
 function fillPrefs(s) {
@@ -1933,6 +2288,7 @@ function fillPrefs(s) {
 }
 
 $("claude_effort").replaceChildren(...EFFORTS.map((e) => el("option", { value: e, text: e })));
+$("claude_model").replaceChildren(...MODELS.map((m) => el("option", { value: m, text: m })));
 
 for (const key of PREFS) {
   const input = $(key);
@@ -1983,6 +2339,8 @@ async function showSettings() {
     fillPrefs(s);
     // 폭은 시작할 때만 — 다른 설정 저장 응답(fillPrefs)이 막 끈 폭을 이전 값으로 되돌리지 않게.
     setSideWidth(s.ui_side_width ?? 272);
+    // 접힘도 시작할 때만(#1g) — 그 뒤는 화면이 바꾼 값이 정본.
+    state.folded = new Set(s.ui_folded ?? []);
     $("max_runs").value = String((await api("GET", "/api/runs")).cap);
   } catch (e) {
     $("status_msg").textContent = "설정 오류: " + e.message;
@@ -2028,6 +2386,7 @@ async function refresh() {
   if (state.current && r.view === "conversation") await openConversation(state.current);
   if (state.current && r.view === "sent") await openSent(state.current);
   if (r.view === "activity") await loadActivity();
+  if (r.view === "requests") await loadRequests();
   if (r.view === "saved") await loadSaved();
   if (r.view === "peer") await loadPeerMessages(r.id);
   if (!$("detail").hidden) await loadRuns();

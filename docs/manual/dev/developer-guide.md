@@ -3,7 +3,7 @@
 > 절차·운영 문서 — 모듈 매뉴얼 형식(개요 / 공개 계약 / 사용 예)의 예외다([매뉴얼 등록 규약](../README.md)).
 > 모듈별 API · 계약의 정본은 [an_core](an_core.md) · [an_net](an_net.md) · [an_agent](an_agent.md) · [an_app](an_app.md) 이고, 여기는
 > 그것들이 **실행 중에 어떻게 맞물리는지**를 적는다 — 어떤 프로세스가 생기고, 어떤 서비스가 무슨 역할을 하며, `claude -p` 헤드리스
-> 대화의 세션 · 저장소 · 흐름이 어떻게 이어지는가. 결정 번호(D · S)는 [masterPlan](../../masterPlan.md). 수치 · 경로는 스키마 13 ·
+> 대화의 세션 · 저장소 · 흐름이 어떻게 이어지는가. 결정 번호(D · S)는 [masterPlan](../../masterPlan.md). 수치 · 경로는 스키마 15 ·
 > 검증 환경 Windows 11 · Claude Code 2.1.296 기준. 쓰는 사람용 안내는 [사용자 가이드](../user/user-guide.md).
 
 ## 1. 한눈에 보기
@@ -86,7 +86,8 @@ python tools/check_crates.py
 
 | 프로세스 | 언제 생기나 | 수명 · 개수 | 하는 일 |
 |---|---|---|---|
-| `coworkAgent.exe`(인자 없음) — **주 인스턴스** | 사용자가 실행 | OS 사용자당 1개(`instance.lock`), 트레이 "종료" 까지 | 트레이 · 로컬 웹 서버 · 피어 노드 · 대화 엔진 · 실행기를 모두 담는다. 시작만으로는 브라우저를 열지 않는다(트레이 "열기") |
+| `coworkAgent.exe`(인자 없음 · 환경 변수 `COWORKAGENT_SUPERVISED` 없음) — **감시 프로세스**(#1e) | 사용자 · 로그인 자동 실행 | 자식이 끝날 때까지 | 같은 실행 파일을 자식(주 인스턴스 또는 보조 실행)으로 띄워 기다린다. 자식이 0 으로 끝나면 함께 끝, 아니면 1초 뒤 다시(변수 = 다시 띄운 횟수) — 60초 안 3번이면 멈추고 스스로 오류 트레이. 로거 · DB · 잠금 없음 · 자식을 Job 에 넣지 않음 |
+| `coworkAgent.exe`(인자 없음 · 감시의 자식) — **주 인스턴스** | 감시 프로세스가 띄움 | OS 사용자당 1개(`instance.lock`), 트레이 "종료" 까지 | 트레이 · 로컬 웹 서버 · 피어 노드 · 대화 엔진 · 실행기를 모두 담는다. 시작만으로는 브라우저를 열지 않는다(트레이 "열기") |
 | `coworkAgent.exe`(인자 없음) — 보조 실행 | 주 인스턴스가 이미 있을 때 다시 실행 | 보통 수 초(최악 약 53초) | `instance.json` 을 읽어 `POST /api/open`(브라우저 열기)을 넘기고 끝 — 300 ms 간격 최대 10번, 요청당 5초 |
 | `coworkAgent.exe <명령>` — CLI | 사용자 · 사용자 AI 에이전트가 `peers` · `ask` · `wait` · `status` · `history` | 명령 하나(`ask` · `wait` 는 앱의 트랜잭션 판정 — 답 · 실패 · 멈춤까지, 안전판 24시간 — 8.7) | 트레이 · 잠금 · 로거 없이 주 인스턴스의 로컬 API 를 부르고 종료 코드로 끝 |
 | `claude --version` | `claude -p` 실행 직전마다 | 30초 상한 | 버전 확인 — 2.1.267(`MIN_CLAUDE`) 미만이면 실행하지 않는다 |
@@ -138,6 +139,7 @@ flowchart TB
 | 대화 엔진 | 피어 처리기 + 대화별 작업 | 받은 요청 검증 · 저장(= 대기열 등록) · 대화별 순차 실행 · 답 보관 · 자동 왕복 · 완료 동기화 · 멘션 · 상태 질의 · CLI 트랜잭션. 피어 처리기는 막히지 않는다 — 실행은 대기열로 | `agent::chat::Chat` |
 | 실행기 | blocking 풀 | `claude -p` 인자 · 표준 입력 · 시간 제한 · 출력(stream-json 줄 — 단계 요약을 세고 마지막 `result` 줄만 남김) 읽기 | `agent::runner` |
 | 알림 | 노드 · 대화 엔진 이벤트 | 설정이 허락하면 건수 +1 → 트레이 표시 · SSE → 브라우저 알림(기본 꺼짐) | `app::notify` |
+| 감시 · 자동 시작 | 감시 = 별도 프로세스(3.1), 자동 시작 = HKCU `Run` 값 `coworkAgent` · macOS `com.coworkagent.plist` | 비정상 종료면 다시 띄움 · 로그인 때 실행. 다시 띄워도 남은 일은 `recover`(6.6)가 이어 간다 | `app::watchdog` · `app::autostart` |
 | 로그 | `logs\coworkAgent.log` | 1 MiB 를 넘기 전에 `.1` 로 회전(1개 보관) | `core::log_file` |
 | 단일 인스턴스 | `instance.lock` · `instance.json` | OS 파일 잠금(프로세스가 죽으면 OS 가 푼다) · 핸드오프 정보(포트 · 토큰) | `core::instance` |
 
@@ -146,13 +148,16 @@ flowchart TB
 ### 4.1 시작 · 종료 순서 (`crates/app/src/main.rs`)
 
 1. 인자가 있으면 CLI(`cli::main`)로 끝낸다 — 주 인스턴스가 되지 않는다.
+   `COWORKAGENT_SUPERVISED` 가 없으면 감시 프로세스(`watchdog::supervise(spawn_app)`)로 돌고 끝낸다(3.1) — 아래는 그 자식.
 2. 트레이 객체를 만든다(메인 스레드).
-3. 데이터 루트(D15) → 개명 전 `agentNetwork` 데이터 이어받기 → 폴더 · `logs` 만들기 → 파일 로거.
+3. 데이터 루트(D15) → 개명 전 `agentNetwork` 데이터 이어받기 → 폴더 · `logs` 만들기 → 파일 로거(패닉 훅 포함 — "패닉: 메시지 — 파일:줄").
+   감시가 다시 띄운 자식이면 "감시 프로세스가 다시 띄움(n번째)".
 4. `instance.lock` 잠금 — 못 잡으면 보조 실행(핸드오프 후 종료).
 5. DB 열기(스키마 올리기 · 올리기 전 `.v{N}.bak`) → 신원 키 읽기 · 없으면 생성.
 6. tokio 런타임 · 웹 포트(`127.0.0.1:0`) · 실행마다 새 토큰 · 피어 포트(47100, 사용 중이면 임의).
 7. 피어 노드 · 알림 · 대화 엔진 — 셋이 같은 DB 파일을 **각자 연결**로 연다(`busy_timeout` 5초). 실행기는 `claude` 를 실행마다 찾는다
    (`%USERPROFILE%\.local\bin\claude.exe`, 없으면 PATH) — 앱을 띄운 뒤 설치해도 된다.
+7.1 릴리스 빌드만: 자동 시작 훅(`autostart::sync`)을 알림에 설치하고, 설정 `autostart` 값으로 맞춘다 — 켜짐 = 등록 · 경로 고침, 꺼짐 = 지움(지난 실행에서 어긋난 것도 고친다, 실패는 `warn`).
 8. `chat.attach()`(노드 요청 처리기 · `Ping` 받기 알림) → `chat.recover()`(남은 대기열 · 남은 outbox 의 상대 줄을 지금 다시 · 7일 지난 실패
    보관 지움 — 6.6).
 9. 피어 수신 루프 · 시작 알림(`announce`) · 웹 서버를 띄우고 `instance.json` 을 쓴다 → 트레이 루프.
@@ -179,13 +184,13 @@ PC 사이는 앱끼리 직접 통신한다.
 
 - **프레임** = 4바이트 big-endian 길이 + JSON(최대 64 KiB), 글 본문은 16 KiB(`MAX_TEXT`). 요청 1건에 응답 1건, 그리고 연결을 닫는다.
 - **요청**(`proto::Request`): 페어링 `Hello` · `Approve` · `Remove` · 접속 `Ping` · 대화 `Agents` · `Message` · `Reply` · `Post` ·
-  `Relay` · `Done` · `Progress`(받는 쪽 차례 · 단계 요약) · `Status`(보낸 쪽 상태 질의). **응답**: `Hello` · `Ok` · `Pong{focus}` ·
+  `Relay` · `ReqState`(요청 상태 — #1d) · `Progress`(받는 쪽 차례 · 단계 요약) · `Status`(보낸 쪽 상태 질의) · `Edit` · `Delete`(이력 정리 — #1f). **응답**: `Hello` · `Ok` · `Pong{focus}` ·
   `Agents{names}` · `Status{state, ahead}` · `Error{code}`. 필드 정본은 [an_net](an_net.md).
 - 미페어링 상대는 `Hello` · `Approve` · `Remove` 만. 대화 요청은 페어링(`my_ok ∧ their_ok`)된 키만 처리기로 간다(SC2).
 - 수신 제한 — 연결당 3초 · 동시 32 · 출처 IP 당 4.
 - 상대가 준 오류 코드는 영소문자 · `_` 1 ~ 32 자만 남긴다(그 밖 `unknown`) — 원격 문자열은 신뢰하지 않는 입력.
 - 응답 코드 `retry` — 받는 쪽이 처리 중 오류(DB 잠금 등)로 잠시 처리하지 못했다. 거절이 아니다 — 보낸 쪽은 전송 오류처럼 다시 보낸다.
-- **outbox 를 거치는 프레임**: `Message` · `Post` · `Reply` · `Done` · `Progress` · `Relay{on: false}`(받은 쪽 멈춤 알림). **바로 보내는 것**: `Hello` ·
+- **outbox 를 거치는 프레임**: `Message` · `Post` · `Reply` · `ReqState` · `Edit` · `Delete` · `Progress` · `Relay{on: false}`(받은 쪽 멈춤 알림). **바로 보내는 것**: `Hello` ·
   `Approve` · `Remove` · `Agents` · `Ping` · `Status` · `Relay{on: true}`(연 쪽 재개) — 사람이 화면에서 결과를 바로 본다.
 
 ### 5.3 순서 그림
@@ -235,7 +240,7 @@ PC 사이는 앱끼리 직접 통신한다.
   실행한다. 같은 세션이 동시에 재개되지 않는다(공식 문서: 동시 resume 은 잠금 없이 섞인다 — D19). 멘션 실행도 같은 대화 대기열이다.
 - **다른 대화끼리는 동시에** — PC 전체 동시 실행 상한 없음(D24 개정).
 - **보내는 쪽 대화 차례**(`Chat::turn`) — 사람 글의 저장 → 전송(또는 보관) → 응답까지 대화당 한 번에 하나(보낸 순서 = 상대 도착 순서). 받은
-  요청의 완료 표시도 같은 차례 안에서 보낸다.
+  요청의 상태 바꾸기(#1d)도 같은 차례 안에서 보낸다.
 - **보내기 줄 순서** — 같은 대화에 앞선(보내는 중 · 기다리는) outbox 행이 있거나 그 상대에 닿지 않고 있는(다시 보내기를 기다리는 행이 있는)
   동안은 새 글도 바로 보내지 않고 줄 뒤에 선다. 상대 줄은 id 순으로 하나씩 — 앞 행이 못 가면 뒤 행도 기다린다. 진행(`Progress`) · 멈춤 알림
   (`Relay{on: false}`)은 대화 안에서 앞질러도 된다(답보다 늦게 닿은 진행은 받는 쪽이 `unknown` 으로 버린다).
@@ -290,7 +295,7 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 | 기록 트랜잭션 실패 | 요청 `error`, 내 쪽 답 "실행 실패: 받는 PC 기록 오류 — …" · 상대 "실행 실패: 받는 PC 기록 오류" |
 | 보내기 · 답 전송 오류(상대 꺼짐 · 네트워크) | 오류가 아니다 — outbox 에 보관하고 상대 줄이 다시 보낸다(아래). 글은 `sent` 그대로, 화면 "보내는 중". 같은 uuid 라 몇 번 다시 보내도 상대에서 한 번만 실행 |
 | 받는 쪽 처리 오류(DB 잠금 등) | 받는 쪽이 `Error{retry}` — 보낸 쪽은 거절로 확정하지 않고 전송 오류처럼 다시 보낸다 |
-| 24시간 닿지 않음 | 그 상대 줄의 행을 모두 실패 보관(`failed`). 내 실행 요청 · 실행 없는 글 · 자동 왕복 넘김은 `error` + 거절 코드 `unreachable`(화면 "보내지 못함 …" · 다시 보내기), 자동 왕복은 꺼지고 넘김이면 끝 사유 "상대에 닿지 않음". 답 · 내 에이전트 답 미러 · 상한 기록은 `undelivered`("답 미전달"). 그 밖(미러 · 완료 · 진행 · 멈춤 알림)은 로그만 |
+| 24시간 닿지 않음 | 그 상대 줄의 행을 모두 실패 보관(`failed`). 내 실행 요청 · 실행 없는 글 · 자동 왕복 넘김은 `error` + 거절 코드 `unreachable`(화면 "보내지 못함 …" · 다시 보내기), 자동 왕복은 꺼지고 넘김이면 끝 사유 "상대에 닿지 않음". 답 · 내 에이전트 답 미러 · 상한 기록은 `undelivered`("답 미전달"). 편집 · 삭제 반영(#1f)은 내 활동 "상대 반영 실패"(`relay_events.kind = sync_failed`). 그 밖(미러 · 진행 · 멈춤 알림)은 로그만 |
 | 상대 거절 | 보낸 글 `error` + 거절 코드(`messages.refused`). `focus` 면 "상대가 집중 중", 다시 보내면 코드를 지운다. 답을 상대가 거절하면 `undelivered` |
 
 **보내기 보관(outbox, D7 — #1c)** — 대화 프레임은 `Chat::ship`(바로 한 번 시도) · `Chat::enqueue`(줄에만 — 진행)로 `outbox` 에 먼저 적는다.
@@ -342,33 +347,33 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 
 폴더 밖: 시작 실패 사유 `%TEMP%\coworkAgent-start-error.txt`, Claude Code 기록(7.4).
 
-### 7.2 DB 표 (스키마 13)
+### 7.2 DB 표 (스키마 15)
 
 | 표 | 한 행 | 주요 열 |
 |---|---|---|
 | `peers` | 연결한 PC | `spki`(공개키) · `name` · `host` · `addr` · `my_ok` · `their_ok` · `round`(페어링 세대) · `grp` · `model` · `effort` · `alias` · `icon` · `activity_seen_msg` · `activity_seen_event` · `seen_at`(마지막 통신 — 보내기 성공 · 요청 받기 · `Pong`) · `focus`(마지막 `Pong` · 집중 거절 때 값) |
 | `settings` | 키 · 값 | 아래 키 |
-| `agents` | 내 에이전트 | `name`(UNIQUE — 상대가 부르는 이름, 바꾸지 않는다) · `folder` · `tools` · `prompt` · `grp` · `uid`(세대) |
+| `agents` | 내 에이전트 | `name`(UNIQUE — 상대가 부르는 이름, 바꾸지 않는다) · `folder` · `tools`(#1d 부터 읽지 않음 — 도구는 읽기 전용 5개 고정) · `prompt` · `grp` · `uid`(세대) |
 | `conversations` | 대화 | `uuid` · `peer_id` · `agent`(대화 에이전트) · `dir`(`out` 내가 엶 · `in` 상대가 엶) · `session` · `relay_agent` · `relay_cap` · `relay_count` · `relay_on` · `relay_blocked` · `title` · `starred_at` · `read_id` |
-| `messages` | 사람 글 · 에이전트 답 | `uuid` · `conversation_id` · `author`(`human` · `agent`) · `text` · `state` · `reply_to` · `turns` · `duration_ms` · `mine` · `exec`(실행 요청) · `lc` · `via`(`cli`) · `saved_at` · `model` · `effort` · `request` · `done_at` · `agent`(멘션) · `refused` |
-| `relay_events` | 자동 왕복 시작 · 끝 · 내 글이 실패로 바뀐 순간 | `conversation_id` · `kind` · `detail` · `message_id` |
+| `messages` | 사람 글 · 에이전트 답 | `uuid` · `conversation_id` · `author`(`human` · `agent`) · `text` · `state` · `reply_to` · `turns` · `duration_ms` · `mine` · `exec`(실행 요청) · `lc` · `via`(`cli`) · `saved_at` · `model` · `effort` · `request` · `req_state`(`wait` · `accepted` · `rejected` · `done` — #1d) · `req_note` · `req_at` · `done_at`(#1d 부터 읽지 않음) · `agent`(멘션) · `refused` · `edited_at`(편집 시각 — #1f) |
+| `relay_events` | 자동 왕복 시작 · 끝 · 내 글이 실패로 바뀐 순간 · 상대 반영 실패(`sync_failed` — #1f) | `conversation_id` · `kind` · `detail` · `message_id` |
 | `agent_sessions` | 대화 × 멘션 에이전트 세션 | (`conversation_id`, `agent`) → `session` |
 | `outbox` | 상대에게 보낼 대화 프레임 1개(#1c) | `peer_id` · `conv_id` · `msg_id` · `kind` · `frame`(직렬화한 요청 JSON) · `key`(진행 합침) · `state`(`pending` 기다림 · `inflight` 보내는 중 · `failed` 실패 보관) · `tries` · `waited`(기다린 초 합) · `next_at` · `last_try` · `last_error` · `created_at`. 응답을 받으면 행을 지운다 |
 | `cli_tx` | CLI `ask` 트랜잭션 1개(#1c) | `key`(UNIQUE — `--id`) · `message_id`(보낸 실행 요청 글) · `created_at` · `asked_at`(마지막 상태 질의) · `unreachable_since` · `stalled_at` |
 
 - 글 상태 `state`: `sent` 보냄 · `queued` 실행 대기 · `running` 실행 중 · `done` 끝 · `error` 실패 · `undelivered` 답을 상대에 못 보냄.
 - `settings` 키: `notify_inbound` · `notify_pair` · `notify_request` · `notify_reply` · `notify_relay` · `notify_preview` · `notify_paused` ·
-  `relay_cap_default` · `claude_model` · `claude_effort` · `ui_theme` · `ui_side_width` · `me_alias` · `me_icon` · `focus`.
+  `relay_cap_default` · `claude_model` · `claude_effort` · `ui_theme` · `ui_side_width` · `ui_folded` · `me_alias` · `me_icon` · `focus`.
 
 ### 7.3 양쪽에 남는 것 · 이 PC 에만 있는 것
 
 | 양쪽(전달에 성공한 프레임으로) | 이 PC 에만 |
 |---|---|
-| 사람 글 · 에이전트 답 본문, 순서(`lc`), 질의 · 요청, 완료 표시, 멘션 이름, 출처(`via`), 답의 실행 정보(턴 · 시간 · model · effort) | 대화 제목 · ★ · 저장 · 읽음 · 내 활동 본 표시 · 타일 표시 이름 · 아이콘 · 그룹 · 상대별 model · effort · 알림 설정 · 집중 · 접속 상태 · **Claude 세션 ID** |
+| 사람 글 · 에이전트 답 본문, 순서(`lc`), 질의 · 요청, 요청 상태 · 메모, 멘션 이름, 출처(`via`), 답의 실행 정보(턴 · 시간 · model · effort), "상대 창에도" 를 고른 편집 · 삭제(#1f) | 대화 제목 · ★ · 저장 · 읽음 · 내 활동 본 표시 · 타일 표시 이름 · 아이콘 · 그룹 · 상대별 model · effort · 알림 설정 · 집중 · 접속 상태 · **Claude 세션 ID** |
 
 답이 상대에 닿지 않으면 실행한 PC 의 outbox 가 다시 보낸다. 상대가 답을 거절했거나 24시간 닿지 않아 포기한 답만 실행한 PC 에
 `undelivered`(화면 "답 미전달")로 남는다 — 그때는 두 DB 가 달라진 채로 남는다(6.6). 보내는 중인 글 · 실패 보관(`outbox`) · CLI 트랜잭션
-(`cli_tx`)은 이 PC 에만 있다.
+(`cli_tx`)은 이 PC 에만 있다. "내 창에서만" 고르거나 지운 글(#1f)도 그때부터 두 DB 가 다르다.
 
 ### 7.4 Claude Code 쪽 기록 — 헤드리스 대화의 맥락
 
@@ -488,7 +493,8 @@ sequenceDiagram
 ```
 
 - 연 쪽이 구동한다. 상한 n = 양쪽 n 번씩(1 ~ 50, 기본 10). 어느 쪽이든 사람이 쓰거나 멈추면 멈추고, 받은 쪽이 멈추면 그 PC 는
-  에이전트발 요청을 `stopped` 로 거절한다. 재개는 연 쪽만(카운트 0).
+  에이전트발 요청을 `stopped` 로 거절한다 — 넘김이 멈춤 알림보다 먼저 닿아 거절돼도 연 쪽 결과는 같다(내 답은 오류 아님 · "상대가 멈춤"). 재개는
+  연 쪽만(카운트 0).
 - 넘김(`Message{by_agent}`)이 전송 오류여도 멈추지 않는다 — outbox 가 보관했다가 닿으면 이어 간다. 24시간 닿지 않으면 멈춤(끝 사유 "상대에
   닿지 않음"). 재개(`Relay{on: true}`)는 바로 보낸다 — 닿지 않으면 재개 실패.
 
@@ -514,21 +520,28 @@ sequenceDiagram
 - 이미 받은 글의 재전송(같은 uuid)은 집중 중에도 `Ok`(한 번만 실행). 진행 중 자동 왕복은 다음 차례에서 멈추고(끝 사유 — 상대가
   집중이면 "상대가 집중 중", 연 쪽이 집중이면 "집중 중"), 집중 동안 알림도 멈춘다.
 
-### 8.6 요청 완료 동기화
+### 8.6 요청 목록 — 실행 없음 · 상태 동기화 (#1d)
 
 ```mermaid
 sequenceDiagram
-  actor UB as B 사용자(받은 쪽)
-  participant B as B 앱
-  participant A as A 앱(쓴 쪽)
-  UB->>B: 완료 표시
-  B->>B: 대화 차례 안에서 done_at 저장(저장 표시도 같은 트랜잭션)
-  B->>A: Done(conv · msg · done) — outbox
-  A->>A: 그 대화의 내 요청 사람 글이면 반영(그 밖 unknown)
-  A-->>B: Ok (닿지 않으면 B 의 outbox 가 다시 보낸다 — 경고 없음)
+  actor UA as A 사용자(요청자)
+  participant A as A 앱
+  participant B as B 앱(받은 쪽)
+  actor UB as B 사용자
+  UA->>A: 입력창 '요청' + 보내기
+  A->>B: Message(request = true) — outbox, 내 글 exec = false
+  B->>B: 집중 판정 앞에서 inbound_ask — 실행 · 대기열 없이 req_state = wait
+  B-->>A: Ok → A 글 done(답 없음)
+  UB->>B: '요청' 화면 · 수용(메모)
+  B->>B: 대화 차례 안에서 can_become 확인 · req_state · req_note · 보내기 행 한 트랜잭션
+  B->>A: ReqState(conv · msg · accepted · 메모) — outbox, 바뀔 때마다 한 행
+  A->>A: 그 대화의 내 요청 사람 글이면 반영(그 밖 unknown) · 알림 AskState
+  A-->>B: Ok (닿지 않으면 B 의 outbox 가 바뀐 순서대로 다시 보낸다 — 경고 없음)
 ```
 
-- 경고("이 PC 에는 표시했다 — 상대에 알리지 못했다 …")는 상대가 거절했거나 보관조차 못 했을 때만 뜬다. B 값은 남고 다음에 바꿀 때 맞춰진다.
+- 옮김은 대기 → 수용 · 반려, 수용 → 완료만(받은 쪽이 검사, 요청자 쪽은 받은 대로). 경고("이 PC 에는 바꿨다 — 상대에 알리지 못했다 …")는 상대가
+  거절했을 때만 뜬다.
+- 받은 대화(B 가 요청자)에서는 미러 `Post{exec: false, request: true}` 로 같은 규칙.
 
 ### 8.7 CLI `ask` (D14 보강)
 
@@ -588,6 +601,26 @@ sequenceDiagram
   "n시간 전 통신" · "n일 전 통신" · "통신 기록 없음". 방금 통신했을 때만 점이 켜지고 집중이면 "집중 중 · 방금 통신". 오래 통신이 없던 상대는
   켜져 있어도 "n분 전 통신" 이다 — 보내기는 보관되므로 표시가 보내기를 막지 않는다.
 - 바뀐 포트 · IP 따라가기(#1b)는 시작 알림의 `Ping.port` 로 — 이 PC 가 다시 켜질 때 상대가 새 주소를 받는다.
+
+### 8.9 이력 정리 — 편집 · 삭제 (#1f)
+
+```mermaid
+sequenceDiagram
+  actor UA as A 사용자
+  participant A as A 앱
+  participant B as B 앱
+  UA->>A: 편집 모드 · 내 글 고르기 · 삭제(또는 연필 · 저장) · "상대 창에도"
+  A->>A: 대화 차례 안에서 tidy_ok(끝난 내 사람 글) 확인 · 지우기(또는 text · edited_at) · 보내기 행 한 트랜잭션
+  A->>B: Delete(conv · msg) 또는 Edit(conv · msg · text) — outbox, 글마다 한 행
+  B->>B: 그 상대 대화의 그 상대가 쓴 사람 글이면 반영(그 밖 unknown · 실행 중 busy) — 실행 · 알림 없음
+  B-->>A: Ok (닿지 않으면 A 의 outbox 가 다시 보낸다 · 거절 · 24시간 포기면 A 내 활동 sync_failed)
+```
+
+- 편집 · 삭제할 수 있는 글(`Chat::tidy_ok`) = 사람 글 ∧ `mine` ∧ 상태 `done` · `error` · `undelivered` ∧ 그 글을 실어 나르는 outbox 행
+  (`pending` · `inflight`)이 없음. 반영 행(`msg_edit` · `msg_delete`)은 글을 "보내는 중" 으로 만들지 않는다(`outbox::for_message` 가 뺀다).
+- 지우기 = 글 행 + 그 글의 `cli_tx` · `relay_events` · 실패 보관 outbox 행. 답(`reply_to`)은 남는다. 받는 쪽 삭제는 이미 없으면 `Ok`, 같은 본문
+  편집도 `Ok`(재전송 멱등).
+- 실행 맥락: 이미 돈 실행은 Claude 세션이 원문을 기억한다. 다음 실행의 앞붙임(`notes_between` — 6.5)은 고친 · 지운 상태의 DB 를 읽는다.
 
 ## 9. 보안 경계 요약
 

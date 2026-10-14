@@ -119,7 +119,7 @@ async fn agents_crud_api() {
     let body = serde_json::json!({ "name": "review", "folder": folder }).to_string();
     let (code, made) = call(port, &h, "POST", "/api/agents", &body).await;
     assert_eq!(code, 201, "{made}");
-    assert_eq!(made["tools"], "Read,Grep,Glob", "기본값은 읽기 전용");
+    assert!(made.get("tools").is_none(), "도구 칸 없음(#1d) {made}");
     let (code, list) = call(port, &h, "GET", "/api/agents", "").await;
     assert_eq!(code, 200);
     assert_eq!(list.as_array().unwrap().len(), 1);
@@ -130,8 +130,6 @@ async fn agents_crud_api() {
         serde_json::json!({ "name": "x", "folder": format!("{folder}/없는폴더") }),
         serde_json::json!({ "name": "x", "folder": "." }),
         serde_json::json!({ "name": " ", "folder": folder }),
-        serde_json::json!({ "name": "w", "folder": folder, "tools": "Read,Edit" }),
-        serde_json::json!({ "name": "b", "folder": folder, "tools": "Bash" }),
     ] {
         let (code, r) = call(port, &h, "POST", "/api/agents", &bad.to_string()).await;
         assert_eq!(code, 400, "{bad} → {r}");
@@ -172,14 +170,7 @@ async fn conversation_api_roundtrip() {
     let pa = b.node.peers().unwrap().remove(0);
     a.node.approve(pb.id).await.unwrap();
     b.node.approve(pa.id).await.unwrap();
-    agents::add(
-        &db::open(&b.paths.db_file()).unwrap(),
-        "review",
-        ".",
-        None,
-        "",
-    )
-    .unwrap();
+    agents::add(&db::open(&b.paths.db_file()).unwrap(), "review", ".", "").unwrap();
     // B 의 알림(S9) — 받은 요청이 `message` 알림으로 나간다.
     let notifier = Notifier::new(db::open(&b.paths.db_file()).unwrap(), |_| {}).unwrap();
     notifier.set_enabled(true).unwrap();
@@ -251,14 +242,7 @@ async fn conversation_summaries_and_message_meta() {
     let pa = b.node.peers().unwrap().remove(0);
     a.node.approve(pb.id).await.unwrap();
     b.node.approve(pa.id).await.unwrap();
-    agents::add(
-        &db::open(&b.paths.db_file()).unwrap(),
-        "review",
-        ".",
-        None,
-        "",
-    )
-    .unwrap();
+    agents::add(&db::open(&b.paths.db_file()).unwrap(), "review", ".", "").unwrap();
     let (port, h) = web(a.chat.clone()).await;
     let body =
         serde_json::json!({ "peer_id": pb.id, "agent": "review", "text": "스키마 초안을 잡아 줘" });
@@ -293,14 +277,7 @@ async fn conversation_post_targets() {
     let pa = b.node.peers().unwrap().remove(0);
     a.node.approve(pb.id).await.unwrap();
     b.node.approve(pa.id).await.unwrap();
-    agents::add(
-        &db::open(&b.paths.db_file()).unwrap(),
-        "review",
-        ".",
-        None,
-        "",
-    )
-    .unwrap();
+    agents::add(&db::open(&b.paths.db_file()).unwrap(), "review", ".", "").unwrap();
     let (port_a, ha) = web(a.chat.clone()).await;
     let (port_b, hb) = web(b.chat.clone()).await;
     let body = serde_json::json!({ "peer_id": pb.id, "agent": "review", "text": "질문" });
@@ -367,22 +344,8 @@ async fn relay_api() {
     let pa = b.node.peers().unwrap().remove(0);
     a.node.approve(pb.id).await.unwrap();
     b.node.approve(pa.id).await.unwrap();
-    agents::add(
-        &db::open(&a.paths.db_file()).unwrap(),
-        "mine",
-        ".",
-        None,
-        "",
-    )
-    .unwrap();
-    agents::add(
-        &db::open(&b.paths.db_file()).unwrap(),
-        "review",
-        ".",
-        None,
-        "",
-    )
-    .unwrap();
+    agents::add(&db::open(&a.paths.db_file()).unwrap(), "mine", ".", "").unwrap();
+    agents::add(&db::open(&b.paths.db_file()).unwrap(), "review", ".", "").unwrap();
     let (port_a, ha) = web(a.chat.clone()).await;
     let (port_b, hb) = web(b.chat.clone()).await;
     // 없는 내 에이전트 · 범위 밖 상한은 400.
@@ -456,15 +419,8 @@ async fn relay_cap_default_from_settings() {
     a.node.approve(pb.id).await.unwrap();
     b.node.approve(pa.id).await.unwrap();
     let a_db = db::open(&a.paths.db_file()).unwrap();
-    agents::add(&a_db, "mine", ".", None, "").unwrap();
-    agents::add(
-        &db::open(&b.paths.db_file()).unwrap(),
-        "review",
-        ".",
-        None,
-        "",
-    )
-    .unwrap();
+    agents::add(&a_db, "mine", ".", "").unwrap();
+    agents::add(&db::open(&b.paths.db_file()).unwrap(), "review", ".", "").unwrap();
     let (port_a, ha) = web(a.chat.clone()).await;
     let start = serde_json::json!({ "peer_id": pb.id, "agent": "review", "text": "x", "relay_agent": "mine" })
         .to_string();
@@ -484,14 +440,7 @@ async fn via_api() {
     let pa = b.node.peers().unwrap().remove(0);
     a.node.approve(pb.id).await.unwrap();
     b.node.approve(pa.id).await.unwrap();
-    agents::add(
-        &db::open(&b.paths.db_file()).unwrap(),
-        "review",
-        ".",
-        None,
-        "",
-    )
-    .unwrap();
+    agents::add(&db::open(&b.paths.db_file()).unwrap(), "review", ".", "").unwrap();
     let (port, h) = web(a.chat.clone()).await;
     // CLI 출처 — 새 대화 · 이어 쓰기 모두 via 가 남고, 웹UI 글은 null.
     let body =

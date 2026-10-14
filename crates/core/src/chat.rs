@@ -25,6 +25,61 @@ pub enum State {
     Undelivered,
 }
 
+/// 요청 글의 상태(#1d) — 받은 쪽 사람이 바꾸고 쓴 쪽은 받은 대로 남긴다. 대기 → 수용 · 반려, 수용 → 완료.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReqState {
+    Wait,
+    Accepted,
+    Rejected,
+    Done,
+}
+
+impl ReqState {
+    pub const ALL: [ReqState; 4] = [
+        ReqState::Wait,
+        ReqState::Accepted,
+        ReqState::Rejected,
+        ReqState::Done,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReqState::Wait => "wait",
+            ReqState::Accepted => "accepted",
+            ReqState::Rejected => "rejected",
+            ReqState::Done => "done",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|r| r.as_str() == s)
+    }
+
+    /// 받은 쪽이 이 상태에서 `next` 로 옮길 수 있나.
+    pub fn can_become(self, next: Self) -> bool {
+        matches!(
+            (self, next),
+            (ReqState::Wait, ReqState::Accepted | ReqState::Rejected)
+                | (ReqState::Accepted, ReqState::Done)
+        )
+    }
+}
+
+/// 요청 상태 메모 최대 글자 수.
+pub const MAX_REQ_NOTE: usize = 200;
+
+/// 요청 상태 메모 — 한 줄(제어 문자 · 줄바꿈 없음) [`MAX_REQ_NOTE`] 자까지, 비면 `None`.
+pub fn clean_req_note(s: &str) -> Result<Option<String>, String> {
+    crate::run_opts::clean_label(s, MAX_REQ_NOTE, "메모")
+}
+
+/// 사람 글 종류 거르기 — 질의 · 요청(요청은 상태로 더 거른다, `None` = 모든 상태).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AskFilter {
+    Query,
+    Request(Option<ReqState>),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Conversation {
     pub id: i64,
@@ -79,12 +134,16 @@ pub struct Message {
     pub effort: Option<String>,
     /// 사람 글의 종류 — 참 = 요청(건의), 거짓 = 질의(기본). 쓴 쪽이 정해 함께 보낸다.
     pub request: bool,
-    /// 요청 완료 표시 시각 — 받은 쪽이 바꾸고 쓴 쪽은 받은 대로 남긴다.
-    pub done_at: Option<i64>,
+    /// 요청 글의 상태 · 메모 · 바꾼 시각(#1d) — 요청이 아니면 `None`.
+    pub req_state: Option<ReqState>,
+    pub req_note: Option<String>,
+    pub req_at: Option<i64>,
     /// 멘션 — 사람 실행 요청이 부른 에이전트 · 그 답을 실행한 에이전트(`None` = 대화 에이전트).
     pub agent: Option<String>,
     /// 보낸 쪽: 상대가 거절한 코드(`focus` 등).
     pub refused: Option<String>,
+    /// 편집한 시각(#1f — 내 사람 글 · 상대가 편집해 보낸 글) — 편집하지 않았으면 `None`.
+    pub edited_at: Option<i64>,
 }
 
 /// 대화 목록 한 줄.
@@ -187,9 +246,9 @@ fn conv_row(r: &Row) -> rusqlite::Result<Conversation> {
     })
 }
 
-const MSG_COLS: &str = "id, uuid, conversation_id, author, text, state, created_at, reply_to, turns, duration_ms, mine, exec, lc, via, saved_at, model, effort, request, done_at, agent, refused";
+const MSG_COLS: &str = "id, uuid, conversation_id, author, text, state, created_at, reply_to, turns, duration_ms, mine, exec, lc, via, saved_at, model, effort, request, req_state, req_note, req_at, agent, refused, edited_at";
 /// `MSG_COLS` 열 수 — 그 뒤에 붙는 열의 위치.
-const MSG_N: usize = 21;
+const MSG_N: usize = 24;
 
 /// 열 목록에 표 별칭을 붙인다(`id, uuid` → `m.id, m.uuid`).
 fn prefixed(cols: &str, alias: &str) -> String {
@@ -210,6 +269,10 @@ fn like_pattern(q: &str) -> String {
 
 fn msg_row(r: &Row) -> rusqlite::Result<Message> {
     let (author, state): (String, String) = (r.get(3)?, r.get(5)?);
+    let req_state = match r.get::<_, Option<String>>(18)? {
+        Some(v) => Some(ReqState::parse(&v).ok_or_else(|| bad(18, &v))?),
+        None => None,
+    };
     Ok(Message {
         id: r.get(0)?,
         uuid: r.get(1)?,
@@ -232,9 +295,12 @@ fn msg_row(r: &Row) -> rusqlite::Result<Message> {
         model: r.get(15)?,
         effort: r.get(16)?,
         request: r.get::<_, Option<bool>>(17)?.unwrap_or(false),
-        done_at: r.get(18)?,
-        agent: r.get(19)?,
-        refused: r.get(20)?,
+        req_state,
+        req_note: r.get(19)?,
+        req_at: r.get(20)?,
+        agent: r.get(21)?,
+        refused: r.get(22)?,
+        edited_at: r.get(23)?,
         state: state_of(&state).ok_or_else(|| bad(5, &state))?,
     })
 }
@@ -328,6 +394,37 @@ pub fn set_saved(conn: &Connection, id: i64, on: bool) -> rusqlite::Result<bool>
     )? == 1)
 }
 
+/// 본문을 바꾸고 편집 시각을 남긴다(#1f) — uuid · 순서 · 요청 상태 · 저장은 그대로. 바뀐 행이 없으면 거짓.
+pub fn edit_text(conn: &Connection, id: i64, text: &str) -> rusqlite::Result<bool> {
+    conn.execute(
+        "UPDATE messages SET text = ?2, edited_at = unixepoch() WHERE id = ?1",
+        params![id, text],
+    )
+    .map(|n| n > 0)
+}
+
+/// 글을 흔적 없이 지운다(#1f) — 그 글의 CLI 트랜잭션 · 실패 기록 · 실패 보관 행도. 답(`reply_to`)은 남는다. 지운 행이 없으면 거짓.
+/// 읽음 · 내 활동 본 표시는 남은 마지막 id 로 낮춘다 — 맨 끝 글을 지우면 SQLite 가 그 id 를 다음 글에 다시 주므로, 표시가 그대로면 새 글이 이미
+/// 읽은 · 본 것으로 보인다.
+pub fn delete_message(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
+    conn.execute("DELETE FROM cli_tx WHERE message_id = ?1", [id])?;
+    conn.execute("DELETE FROM relay_events WHERE message_id = ?1", [id])?;
+    conn.execute(
+        "DELETE FROM outbox WHERE msg_id = ?1 AND state = 'failed'",
+        [id],
+    )?;
+    let gone = conn.execute("DELETE FROM messages WHERE id = ?1", [id])? > 0;
+    conn.execute_batch(
+        "UPDATE conversations SET read_id = (SELECT coalesce(max(id), 0) FROM messages)
+           WHERE read_id > (SELECT coalesce(max(id), 0) FROM messages);
+         UPDATE peers SET activity_seen_msg = (SELECT coalesce(max(id), 0) FROM messages)
+           WHERE activity_seen_msg > (SELECT coalesce(max(id), 0) FROM messages);
+         UPDATE peers SET activity_seen_event = (SELECT coalesce(max(id), 0) FROM relay_events)
+           WHERE activity_seen_event > (SELECT coalesce(max(id), 0) FROM relay_events);",
+    )?;
+    Ok(gone)
+}
+
 /// 저장된 메시지 — 저장 시각 최신부터(같은 초면 id 큰 것), `peer` · `conversation` 으로 거른다.
 pub fn saved(
     conn: &Connection,
@@ -345,11 +442,13 @@ pub fn saved(
     .collect()
 }
 
-/// 자동 왕복 기록 종류.
+/// 자동 왕복 기록 종류 — 같은 표에 상대 반영 실패(#1f)도 남는다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelayMark {
     Start,
     End,
+    /// 편집 · 삭제를 상대 창에 반영하지 못했다(상대 거절 · 24시간 포기). 편집이면 그 글 id — 글을 지우면 기록(본문 미리보기)도 함께 지운다.
+    SyncFailed(Option<i64>),
 }
 
 /// 자동 왕복 시작 · 끝을 남긴다(내 활동) — 알림 설정과 무관하게. `detail` = 끝 사유 · 시작 글 미리보기. 같은 표의 `failed` 행은 내 글이 실패로
@@ -360,24 +459,26 @@ pub fn add_relay_event(
     mark: RelayMark,
     detail: &str,
 ) -> rusqlite::Result<()> {
-    let kind = match mark {
-        RelayMark::Start => "start",
-        RelayMark::End => "end",
+    let (kind, message) = match mark {
+        RelayMark::Start => ("start", None),
+        RelayMark::End => ("end", None),
+        RelayMark::SyncFailed(message) => ("sync_failed", message),
     };
     conn.execute(
-        "INSERT INTO relay_events (conversation_id, kind, detail, created_at) VALUES (?1, ?2, ?3, unixepoch())",
-        params![conversation_id, kind, detail],
+        "INSERT INTO relay_events (conversation_id, kind, detail, created_at, message_id) VALUES (?1, ?2, ?3, unixepoch(), ?4)",
+        params![conversation_id, kind, detail, message],
     )
     .map(drop)
 }
 
-/// 내 활동 한 줄의 종류 — 상대 쪽 글 · 내 쪽 실패 · 자동 왕복 시작 · 끝.
+/// 내 활동 한 줄의 종류 — 상대 쪽 글 · 내 쪽 실패 · 자동 왕복 시작 · 끝 · 상대 반영 실패(#1f).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivityKind {
     Message,
     Failed,
     RelayStart,
     RelayEnd,
+    SyncFailed,
 }
 
 impl ActivityKind {
@@ -387,6 +488,7 @@ impl ActivityKind {
             ActivityKind::Failed => "failed",
             ActivityKind::RelayStart => "relay_start",
             ActivityKind::RelayEnd => "relay_end",
+            ActivityKind::SyncFailed => "sync_failed",
         }
     }
 }
@@ -399,9 +501,6 @@ pub enum ActivityFilter {
     Agent,
     Relay,
     Failed,
-    /// 상대 쪽 사람 글 중 질의 · 요청('내게 요청된 목록').
-    Query,
-    Request,
 }
 
 /// 내 활동 한 줄.
@@ -438,10 +537,6 @@ pub fn activity(
         ActivityFilter::Human => Some("m.mine = 0 AND m.author = 'human'"),
         ActivityFilter::Agent => Some("m.mine = 0 AND m.author = 'agent'"),
         ActivityFilter::Failed => Some("m.mine = 1 AND m.state = 'error'"),
-        ActivityFilter::Query => {
-            Some("m.mine = 0 AND m.author = 'human' AND coalesce(m.request, 0) = 0")
-        }
-        ActivityFilter::Request => Some("m.mine = 0 AND m.author = 'human' AND m.request = 1"),
         ActivityFilter::Relay => None,
     };
     if let Some(w) = msg_where {
@@ -474,20 +569,28 @@ pub fn activity(
             out.push(a?);
         }
     }
-    if matches!(filter, ActivityFilter::All | ActivityFilter::Relay) {
-        let mut stmt = conn.prepare(
+    // 기록 종류 — 자동 왕복 시작 · 끝, 상대 반영 실패(실패 거르기에도).
+    let kinds = match filter {
+        ActivityFilter::All => Some("'start', 'end', 'sync_failed'"),
+        ActivityFilter::Relay => Some("'start', 'end'"),
+        ActivityFilter::Failed => Some("'sync_failed'"),
+        ActivityFilter::Human | ActivityFilter::Agent => None,
+    };
+    if let Some(kinds) = kinds {
+        let mut stmt = conn.prepare(&format!(
             "SELECT e.kind, e.created_at, e.conversation_id, c.peer_id, e.detail,
                p.id IS NOT NULL AND e.id > coalesce(p.activity_seen_event, 0)
              FROM relay_events e JOIN conversations c ON c.id = e.conversation_id LEFT JOIN peers p ON p.id = c.peer_id
-             WHERE e.kind IN ('start', 'end') AND (?1 IS NULL OR c.peer_id = ?1) AND (?2 IS NULL OR e.detail LIKE ?2 ESCAPE '\\')
-             ORDER BY e.created_at DESC, e.id DESC LIMIT ?3",
-        )?;
+             WHERE e.kind IN ({kinds}) AND (?1 IS NULL OR c.peer_id = ?1) AND (?2 IS NULL OR e.detail LIKE ?2 ESCAPE '\\')
+             ORDER BY e.created_at DESC, e.id DESC LIMIT ?3"
+        ))?;
         let rows = stmt.query_map(params![peer, like, limit], |r| {
             let kind: String = r.get(0)?;
             Ok(Activity {
                 kind: match kind.as_str() {
                     "start" => ActivityKind::RelayStart,
                     "end" => ActivityKind::RelayEnd,
+                    "sync_failed" => ActivityKind::SyncFailed,
                     v => return Err(bad(0, v)),
                 },
                 at: r.get(1)?,
@@ -527,7 +630,7 @@ pub fn activity_unseen(conn: &Connection, peer: Option<i64>) -> rusqlite::Result
              + (SELECT count(*) FROM relay_events e JOIN conversations c ON c.id = e.conversation_id
                   LEFT JOIN peers p ON p.id = c.peer_id
                 WHERE e.id > coalesce((SELECT min(coalesce(activity_seen_event, 0)) FROM peers WHERE ?1 IS NULL OR id = ?1), 0)
-                  AND e.kind IN ('start', 'end') AND (?1 IS NULL OR c.peer_id = ?1)
+                  AND e.kind IN ('start', 'end', 'sync_failed') AND (?1 IS NULL OR c.peer_id = ?1)
                   AND p.id IS NOT NULL AND e.id > coalesce(p.activity_seen_event, 0))"
         ),
         params![peer],
@@ -637,10 +740,10 @@ pub fn set_via(conn: &Connection, id: i64, via: Option<&str>) -> rusqlite::Resul
 /// CLI 로 쓴 글의 `via` 값.
 pub const VIA_CLI: &str = "cli";
 
-/// 사람 글의 종류 — 참 = 요청(건의), 거짓 = 질의(기본). 글과 같은 트랜잭션에서 부른다.
+/// 사람 글의 종류 — 참 = 요청(건의, 상태 '대기'로 시작), 거짓 = 질의(기본). 글과 같은 트랜잭션에서 부른다.
 pub fn set_request(conn: &Connection, id: i64, request: bool) -> rusqlite::Result<()> {
     conn.execute(
-        "UPDATE messages SET request = ?2 WHERE id = ?1",
+        "UPDATE messages SET request = ?2, req_state = CASE WHEN ?2 THEN coalesce(req_state, 'wait') END WHERE id = ?1",
         params![id, request],
     )
     .map(drop)
@@ -655,11 +758,16 @@ pub fn set_agent(conn: &Connection, id: i64, agent: Option<&str>) -> rusqlite::R
     .map(drop)
 }
 
-/// 요청 완료 표시 · 취소 — 이미 완료면 처음 시각을 둔다.
-pub fn set_done(conn: &Connection, id: i64, done: bool) -> rusqlite::Result<()> {
+/// 요청 상태 · 메모를 바꾸고 시각을 남긴다 — 옮김 검사는 부르는 쪽([`ReqState::can_become`]).
+pub fn set_req_state(
+    conn: &Connection,
+    id: i64,
+    state: ReqState,
+    note: Option<&str>,
+) -> rusqlite::Result<()> {
     conn.execute(
-        "UPDATE messages SET done_at = CASE WHEN ?2 THEN coalesce(done_at, unixepoch()) END WHERE id = ?1",
-        params![id, done],
+        "UPDATE messages SET req_state = ?2, req_note = ?3, req_at = unixepoch() WHERE id = ?1",
+        params![id, state.as_str(), note],
     )
     .map(drop)
 }
@@ -863,21 +971,26 @@ pub fn messages_across(
     mine: Option<bool>,
     peer: Option<i64>,
     author: Option<Author>,
-    request: Option<bool>,
+    ask: Option<AskFilter>,
     q: Option<&str>,
     limit: i64,
 ) -> rusqlite::Result<Vec<Message>> {
     let cols = prefixed(MSG_COLS, "m");
     let like = q.map(like_pattern);
+    let (request, req_state) = match ask {
+        None => (None, None),
+        Some(AskFilter::Query) => (Some(false), None),
+        Some(AskFilter::Request(s)) => (Some(true), s.map(ReqState::as_str)),
+    };
     conn.prepare(&format!(
         "SELECT {cols} FROM messages m JOIN conversations c ON c.id = m.conversation_id
          WHERE (?1 IS NULL OR m.mine = ?1) AND (?2 IS NULL OR c.peer_id = ?2) AND (?3 IS NULL OR m.author = ?3)
            AND (?4 IS NULL OR (m.author = 'human' AND coalesce(m.request, 0) = ?4))
-           AND (?5 IS NULL OR m.text LIKE ?5 ESCAPE '\\')
+           AND (?5 IS NULL OR m.text LIKE ?5 ESCAPE '\\') AND (?7 IS NULL OR m.req_state = ?7)
          ORDER BY m.created_at DESC, m.id DESC LIMIT ?6"
     ))?
     .query_map(
-        params![mine, peer, author.map(Author::as_str), request, like, limit],
+        params![mine, peer, author.map(Author::as_str), request, like, limit, req_state],
         msg_row,
     )?
     .collect()

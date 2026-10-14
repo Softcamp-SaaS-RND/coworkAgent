@@ -23,7 +23,7 @@ async fn request_not_recorded_without_outbox_row() {
     let a = common::side("atq-a", Duration::ZERO).await;
     let b = common::side("atq-b", Duration::ZERO).await;
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     block_outbox(&a, "message");
     assert!(a.chat.send(b_id, "review", None, "질문").await.is_err());
     assert_eq!(count(&a, "SELECT COUNT(*) FROM messages"), 0, "보낼 행 없이 글만 남지 않는다");
@@ -36,7 +36,7 @@ async fn reply_not_recorded_without_outbox_row() {
     let a = common::side("atr-a", Duration::ZERO).await;
     let b = common::side("atr-b", Duration::ZERO).await;
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     block_outbox(&b, "reply");
     a.chat.send(b_id, "review", None, "질문").await.unwrap();
     common::eventually(|| b.runs.lock().unwrap().len() == 1).await;
@@ -56,8 +56,8 @@ async fn relay_step_not_marked_sent_without_outbox_row() {
     let a = common::side("ats-a", Duration::ZERO).await;
     let b = common::side("ats-b", Duration::ZERO).await;
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&a), "mine", ".", None, "").unwrap();
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&a), "mine", ".", "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     block_outbox(&a, "relay_step");
     let (conv, _) = a
         .chat
@@ -65,18 +65,20 @@ async fn relay_step_not_marked_sent_without_outbox_row() {
         .await
         .unwrap();
     common::eventually(|| a.runs.lock().unwrap().len() == 1).await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // 고정 대기(0.5초) 대신 멈출 때까지 — 부하 걸린 PC 에서 넘김이 늦게 와도 판정이 앞서지 않게.
+    let relay_on = || -> bool {
+        common::db(&a)
+            .query_row("SELECT relay_on FROM conversations WHERE id = ?1", [conv.id], |r| r.get::<_, Option<bool>>(0))
+            .unwrap()
+            .unwrap_or(false)
+    };
+    common::eventually(|| !relay_on()).await;
     let stuck = an_core::chat::messages(&common::db(&a), conv.id)
         .unwrap()
         .into_iter()
         .filter(|m| m.author == Author::Agent && m.state == an_core::chat::State::Sent)
         .count();
     assert_eq!(stuck, 0, "보낼 행 없이 sent 로 남지 않는다");
-    let on: Option<bool> = common::db(&a)
-        .query_row("SELECT relay_on FROM conversations WHERE id = ?1", [conv.id], |r| r.get(0))
-        .unwrap();
-    let on = on.unwrap_or(false);
-    assert!(!on, "자동 왕복 멈춤");
     assert_eq!(b.runs.lock().unwrap().len(), 1);
 }
 

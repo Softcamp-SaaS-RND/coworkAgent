@@ -1,7 +1,13 @@
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 13;
+pub const SCHEMA_VERSION: i64 = 15;
+
+/// 쓰기 트랜잭션 — `BEGIN IMMEDIATE`. 읽고 나서 쓰는 지연(deferred) 트랜잭션은 다른 연결(피어 노드 · 알림)이 쓰는 중이면 잠금을 올리지 못해
+/// `busy_timeout` 을 기다리지 않고 바로 `database is locked` 로 실패한다(SQLite 교착 회피) — 처음부터 쓰기 잠금을 잡아 기다린다.
+pub fn write_tx(conn: &Connection) -> rusqlite::Result<rusqlite::Transaction<'_>> {
+    rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+}
 
 /// DB 를 열고 스키마를 `SCHEMA_VERSION` 으로 올린다. 이 실행 파일보다 새 스키마면 열지 않는다.
 pub fn open(path: &Path) -> rusqlite::Result<Connection> {
@@ -258,6 +264,43 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
             );
             PRAGMA user_version = 13;",
         )?;
+    }
+    if v < 14 {
+        // 요청 목록(#1d): 요청 글의 상태(`wait` · `accepted` · `rejected` · `done`) · 메모 · 바꾼 시각 — 완료 표시(`done_at`)는 `done` 으로 옮기고
+        // 열은 읽지 않는다. 모델은 목록(`run_opts::MODELS`) 밖 값을 지운다(기본값). 아직 못 보낸 옛 완료 알림(`Request::Done`) 행은 같은 자리 · 순서 그대로
+        // `ReqState` 프레임(완료 → `done`, 취소 → `wait`)으로 바꾸고 그 요청 글에 잇는다 — 요청자가 꺼져 있는 동안 바꾼 상태를 잃지 않게(#1d R1).
+        let tx = conn.unchecked_transaction()?;
+        for (col, ty) in [
+            ("req_state", "TEXT"),
+            ("req_note", "TEXT"),
+            ("req_at", "INTEGER"),
+        ] {
+            if !has_column(&tx, "messages", col)? {
+                tx.execute_batch(&format!("ALTER TABLE messages ADD COLUMN {col} {ty};"))?;
+            }
+        }
+        tx.execute_batch(
+            "UPDATE messages SET req_state = CASE WHEN done_at IS NOT NULL THEN 'done' ELSE 'wait' END, req_at = done_at
+             WHERE request = 1 AND req_state IS NULL;
+             DELETE FROM settings WHERE key = 'claude_model' AND value NOT IN ('opus', 'sonnet', 'haiku');
+             UPDATE peers SET model = NULL WHERE model NOT IN ('opus', 'sonnet', 'haiku');
+             UPDATE outbox SET kind = 'req_state',
+               msg_id = (SELECT m.id FROM messages m WHERE m.uuid = json_extract(outbox.frame, '$.msg')),
+               frame = json_object('type', 'req_state', 'conv', json_extract(frame, '$.conv'), 'msg', json_extract(frame, '$.msg'),
+                 'state', CASE WHEN json_extract(frame, '$.done') THEN 'done' ELSE 'wait' END, 'note', NULL)
+             WHERE kind = 'done';
+             PRAGMA user_version = 14;",
+        )?;
+        tx.commit()?;
+    }
+    if v < 15 {
+        // 이력 정리(#1f): 내 사람 글을 편집한 시각 — "(편집됨)" 표시.
+        let tx = conn.unchecked_transaction()?;
+        if !has_column(&tx, "messages", "edited_at")? {
+            tx.execute_batch("ALTER TABLE messages ADD COLUMN edited_at INTEGER;")?;
+        }
+        tx.execute_batch("PRAGMA user_version = 15;")?;
+        tx.commit()?;
     }
     Ok(conn)
 }

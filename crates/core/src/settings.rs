@@ -15,6 +15,13 @@ pub fn focus(conn: &Connection) -> rusqlite::Result<bool> {
     Ok(get(conn, FOCUS_KEY)?.as_deref() == Some("1"))
 }
 
+/// 로그인 때 자동 시작(S7 · D13) — 없으면 켜짐(D13 기본 ON), 값 `0` 만 꺼짐.
+pub const AUTOSTART_KEY: &str = "autostart";
+
+pub fn autostart(conn: &Connection) -> rusqlite::Result<bool> {
+    Ok(get(conn, AUTOSTART_KEY)?.as_deref() != Some("0"))
+}
+
 pub fn set(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2",

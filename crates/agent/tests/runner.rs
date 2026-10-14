@@ -5,12 +5,11 @@ use an_core::agents::Agent;
 use std::io::ErrorKind;
 use std::time::{Duration, Instant};
 
-fn agent(tools: &str, prompt: &str) -> Agent {
+fn agent(prompt: &str) -> Agent {
     Agent {
         id: 1,
         name: "review".into(),
         folder: "/work".into(),
-        tools: tools.into(),
         prompt: prompt.into(),
         group: None,
         uid: String::new(),
@@ -31,7 +30,7 @@ fn value_of<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
 #[test]
 fn args_follow_d22() {
     let args = claude_args(
-        &agent("Read,Grep,Glob", ""),
+        &agent(""),
         &Session::New("11111111-2222-3333-4444-555555555555".into()),
     );
     for flag in ["-p", "--restricted", "--strict-mcp-config"] {
@@ -41,8 +40,14 @@ fn args_follow_d22() {
     assert!(args.iter().any(|a| a == "--verbose"), "stream-json 은 --verbose 필요");
     assert_eq!(value_of(&args, "--permission-prompts"), Some("none"));
     assert_eq!(value_of(&args, "--permission-mode"), Some("dontAsk"));
-    assert_eq!(value_of(&args, "--tools"), Some("Read,Grep,Glob"));
-    assert_eq!(value_of(&args, "--allowedTools"), Some("Read,Grep,Glob"));
+    assert_eq!(
+        value_of(&args, "--tools"),
+        Some("Read,Grep,Glob,LS,NotebookRead")
+    );
+    assert_eq!(
+        value_of(&args, "--allowedTools"),
+        Some("Read,Grep,Glob,LS,NotebookRead")
+    );
     assert_eq!(
         value_of(&args, "--session-id"),
         Some("11111111-2222-3333-4444-555555555555")
@@ -57,7 +62,7 @@ fn args_follow_d22() {
 #[test]
 fn guard_prompt_always() {
     // 프로필 지시가 없어도 문의 응답 전용 지시는 항상(D31).
-    let args = claude_args(&agent("Read", ""), &Session::New("u".into()));
+    let args = claude_args(&agent(""), &Session::New("u".into()));
     assert_eq!(
         value_of(&args, "--append-system-prompt"),
         Some(GUARD_PROMPT)
@@ -66,7 +71,7 @@ fn guard_prompt_always() {
         assert!(GUARD_PROMPT.contains(must), "{must}");
     }
     // 프로필 지시는 그 뒤에.
-    let args = claude_args(&agent("Read", "짧게 답해"), &Session::New("u".into()));
+    let args = claude_args(&agent("짧게 답해"), &Session::New("u".into()));
     let system = value_of(&args, "--append-system-prompt").unwrap();
     assert!(system.starts_with(GUARD_PROMPT), "{system}");
     assert!(
@@ -78,7 +83,7 @@ fn guard_prompt_always() {
         Session::New("u".into()),
         Session::Resume("old-session".into()),
     ] {
-        let args = claude_args(&agent("Read", ""), &session);
+        let args = claude_args(&agent(""), &session);
         assert_eq!(
             value_of(&args, "--system-prompt-snapshot"),
             Some("off"),
@@ -92,25 +97,17 @@ fn guard_prompt_always() {
 }
 
 #[test]
-fn tools_limited_to_read_only() {
-    // 이전에 저장된 쓰기 도구는 실행 인자에서 빠진다.
-    let args = claude_args(
-        &agent("Read,Edit,Bash,Grep,Write", ""),
-        &Session::New("u".into()),
-    );
-    assert_eq!(value_of(&args, "--tools"), Some("Read,Grep"));
-    assert_eq!(value_of(&args, "--allowedTools"), Some("Read,Grep"));
-    let args = claude_args(&agent("Bash", ""), &Session::New("u".into()));
-    assert_eq!(
-        value_of(&args, "--tools"),
-        Some("Read,Grep,Glob"),
-        "남는 것이 없으면 기본"
-    );
+fn tools_are_all_read_only() {
+    // 프로필과 무관하게 탐색 도구 5개 — 체크 칸이 없다(#1d).
+    let args = claude_args(&agent("짧게"), &Session::New("u".into()));
+    let all = "Read,Grep,Glob,LS,NotebookRead";
+    assert_eq!(value_of(&args, "--tools"), Some(all));
+    assert_eq!(value_of(&args, "--allowedTools"), Some(all));
 }
 
 #[test]
 fn resume_uses_saved_session() {
-    let args = claude_args(&agent("Read", ""), &Session::Resume("sess-9".into()));
+    let args = claude_args(&agent(""), &Session::Resume("sess-9".into()));
     assert_eq!(value_of(&args, "--resume"), Some("sess-9"));
     assert!(!args.iter().any(|a| a == "--session-id"));
 }

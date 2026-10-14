@@ -82,20 +82,22 @@
           <input id="conv_search" type="search" placeholder="제목">
         </div>
         <div id="conv_sections"></div>
-        <section class="side-section">
-          <h2 id="side_agents_title" class="side-title">내 에이전트</h2>
-          <ul id="side_agents" class="side-list agents"></ul>
-        </section>
       </div>
     </aside>
     <div id="side_resize" role="separator" aria-orientation="vertical" aria-label="대화 목록 폭 — 끌거나 ← → 키" tabindex="0" aria-valuemin="200" aria-valuemax="560" aria-valuenow="272"></div>
 
     <main id="main">
       <section id="home" class="view">
-        <div class="empty">
+        <header class="view-head">
+          <div class="head-title">
+            <strong>대화</strong>
+            <span class="hint">상대별 대화 요약 — 대화 수 · 안 읽음 · 대기 요청 · 최근 활동, 누르면 그 대화로</span>
+          </div>
+        </header>
+        <ol id="home_summary" class="rows"></ol>
+        <div id="home_intro" class="empty">
           <h1>coworkAgent</h1>
-          <p>왼쪽 목록에서 대화를 고르세요 — 고르면 여기에 메시지가 나옵니다. 새 대화는 위의 "+ 새로 만들기" 나 "대화" 옆 + 로 엽니다.</p>
-          <p class="hint">레일의 '나' 는 전체 대화, 상대 타일은 그 상대와의 대화만 목록에 보입니다. 내 활동 · 저장된 항목 · 에이전트는 목록 위 메뉴로 봅니다.</p>
+          <p>레일의 '나' 는 모든 상대의 대화 · 내 활동 · 요청 · 저장된 항목 · 주고받은 글 · 에이전트를 상대별로 묶어 보고, 상대 타일은 그 상대 것만 봅니다.</p>
           <p class="hint">PC 를 처음 잇는다면 상대가 '초대 생성' 에서 만든 초대 메시지를 레일의 + (초대 수락)에 붙여 넣으세요.</p>
         </div>
       </section>
@@ -108,10 +110,6 @@
           </div>
         </header>
         <div class="filters">
-          <span id="act_peer_box">
-            <label for="act_peer">상대</label>
-            <select id="act_peer"><option value="">전체</option></select>
-          </span>
           <label for="act_kind">종류</label>
           <select id="act_kind">
             <option value="all">전체</option>
@@ -119,13 +117,35 @@
             <option value="agent">에이전트 답</option>
             <option value="relay">자동 왕복</option>
             <option value="failed">실패</option>
-            <option value="query">질의</option>
-            <option value="request">요청</option>
           </select>
           <label for="act_q" class="sr-only">내 활동 본문 검색</label>
           <input id="act_q" type="search" placeholder="본문 검색">
         </div>
         <ol id="act_list" class="rows"></ol>
+      </section>
+
+      <section id="requests" class="view" hidden>
+        <header class="view-head">
+          <div class="head-title">
+            <strong>요청</strong>
+            <span class="hint">실행 없이 모인 요청 — 받은 요청은 수용 · 반려 · 완료로 답하고, 보낸 요청은 상대가 바꾼 상태를 봅니다</span>
+          </div>
+          <nav class="tabs" aria-label="요청 목록">
+            <a id="req_tab_theirs" href="#requests" data-box="theirs" aria-current="page">받은 요청</a>
+            <a id="req_tab_mine" href="#requests" data-box="mine">보낸 요청</a>
+          </nav>
+        </header>
+        <div class="filters">
+          <label for="req_state">상태</label>
+          <select id="req_state">
+            <option value="">전체</option>
+            <option value="wait">대기</option>
+            <option value="accepted">수용</option>
+            <option value="rejected">반려</option>
+            <option value="done">완료</option>
+          </select>
+        </div>
+        <ol id="req_list" class="rows"></ol>
       </section>
 
       <section id="saved" class="view" hidden>
@@ -152,7 +172,7 @@
         <header class="view-head">
           <div class="head-title">
             <strong id="peer_title"></strong>
-            <span class="hint">이 상대와 주고받은 글 — 모든 대화, 최신순, 누르면 그 대화로</span>
+            <span class="hint">주고받은 글 — 모든 대화, 최신순('나' 는 상대별), 누르면 그 대화로</span>
           </div>
         </header>
         <ol id="peer_list" class="rows"></ol>
@@ -200,6 +220,15 @@
 
         <div id="panel_conv" class="panel">
           <div id="messages" aria-live="polite"></div>
+          <div class="edit-row">
+            <button id="edit_btn" type="button" class="edit-toggle" aria-pressed="false" title="편집 모드 — 끝난 내 글을 골라 삭제 · 편집">편집</button>
+          </div>
+          <div id="edit_bar" class="edit-bar" role="toolbar" aria-label="편집 모드" hidden>
+            <span id="edit_count">0개 선택</span>
+            <span class="hint">끝난 내 글만 고를 수 있습니다 · 에이전트는 다시 실행하지 않습니다</span>
+            <button id="edit_delete" type="button" class="danger" disabled>삭제</button>
+            <button id="edit_done" type="button" class="primary">완료</button>
+          </div>
           <form id="reply_form" class="composer">
             <label for="reply_text" class="sr-only">메시지 — 대화 에이전트에게 실행 요청</label>
             <textarea id="reply_text" rows="3" placeholder="메시지 입력 — markdown 가능" aria-autocomplete="list" aria-controls="mention_box"></textarea>
@@ -215,11 +244,24 @@
                 <label><input type="radio" name="ask" value="request"> 요청</label>
               </div>
               <span id="mention_hint" class="hint kbd-hint" hidden>@ 로 상대 에이전트 부르기</span>
+              <span id="ask_hint" class="hint" hidden>실행 없이 상대 요청 목록에 등록 — 상대가 수용 · 반려합니다</span>
               <span class="hint mono kbd-hint">Enter 보내기 · Shift+Enter 줄바꿈</span>
               <button type="submit" class="primary">보내기</button>
             </div>
           </form>
         </div>
+
+        <dialog id="scope_dialog" aria-labelledby="scope_title">
+          <form method="dialog">
+            <p id="scope_title"></p>
+            <p class="hint">어디에 반영할까요? 에이전트는 다시 실행하지 않고, 이미 실행에 쓰인 내용은 에이전트 기억에 남습니다.</p>
+            <div class="actions">
+              <button value="mine">내 창에서만</button>
+              <button value="both">상대 창에도</button>
+              <button value="cancel">취소</button>
+            </div>
+          </form>
+        </dialog>
 
         <div id="panel_sent" class="panel" hidden>
           <p class="hint pad">이 상대에게 내가 쓴 글 — 모든 대화, 최신순.</p>
@@ -344,8 +386,8 @@
                 <input id="agent_name" required maxlength="64" placeholder="review">
                 <label for="agent_folder">폴더(절대 경로)</label>
                 <input id="agent_folder" required placeholder="D:\work\project">
-                <span class="label">허용 도구</span>
-                <div id="agent_tools" class="checks"></div>
+                <span class="label">도구</span>
+                <p id="agent_tools" class="hint"></p>
                 <label for="agent_prompt">추가 지시</label>
                 <div class="field"><textarea id="agent_prompt" rows="3"></textarea></div>
                 <button type="submit" class="primary">등록</button>
@@ -365,13 +407,12 @@
             <h2>실행 — 모델 · effort</h2>
             <div class="form-grid">
               <label for="claude_model">모델</label>
-              <input id="claude_model" list="model_names" maxlength="64">
+              <select id="claude_model"></select>
               <label for="claude_effort">effort</label>
               <select id="claude_effort"></select>
               <label for="max_runs">동시 실행 상한</label>
               <input type="number" id="max_runs" min="1" max="8">
             </div>
-            <datalist id="model_names"><option value="sonnet"><option value="opus"><option value="haiku"></datalist>
             <p class="hint">받은 요청 실행(<span class="mono">claude -p</span>)의 기본값입니다. 상대별로 덮어쓰려면 연결 목록에서 그 상대를 펼치세요.
               동시 실행 상한(1 ~ 8, 이 PC)을 넘는 요청은 거절하지 않고 닿은 순서로 기다립니다.</p>
           </section>
@@ -384,6 +425,15 @@
                 <option value="dark">다크</option>
                 <option value="light">라이트</option>
               </select>
+            </div>
+          </section>
+
+          <section id="startup" class="card">
+            <h2>시작 — 자동 실행</h2>
+            <p class="hint">끄면 다음 로그인부터 자동으로 켜지지 않습니다. 비정상 종료되면 자동으로 다시 실행합니다.</p>
+            <div class="form-grid">
+              <label for="autostart">로그인할 때 자동 실행</label>
+              <input type="checkbox" id="autostart">
             </div>
           </section>
 

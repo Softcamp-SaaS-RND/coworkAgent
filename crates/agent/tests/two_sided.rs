@@ -27,7 +27,7 @@ async fn human_note_both_ways() {
         common::side("hn-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, _) = a.chat.send(b_id, "review", None, "질문").await.unwrap();
     let a_db = common::db(&a);
     common::eventually(|| chat::messages(&a_db, conv.id).unwrap().len() == 2).await;
@@ -59,7 +59,7 @@ async fn receiver_asks_own_agent() {
         common::side("ro-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, _) = a.chat.send(b_id, "review", None, "첫").await.unwrap();
     let a_db = common::db(&a);
     common::eventually(|| chat::messages(&a_db, conv.id).unwrap().len() == 2).await;
@@ -93,7 +93,7 @@ async fn notes_prepended_to_run() {
         common::side("np-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, _) = a.chat.send(b_id, "review", None, "첫 요청").await.unwrap();
     let a_db = common::db(&a);
     common::eventually(|| chat::messages(&a_db, conv.id).unwrap().len() == 2).await;
@@ -131,7 +131,7 @@ async fn post_refused_when_foreign() {
         common::side("pf-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, sent) = a.chat.send(b_id, "review", None, "질문").await.unwrap();
     let a_db = common::db(&a);
     common::eventually(|| chat::messages(&a_db, conv.id).unwrap().len() == 2).await;
@@ -297,7 +297,7 @@ async fn concurrent_notes_same_order_both_sides() {
         common::side("cc-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, _) = a.chat.send(b_id, "review", None, "시작").await.unwrap();
     let a_db = common::db(&a);
     common::eventually(|| chat::messages(&a_db, conv.id).unwrap().len() == 2).await;
@@ -335,7 +335,7 @@ async fn own_run_not_failed_by_mirror() {
         common::side("mf-b", Duration::ZERO).await,
     );
     let (b_id, a_id) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, _) = a.chat.send(b_id, "review", None, "시작").await.unwrap();
     let a_db = common::db(&a);
     common::eventually(|| chat::messages(&a_db, conv.id).unwrap().len() == 2).await;
@@ -367,7 +367,7 @@ async fn late_queued_request_not_skipped() {
         common::side("lq-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, _) = a.chat.send(b_id, "review", None, "첫").await.unwrap();
     let a_db = common::db(&a);
     common::eventually(|| b.runs.lock().unwrap().len() == 1).await;

@@ -51,7 +51,7 @@ async fn pair_review(tag: &str, delay: Duration) -> (common::Side, common::Side,
     let a = common::side(&format!("{tag}-a"), Duration::ZERO).await;
     let b = common::side(&format!("{tag}-b"), delay).await;
     let (b_id, a_id) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     (a, b, b_id, a_id)
 }
 
@@ -172,8 +172,8 @@ async fn one_dead_peer_does_not_delay_another() {
     let c = common::side("iso-c", Duration::ZERO).await;
     let (b_id, _) = common::pair(&a, &b).await;
     let (c_id, _) = common::pair(&a, &c).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
-    agents::add(&common::db(&c), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
+    agents::add(&common::db(&c), "review", ".", "").unwrap();
     a.chat.set_retry(1, 1, 600);
     unplug(&a, b_id);
     for i in 0..3 {

@@ -17,8 +17,8 @@
   않음, 받은 `Pong` 은 접속 상태로 — #1c) · 피어 JSON 에 `online`(마지막 통신 75초 안) · `focus`(온라인일 때만 — #18) · `seen_at`(마지막으로
   주고받기에 성공한 유닉스 초 · 없으면 `null` — 화면이 "n분 전 통신" 을 센다, #1c) ·
   `POST /api/pairing-window`(초대 생성) → `{seconds, code, invite}`. 오류 404 · 400 · 502, JSON 아닌 본문 415.
-- `chat_api::routes(chat)` — `GET/POST /api/agents`(이름 1 ~ 64자 · 폴더는 있는 절대 경로 · 데이터 루트를 품거나 네트워크 경로면 400(`an_core::paths::agent_folder_problem`, #1a) · 같은 이름 409 · 도구 비면 읽기 전용 · 목록 밖 도구 400 — D31) ·
-  `PATCH /api/agents/{id} {folder?, tools?, prompt?, group?}`(이름은 바꾸지 않는다 — 주면 400) · 에이전트 JSON 에 `group` ·
+- `chat_api::routes(chat)` — `GET/POST /api/agents`(이름 1 ~ 64자 · 폴더는 있는 절대 경로 · 데이터 루트를 품거나 네트워크 경로면 400(`an_core::paths::agent_folder_problem`, #1a) · 같은 이름 409 · 도구 칸 없음 — `tools` 를 주면 422(#1d)) ·
+  `PATCH /api/agents/{id} {folder?, prompt?, group?}`(이름은 바꾸지 않는다 — 주면 400) · 에이전트 JSON 에 `group` ·
   `DELETE /api/agents/{id}` · `GET /api/peers/{id}/agents` → `{names}` · `GET/POST /api/conversations`(목록 = 요약 `title` · `last_state` · `last_at`;
   `{peer_id, agent, text, title?}` → 201 `{conversation, message}`) · `PATCH /api/conversations/{id} {title}`(이 PC 에만, 빈 문자열 = 지움) ·
   `GET /api/messages?side=theirs|mine&peer=&kind=human|agent&q=&limit=`(대화를 가로지른 글 — 거른 뒤 최신순, 기본 200 · 최대 500) · `GET /api/runs` `{cap, running, waiting}`(항목 `message_id` · `conversation_id` · `peer_id` · `peer` · `agent` · `text` 앞 40자 — #1b) ·
@@ -40,9 +40,15 @@
   (받은 `upto` 까지) · `GET /api/saved?peer=&conversation=&limit=` · `PATCH /api/messages/{id} {saved}` · `PATCH /api/conversations/{id} {title?, starred?}` ·
   `POST /api/conversations/{id}/read {upto}`(받은 마지막 글 id — 그 대화 글이 아니면 400). 요약 JSON 에 `starred` · `unread`, 메시지에 `model` · `effort` · `saved`.
   #18: 새 대화 · 이어 쓰기 본문 `request?`(요청 — 기본 질의), 이어 쓰기 `agent?`(멘션 — 보낸 대화 · 자동 왕복 아님, 대화 에이전트면 멘션 아님, 받은
-  대화 · 자동 왕복 · 빈 이름 400) · `PATCH /api/messages/{id} {saved?, done?}`(하나 이상 — 없으면 400, `done` 은 받은 요청만, 둘 다면 한 트랜잭션,
-  응답은 준 항목만 `{id, saved?, done?, warning?}`) · `GET /api/messages` 의 `ask=query|request`(사람 글만, 그 밖 400) · `GET /api/activity` 종류
-  `query` · `request` · 메시지 JSON 에 `request` · `done` · `agent` · `refused` · 설정 `focus`(`GET/PUT /api/settings` — 켜면 알림도 멈춘다).
+  대화 · 자동 왕복 · 빈 이름 400) · `GET /api/messages` 의 `ask=query|request`(사람 글만, 그 밖 400) · 메시지 JSON 에 `request` · `agent` · `refused` ·
+  설정 `focus`(`GET/PUT /api/settings` — 켜면 알림도 멈춘다).
+  #1d: `PATCH /api/messages/{id} {saved?, req_state?, note?}`(하나 이상 — 없으면 400, `req_state` = `accepted` · `rejected` · `done` 받은 요청만 ·
+  `note` 는 `req_state` 와 함께만, 둘 다면 한 트랜잭션, 응답은 준 항목만 `{id, saved?, req_state?, req_note?, warning?}`) · 메시지 JSON 에
+  `req_state` · `req_note` · `req_at` · `GET /api/messages` 의 `req=wait|accepted|rejected|done`(`ask=request` 와 함께만) · `GET /api/activity` 종류는
+  `all` · `human` · `agent` · `relay` · `failed` 만 · 요청 · 멘션 · CLI 함께면 400 · 모델은 `opus` · `sonnet` · `haiku` 만(설정 · 상대별).
+  #1f: `PATCH /api/messages/{id} {text, mirror?}`(끝난 내 사람 글만 — 그 밖 400, `text` 는 다른 항목과 함께 못 씀 · `mirror` 는 `text` 와 함께만 →
+  `{id, text, edited_at, warning?}`) · `POST /api/messages/delete {ids, mirror?}`(1 ~ 200개 · 한 대화 · 하나라도 안 되면 아무것도 안 지움 →
+  `{deleted, warning?}`) · 대화 글 JSON 에 `editable`(`Chat::tidy_ok`) · 메시지 JSON 에 `edited_at` · 내 활동 항목 `kind = sync_failed`(`detail` = 사유).
   거절(`focus` 등)은 403 + 글 `refused`. CLI `ask --conv N --agent X` — X 가 대화 에이전트가 아니면 멘션(자동 왕복 대화는 오류, 상대 PC 목록에 없으면
   사용법 오류), `history` 발화자 = 실행한 에이전트.
 - guard 순서(#1a): Host(`127.0.0.1:{port}`) 403 → Origin(있으면 일치) 403 → 정적 자산(`server::PUBLIC` GET — 토큰 없이, 진입 `/?t=` 는 틀리면
@@ -57,7 +63,7 @@
   `notify_relay`(`start_end` 기본 · `every` · `off`) · `notify_preview`(기본 켬 — 끄면 본문 = 이름 · PC 만, 끝 사유는 보임) · `notify_paused`(기본 끔 —
   켜 있는 동안 알림 · 트레이 표시 · 이벤트를 버린다, 건수 그대로).
   `notify::routes` — `GET/PUT /api/settings`(PUT 은 준 항목만 · 모르는 항목 · 틀린 값 400, `relay_cap_default` 1 ~ 50, `claude_model` ·
-  `claude_effort`(실행 기본값 `sonnet` · `high`) · `ui_theme`(`dark` 기본 · `light`) · `ui_side_width`(200 ~ 560) · `me_alias` · `me_icon`(빈 = 지움),
+  `claude_effort`(실행 기본값 `sonnet` · `high`) · `ui_theme`(`dark` 기본 · `light`) · `ui_side_width`(200 ~ 560) · `ui_folded`(접은 절 열쇠 목록 — `{화면}:{상대 id | me}` 300개까지, #1g) · `me_alias` · `me_icon`(빈 = 지움),
   설정 DB 읽기 오류는 500) ·
   `GET /api/events`(SSE, 상태 변경 없음) · `POST /api/seen`(지움). 상한 없는 자동 왕복 새 대화는 `relay_cap_default`.
 - `handoff::request_open(&InstanceInfo)` — 전체 5초 상한(`HANDOFF_DEADLINE`). `handoff::local_request(info, method, path, body, deadline) ->
@@ -84,14 +90,30 @@
   `Tray::run(url, note, on_seen, on_quit)`(`note` = 툴팁 둘째 줄 — 피어 포트를 남이 잡았을 때 `peer_port_note`, `tray::tip(n, note)`) — "열기" · "종료"(S4 개정 — 내 정보는 웹UI 설정 `#me`), 열기 성공 시 `on_seen`. 트레이를 못 만들면
   사유 파일을 열고 끝냄. `Tray::run_error(message, file)` — 붉은 아이콘 · "오류 보기" · "종료". `write_start_error(message)` — 임시 폴더
   `coworkAgent-start-error.txt`. 종료 순서: 런타임 정지 → `instance.json` 삭제 → 잠금 해제.
+- `watchdog`(#1e) — `ENV`(`COWORKAGENT_SUPERVISED`, 값 = 다시 띄운 횟수 · 없으면 감시 프로세스) · `MAX_CRASHES`(3) · `CRASH_WINDOW`(60초) ·
+  `RESTART_DELAY`(1초) · `supervise(spawn: FnMut(u32) -> io::Result<bool>, delay) -> Outcome`(`Done` = 자식 정상 종료 · `GaveUp(사유)` = 창 안 3번 ·
+  띄우기 실패) · `Crashes::record(at) -> bool` · `spawn_app(n)`(이 실행 파일 · 인자 없음 · `ENV = n`) · `restarts()`.
+- `autostart`(#1e, S7 · D13) — `sync(on)`(이 OS 의 실제 자리: Windows `RUN_KEY` 값 `VALUE_NAME` = `"exe"`, macOS `~/Library/LaunchAgents/{LABEL}.plist` —
+  같으면 쓰지 않음 · 끄면 지움 · 없어도 성공) · `launch_agent_plist(exe)`(`RunAtLoad` · `KeepAlive` 없음 · 경로 XML 이스케이프) · Windows
+  `registered(key)` · `register(key, exe) -> 바뀜` · `unregister(key)`(키 경로 인자 — 시험은 시험 키). 설정 `autostart`(`GET/PUT /api/settings`, 없으면
+  켜짐): `Notifier::set_autostart_hook(f)` 가 있으면 켜기는 `f(true)` → 저장(저장 실패면 `f(이전 값)`), 끄기는 저장 → `f(false)`(실패면 저장을 이전 값으로 되돌림) — 훅 실패는 500.
+  중단돼도 "저장 켜짐 · OS 꺼짐" 이 남지 않는 순서(남는 것은 "OS 켜짐 · 저장 꺼짐" 뿐 — 다음 로그인 시작 맞추기가 지움) · 훅 잠금을
+  저장 끝까지 쥔다(동시 요청 순서 = 저장 순서). 앱은 릴리스 빌드에서만 훅 설치 · 시작마다 설정 값으로 `sync`. `write_atomic(path, content)` — 같은
+  폴더 `.tmp` 에 쓰고 `sync_all` 뒤 이름 바꾸기(실패하면 원래 파일 그대로 — plist).
 - 시작 실패는 두 OS 모두 트레이 오류 모드(+ stderr). 시작 시 `Chat::attach` · `Chat::recover`(남은 대화 대기열 · 남은 outbox) · 피어 수신 뒤
   `Node::announce`(시작 알림 — 주기 접속 확인은 없다, #1c).
 
 - 웹UI(`web/`, 빌드 없는 ES 모듈 — D10): 시안 v4(Nocturne) 5영역(상단 바 · 레일 · 사이드바 · 대화 · 실행 상세) + 설정 + 새 대화, 화면은 해시로만
-  바뀐다(`#c/{id}`(`/m/{글}`) 대화 · `#s/{id}` 보낸 메시지 · `#p/{id}` 상대와 주고받은 글 · `#activity` 내 활동 · `#saved` 저장된 항목 · `#agents`
+  바뀐다(`#c/{id}`(`/m/{글}`) 대화 · `#s/{id}` 보낸 메시지 · `#p/{id}` 상대와 주고받은 글(`#p` = 모든 상대) · `#activity` 내 활동 · `#saved` 저장된 항목 · `#agents`
   에이전트 · `#settings/{절}` · `#me` · `#new`, 옛 `#inbox` · `#t/` 는 첫 화면). 색 · 글꼴 크기는 `app.css` 첫 `:root` 토큰만(다크 값은 `--dark-*` 토큰을
   `:root[data-theme="dark"]` 가 가리킨다). 상단 바 통합 검색(Ctrl K) · "+ 새로 만들기" · 알림(내 활동) · 프로필 메뉴, 사이드바 내비 · ★ 즐겨찾기 ·
-  대화 섹션, 메시지 작업(저장 · 복사 · 다시 보내기) · 입력창 서식 · Enter 보내기, 실행 상세(진행 · 대화 정보 · 자동 왕복 · 저장된 항목). 타일('나' · 상대)을 누르면 사이드바에 그 타일 대화
+  대화 섹션, 말풍선 우상단 복사 아이콘(늘 보임 — #1f) · 메시지 작업(저장 · 다시 보내기) · 입력창 위 "편집"(편집 모드 — 끝난 내 사람 글 체크박스 ·
+  연필, 입력창 자리 `#edit_bar` "n개 선택 · 삭제 · 완료", 반영 범위 `<dialog id="scope_dialog">` "내 창에서만" · "상대 창에도" · 취소 — 본문을 고치는
+  동안은 5초 새로 고침이 대화를 다시 그리지 않는다, `view.keepPicked` · `editedTag`) · 입력창 서식 · Enter 보내기, 실행 상세(진행 · 대화 정보 · 자동 왕복 · 저장된 항목). 레일 범위(#1g, `view.sideNav`):
+  '나' = 메뉴 6개(대화 · 내 활동 · 요청 · 저장된 항목 · 주고받은 글 · 에이전트), 목록은 `view.peerGroups`(레일 순서 · 풀린 상대 뒤 · 빈 상대 숨김)로 상대별
+  `<details>` 절, '대화'(`#`) = `view.peerSummary` 상대별 요약(대기 요청 = `view.waitingByPeer`), 사이드바 = `convSections(rows, paired)` ★ 아래 상대별 절.
+  상대 타일 = 메뉴 4개(요청 · 저장된 항목 · 주고받은 글 · 에이전트), 첫 화면 `#p/{id}`, 그 상대 것만 — 상대 타일인 채 `#` 는 `#p/{id}`, `#activity` 는
+  '나' 로. 절 접힘은 설정 `ui_folded`(`{화면}:{상대 id | me}`, 시작할 때만 읽는다). 사이드바 에이전트 절은 없다(에이전트 화면만). 타일을 누르면 사이드바에 그 타일 대화
   목록, 메시지 본문은 markdown 뷰어 · HTML 문서는 `<iframe sandbox srcdoc>`(머리글 "원문 보기" 하나로 전체 전환), 설정은 전체 폭 트리. 판단 로직은 `view.js`(DOM 없음) — `node --test` 로 시험(`view.test.mjs`),
   `app.js` 는 조립만(`textContent` · `replaceChildren`). #1c: `view.presence(p, now)`(피어 `seen_at` → "방금 통신"(75초 안) · "n분 · n시간 · n일 전
   통신" · "통신 기록 없음", 방금일 때만 점 · 집중 "집중 중 · …") · `outboxText`("보내는 중" · "보내는 중 — 상대에 닿지 않아 다시 보냄(n회)") ·

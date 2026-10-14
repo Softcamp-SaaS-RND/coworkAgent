@@ -22,7 +22,15 @@ impl StepDetail {
         let tools = self
             .tools
             .into_iter()
-            .map(|(k, v)| (clean_name(&k).chars().take(MAX_STEP_NAME).collect::<String>(), v))
+            .map(|(k, v)| {
+                (
+                    clean_name(&k)
+                        .chars()
+                        .take(MAX_STEP_NAME)
+                        .collect::<String>(),
+                    v,
+                )
+            })
             .filter(|(k, _)| !k.is_empty())
             .take(MAX_STEP_TOOLS)
             .collect();
@@ -162,11 +170,26 @@ pub enum Request {
         conv: String,
         msg: String,
     },
-    /// 요청 완료 표시 — 그 글을 받은 쪽이 바꾸고 쓴 쪽에 상태로 보낸다(쓴 쪽은 자기 요청 글에만 받는다). 페어링된 상대만.
-    Done {
+    /// 요청 상태(#1d) — 요청 글을 받은 쪽 사람이 바꾸고 쓴 쪽에 보낸다(쓴 쪽은 자기 요청 글에만 받는다). `state` = `wait` · `accepted` ·
+    /// `rejected` · `done`, `note` = 한 줄 메모. 페어링된 상대만.
+    ReqState {
         conv: String,
         msg: String,
-        done: bool,
+        state: String,
+        note: Option<String>,
+    },
+    /// 이력 정리(#1f) — 쓴 쪽 사람이 자기 사람 글(`msg`)의 본문을 고쳤다. 받는 쪽은 그 상대가 쓴 사람 글에만 적용한다(실행 · 알림 없음).
+    /// 페어링된 상대만.
+    Edit {
+        conv: String,
+        msg: String,
+        text: String,
+    },
+    /// 이력 정리(#1f) — 쓴 쪽 사람이 자기 사람 글(`msg`)을 지웠다. 받는 쪽은 그 상대가 쓴 사람 글만 지운다(이미 없으면 `Ok`).
+    /// 페어링된 상대만.
+    Delete {
+        conv: String,
+        msg: String,
     },
 }
 
@@ -281,9 +304,11 @@ impl Request {
     pub fn ids_ok(&self) -> bool {
         match self {
             Request::Message { conv, msg, .. }
-            | Request::Done { conv, msg, .. }
+            | Request::ReqState { conv, msg, .. }
             | Request::Progress { conv, msg, .. }
-            | Request::Status { conv, msg } => is_uuid(conv) && is_uuid(msg),
+            | Request::Status { conv, msg }
+            | Request::Edit { conv, msg, .. }
+            | Request::Delete { conv, msg } => is_uuid(conv) && is_uuid(msg),
             Request::Reply {
                 conv,
                 msg,

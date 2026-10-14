@@ -101,7 +101,7 @@ fn stepping(
 
 /// 보낸 쪽이 그 글의 진행에서 본 서로 다른 단계 요약 — 답이 올 때까지 10ms 마다.
 async fn watch_steps(a: &common::Side, b: &common::Side, text: &str) -> Vec<StepDetail> {
-    agents::add(&common::db(b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(b), "review", ".", "").unwrap();
     let (b_id, _) = common::pair(a, b).await;
     let (conv, sent) = a.chat.send(b_id, "review", None, text).await.unwrap();
     let mut seen: Vec<StepDetail> = Vec::new();

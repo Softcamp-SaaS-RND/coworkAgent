@@ -258,26 +258,22 @@ async fn agent_patch_edits_but_not_name() {
         .call(
             "PATCH",
             &path,
-            json!({ "folder": other.display().to_string(), "tools": "Read,Grep", "prompt": " 짧게 ", "group": "문서" }),
+            json!({ "folder": other.display().to_string(), "prompt": " 짧게 ", "group": "문서" }),
         )
         .await;
     assert_eq!(code, 200, "{r}");
     assert_eq!(r["name"], "review");
     assert_eq!(r["folder"], other.display().to_string());
     assert_eq!(
-        (&r["tools"], &r["prompt"], &r["group"]),
-        (&json!("Read,Grep"), &json!("짧게"), &json!("문서"))
+        (&r["prompt"], &r["group"]),
+        (&json!("짧게"), &json!("문서"))
     );
     // 준 항목만 · 빈 그룹은 지움.
     let (code, r) = a.call("PATCH", &path, json!({ "group": "" })).await;
     assert_eq!(code, 200, "{r}");
-    assert_eq!(
-        (&r["tools"], &r["group"]),
-        (&json!("Read,Grep"), &Value::Null)
-    );
+    assert_eq!((&r["prompt"], &r["group"]), (&json!("짧게"), &Value::Null));
     for bad in [
         json!({ "name": "renamed" }),
-        json!({ "tools": "Read,Edit" }),
         json!({ "folder": "." }),
         json!({ "group": "가".repeat(33) }),
     ] {
@@ -334,7 +330,7 @@ async fn settings_claude_defaults() {
 async fn inbox_lists_their_messages_with_search() {
     let (a, b) = (side("in-a").await, side("in-b").await);
     let (pb, pa) = pair(&a, &b).await;
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
     ask(&a, pb, "할인 100% 맞나").await;
     tokio::time::sleep(Duration::from_millis(1100)).await; // 최신순은 초 단위 시각
     ask(&a, pb, "다른 질문 1000").await;
@@ -391,8 +387,8 @@ async fn outbox_lists_my_messages_to_peer() {
     );
     let (pb, _) = pair(&a, &b).await;
     let (pc, _) = pair(&a, &c).await;
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
-    agents::add(&c.db(), "review", ".", None, "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
+    agents::add(&c.db(), "review", ".", "").unwrap();
     ask(&a, pb, "B 에게").await;
     ask(&a, pc, "C 에게").await;
     let (code, list) = a
@@ -439,7 +435,7 @@ async fn theme_setting_persists() {
 async fn to_human_rejected() {
     let (a, b) = (side("th-a").await, side("th-b").await);
     let (pb, _) = pair(&a, &b).await;
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
     let conv = ask(&a, pb, "질문").await;
     let path = format!("/api/conversations/{conv}/messages");
     let (code, r) = a
@@ -463,7 +459,7 @@ async fn to_human_rejected() {
 async fn new_conversation_to_human_rejected() {
     let (a, b) = (side("nh-a").await, side("nh-b").await);
     let (pb, _) = pair(&a, &b).await;
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
     let start = |to: &str| json!({ "peer_id": pb, "agent": "review", "text": "메모", "to": to });
     for to in ["human", "peer"] {
         let (code, r) = a.call("POST", "/api/conversations", start(to)).await;
@@ -482,8 +478,8 @@ async fn new_conversation_to_human_rejected() {
 async fn inbox_kind_filter_applies_before_limit() {
     let (a, b) = (side("ik-a").await, side("ik-b").await);
     let (pb, pa) = pair(&a, &b).await;
-    agents::add(&a.db(), "review", ".", None, "").unwrap();
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
+    agents::add(&a.db(), "review", ".", "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
     ask(&b, pa, "B 가 묻는다").await; // A 가 받은 사람 글 — 오래된 것
     ask(&a, pb, "A 가 묻는다").await; // A 가 받은 에이전트 답 — 최신
     for (kind, author) in [
@@ -529,7 +525,7 @@ fn png() -> String {
 async fn conversation_title_set_and_edit() {
     let (a, b) = (side("ti-a").await, side("ti-b").await);
     let (pb, _) = pair(&a, &b).await;
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
     // 틀린 제목이면 보내지 않는다.
     let (code, r) = a
         .call(
@@ -602,7 +598,7 @@ async fn conversation_title_set_and_edit() {
     assert_eq!(code, 403, "{r}");
     assert_eq!(first_title(&a).await, "거절된 질문");
     // 자동 왕복 대화도 같은 제목 규칙.
-    agents::add(&a.db(), "mine", ".", None, "").unwrap();
+    agents::add(&a.db(), "mine", ".", "").unwrap();
     let (code, r) = a
         .call(
             "POST",
@@ -685,6 +681,42 @@ async fn peer_tile_alias_icon() {
         (&list[0]["alias"], &list[0]["icon"]),
         (&Value::Null, &Value::Null),
         "상대에는 알리지 않는다"
+    );
+}
+
+/// 접은 절(#1g) — 목록을 통째로 저장 · 읽기, 형식 · 개수가 틀리면 400 이고 아무것도 쓰지 않는다.
+#[tokio::test(flavor = "multi_thread")]
+async fn settings_folded() {
+    let a = side("fold").await;
+    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
+    assert_eq!(s["ui_folded"], json!([]));
+    let keys = json!(["home:3", "agents:me", "requests:12"]);
+    let (code, s) = a
+        .call("PUT", "/api/settings", json!({ "ui_folded": keys }))
+        .await;
+    assert_eq!((code, &s["ui_folded"]), (200, &keys), "{s}");
+    let many: Vec<String> = (0..301).map(|i| format!("saved:{i}")).collect();
+    for bad in [
+        json!({ "ui_folded": ["home"] }),
+        json!({ "ui_folded": ["home:"] }),
+        json!({ "ui_folded": ["Home:1"] }),
+        json!({ "ui_folded": ["home:1,saved:2"] }),
+        json!({ "ui_folded": ["home:you"] }),
+        json!({ "ui_folded": [format!("{}:1", "a".repeat(31))] }),
+        json!({ "ui_folded": many }),
+    ] {
+        let (code, r) = a.call("PUT", "/api/settings", bad.clone()).await;
+        assert_eq!(code, 400, "{bad} → {r}");
+    }
+    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
+    assert_eq!(s["ui_folded"], keys, "틀린 요청은 쓰지 않았다");
+    let (code, s) = a
+        .call("PUT", "/api/settings", json!({ "ui_folded": [] }))
+        .await;
+    assert_eq!(
+        (code, &s["ui_folded"]),
+        (200, &json!([])),
+        "다 펴면 빈 목록"
     );
 }
 
@@ -818,8 +850,8 @@ fn enc(s: &str) -> String {
 async fn search_groups_messages_titles_peers_agents() {
     let (a, b) = (side("sg-a").await, side("sg-b").await);
     let (pb, _) = pair(&a, &b).await;
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
-    agents::add(&a.db(), "billing-bot", ".", None, "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
+    agents::add(&a.db(), "billing-bot", ".", "").unwrap();
     let (code, r) = a
         .call(
             "POST",
@@ -890,7 +922,7 @@ async fn search_groups_messages_titles_peers_agents() {
 async fn search_treats_like_wildcards_literally() {
     let (a, b) = (side("sw-a").await, side("sw-b").await);
     let (pb, _) = pair(&a, &b).await;
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
     ask(&a, pb, "할인 100% 맞나").await;
     ask(&a, pb, "a_b 변수").await;
     let found = |q: &'static str| {
@@ -915,8 +947,8 @@ async fn search_treats_like_wildcards_literally() {
 async fn activity_merges_theirs_failures_relay_events() {
     let (a, b) = (side("ac-a").await, side("ac-b").await);
     let (pb, pa) = pair(&a, &b).await;
-    agents::add(&a.db(), "review", ".", None, "").unwrap();
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
+    agents::add(&a.db(), "review", ".", "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
     let mine = ask(&a, pb, "A 의 질문").await; // A 가 받은 에이전트 답
     ask(&b, pa, "B 의 질문").await; // A 가 받은 사람 글
     // 내 쪽 실패 — 내 질문을 실패로.
@@ -1039,7 +1071,7 @@ async fn activity_unseen_by_peer_and_mark_seen() {
     let (a, b, c) = (side("au-a").await, side("au-b").await, side("au-c").await);
     let (_, pa) = pair(&b, &a).await;
     let (_, pa2) = pair(&c, &a).await;
-    agents::add(&a.db(), "review", ".", None, "").unwrap();
+    agents::add(&a.db(), "review", ".", "").unwrap();
     ask(&b, pa, "B 가 묻는다").await;
     ask(&c, pa2, "C 가 묻는다").await;
     // A 쪽에서 본 상대 id.
@@ -1220,7 +1252,7 @@ async fn activity_unseen_by_peer_and_mark_seen() {
 async fn star_toggles_local_only() {
     let (a, b) = (side("st-a").await, side("st-b").await);
     let (pb, _) = pair(&a, &b).await;
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
     let conv = ask(&a, pb, "질문").await;
     let path = format!("/api/conversations/{conv}");
     let (code, r) = a.call("PATCH", &path, json!({ "starred": true })).await;
@@ -1255,8 +1287,8 @@ async fn saved_toggle_and_list_scoped() {
     let (a, b, c) = (side("sv-a").await, side("sv-b").await, side("sv-c").await);
     let (pb, _) = pair(&a, &b).await;
     let (pc, _) = pair(&a, &c).await;
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
-    agents::add(&c.db(), "review", ".", None, "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
+    agents::add(&c.db(), "review", ".", "").unwrap();
     let cb = ask(&a, pb, "B 에게").await;
     let cc = ask(&a, pc, "C 에게").await;
     let (rb, qc) = (
@@ -1346,7 +1378,7 @@ async fn first_unread(s: &Side) -> i64 {
 async fn conversation_read_clears_unread() {
     let (a, b) = (side("rd-a").await, side("rd-b").await);
     let (pb, _) = pair(&a, &b).await;
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
     let conv = ask(&a, pb, "질문").await;
     assert_eq!(first_unread(&a).await, 1, "상대 에이전트 답 하나");
     // 화면이 받은 마지막 글.
@@ -1469,7 +1501,10 @@ async fn focus_setting_and_peer_presence() {
     assert_eq!(code, 200);
     // 화면 확인은 60초 안 중복 없음(#1c) — 기한이 지난 것으로 돌려 다음 확인이 실제로 나가게.
     b.db()
-        .execute("UPDATE peers SET seen_at = seen_at - 120 WHERE id = ?1", [pa])
+        .execute(
+            "UPDATE peers SET seen_at = seen_at - 120 WHERE id = ?1",
+            [pa],
+        )
         .unwrap();
     b.call("POST", &format!("/api/peers/{pa}/ping"), Value::Null)
         .await;
@@ -1482,7 +1517,7 @@ async fn focus_setting_and_peer_presence() {
     a.call("PUT", "/api/settings", json!({ "focus": true }))
         .await;
     // 집중 중인 A 에게 보낸 B 의 요청 — 403 "상대가 집중 중", B 이력의 그 글은 실패 + 거절 코드(화면 사유), A 는 접속 · 집중(거절도 접속 증거).
-    agents::add(&a.db(), "review", ".", None, "").unwrap();
+    agents::add(&a.db(), "review", ".", "").unwrap();
     let (code, r) = b
         .call(
             "POST",
@@ -1516,13 +1551,13 @@ async fn focus_setting_and_peer_presence() {
     assert_eq!(s["focus"], true, "다시 열어도 유지");
 }
 
-/// 질의 · 요청 — 새 대화 · 이어 쓰기의 `request`(기본 질의)가 양쪽 이력(메시지 JSON `request`)에 남고, 보낸 목록(`GET /api/messages` 의 `ask`) ·
-/// 받은 목록(내 활동 `kind`)을 질의 · 요청으로 거른다(제한 전에).
+/// 질의 · 요청 — 새 대화 · 이어 쓰기의 `request`(기본 질의)가 양쪽 이력(메시지 JSON `request` · `req_state`)에 남고, 보낸 목록 · 받은 목록
+/// (`GET /api/messages` 의 `ask` · `req`)을 질의 · 요청 · 상태로 거른다(제한 전에). 요청은 답이 없다(#1d).
 #[tokio::test(flavor = "multi_thread")]
 async fn ask_kind_recorded_and_filtered() {
     let (a, b) = (side("aq-a").await, side("aq-b").await);
     let (pb, _) = pair(&a, &b).await;
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
     let (code, r) = a
         .call(
             "POST",
@@ -1531,9 +1566,12 @@ async fn ask_kind_recorded_and_filtered() {
         )
         .await;
     assert_eq!(code, 201, "{r}");
-    assert_eq!(r["message"]["request"], true, "{r}");
+    assert_eq!(
+        (&r["message"]["request"], &r["message"]["req_state"]),
+        (&json!(true), &json!("wait")),
+        "{r}"
+    );
     let conv = r["conversation"]["id"].as_i64().unwrap();
-    wait_messages(&a, conv, 2).await;
     let (code, r) = a
         .call(
             "POST",
@@ -1542,58 +1580,53 @@ async fn ask_kind_recorded_and_filtered() {
         )
         .await;
     assert_eq!(
-        (code, &r["message"]["request"]),
-        (201, &json!(false)),
+        (code, &r["message"]["request"], &r["message"]["req_state"]),
+        (201, &json!(false), &Value::Null),
         "{r}"
     );
-    wait_messages(&a, conv, 4).await;
-    let mine = |ask: &'static str| {
-        let a = &a;
+    wait_messages(&a, conv, 3).await;
+    let list = |s: &'static str, side: &'static str, ask: &'static str| {
+        let s = if s == "a" { &a } else { &b };
         async move {
-            a.call(
+            s.call(
                 "GET",
-                &format!("/api/messages?side=mine&peer={pb}&ask={ask}&limit=1"),
+                &format!("/api/messages?side={side}&{ask}&limit=1"),
                 Value::Null,
             )
             .await
         }
     };
-    let (_, list) = mine("request").await;
-    assert_eq!(texts(&list), ["요청 첫 글"], "제한 전에 거른다");
-    let (_, list) = mine("query").await;
-    assert_eq!(texts(&list), ["질의 둘째"]);
-    let (code, _) = mine("x").await;
+    let (_, l) = list("a", "mine", "ask=request").await;
+    assert_eq!(texts(&l), ["요청 첫 글"], "제한 전에 거른다");
+    let (_, l) = list("a", "mine", "ask=query").await;
+    assert_eq!(texts(&l), ["질의 둘째"]);
+    let (_, l) = list("b", "theirs", "ask=request&req=wait").await;
+    assert_eq!(texts(&l), ["요청 첫 글"], "받은 요청 — 대기");
+    let (_, l) = list("b", "theirs", "ask=request&req=done").await;
+    assert_eq!(texts(&l), Vec::<String>::new());
+    for bad in [
+        "ask=x",
+        "req=wait",
+        "ask=query&req=wait",
+        "ask=request&req=x",
+    ] {
+        let (code, r) = list("a", "mine", bad).await;
+        assert_eq!(code, 400, "{bad} → {r}");
+    }
+    // 내 활동은 질의 · 요청으로 거르지 않는다 — 요청은 '요청' 화면.
+    let (code, _) = b
+        .call("GET", "/api/activity?kind=request", Value::Null)
+        .await;
     assert_eq!(code, 400);
-    // 받은 쪽(B) 내 활동 — '내게 요청된 목록'.
-    let items = |kind: &'static str| {
-        let b = &b;
-        async move {
-            let (_, r) = b
-                .call("GET", &format!("/api/activity?kind={kind}"), Value::Null)
-                .await;
-            r["items"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|i| {
-                    (
-                        i["message"]["text"].as_str().unwrap().to_string(),
-                        i["message"]["request"].as_bool().unwrap(),
-                    )
-                })
-                .collect::<Vec<_>>()
-        }
-    };
-    assert_eq!(items("request").await, [("요청 첫 글".to_string(), true)]);
-    assert_eq!(items("query").await, [("질의 둘째".to_string(), false)]);
 }
 
-/// 완료 표시 — 받은 요청에만(받은 쪽), 바뀐 상태는 쓴 쪽 이력에도. 쓴 쪽 · 답 · 빈 몸 · 모르는 항목은 거절. `saved` 와 함께 줄 수 있다.
+/// 요청 상태(#1d) — 받은 요청에만(받은 쪽), 대기 → 수용 · 반려 · 수용 → 완료, 메모와 함께 쓴 쪽 이력에도. 쓴 쪽 · 질의 · 빈 몸 · 모르는
+/// 항목 · `wait` · 메모만은 거절. `saved` 와 함께 줄 수 있다(한 트랜잭션).
 #[tokio::test(flavor = "multi_thread")]
-async fn done_only_by_receiver() {
+async fn req_state_only_by_receiver() {
     let (a, b) = (side("dn-a").await, side("dn-b").await);
     let (pb, _) = pair(&a, &b).await;
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
     let (_, r) = a
         .call(
             "POST",
@@ -1603,7 +1636,15 @@ async fn done_only_by_receiver() {
         .await;
     let conv = r["conversation"]["id"].as_i64().unwrap();
     let a_req = r["message"]["id"].as_i64().unwrap();
-    wait_messages(&a, conv, 2).await;
+    let (_, r) = a
+        .call(
+            "POST",
+            &format!("/api/conversations/{conv}/messages"),
+            json!({ "text": "질의" }),
+        )
+        .await;
+    assert!(r["message"]["id"].is_i64(), "{r}");
+    wait_messages(&a, conv, 3).await;
     let (_, list) = b.call("GET", "/api/conversations", Value::Null).await;
     let (_, ms) = b
         .call(
@@ -1612,7 +1653,7 @@ async fn done_only_by_receiver() {
             Value::Null,
         )
         .await;
-    let (b_req, b_reply) = (ms[0]["id"].as_i64().unwrap(), ms[1]["id"].as_i64().unwrap());
+    let (b_req, b_query) = (ms[0]["id"].as_i64().unwrap(), ms[1]["id"].as_i64().unwrap());
     let patch = |s: &'static str, id: i64, body: Value| {
         let side = if s == "a" { &a } else { &b };
         async move {
@@ -1620,55 +1661,60 @@ async fn done_only_by_receiver() {
                 .await
         }
     };
-    let (code, r) = patch("b", b_req, json!({ "done": true })).await;
+    let a_ms = || async {
+        a.call(
+            "GET",
+            &format!("/api/conversations/{conv}/messages"),
+            Value::Null,
+        )
+        .await
+        .1
+    };
+    let (code, r) = patch(
+        "b",
+        b_req,
+        json!({ "req_state": "accepted", "note": "이번 주" }),
+    )
+    .await;
     assert_eq!(code, 200, "{r}");
     assert_eq!(
-        (&r["done"], &r["warning"]),
-        (&json!(true), &Value::Null),
+        (&r["req_state"], &r["req_note"], &r["warning"]),
+        (&json!("accepted"), &json!("이번 주"), &Value::Null),
         "{r}"
     );
-    let (_, ms) = a
-        .call(
-            "GET",
-            &format!("/api/conversations/{conv}/messages"),
-            Value::Null,
-        )
-        .await;
-    assert_eq!(ms[0]["done"], true, "쓴 쪽은 받은 대로 {ms}");
-    for (s, id) in [("a", a_req), ("b", b_reply)] {
-        let (code, r) = patch(s, id, json!({ "done": true })).await;
+    let ms = a_ms().await;
+    assert_eq!(
+        (&ms[0]["req_state"], &ms[0]["req_note"]),
+        (&json!("accepted"), &json!("이번 주")),
+        "쓴 쪽은 받은 대로 {ms}"
+    );
+    for (s, id) in [("a", a_req), ("b", b_query)] {
+        let (code, r) = patch(s, id, json!({ "req_state": "done" })).await;
         assert_eq!(code, 400, "{s} {id} {r}");
-        // 둘 다 주면 한 트랜잭션 — 완료 자격이 없으면 저장도 쓰지 않는다.
-        let (code, r) = patch(s, id, json!({ "done": true, "saved": true })).await;
+        // 둘 다 주면 한 트랜잭션 — 상태를 못 바꾸면 저장도 쓰지 않는다.
+        let (code, r) = patch(s, id, json!({ "req_state": "done", "saved": true })).await;
         assert_eq!(code, 400, "{s} {id} {r}");
     }
-    let (_, ms) = a
-        .call(
-            "GET",
-            &format!("/api/conversations/{conv}/messages"),
-            Value::Null,
-        )
-        .await;
-    assert_eq!(ms[0]["saved"], false, "부분 적용 없음 {ms}");
-    for body in [json!({}), json!({ "done": true, "pin": true })] {
+    assert_eq!(a_ms().await[0]["saved"], false, "부분 적용 없음");
+    for body in [
+        json!({}),
+        json!({ "req_state": "wait" }),
+        json!({ "note": "메모만" }),
+        json!({ "req_state": "rejected" }),
+        json!({ "done": true }),
+    ] {
         let (code, r) = patch("b", b_req, body.clone()).await;
         assert!(code == 400 || code == 422, "{body} → {code} {r}");
     }
-    let (code, r) = patch("b", b_req, json!({ "done": false, "saved": true })).await;
+    let (code, r) = patch("b", b_req, json!({ "req_state": "done", "saved": true })).await;
     assert_eq!(code, 200, "{r}");
     assert_eq!(
-        (&r["done"], &r["saved"]),
-        (&json!(false), &json!(true)),
+        (&r["req_state"], &r["req_note"], &r["saved"]),
+        (&json!("done"), &Value::Null, &json!(true)),
         "{r}"
     );
-    let (_, ms) = a
-        .call(
-            "GET",
-            &format!("/api/conversations/{conv}/messages"),
-            Value::Null,
-        )
-        .await;
-    assert_eq!(ms[0]["done"], false, "취소도 쓴 쪽에 {ms}");
+    let ms = a_ms().await;
+    assert_eq!(ms[0]["req_state"], "done", "완료도 쓴 쪽에 {ms}");
 }
 
 /// 이어 쓰기의 `agent`(멘션) — 보낸 대화 · 자동 왕복 아님에서만(받은 대화 · 자동 왕복 · 빈 이름은 400), 대화 에이전트 이름이면 멘션이 아니다
@@ -1677,9 +1723,9 @@ async fn done_only_by_receiver() {
 async fn mention_api_rules() {
     let (a, b) = (side("mn-a").await, side("mn-b").await);
     let (pb, _) = pair(&a, &b).await;
-    agents::add(&b.db(), "review", ".", None, "").unwrap();
-    agents::add(&b.db(), "guide", ".", None, "").unwrap();
-    agents::add(&a.db(), "mine", ".", None, "").unwrap();
+    agents::add(&b.db(), "review", ".", "").unwrap();
+    agents::add(&b.db(), "guide", ".", "").unwrap();
+    agents::add(&a.db(), "mine", ".", "").unwrap();
     let (_, r) = a
         .call(
             "POST",

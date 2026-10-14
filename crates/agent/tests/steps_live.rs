@@ -26,7 +26,6 @@ fn live_run_reports_steps_before_result() {
             id: 1,
             name: "live".into(),
             folder: work.display().to_string(),
-            tools: "Read,Grep,Glob".into(),
             prompt: String::new(),
             group: None,
             uid: String::new(),

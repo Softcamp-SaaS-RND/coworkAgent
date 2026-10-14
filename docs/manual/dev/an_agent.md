@@ -3,7 +3,7 @@
 ## 개요
 
 `an-agent`(`crates/agent`) — domain Layer. 에이전트 왕복: `claude -p` 실행기(`runner`)와 대화 조율(`chat`). 원격 메시지는 신뢰하지
-않는 입력 — 텍스트는 표준 입력으로만, 권한은 프로필의 허용 도구만. 의존: `an-core`(프로필 · 대화 · 메시지 표) · `an-net`(노드).
+않는 입력 — 텍스트는 표준 입력으로만, 도구는 읽기 전용 5개(`READ_ONLY_TOOLS` — #1d, 프로필과 무관)만. 의존: `an-core`(프로필 · 대화 · 메시지 표) · `an-net`(노드).
 Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세스 그룹과 같은 동작).
 
 ## 공개 계약
@@ -87,9 +87,24 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
 - 새 글의 선택(#18) — `Compose { via, title, request, mention }` · `send_with(peer, agent, conv?, text, Compose)` · `post_with(conv, text, to_agent,
   Compose)` · `start_relay_with(…, Compose)`(기존 `send` · `send_via` · `post` · `post_via` · `start_relay` 는 기본 `Compose` 로 위임). `request` 는
   `message` · `post` 에 실어 양쪽에 남는다.
-- 완료(#18) — `mark_done(id, done, saved?) -> (Message, 경고)`: 받은 요청(사람 글 · `mine = false` · `request`)만(그 밖 `InvalidInput` — 아무것도 쓰지
-  않는다), 완료 · 저장을 한 트랜잭션으로 쓰고 대화 차례(`turn` — 사람 글과 같은 잠금) 안에서 `Done` 을 보낸다(outbox — 닿지 않으면 보관). 상대가
-  거절했거나 보관조차 못 했을 때만 경고("이 PC 에는 표시했다 — …" · "이 PC 에서는 취소했다 — …"). 받기 `Done` 은 그 상대 대화의 내 요청 사람 글에만(그 밖 `unknown`).
+- 요청(#1d) — `Compose.request` 글은 **실행하지 않는다**. 보낸 대화는 `Message{request: true}`(내 글 `exec = false` · outbox 종류 `note` — 닿으면
+  `done`), 받은 대화는 실행 없는 미러(`post_with` 가 `to_agent = false` 로). 멘션 · CLI(`via`)와 함께면 `InvalidInput`(`REQUEST_NO_MENTION` ·
+  `REQUEST_NO_CLI`), 자동 왕복을 열지 않는다. 받기: `inbound_message` 가 집중 판정 **앞에서** `inbound_ask` 로(대기열 · 실행 기록 없이 사람 글
+  `exec = false` · `done` · `req_state = wait`, 알림 `Ask` — 자동 왕복 · 멘션과 함께면 `bad_request`), `inbound_post` 의 요청 + 실행은 `bad_request`.
+- 요청 상태(#1d — #18 완료 표시 대체) — `set_req_state(id, state, note, saved?) -> (Message, 경고)`: 받은 요청(사람 글 · `mine = false` · `request`)만,
+  옮김은 `ReqState::can_become`(그 밖 · 메모 규칙 위반은 `InvalidInput` — 아무것도 쓰지 않는다). 대화 차례(`turn`) 안에서 확인 · 상태 · 저장 ·
+  보내기 행(`ReqState`, 종류 `req_state` · 그 요청 글에 이음 — 바뀔 때마다 한 행, 합치지 않음)을 한 트랜잭션으로 쓰고 보낸다(닿지 않으면 보관).
+  상대가 거절했을 때만 경고("이 PC 에는 바꿨다 — …"). 오래 닿지 않아 포기하면(`give_up`) 그 글 `refused = unreachable`, 요청자가 거절하면(바로 보낼 때 · 줄이 보낼 때
+  `settle`) 그 거절 코드 — 같은 상태 · 메모로 다시 부르면(`refused` 가 있을 때만 같은 상태 허용) 다시 보내고 표시를 지운다. 받기는 같은 상태 ·
+  메모면 아무것도 바꾸지 않고 `Ok`(시각 · 알림 그대로 — 재전송 멱등). 받기 `ReqState` 는 그 상대 대화의 내 요청 사람 글에만(그 밖 `unknown`, 모르는 상태 · 메모 규칙 위반은
+  `bad_request`) — 옮김 검사 없이 받은 대로, 알림 `AskState`.
+- 이력 정리(#1f) — `Chat::tidy_ok(conn, &msg)`(사람 글 ∧ `mine` ∧ `done` · `error` · `undelivered` ∧ 그 글을 실어 나르는 outbox 행이 기다리지
+  않음 — 웹UI `editable` 의 정본) · `edit_message(id, text, mirror) -> (Message, 경고)` · `delete_messages(ids, mirror) -> (지운 수, 경고)`(한 대화의
+  글만 · 하나라도 안 되면 `InvalidInput` — 아무것도 쓰지 않는다). 대화 차례(`turn`) 안에서 확인 · 쓰기 · 반영 행(`Edit` · `Delete`, 종류 `msg_edit` ·
+  `msg_delete` — 글마다 한 행)을 한 트랜잭션으로 쓰고 커밋 뒤 보낸다(닿지 않으면 보관 — 경고 없음). 상대 거절 · 24시간 포기(`settle` ·
+  `give_up`)는 그 대화 `relay_events` `sync_failed`(사유 "편집 — {미리보기}" · "삭제") — 바로 보낸 결과가 거절이면 경고("이 PC 에는 반영했다 — 상대 창에
+  반영하지 못했다(…)")도. 받기 `inbound_edit` · `inbound_delete` 는 그 상대 소유 대화의 `!mine` 사람 글에만(그 밖 `unknown`, 실행 대기 · 실행 중
+  `busy`, 빈 · 긴 본문 `bad_request`) — 실행 · 알림 없음, 같은 본문 · 이미 없는 글 삭제는 `Ok`.
 - 멘션(#18) — `Compose.mention`: 보낸 대화 이어 쓰기 · 자동 왕복 아님에서만(새 대화 · 받은 대화 · 자동 왕복 · 빈 이름은 `InvalidInput`, 대화 에이전트
   이름이면 멘션 아님). 글 `agent` 와 `message.mention` 에 부른 이름(`message.agent` 는 늘 대화 에이전트). 받은 쪽은 `mention` 이 대화 에이전트가
   아니면 멘션(`relay` · `by_agent` 와 함께면 대화를 만들기 전 · 자동 왕복 대화면 `bad_request`, 없는 이름은 `unknown_agent`, 대화가 아직 없으면 대화
@@ -102,7 +117,8 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
   n 번째 내 답은 `post`(agent, 실행 없음)로 상대 이력에 기록만. 재개는 넘기지 못한 내 답을 같은 uuid 로 다시 넘긴다(받은 쪽은 기록만
   받은 글을 실행 요청으로). 실패 답 · 상한 · 거절 · 24시간 닿지 않음이면 멈춤,
   전송 오류는 멈추지 않는다(보관 — 닿으면 이어 감). 재개(`Relay{on: true}`)는 바로 보낸다. 사람이 쓰면 멈춤(연 쪽 끔 · 받은 쪽 거절 + `relay{on:false}` 알림 — 기다리지 않음). 받은 쪽은
-  거절 중이면 에이전트발 요청에 `stopped`. 실행 입력에 `[요청 — 상대 에이전트({상대})]`.
+  거절 중이면 에이전트발 요청에 `stopped` — 연 쪽은 `relay_stopped`(내 답을 넘기지 않은 답 `done` 으로 되돌리고 끔 · "상대가 멈춤", 멈춤 알림이
+  먼저 온 것과 같은 결과 — 바로 보낼 때 · 줄이 보낼 때 모두). 실행 입력에 `[요청 — 상대 에이전트({상대})]`.
 - 이벤트: 받은 요청 · 받은 답 → `PeerEvent::Message{name, host, agent, preview, kind}`(알림 S9). 자동 왕복은 양쪽 모두 시작 1건
   (받은 쪽 = `relay` 표시 사람 요청 · 재개 알림, 연 쪽 = 그 요청에 온 첫 답) · 중간(`RelayStep`) · 저절로 멈춤 1건(`RelayEnd` — 상한 ·
   받은 쪽 자동 왕복 요청 실행 실패(받은 쪽은 `mark_relayed` 로 자동 왕복 대화를 기록) · 상대/내 실행 실패 · 거절 · 상대에 닿지 않음 · 상태 저장 실패 · 상대가 멈춤). 사람이 멈춘 것은 내지 않는다.

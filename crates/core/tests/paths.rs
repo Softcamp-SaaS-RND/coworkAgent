@@ -39,7 +39,7 @@ fn db_schema_version_kept_on_reopen() {
     let root = temp_root("dbver");
     let paths = Paths::under(&root);
     paths.ensure().unwrap();
-    assert_eq!(db::SCHEMA_VERSION, 13);
+    assert_eq!(db::SCHEMA_VERSION, 15);
     {
         // 00 이 남긴 스키마 1 파일 — 열면 2 로 오른다.
         let conn = rusqlite::Connection::open(paths.db_file()).unwrap();
@@ -47,13 +47,13 @@ fn db_schema_version_kept_on_reopen() {
     }
     {
         let conn = db::open(&paths.db_file()).unwrap();
-        assert_eq!(db::user_version(&conn).unwrap(), 13);
+        assert_eq!(db::user_version(&conn).unwrap(), 15);
         assert!(an_core::peers::list(&conn).unwrap().is_empty());
         assert_eq!(an_core::settings::get(&conn, "x").unwrap(), None);
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 13);
-    conn.pragma_update(None, "user_version", 14).unwrap();
+    assert_eq!(db::user_version(&conn).unwrap(), 15);
+    conn.pragma_update(None, "user_version", 16).unwrap();
     drop(conn);
     assert!(
         db::open(&paths.db_file()).is_err(),
@@ -75,7 +75,7 @@ fn schema5_migration_survives_partial_state() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 13);
+    assert_eq!(db::user_version(&conn).unwrap(), 15);
     let cols: Vec<String> = conn
         .prepare("SELECT name FROM pragma_table_info('messages')")
         .unwrap()
@@ -137,7 +137,7 @@ fn schema6_fills_mine_exec() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 13);
+    assert_eq!(db::user_version(&conn).unwrap(), 15);
     let flags = |conv| -> Vec<(bool, bool)> {
         an_core::chat::messages(&conn, conv)
             .unwrap()
@@ -165,7 +165,7 @@ fn schema7_relay_columns() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 13);
+    assert_eq!(db::user_version(&conn).unwrap(), 15);
     let c = an_core::chat::by_id(&conn, 1).unwrap().unwrap();
     assert_eq!(
         (c.relay, c.relay_blocked),
@@ -209,7 +209,7 @@ fn schema8_via_column() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 13);
+    assert_eq!(db::user_version(&conn).unwrap(), 15);
     assert_eq!(
         an_core::chat::messages(&conn, 1).unwrap()[0].via,
         None,
@@ -238,7 +238,7 @@ fn schema9_group_model_columns() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 13);
+    assert_eq!(db::user_version(&conn).unwrap(), 15);
     assert!(
         db::backup_path(&paths.db_file(), 8).exists(),
         "올리기 전 사본"
@@ -265,30 +265,29 @@ fn schema9_group_model_columns() {
         chat::set_session(&conn, c.id, "s1").unwrap();
     }
     let session = |id| chat::by_id(&conn, id).unwrap().unwrap().session;
-    an_core::agents::update(&conn, a.id, "D:\\x", "Read", "", None).unwrap();
+    an_core::agents::update(&conn, a.id, "D:\\x", "", None).unwrap();
     assert_eq!(
         session(inbound.id).as_deref(),
         Some("s1"),
         "폴더 그대로면 유지"
     );
-    let a = an_core::agents::update(&conn, a.id, "D:\\y", "Read,Grep", "지시", Some("문서"))
+    let a = an_core::agents::update(&conn, a.id, "D:\\y", "지시", Some("문서"))
         .unwrap()
         .unwrap();
     assert_eq!(
         (
             a.name.as_str(),
             a.folder.as_str(),
-            a.tools.as_str(),
             a.prompt.as_str(),
             a.group.as_deref()
         ),
-        ("a", "D:\\y", "Read,Grep", "지시", Some("문서")),
+        ("a", "D:\\y", "지시", Some("문서")),
         "이름은 그대로"
     );
     assert_eq!(session(inbound.id), None, "폴더가 바뀌면 새 세션");
     assert_eq!(session(outbound.id).as_deref(), Some("s1"));
     assert_eq!(
-        an_core::agents::update(&conn, 999, "D:\\y", "Read", "", None).unwrap(),
+        an_core::agents::update(&conn, 999, "D:\\y", "", None).unwrap(),
         None
     );
 }
@@ -308,7 +307,7 @@ fn schema10_title_alias_icon() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 13);
+    assert_eq!(db::user_version(&conn).unwrap(), 15);
     assert!(
         db::backup_path(&paths.db_file(), 9).exists(),
         "올리기 전 사본"
@@ -476,7 +475,7 @@ fn schema12_focus_mention() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 13);
+    assert_eq!(db::user_version(&conn).unwrap(), 15);
     assert!(
         db::backup_path(&paths.db_file(), 11).exists(),
         "올리기 전 사본"
@@ -486,7 +485,7 @@ fn schema12_focus_mention() {
     assert_eq!(
         (
             m.request,
-            m.done_at,
+            m.req_state,
             m.agent.as_deref(),
             m.refused.as_deref()
         ),
@@ -509,8 +508,8 @@ fn schema12_focus_mention() {
     settings::set(&conn, settings::FOCUS_KEY, "0").unwrap();
     assert!(!settings::focus(&conn).unwrap());
     // 멘션한 에이전트의 세션은 따로, 대화 에이전트 세션(`conversations.session`)은 그대로. 폴더가 바뀌면 둘 다 지운다.
-    let review = agents::add(&conn, "review", "/a", None, "").unwrap();
-    agents::add(&conn, "lint", "/b", None, "").unwrap();
+    let review = agents::add(&conn, "review", "/a", "").unwrap();
+    agents::add(&conn, "lint", "/b", "").unwrap();
     assert_eq!(chat::agent_session(&conn, 1, "lint").unwrap(), None);
     chat::set_agent_session(&conn, 1, "lint", "s2").unwrap();
     chat::set_agent_session(&conn, 1, "review", "s3").unwrap();
@@ -522,11 +521,11 @@ fn schema12_focus_mention() {
         chat::by_id(&conn, 1).unwrap().unwrap().session.as_deref(),
         Some("s1")
     );
-    let moved = agents::update(&conn, review.id, "/c", &review.tools, "", None)
+    let moved = agents::update(&conn, review.id, "/c", "", None)
         .unwrap()
         .unwrap();
     assert_ne!(moved.uid, review.uid, "폴더를 바꾸면 새 세대");
-    let same = agents::update(&conn, review.id, "/c", &review.tools, "지시", None)
+    let same = agents::update(&conn, review.id, "/c", "지시", None)
         .unwrap()
         .unwrap();
     assert_eq!(same.uid, moved.uid, "폴더 그대로면 세대 그대로");

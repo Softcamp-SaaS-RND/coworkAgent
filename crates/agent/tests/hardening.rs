@@ -34,7 +34,7 @@ async fn failed_reply_with(
     let a = common::side(&format!("{tag}-a"), Duration::ZERO).await;
     let b = common::side_with(&format!("{tag}-b"), make).await;
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, _) = a.chat.send(b_id, "review", None, "안녕").await.unwrap();
     let (a_db, b_db) = (common::db(&a), common::db(&b));
     let agent_text = |db: &an_core::db::Connection, id: i64| {
@@ -119,7 +119,7 @@ async fn record_failure_hides_db_error() {
     );
     let (b_id, _) = common::pair(&a, &b).await;
     let b_db = common::db(&b);
-    agents::add(&b_db, "review", ".", None, "").unwrap();
+    agents::add(&b_db, "review", ".", "").unwrap();
     b_db.execute_batch(
         "CREATE TRIGGER fail_reply BEFORE INSERT ON messages WHEN NEW.author = 'agent'
          BEGIN SELECT RAISE(ABORT, 'disk full at D:\\data'); END;",
@@ -144,7 +144,7 @@ async fn second_input(tag: &str, notes: &[String]) -> String {
         common::side(&format!("{tag}-b"), Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     let (conv, _) = a.chat.send(b_id, "review", None, "첫 요청").await.unwrap();
     let a_db = common::db(&a);
     common::eventually(|| chat::messages(&a_db, conv.id).unwrap().len() == 2).await;
@@ -185,7 +185,7 @@ async fn body_framed_without_notes() {
         common::side("fr-one-b", Duration::ZERO).await,
     );
     let (b_id, _) = common::pair(&a, &b).await;
-    agents::add(&common::db(&b), "review", ".", None, "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
     a.chat
         .send(b_id, "review", None, "/compact 안녕")
         .await

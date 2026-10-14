@@ -5,6 +5,8 @@ use rusqlite::Connection;
 
 pub const DEFAULT_MODEL: &str = "sonnet";
 pub const DEFAULT_EFFORT: &str = "high";
+/// 고를 수 있는 모델 — Claude Code 별칭(#1d, 웹UI 드롭다운과 같다).
+pub const MODELS: [&str; 3] = ["opus", "sonnet", "haiku"];
 /// `claude --effort <level>` 이 받는 값(2.1.296 `--help`).
 pub const EFFORTS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 pub const MODEL_KEY: &str = "claude_model";
@@ -24,16 +26,17 @@ pub const MAX_ICON_CHARS: usize = 65_536;
 pub const SIDE_WIDTH_KEY: &str = "ui_side_width";
 pub const SIDE_WIDTHS: std::ops::RangeInclusive<i64> = 200..=560;
 pub const DEFAULT_SIDE_WIDTH: i64 = 272;
+/// 접은 절(#1g) — 웹UI 상대별 절 열쇠 `{화면}:{상대 id}`('내 에이전트' = `{화면}:me`)를 쉼표로 이은 한 값, 이 개수 · 글자 수까지.
+pub const FOLDED_KEY: &str = "ui_folded";
+pub const MAX_FOLDED: usize = 300;
+pub const MAX_FOLD_CHARS: usize = 32;
 /// '나' 타일 — 표시 이름 · 아이콘(빈 값 = 없음).
 pub const ME_ALIAS_KEY: &str = "me_alias";
 pub const ME_ICON_KEY: &str = "me_icon";
 
-/// model — 1 ~ 64자 `[A-Za-z0-9._:[]-]`, `-` 로 시작하지 않는다(인자로 읽히지 않게).
+/// model — [`MODELS`] 중 하나.
 pub fn valid_model(s: &str) -> bool {
-    (1..=64).contains(&s.len())
-        && !s.starts_with('-')
-        && s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || "._:[]-".contains(c))
+    MODELS.contains(&s)
 }
 
 pub fn valid_effort(s: &str) -> bool {
@@ -117,6 +120,37 @@ pub fn side_width(conn: &Connection) -> rusqlite::Result<i64> {
         .unwrap_or(DEFAULT_SIDE_WIDTH))
 }
 
+/// 접은 절 열쇠 목록 → 저장 값. 열쇠는 `^[a-z]+:([0-9]+|me)$` · [`MAX_FOLD_CHARS`] 자까지, [`MAX_FOLDED`] 개까지.
+pub fn clean_folded(keys: &[String]) -> Result<String, String> {
+    let ok = |k: &str| {
+        k.len() <= MAX_FOLD_CHARS
+            && k.split_once(':').is_some_and(|(screen, peer)| {
+                !screen.is_empty()
+                    && screen.bytes().all(|b| b.is_ascii_lowercase())
+                    && (peer == "me"
+                        || (!peer.is_empty() && peer.bytes().all(|b| b.is_ascii_digit())))
+            })
+    };
+    if keys.len() > MAX_FOLDED || !keys.iter().all(|k| ok(k)) {
+        return Err(format!(
+            "ui_folded 는 '{{화면}}:{{상대 id | me}}' {MAX_FOLDED}개까지"
+        ));
+    }
+    Ok(keys.join(","))
+}
+
+/// 접은 절 열쇠 목록(없으면 빈 목록).
+pub fn folded(conn: &Connection) -> rusqlite::Result<Vec<String>> {
+    Ok(settings::get(conn, FOLDED_KEY)?
+        .map(|v| {
+            v.split(',')
+                .filter(|k| !k.is_empty())
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
 /// '나' 타일(표시 이름, 아이콘) — 비었거나 틀린 값은 `None`.
 pub fn me_tile(conn: &Connection) -> rusqlite::Result<(Option<String>, Option<String>)> {
     Ok((
@@ -131,10 +165,10 @@ mod tests {
 
     #[test]
     fn model_effort_group_rules() {
-        for ok in ["sonnet", "opus", "claude-sonnet-5-5", "sonnet[1m]", "a"] {
+        for ok in MODELS {
             assert!(valid_model(ok), "{ok}");
         }
-        for bad in ["", "-x", "son net", "a;b", &"m".repeat(65)] {
+        for bad in ["", "-x", "Sonnet", "claude-sonnet-5-5", "sonnet[1m]", "a;b"] {
             assert!(!valid_model(bad), "{bad}");
         }
         assert!(EFFORTS.iter().all(|e| valid_effort(e)));
