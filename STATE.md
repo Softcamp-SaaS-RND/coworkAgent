@@ -5,7 +5,7 @@
 > 미조치는 [overview/ledger.md](docs/overview/ledger.md). 가드레일·검증 명령은 루트 `PROJECT.md`,
 > 제품 구조는 루트 `PRODUCT.md`, 절차는 [etc/ddd-workflow.md](docs/etc/ddd-workflow.md).
 
-- **갱신**: 2026-10-14 / main — 1g 종결 · README · 사용자 가이드 화면 캡처 갱신 · GitHub squash push(1d ~ 1g)
+- **갱신**: 2026-10-14 / main — 0.2.0 GitHub 릴리스(v0.2.0 · pre-release) · 1d ~ 1g squash push
 
 ## 현재 작업
 
