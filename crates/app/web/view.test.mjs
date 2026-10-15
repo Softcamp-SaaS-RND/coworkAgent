@@ -60,6 +60,21 @@ import {
   requestRows,
   peerGroups,
   peerSummary,
+  sortByPos,
+  inGroup,
+  groupPeers,
+  scopeQuery,
+  groupNameError,
+  membershipDiff,
+  colorOf,
+  moveInOrder,
+  stepTarget,
+  dropKind,
+  withOrder,
+  movedText,
+  groupLeaves,
+  groupUnread,
+  orderToApply,
   waitingByPeer,
   SendLatest,
   holdsRender,
@@ -505,24 +520,24 @@ test("waiting_by_peer — 받은 대기 요청을 상대별로 센다", () => {
   ]);
 });
 
-test("peer_summary — '나' 대화 요약: 페어링된 상대는 대화 없어도, 풀린 상대는 대화 있을 때만 · 수 · 안 읽음 · 대기 · 최근 순 대화", () => {
+test("peer_summary — '나' 대화 요약: 페어링된 상대는 대화 없어도, 풀린 상대는 대화 있을 때만 · 수 · 안 읽음 · 대기 · 손으로 놓은 순서(#1i)", () => {
   const names = new Map([
     [1, "가람 · A-PC"],
     [2, "나래 · B-PC"],
     [8, "옛친구 · Z-PC"],
   ]);
   const convs = [
-    { id: 11, peer_id: 1, unread: 2, last_at: 100 },
-    { id: 12, peer_id: 1, unread: 0, last_at: 300 },
-    { id: 13, peer_id: 1, unread: 1, last_at: null },
-    { id: 14, peer_id: 8, unread: 0, last_at: 50 },
+    { id: 11, peer_id: 1, unread: 2, last_at: 100, pos: 2 },
+    { id: 12, peer_id: 1, unread: 0, last_at: 300, pos: 5 },
+    { id: 13, peer_id: 1, unread: 1, last_at: null, pos: -1 },
+    { id: 14, peer_id: 8, unread: 0, last_at: 50, pos: 0 },
   ];
   const s = peerSummary(convs, [2, 1], names, new Map([[1, 3]]));
   assert.deepEqual(
     s.map((x) => [x.peer, x.name, x.convs, x.unread, x.waiting, x.last, x.rows.map((c) => c.id)]),
     [
       [2, "나래", 0, 0, 0, null, []],
-      [1, "가람", 3, 3, 3, 300, [12, 11, 13]],
+      [1, "가람", 3, 3, 3, 300, [13, 11, 12]],
       [8, "옛친구", 1, 0, 0, 50, [14]],
     ],
   );
@@ -1025,4 +1040,233 @@ test("send_latest — 접힘 저장은 한 번에 하나, 보내는 동안 온 �
   await new Promise((r) => setTimeout(r, 0));
   await new Promise((r) => setTimeout(r, 0));
   assert.deepEqual(sent.slice(-2), ["E", "F"], "실패해도 다음 값을 보낸다");
+});
+
+// ---- #1i 레일 그룹 · 손으로 놓는 순서 ----
+
+test("side_nav_group — 그룹 타일 메뉴 4개(대화 · 요청 · 저장된 항목 · 주고받은 글), 내 활동 · 에이전트 없음", () => {
+  assert.deepEqual(
+    sideNav("group", 7, 2).map((n) => [n.label, n.href, n.count ?? 0]),
+    [
+      ["대화", "#", 0],
+      ["요청", "#requests", 2],
+      ["저장된 항목", "#saved", 0],
+      ["주고받은 글", "#p", 0],
+    ],
+  );
+});
+
+test("sort_by_pos — 자리 작은 것 먼저, 같으면 id, 자리 없으면 0 · 원본은 그대로", () => {
+  const xs = [
+    { id: 5, pos: 1 },
+    { id: 3, pos: 1 },
+    { id: 9, pos: -2 },
+    { id: 1 },
+  ];
+  assert.deepEqual(sortByPos(xs).map((x) => x.id), [9, 1, 3, 5]);
+  assert.deepEqual(xs.map((x) => x.id), [5, 3, 9, 1], "새 배열");
+});
+
+test("in_group · group_peers — 그룹 대화만 · 그 그룹에 대화가 있는 상대만(레일 순서)", () => {
+  const convs = [
+    { id: 1, peer_id: 7 },
+    { id: 2, peer_id: 8 },
+    { id: 3, peer_id: 9 },
+    { id: 4, peer_id: 7 },
+  ];
+  const g = { id: 1, convs: [4, 2] };
+  assert.deepEqual(inGroup(convs, g).map((c) => c.id), [2, 4]);
+  assert.deepEqual(inGroup(convs, null), []);
+  assert.deepEqual(groupPeers(inGroup(convs, g), [9, 8, 7]), [8, 7], "9 는 그룹에 대화가 없다");
+});
+
+test("scope_query — 그룹이 있으면 그룹, 아니면 상대, 둘 다 없으면 빈 값", () => {
+  assert.equal(scopeQuery(null, null), "");
+  assert.equal(scopeQuery(3, null), "peer=3");
+  assert.equal(scopeQuery(null, 5), "group=5");
+});
+
+test("group_name_error — 1 ~ 40자(앞뒤 공백 뺌) · 같은 이름(이름 바꾸는 그룹 자신은 뺌)", () => {
+  const gs = [
+    { id: 1, name: "결제" },
+    { id: 2, name: "배포" },
+  ];
+  assert.equal(groupNameError("  ", gs), "그룹 이름은 1 ~ 40자");
+  assert.equal(groupNameError("가".repeat(41), gs), "그룹 이름은 1 ~ 40자");
+  assert.equal(groupNameError(" " + "가".repeat(40) + " ", gs), null);
+  assert.equal(groupNameError(" 결제 ", gs), "같은 이름의 그룹이 있습니다");
+  assert.equal(groupNameError("결제", gs, 1), null, "자기 이름");
+  assert.equal(groupNameError("배포", gs, 1), "같은 이름의 그룹이 있습니다");
+});
+
+test("membership_diff — 고른 것과 지금 소속의 차이(넣기 · 빼기)", () => {
+  assert.deepEqual(membershipDiff([3, 1, 2], [2, 5, 4, 3]), { add: [4, 5], remove: [1] });
+  assert.deepEqual(membershipDiff([], []), { add: [], remove: [] });
+});
+
+test("color_of — id 로 다섯 색(자리와 무관)", () => {
+  assert.deepEqual([1, 2, 5, 6, 10, 11].map(colorOf), ["peer-2", "peer-3", "peer-1", "peer-2", "peer-1", "peer-2"]);
+});
+
+test("move_in_order — 대상 앞 · 뒤에 끼우기, 걸러 보인 이웃 기준이어도 전체 순서에서 · 그대로인 경우", () => {
+  const order = [1, 2, 3, 4, 5];
+  assert.deepEqual(moveInOrder(order, 5, 2), [1, 5, 2, 3, 4], "앞");
+  assert.deepEqual(moveInOrder(order, 1, 4, true), [2, 3, 4, 1, 5], "뒤");
+  assert.deepEqual(moveInOrder(order, 2, 4, true), [1, 3, 4, 2, 5], "보이지 않는 3 을 건너 4 뒤로");
+  assert.deepEqual(moveInOrder(order, 3, 3), order, "자기 자신");
+  assert.deepEqual(moveInOrder(order, 9, 1), order, "없는 id");
+  assert.deepEqual(moveInOrder(order, 1, 9), order, "없는 대상");
+});
+
+test("step_target — 보이는 묶음에서 한 칸(위 = 앞 이웃 앞, 아래 = 뒤 이웃 뒤), 끝이면 null", () => {
+  const vis = [7, 3, 9];
+  assert.deepEqual(stepTarget(vis, 3, -1), { target: 7, after: false });
+  assert.deepEqual(stepTarget(vis, 3, 1), { target: 9, after: true });
+  assert.equal(stepTarget(vis, 7, -1), null);
+  assert.equal(stepTarget(vis, 9, 1), null);
+  assert.equal(stepTarget(vis, 5, 1), null, "없는 항목");
+  // 한 칸 옮긴 결과 — 전체 순서에 숨은 항목이 있어도 보이는 앞뒤가 한 칸 바뀐다.
+  const t = stepTarget(vis, 9, -1);
+  assert.deepEqual(moveInOrder([7, 1, 3, 2, 9], 9, t.target, t.after), [7, 1, 9, 3, 2]);
+});
+
+test("drop_kind — 같은 종류만 옮기기, 대화는 같은 절만, 대화 → 그룹 타일은 넣기, 그 밖은 놓을 수 없음", () => {
+  const conv = (section) => ({ kind: "conv", section });
+  assert.equal(dropKind({ kind: "peer" }, { kind: "peer" }), "move");
+  assert.equal(dropKind({ kind: "group" }, { kind: "group" }), "move");
+  assert.equal(dropKind(conv("peer:2"), conv("peer:2")), "move");
+  assert.equal(dropKind(conv("peer:2"), conv("peer:3")), null, "다른 상대 절");
+  assert.equal(dropKind(conv("starred"), conv("peer:2")), null, "★ ↔ 상대 절");
+  assert.equal(dropKind(conv("peer:2"), { kind: "group" }), "join");
+  assert.equal(dropKind({ kind: "peer" }, { kind: "group" }), null, "상대 ↔ 그룹");
+  assert.equal(dropKind({ kind: "group" }, { kind: "peer" }), null);
+  assert.equal(dropKind({ kind: "peer" }, { kind: "me" }), null, "'나' 고정");
+  assert.equal(dropKind(null, { kind: "peer" }), null);
+});
+
+test("with_order — 보낸 순서를 자리로, 빠진 항목은 그대로(서버와 같은 규칙) · 원본 그대로", () => {
+  const xs = [
+    { id: 1, pos: -1 },
+    { id: 2, pos: -2 },
+    { id: 3, pos: 7 },
+  ];
+  const ys = withOrder(xs, [3, 1]);
+  assert.deepEqual(ys.map((x) => [x.id, x.pos]), [
+    [1, 1],
+    [2, -2],
+    [3, 0],
+  ]);
+  assert.deepEqual(sortByPos(ys).map((x) => x.id), [2, 3, 1]);
+  assert.equal(xs[0].pos, -1, "원본 그대로");
+});
+
+test("moved_text — 화면 읽기 알림(1 부터)", () => {
+  assert.equal(movedText("결제 모듈", 0), "결제 모듈 — 1번째로 옮김");
+  assert.equal(movedText("이준호", 2), "이준호 — 3번째로 옮김");
+});
+
+test("group_leaves — 그룹을 고른 채 내 활동 · 에이전트는 '나' 로, 그 밖은 그대로", () => {
+  assert.deepEqual(
+    ["home", "activity", "requests", "saved", "agents", "peer", "conversation", "new"].filter(groupLeaves),
+    ["activity", "agents"],
+  );
+});
+
+test("group_unread — 그룹 대화의 안 읽음 합(그룹 밖 대화는 세지 않음)", () => {
+  const convs = [
+    { id: 1, unread: 2 },
+    { id: 2, unread: 5 },
+    { id: 3 },
+  ];
+  assert.equal(groupUnread(convs, { convs: [1, 3] }), 2);
+  assert.equal(groupUnread(convs, { convs: [] }), 0);
+});
+
+test("group_summary — 그룹 요약: 그룹에 대화가 있는 페어링 상대만(레일 순서) + 지운 상대의 대화는 뒤(A11)", () => {
+  const names = new Map([
+    [1, "가람 · A-PC"],
+    [2, "나래 · B-PC"],
+    [8, "옛친구 · Z-PC"],
+  ]);
+  const convs = [
+    { id: 11, peer_id: 1, pos: 1 },
+    { id: 12, peer_id: 2, pos: 0 },
+    { id: 13, peer_id: 8, pos: 2 },
+    { id: 14, peer_id: 1, pos: 3 },
+  ];
+  const mine = inGroup(convs, { convs: [11, 13] });
+  const s = peerSummary(mine, groupPeers(mine, [2, 1]), names);
+  assert.deepEqual(
+    s.map((x) => [x.peer, x.rows.map((c) => c.id)]),
+    [
+      [1, [11]],
+      [8, [13]],
+    ],
+    "나래(2)는 그룹에 대화가 없어 빠지고, 지운 상대(8)는 뒤",
+  );
+});
+
+test("group_sections — 그룹 사이드바: ★(그룹 안) + 상대별 절(레일 순서, 지운 상대 뒤), 순서 = 자리", () => {
+  const names = new Map([
+    [1, "가람 · A-PC"],
+    [2, "나래 · B-PC"],
+    [8, "옛친구 · Z-PC"],
+  ]);
+  const convs = sortByPos([
+    { id: 21, peer_id: 2, pos: 5, starred: true },
+    { id: 22, peer_id: 1, pos: 2 },
+    { id: 23, peer_id: 8, pos: 0 },
+    { id: 24, peer_id: 1, pos: 1 },
+  ]);
+  const rows = convs.map((c) => ({ c, label: {} }));
+  const secs = convSections(rows, [2, 1], names);
+  assert.deepEqual(
+    secs.map((x) => [x.key, x.rows.map((r) => r.c.id)]),
+    [
+      ["starred", [21]],
+      ["peer:1", [24, 22]],
+      ["peer:8", [23]],
+    ],
+  );
+});
+
+test("order_one_for_all — 그룹 화면에서 옮긴 앞뒤가 '나' · 상대 타일에서도 같다(대화마다 순서 하나, A9)", () => {
+  const convs = [
+    { id: 1, peer_id: 2, pos: 0 },
+    { id: 2, peer_id: 3, pos: 1 },
+    { id: 3, peer_id: 2, pos: 2 },
+    { id: 4, peer_id: 2, pos: 3 },
+  ];
+  const group = { convs: [1, 4] };
+  // 그룹 화면(상대 2 절)에서 4 를 1 앞으로.
+  const order = moveInOrder(sortByPos(convs).map((c) => c.id), 4, 1, false);
+  const after = sortByPos(withOrder(convs, order));
+  assert.deepEqual(inGroup(after, group).map((c) => c.id), [4, 1], "그룹");
+  assert.deepEqual(after.filter((c) => c.peer_id === 2).map((c) => c.id), [4, 1, 3], "상대 타일 — 3 은 그대로 1 뒤");
+  assert.deepEqual(after.map((c) => c.id), [4, 1, 2, 3], "'나'");
+});
+
+test("drop_kind_join — ★ 절의 대화도 그룹 타일에 넣기, '나' · \"+\" 위는 놓기 없음", () => {
+  assert.equal(dropKind({ kind: "conv", section: "starred" }, { kind: "group" }), "join");
+  assert.equal(dropKind({ kind: "conv", section: "starred" }, { kind: "peer" }), null);
+  assert.equal(dropKind({ kind: "group" }, { kind: "conv", section: "peer:2" }), null);
+  assert.equal(groupNameError("😀".repeat(40), []), null, "그림 문자도 한 글자(서버 chars 와 같게)");
+  assert.equal(groupNameError("😀".repeat(41), []), "그룹 이름은 1 ~ 40자");
+});
+
+test("order_to_apply — 저장 중 · 읽는 사이 옮김이면 마지막으로 놓은 순서를 덮는다(늦게 온 옛 응답, 라운드 1), 아니면 받은 그대로", () => {
+  const last = [3, 1, 2];
+  assert.equal(orderToApply(undefined, 0), null, "옮긴 적 없음");
+  assert.equal(orderToApply({ last: null, busy: false, stamp: 4 }, 0), null, "저장 실패로 되돌림");
+  assert.equal(orderToApply({ last, busy: true, stamp: 2 }, 2), last, "저장 중");
+  assert.equal(orderToApply({ last, busy: false, stamp: 5 }, 3), last, "읽는 사이 옮김 · 저장 끝");
+  assert.equal(orderToApply({ last, busy: false, stamp: 5 }, 5), null, "저장 뒤 시작한 읽기 = 서버 값");
+  // 역순 응답: 옛 순서([1,2,3])를 담은 늦은 응답이 와도 화면은 마지막으로 놓은 순서.
+  const old = [
+    { id: 1, pos: 0 },
+    { id: 2, pos: 1 },
+    { id: 3, pos: 2 },
+  ];
+  const keep = orderToApply({ last, busy: true, stamp: 1 }, 0);
+  assert.deepEqual(sortByPos(withOrder(old, keep)).map((x) => x.id), [3, 1, 2]);
 });

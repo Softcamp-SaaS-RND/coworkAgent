@@ -76,8 +76,20 @@ fn schema14_moves_done_and_models() {
     assert_eq!(
         rows,
         [
-            (1, "req_state".into(), Some(1), "req_state:m1:done".into(), Some("null".into())),
-            (2, "req_state".into(), Some(2), "req_state:m2:wait".into(), Some("null".into())),
+            (
+                1,
+                "req_state".into(),
+                Some(1),
+                "req_state:m1:done".into(),
+                Some("null".into())
+            ),
+            (
+                2,
+                "req_state".into(),
+                Some(2),
+                "req_state:m2:wait".into(),
+                Some("null".into())
+            ),
             (3, "note".into(), None, "post:m3:".into(), None),
         ]
     );
@@ -89,7 +101,11 @@ fn transitions_only_forward() {
     let allowed = [(Wait, Accepted), (Wait, Rejected), (Accepted, Done)];
     for from in ReqState::ALL {
         for to in ReqState::ALL {
-            assert_eq!(from.can_become(to), allowed.contains(&(from, to)), "{from:?} → {to:?}");
+            assert_eq!(
+                from.can_become(to),
+                allowed.contains(&(from, to)),
+                "{from:?} → {to:?}"
+            );
         }
     }
     for s in ReqState::ALL {
@@ -104,7 +120,11 @@ fn note_one_line_200() {
     assert_eq!(clean_req_note("  "), Ok(None));
     assert_eq!(clean_req_note(" 확인 ").unwrap().as_deref(), Some("확인"));
     assert!(clean_req_note(&"가".repeat(MAX_REQ_NOTE)).is_ok());
-    for bad in ["가".repeat(MAX_REQ_NOTE + 1), "두\n줄".into(), "탭\t가".into()] {
+    for bad in [
+        "가".repeat(MAX_REQ_NOTE + 1),
+        "두\n줄".into(),
+        "탭\t가".into(),
+    ] {
         assert!(clean_req_note(&bad).is_err(), "{bad:?}");
     }
 }
@@ -128,21 +148,38 @@ fn list_filters_by_kind_and_state() {
     add("q1", "질의", false);
     chat::set_req_state(&conn, r1, ReqState::Accepted, Some("곧")).unwrap();
     let texts = |ask| {
-        chat::messages_across(&conn, Some(false), None, None, Some(ask), None, 10)
-            .unwrap()
-            .into_iter()
-            .map(|m| m.text)
-            .collect::<Vec<_>>()
+        chat::messages_across(
+            &conn,
+            Some(false),
+            chat::Scope::All,
+            None,
+            Some(ask),
+            None,
+            10,
+        )
+        .unwrap()
+        .into_iter()
+        .map(|m| m.text)
+        .collect::<Vec<_>>()
     };
     assert_eq!(texts(AskFilter::Request(None)), ["요청 둘", "요청 하나"]);
     assert_eq!(texts(AskFilter::Request(Some(ReqState::Wait))), ["요청 둘"]);
-    assert_eq!(texts(AskFilter::Request(Some(ReqState::Accepted))), ["요청 하나"]);
+    assert_eq!(
+        texts(AskFilter::Request(Some(ReqState::Accepted))),
+        ["요청 하나"]
+    );
     assert!(texts(AskFilter::Request(Some(ReqState::Done))).is_empty());
     assert_eq!(texts(AskFilter::Query), ["질의"]);
     let m = chat::message_by_id(&conn, r1).unwrap().unwrap();
-    assert_eq!((m.req_state, m.req_note.as_deref()), (Some(ReqState::Accepted), Some("곧")));
+    assert_eq!(
+        (m.req_state, m.req_note.as_deref()),
+        (Some(ReqState::Accepted), Some("곧"))
+    );
     assert!(m.req_at.is_some());
     // 질의로 바꾸면 상태가 없다.
     chat::set_request(&conn, r1, false).unwrap();
-    assert_eq!(chat::message_by_id(&conn, r1).unwrap().unwrap().req_state, None);
+    assert_eq!(
+        chat::message_by_id(&conn, r1).unwrap().unwrap().req_state,
+        None
+    );
 }

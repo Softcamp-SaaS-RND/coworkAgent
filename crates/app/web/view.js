@@ -356,8 +356,16 @@ export function preview(text) {
 // ---- 작업 화면 — 상단 바 · 사이드바 · 내 활동 · 대화 · 실행 상세 · 통합 검색 ----
 
 /// 사이드바 내비(#1g) — '나'(`tile` = `null`) = 전부를 상대별로 묶어 보는 6개, 상대 타일 = 그 상대만 4개(대화는 아래 목록, 내 활동은 '나' 에만).
+/// 그룹 타일(`tile` = `"group"`, #1i) = 대화(그룹 요약) · 요청 · 저장된 항목 · 주고받은 글 4개 — 내 활동('나' 에만) · 에이전트(대화 단위 아님) 없음.
 /// 내 활동은 안 본 수(`count`), 요청은 받은 요청 중 대기 수(`waiting`).
 export function sideNav(tile, unseen = 0, waiting = 0) {
+  if (tile === "group")
+    return [
+      { label: "대화", href: "#" },
+      { label: "요청", href: "#requests", count: waiting },
+      { label: "저장된 항목", href: "#saved" },
+      { label: "주고받은 글", href: "#p" },
+    ];
   const scoped = [
     { label: "요청", href: "#requests", count: waiting },
     { label: "저장된 항목", href: "#saved" },
@@ -592,11 +600,11 @@ export function waitingByPeer(messages) {
 }
 
 /// '나' 의 '대화' = 상대별 요약(#1g) — 페어링된 상대(레일 순서)는 대화가 없어도, 풀린 상대는 대화가 있을 때만. 대화 수 · 안 읽음 합 · 대기 요청 ·
-/// 최근 활동(`last_at` 최대, 없으면 `null`) · 그 상대 대화(최근 활동 순, 활동 없는 대화는 뒤로).
+/// 최근 활동(`last_at` 최대, 없으면 `null`) · 그 상대 대화(손으로 놓은 순서 — #1i `sortByPos`).
 export function peerSummary(convs, paired, peerNames, waiting = new Map()) {
   const rest = [...new Set(convs.map((c) => c.peer_id))].filter((id) => !paired.includes(id)).sort((a, b) => a - b);
   return [...paired, ...rest].map((id) => {
-    const rows = convs.filter((c) => c.peer_id === id).sort((a, b) => (b.last_at ?? -1) - (a.last_at ?? -1));
+    const rows = sortByPos(convs.filter((c) => c.peer_id === id));
     const ats = rows.map((c) => c.last_at).filter((t) => t != null);
     return {
       peer: id,
@@ -618,6 +626,110 @@ export function convMeta(c) {
     running: c.last_state === "running",
     relay: c.relay_agent && c.relay_cap != null ? `왕복 ${c.relay_count ?? 0}/${c.relay_cap}` : null,
     unread: c.unread > 0,
+  };
+}
+
+// ---- 레일 그룹 · 손으로 놓는 순서(#1i) ----
+
+/// 타일 색 — id 로 다섯 색을 돈다(상대 · 그룹, 자리를 옮겨도 색이 따라간다).
+export function colorOf(id) {
+  return `peer-${(((id % 5) + 5) % 5) + 1}`;
+}
+
+/// 손으로 놓은 순서 — `pos` 작은 것 먼저, 같으면 id(서버 `peers::list` 와 같은 규칙). 새 배열.
+export function sortByPos(items) {
+  return [...items].sort((a, b) => (a.pos ?? 0) - (b.pos ?? 0) || a.id - b.id);
+}
+
+/// 전체 순서(`order` — id 목록)에서 `id` 를 빼 `target` 바로 앞(`after` 면 뒤)에 끼운다 — 걸러 보인 목록에서 옮겨도 그 앞뒤가 다른 화면에도
+/// 같다(#1i A9). 같은 id 거나 `target` 이 없으면 그대로(새 배열).
+export function moveInOrder(order, id, target, after = false) {
+  if (id === target || !order.includes(id) || !order.includes(target)) return [...order];
+  const rest = order.filter((x) => x !== id);
+  const i = rest.indexOf(target) + (after ? 1 : 0);
+  return [...rest.slice(0, i), id, ...rest.slice(i)];
+}
+
+/// 늦게 온 목록 응답에 덮어 씌울 순서(#1i 라운드 1) — 저장 상태 `saved = {last, busy, stamp}`, `stamp` = 그 읽기를 시작할 때의 표. 저장 중이거나
+/// 읽는 사이 옮김 · 저장이 있었으면 마지막으로 놓은 순서, 아니면 `null`(받은 그대로).
+export function orderToApply(saved, stamp) {
+  if (!saved?.last) return null;
+  return saved.busy || saved.stamp !== stamp ? saved.last : null;
+}
+
+/// 새 순서를 화면 값에 바로 — `ids` 의 자리(0 ..)를 `pos` 로, 빠진 항목은 제 `pos` 그대로(서버 `PUT /api/order` 와 같은 규칙). 새 배열.
+export function withOrder(items, ids) {
+  const at = new Map(ids.map((id, i) => [id, i]));
+  return items.map((x) => (at.has(x.id) ? { ...x, pos: at.get(x.id) } : x));
+}
+
+/// 옮긴 뒤 화면 읽기 프로그램 알림 — "{이름} — n번째로 옮김"(1 부터).
+export function movedText(name, index) {
+  return `${name} — ${index + 1}번째로 옮김`;
+}
+
+/// 그룹 타일을 고른 채 열 수 없는 화면(#1i) — 내 활동('나' 에만) · 에이전트(대화 단위 아님) → '나' 로 바꿔 연다.
+export function groupLeaves(view) {
+  return view === "activity" || view === "agents";
+}
+
+/// 그룹의 안 읽음 합(레일 배지).
+export function groupUnread(convs, group) {
+  return inGroup(convs, group).reduce((n, c) => n + (c.unread ?? 0), 0);
+}
+
+/// 키보드 한 칸(Alt + ↑ / ↓) — 보이는 같은 묶음(`visible` — 화면 순서 id)에서 `dir`(-1 위 · +1 아래) 쪽 이웃의 앞 · 뒤. 끝이면 `null`.
+export function stepTarget(visible, id, dir) {
+  const i = visible.indexOf(id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= visible.length) return null;
+  return { target: visible[j], after: dir > 0 };
+}
+
+/// 끌어 놓기 판정 — 끄는 것(`drag` = `{kind, section}`) → 놓을 곳(`target` = `{kind, section}`): `"move"`(같은 종류 · 대화는 같은 절) ·
+/// `"join"`(대화 → 그룹 타일, 그룹에 넣기) · `null`(놓을 수 없음 — '나' · "+" · 설정 · 다른 묶음 · 다른 절).
+export function dropKind(drag, target) {
+  if (!drag || !target) return null;
+  if (drag.kind === "conv" && target.kind === "group") return "join";
+  if (drag.kind !== target.kind || !["peer", "group", "conv"].includes(drag.kind)) return null;
+  if (drag.kind === "conv" && drag.section !== target.section) return null;
+  return "move";
+}
+
+/// 그룹(`{convs: [대화 id]}`)의 대화만 — 순서는 들어온 그대로.
+export function inGroup(convs, group) {
+  const ids = new Set(group?.convs ?? []);
+  return convs.filter((c) => ids.has(c.id));
+}
+
+/// 그룹 요약에 머리를 둘 페어링된 상대 — 레일 순서 중 그 그룹에 대화가 있는 상대만('나' 처럼 대화 없는 상대를 늘어놓지 않는다).
+export function groupPeers(convs, paired) {
+  const has = new Set(convs.map((c) => c.peer_id));
+  return paired.filter((id) => has.has(id));
+}
+
+/// 목록 범위 쿼리(`peer=` · `group=`, 없으면 빈 문자열) — 상대 · 그룹 중 하나만.
+export function scopeQuery(peer, group) {
+  if (group != null) return `group=${group}`;
+  if (peer != null) return `peer=${peer}`;
+  return "";
+}
+
+/// 그룹 이름 미리 거르기(서버가 정본) — 앞뒤 공백 뺀 1 ~ 40자 · 같은 이름(`except` = 이름 바꾸는 그 그룹 id) 없음. 맞으면 `null`.
+export function groupNameError(name, groups, except = null) {
+  const n = (name ?? "").trim();
+  if (!n || [...n].length > 40) return "그룹 이름은 1 ~ 40자";
+  if (groups.some((g) => g.name === n && g.id !== except)) return "같은 이름의 그룹이 있습니다";
+  return null;
+}
+
+/// 그룹 소속 바꾸기 — 고른 대화(`picked`) 와 지금 소속(`now`)의 차이 → `{add, remove}`(작은 id 부터).
+export function membershipDiff(now, picked) {
+  const a = new Set(now);
+  const b = new Set(picked);
+  return {
+    add: [...b].filter((id) => !a.has(id)).sort((x, y) => x - y),
+    remove: [...a].filter((id) => !b.has(id)).sort((x, y) => x - y),
   };
 }
 

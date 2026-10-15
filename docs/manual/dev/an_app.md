@@ -49,6 +49,12 @@
   #1f: `PATCH /api/messages/{id} {text, mirror?}`(끝난 내 사람 글만 — 그 밖 400, `text` 는 다른 항목과 함께 못 씀 · `mirror` 는 `text` 와 함께만 →
   `{id, text, edited_at, warning?}`) · `POST /api/messages/delete {ids, mirror?}`(1 ~ 200개 · 한 대화 · 하나라도 안 되면 아무것도 안 지움 →
   `{deleted, warning?}`) · 대화 글 JSON 에 `editable`(`Chat::tidy_ok`) · 메시지 JSON 에 `edited_at` · 내 활동 항목 `kind = sync_failed`(`detail` = 사유).
+  #1i(`groups_api.rs` — 이 PC 에만, 상대 PC 로 가는 프레임 없음): `GET /api/groups` → `[{id, name, icon, pos, convs}]`(레일 순서) · `POST /api/groups {name}`
+  → 201(이름 = 앞뒤 공백 뺀 1 ~ 40자 · 제어 문자 없음 — 400, 같은 이름 409 "같은 이름의 그룹이 있습니다") · `PATCH /api/groups/{id} {name?, icon?}`(둘 다
+  검증한 뒤 쓴다, 빈 `icon` = 지움, 없으면 404) · `DELETE /api/groups/{id}` → 204(소속도, 대화는 그대로) · `PUT /api/groups/{id}/conversations {add?,
+  remove?}`(이미 있음 · 없음은 무시, 없는 대화 400, 합쳐 10000개까지) · `PUT /api/order {kind: peers|groups|conversations, ids}` → 204(준 순서대로 자리
+  0 ..; 겹침 · 없는 id 400 — 아무것도 안 바뀜, 빠진 id 는 제 자리 · 같은 자리면 id 순). `GET /api/messages` · `GET /api/saved` 에 `group`(`peer` 와 함께면
+  400), 새 대화 본문 `group?`(없는 그룹 404 — 보내지 않음, 소속은 대화와 같은 트랜잭션), 대화 요약 JSON 에 `pos`, `GET /api/peers` 순서 = 자리.
   거절(`focus` 등)은 403 + 글 `refused`. CLI `ask --conv N --agent X` — X 가 대화 에이전트가 아니면 멘션(자동 왕복 대화는 오류, 상대 PC 목록에 없으면
   사용법 오류), `history` 발화자 = 실행한 에이전트.
 - guard 순서(#1a): Host(`127.0.0.1:{port}`) 403 → Origin(있으면 일치) 403 → 정적 자산(`server::PUBLIC` GET — 토큰 없이, 진입 `/?t=` 는 틀리면
@@ -113,7 +119,13 @@
   '나' = 메뉴 6개(대화 · 내 활동 · 요청 · 저장된 항목 · 주고받은 글 · 에이전트), 목록은 `view.peerGroups`(레일 순서 · 풀린 상대 뒤 · 빈 상대 숨김)로 상대별
   `<details>` 절, '대화'(`#`) = `view.peerSummary` 상대별 요약(대기 요청 = `view.waitingByPeer`), 사이드바 = `convSections(rows, paired)` ★ 아래 상대별 절.
   상대 타일 = 메뉴 4개(요청 · 저장된 항목 · 주고받은 글 · 에이전트), 첫 화면 `#p/{id}`, 그 상대 것만 — 상대 타일인 채 `#` 는 `#p/{id}`, `#activity` 는
-  '나' 로. 절 접힘은 설정 `ui_folded`(`{화면}:{상대 id | me}`, 시작할 때만 읽는다). 사이드바 에이전트 절은 없다(에이전트 화면만). 타일을 누르면 사이드바에 그 타일 대화
+  '나' 로. 절 접힘은 설정 `ui_folded`(`{화면}:{상대 id | me}`, 시작할 때만 읽는다). 사이드바 에이전트 절은 없다(에이전트 화면만). 레일 그룹(#1i): 그룹 타일 =
+  메뉴 4개(`sideNav("group")` — 대화 · 요청 · 저장된 항목 · 주고받은 글 `#p`), 목록 · 요약은 그 그룹 대화만(`view.inGroup` · `groupPeers` — 대화 있는 상대만,
+  서버 거르기 `group=`), 그룹인 채 `#activity` · `#agents` 는 '나' 로(`view.groupLeaves`). 접힘 열쇠는 '나' 와 같은 화면 열쇠. 떠 있는 상자 `#float`(화면 기준 —
+  "그룹 +" · 대화 ⋯ "그룹" 체크 · "그룹에서 빼기" · "대화 추가" · 타일 메뉴 "타일 편집" · "이미지 지우기" · "그룹 삭제"(상자 안 확인)) — 레일 우클릭 · 메뉴 키 ·
+  사이드 머리 ⋯. 순서 = 손으로 놓은 자리(`view.sortByPos` — 대화 · 상대 · 그룹 모두): 끌어 놓기(HTML 기본 드래그, `view.dropKind` — 같은 종류 · 대화는 같은
+  절, 대화 → 그룹 타일 = 넣기) · Alt + ↑ / ↓(`view.stepTarget`, `#order_live` 알림 `movedText`) → 전체 순서에 끼워(`view.moveInOrder`) `PUT /api/order`.
+  타일 색 = `view.colorOf(id)`. 아이콘 그림은 data URL 로 읽는다(CSP `img-src` 가 `blob:` 을 막는다). 타일을 누르면 사이드바에 그 타일 대화
   목록, 메시지 본문은 markdown 뷰어 · HTML 문서는 `<iframe sandbox srcdoc>`(머리글 "원문 보기" 하나로 전체 전환), 설정은 전체 폭 트리. 판단 로직은 `view.js`(DOM 없음) — `node --test` 로 시험(`view.test.mjs`),
   `app.js` 는 조립만(`textContent` · `replaceChildren`). #1c: `view.presence(p, now)`(피어 `seen_at` → "방금 통신"(75초 안) · "n분 · n시간 · n일 전
   통신" · "통신 기록 없음", 방금일 때만 점 · 집중 "집중 중 · …") · `outboxText`("보내는 중" · "보내는 중 — 상대에 닿지 않아 다시 보냄(n회)") ·

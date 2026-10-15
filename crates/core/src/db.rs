@@ -1,7 +1,7 @@
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 15;
+pub const SCHEMA_VERSION: i64 = 16;
 
 /// 쓰기 트랜잭션 — `BEGIN IMMEDIATE`. 읽고 나서 쓰는 지연(deferred) 트랜잭션은 다른 연결(피어 노드 · 알림)이 쓰는 중이면 잠금을 올리지 못해
 /// `busy_timeout` 을 기다리지 않고 바로 `database is locked` 로 실패한다(SQLite 교착 회피) — 처음부터 쓰기 잠금을 잡아 기다린다.
@@ -300,6 +300,40 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
             tx.execute_batch("ALTER TABLE messages ADD COLUMN edited_at INTEGER;")?;
         }
         tx.execute_batch("PRAGMA user_version = 15;")?;
+        tx.commit()?;
+    }
+    if v < 16 {
+        // 레일 그룹 · 손으로 놓는 순서(#1i): 그룹(이 PC 에만) · 소속, 상대 · 대화 자리. 첫 자리 = 지금 보이는 순서(상대 = id 순, 대화 = 최근 활동순).
+        // 외래 키는 켜지 않는다(이 DB 기본) — 그룹을 지울 때 소속은 `groups::remove` 가 함께 지운다.
+        let tx = conn.unchecked_transaction()?;
+        for table in ["peers", "conversations"] {
+            if !has_column(&tx, table, "pos")? {
+                tx.execute_batch(&format!(
+                    "ALTER TABLE {table} ADD COLUMN pos INTEGER NOT NULL DEFAULT 0;"
+                ))?;
+            }
+        }
+        tx.execute_batch(
+            "UPDATE peers SET pos = (SELECT count(*) FROM peers p WHERE p.id < peers.id);
+             UPDATE conversations SET pos = (SELECT r.n FROM (
+               SELECT c.id, row_number() OVER (
+                 ORDER BY coalesce((SELECT max(created_at) FROM messages WHERE conversation_id = c.id), c.created_at) DESC,
+                   coalesce((SELECT max(id) FROM messages WHERE conversation_id = c.id), 0) DESC, c.id DESC) - 1 AS n
+               FROM conversations c) r WHERE r.id = conversations.id);
+             CREATE TABLE IF NOT EXISTS groups (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               name TEXT NOT NULL UNIQUE,
+               icon TEXT,
+               pos INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS group_convs (
+               group_id INTEGER NOT NULL,
+               conversation_id INTEGER NOT NULL,
+               PRIMARY KEY (group_id, conversation_id)
+             );
+             CREATE INDEX IF NOT EXISTS group_convs_conv ON group_convs(conversation_id);
+             PRAGMA user_version = 16;",
+        )?;
         tx.commit()?;
     }
     Ok(conn)

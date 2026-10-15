@@ -65,6 +65,21 @@ import {
   waitingByPeer,
   SendLatest,
   holdsRender,
+  sortByPos,
+  inGroup,
+  groupPeers,
+  scopeQuery,
+  groupNameError,
+  membershipDiff,
+  colorOf,
+  moveInOrder,
+  stepTarget,
+  dropKind,
+  withOrder,
+  movedText,
+  groupLeaves,
+  groupUnread,
+  orderToApply,
 } from "/view.js";
 
 const $ = (id) => document.getElementById(id);
@@ -146,6 +161,8 @@ const state = {
   convs: [],
   settings: {},
   railPeer: null, // 레일에서 고른 상대(null = 나 = 전부)
+  railGroup: null, // 레일에서 고른 그룹(#1i — 고르면 railPeer = null)
+  groups: [], // 레일 그룹(`GET /api/groups` — 이 PC 에만, 레일 순서)
   current: null, // 열린 대화(요약)
   open: new Set(), // 펼쳐 둔 연결 · 에이전트(다시 그려도 유지)
   unseen: 0, // 안 본 내 활동 — 고른 타일 범위(사이드바 내비)
@@ -263,8 +280,9 @@ function applyTheme(theme) {
 // ---- 피어 · 레일 ----
 
 async function loadPeers(force = false) {
+  const stamp = orderStamp("peer");
   try {
-    state.peers = await api("GET", "/api/peers");
+    state.peers = keepOrder("peer", await api("GET", "/api/peers"), stamp);
   } catch (e) {
     $("peer_msg").textContent = "연결 목록 오류: " + e.message;
     return;
@@ -285,10 +303,9 @@ function tileFace(name, icon) {
   return icon ? el("img", { src: icon, alt: "" }) : tileText(name);
 }
 
-/// 타일 색 — 페어링된 상대 순서로 다섯 색을 돈다.
+/// 타일 색 — 상대 id 로 다섯 색을 돈다(#1i — 자리를 옮겨도 색이 타일을 따라간다).
 function tileColor(p) {
-  const i = state.peers.filter((x) => x.paired).findIndex((x) => x.id === p.id);
-  return `peer-${(Math.max(i, 0) % 5) + 1}`;
+  return colorOf(p.id);
 }
 
 function renderRail() {
@@ -298,10 +315,18 @@ function renderRail() {
     closeTileEdit(); // 그 상대에 묶인 편집
   }
   const unread = unreadByPeer(state.convs);
-  const sig = [state.railPeer, state.settings.me_alias, state.settings.me_icon, paired.map((p) => [p.id, displayName(p), p.host, p.icon, unread.get(p.id) ?? 0, presence(p).text])];
+  if (state.railGroup != null && !state.groups.some((g) => g.id === state.railGroup)) state.railGroup = null;
+  const sig = [
+    state.railPeer,
+    state.railGroup,
+    state.settings.me_alias,
+    state.settings.me_icon,
+    paired.map((p) => [p.id, displayName(p), p.host, p.icon, unread.get(p.id) ?? 0, presence(p).text]),
+    state.groups.map((g) => [g.id, g.name, g.icon, groupUnread(state.convs, g)]),
+  ];
   if (unchanged($("rail"), JSON.stringify(sig))) return;
   const me = $("rail_me");
-  me.setAttribute("aria-pressed", String(state.railPeer == null));
+  me.setAttribute("aria-pressed", String(state.railPeer == null && state.railGroup == null));
   me.setAttribute("aria-label", `${state.settings.me_alias || "나"} — 전체 대화`);
   me.replaceChildren(tileFace(state.settings.me_alias || "나", state.settings.me_icon));
   $("rail_pcs").replaceChildren(
@@ -315,7 +340,13 @@ function renderRail() {
           class: `rail-btn ${tileColor(p)}`,
           "aria-label": `${displayName(p)} · ${p.host} 의 대화만${n ? ` · 안 읽음 ${n}` : ""} — ${pr.text}`,
           "aria-pressed": String(state.railPeer === p.id),
+          "data-peer": String(p.id),
+          "data-drag": "peer",
+          "data-id": String(p.id),
+          draggable: "true",
+          title: "끌어 옮기거나 Alt + ↑ / ↓ 로 자리를 바꿉니다",
           onclick: () => pickTile(p.id),
+          oncontextmenu: (ev) => tileMenuEvent(ev, { kind: "peer", id: p.id }),
         },
         tileFace(displayName(p), p.icon),
         n ? el("span", { class: "rail-badge", "aria-hidden": "true", text: n > 99 ? "99+" : String(n) }) : "",
@@ -323,6 +354,82 @@ function renderRail() {
       );
     }),
   );
+  // 그룹 타일(#1i) — 상대 타일 아래 구분선 뒤, 이름 머리글자 또는 그림, 배지 = 그룹 대화의 안 읽음 합.
+  $("rail_sep").hidden = false;
+  $("rail_groups").replaceChildren(
+    ...state.groups.map((g) => {
+      const n = groupUnread(state.convs, g);
+      return el(
+        "button",
+        {
+          type: "button",
+          class: `rail-btn group ${groupColor(g)}`,
+          "data-group": String(g.id),
+          "data-drag": "group",
+          "data-id": String(g.id),
+          draggable: "true",
+          title: "끌어 옮기거나 Alt + ↑ / ↓ 로 자리를 바꿉니다 · 대화를 끌어 놓으면 이 그룹에 넣습니다",
+          "aria-label": `그룹 ${g.name} — 대화 ${g.convs.length}${n ? ` · 안 읽음 ${n}` : ""}`,
+          "aria-pressed": String(state.railGroup === g.id),
+          onclick: () => pickGroup(g.id),
+          oncontextmenu: (ev) => tileMenuEvent(ev, { kind: "group", id: g.id }),
+        },
+        tileFace(g.name, g.icon),
+        n ? el("span", { class: "rail-badge", "aria-hidden": "true", text: n > 99 ? "99+" : String(n) }) : "",
+      );
+    }),
+  );
+}
+
+/// 그룹 타일 색 — 그룹 id 로 다섯 색을 돈다.
+function groupColor(g) {
+  return colorOf(g.id);
+}
+
+/// 레일 그룹 읽기(#1i) — 레일 · 사이드바 · 요약을 다시 그린다.
+async function loadGroups() {
+  const stamp = orderStamp("group");
+  try {
+    state.groups = keepOrder("group", await api("GET", "/api/groups"), stamp);
+  } catch (e) {
+    $("status_msg").textContent = "그룹 목록 오류: " + e.message;
+    return;
+  }
+  renderRail();
+  renderSideHead();
+  renderSideNav();
+  renderConvList();
+  refreshHome();
+}
+
+/// 고른 그룹(없으면 `null`).
+function railGroupOf() {
+  return state.groups.find((g) => g.id === state.railGroup) ?? null;
+}
+
+/// 고른 레일 범위의 대화 — 상대 = 그 상대, 그룹 = 그 그룹 대화, '나' = 전부.
+function scopedConvs() {
+  const g = railGroupOf();
+  if (g) return inGroup(state.convs, g);
+  return state.railPeer == null ? state.convs : state.convs.filter((c) => c.peer_id === state.railPeer);
+}
+
+/// 그룹 타일 누름 — 열린 대화가 그 그룹 것이면 그대로, 아니면 메인 = 그룹 요약(`#`).
+function pickGroup(id) {
+  const changed = state.railGroup !== id;
+  if (changed) closeTileEdit();
+  state.railPeer = null;
+  state.railGroup = id;
+  renderRail();
+  renderSideHead();
+  const g = railGroupOf();
+  const keep = ["conversation", "sent"].includes(route(location.hash).view) && state.current && g?.convs.includes(state.current.id);
+  if (!keep) state.current = null;
+  renderConvList();
+  if (changed) state.unseen = 0;
+  renderSideNav();
+  if (changed) loadCounts();
+  if (!keep) go("#");
 }
 
 /// 레일 선택 — 다른 PC 를 고르면 열린 대화를 놓는다(입력창이 이전 상대를 가리킨 채 남지 않게). 화면 이동은 부른 쪽이.
@@ -333,9 +440,10 @@ function pingPeers(ids) {
 }
 
 function pickRail(id) {
-  const changed = state.railPeer !== id;
+  const changed = state.railPeer !== id || state.railGroup != null;
   if (changed) closeTileEdit();
   state.railPeer = id;
+  state.railGroup = null;
   renderRail();
   renderSideHead();
   if (state.current && !keepsConversation(state.current, id)) state.current = null;
@@ -363,7 +471,11 @@ function go(hash) {
 
 function renderSideHead() {
   const p = state.peers.find((x) => x.id === state.railPeer);
-  if (p) {
+  const g = railGroupOf();
+  if (g) {
+    $("side_name").textContent = g.name;
+    $("side_sub").textContent = `그룹 · 대화 ${g.convs.length} · 이 PC 에만`;
+  } else if (p) {
     $("side_name").textContent = displayName(p);
     $("side_sub").textContent = [p.alias ? `${p.name} · ${p.host}` : p.host, peerState(p), p.paired ? presence(p).text : ""].filter(Boolean).join(" · ");
   } else if (state.me) {
@@ -384,9 +496,9 @@ function renderAvatar() {
 /// 사이드바 내비 — 고른 타일 범위(`view.js` `sideNav`), 지금 화면은 강조. '대화' 는 대화 · 보낸 메시지 화면에서도.
 function renderSideNav() {
   const view = route(location.hash).view;
-  if (unchanged($("side_nav"), JSON.stringify([view, state.railPeer, state.unseen, state.reqWaiting]))) return;
+  if (unchanged($("side_nav"), JSON.stringify([view, state.railPeer, state.railGroup, state.unseen, state.reqWaiting]))) return;
   $("side_nav").replaceChildren(
-    ...sideNav(state.railPeer, state.unseen, state.reqWaiting).map((n) => {
+    ...sideNav(state.railGroup != null ? "group" : state.railPeer, state.unseen, state.reqWaiting).map((n) => {
       const target = route(n.href).view;
       const current = target === view || (target === "home" && (view === "conversation" || view === "sent"));
       return el(
@@ -431,14 +543,41 @@ async function newChat(peer, agent) {
 // ---- 타일 표시 이름 · 아이콘(이 PC 에만) ----
 
 const ICON_PX = 80; // 타일 40px × 2(고해상도 화면)
-/// 열린 타일 편집 — `peer` = 상대 id(`null` = 나), `icon` = `undefined`(그대로) · `""`(지움) · PNG data URL.
+/// 열린 타일 편집 — `kind` = `me` · `peer` · `group`(#1i), `id` = 상대 · 그룹 id, `icon` = `undefined`(그대로) · `""`(지움) · PNG data URL.
 let tileEdit = null;
 
+/// 지금 고른 타일(레일 범위).
+function currentTile() {
+  if (state.railGroup != null) return { kind: "group", id: state.railGroup };
+  if (state.railPeer != null) return { kind: "peer", id: state.railPeer };
+  return { kind: "me", id: null };
+}
+
+/// 타일의 지금 값 — 이름(편집 칸) · 빈 이름일 때 보일 이름 · 그림 · 색.
+function tileNow(t) {
+  if (t.kind === "group") {
+    const g = state.groups.find((x) => x.id === t.id);
+    return g && { value: g.name, fallback: g.name, icon: g.icon, color: groupColor(g) };
+  }
+  if (t.kind === "peer") {
+    const p = state.peers.find((x) => x.id === t.id);
+    return p && { value: p.alias ?? "", fallback: p.name, icon: p.icon, color: tileColor(p) };
+  }
+  return { value: state.settings.me_alias ?? "", fallback: "나", icon: state.settings.me_icon, color: "me" };
+}
+
 function openTileEdit() {
-  const p = state.peers.find((x) => x.id === state.railPeer);
-  tileEdit = { peer: p?.id ?? null, icon: undefined };
-  $("tile_alias").value = (p ? p.alias : state.settings.me_alias) ?? "";
-  $("tile_alias").placeholder = p ? p.name : "나";
+  const t = currentTile();
+  const now = tileNow(t);
+  if (!now) return;
+  tileEdit = { ...t, icon: undefined };
+  const group = t.kind === "group";
+  $("tile_alias_label").textContent = group ? "그룹 이름" : "표시 이름";
+  // 그룹 이름 길이는 `groupNameError`(코드 포인트 40자)로 — HTML 제한은 UTF-16 단위라 두지 않는다(라운드 1).
+  if (group) $("tile_alias").removeAttribute("maxlength");
+  else $("tile_alias").maxLength = 32;
+  $("tile_alias").value = now.value;
+  $("tile_alias").placeholder = now.fallback;
   $("tile_icon_file").value = "";
   $("tile_msg").textContent = "";
   renderTilePreview();
@@ -453,32 +592,122 @@ function closeTileEdit() {
 
 /// 미리보기 — 고친 이름 · 아이콘으로 그린 타일.
 function renderTilePreview() {
-  const p = state.peers.find((x) => x.id === tileEdit.peer);
-  const icon = tileEdit.icon !== undefined ? tileEdit.icon : p ? p.icon : state.settings.me_icon;
-  const name = $("tile_alias").value.trim() || (p ? p.name : "나");
+  const now = tileNow(tileEdit);
+  if (!now) return;
+  const icon = tileEdit.icon !== undefined ? tileEdit.icon : now.icon;
+  const name = $("tile_alias").value.trim() || now.fallback;
   const box = $("tile_preview");
-  box.className = `rail-btn tile-preview ${p ? tileColor(p) : "me"}`;
+  box.className = `rail-btn tile-preview ${now.color}`;
   box.replaceChildren(tileFace(name, icon));
 }
 
-/// 고른 그림 → 가운데 정사각형을 잘라 `ICON_PX` 크기 PNG data URL(서버는 PNG data URL 만 받는다).
+/// 고른 그림 → 가운데 정사각형을 잘라 `ICON_PX` 크기 PNG data URL(서버는 PNG data URL 만 받는다). 그림은 data URL 로 읽는다 — CSP
+/// `img-src 'self' data:` 가 `blob:` 을 막는다(#1i 실측 — 객체 URL 이면 "cannot be decoded").
 async function iconFromFile(file) {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = new Image();
-    img.src = url;
-    await img.decode();
-    const s = Math.min(img.naturalWidth, img.naturalHeight);
-    if (!s) throw new Error("크기를 알 수 없는 그림");
-    const canvas = el("canvas", { width: ICON_PX, height: ICON_PX });
-    canvas.getContext("2d").drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, ICON_PX, ICON_PX);
-    return canvas.toDataURL("image/png");
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  const url = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error ?? new Error("그림을 읽지 못했다"));
+    r.readAsDataURL(file);
+  });
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  const s = Math.min(img.naturalWidth, img.naturalHeight);
+  if (!s) throw new Error("크기를 알 수 없는 그림");
+  const canvas = el("canvas", { width: ICON_PX, height: ICON_PX });
+  canvas.getContext("2d").drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, ICON_PX, ICON_PX);
+  return canvas.toDataURL("image/png");
 }
 
 $("tile_edit_btn").addEventListener("click", () => ($("tile_form").hidden ? openTileEdit() : closeTileEdit()));
+$("tile_more_btn").addEventListener("click", (ev) => openTileMenu(currentTile(), ev.currentTarget));
+$("rail_me").addEventListener("contextmenu", (ev) => tileMenuEvent(ev, { kind: "me", id: null }));
+
+/// 레일 타일 우클릭 · 메뉴 키(Shift + F10 포함 — 브라우저가 같은 `contextmenu` 를 낸다) → 타일 메뉴(#1i).
+function tileMenuEvent(ev, t) {
+  ev.preventDefault();
+  openTileMenu(t, ev.currentTarget);
+}
+
+/// 그 타일을 고른다 — 타일 편집 폼은 고른 타일의 사이드바 머리에 있다.
+function selectTile(t) {
+  if (t.kind === "group") {
+    if (state.railGroup !== t.id) pickGroup(t.id);
+  } else if (state.railPeer !== t.id || state.railGroup != null) pickTile(t.id);
+}
+
+/// 타일 메뉴 — "타일 편집"(이름 · 그림) · "이미지 지우기"(그림이 있을 때) · 그룹이면 "그룹 삭제"(확인 한 번 — 대화는 지우지 않는다).
+function openTileMenu(t, anchor) {
+  const now = tileNow(t);
+  if (!now) return;
+  const item = (text, onclick, cls) => el("button", { type: "button", role: "menuitem", text, onclick, class: cls });
+  const items = [
+    item("타일 편집", () => {
+      closeFloat(false);
+      selectTile(t);
+      openTileEdit();
+    }),
+  ];
+  if (now.icon)
+    items.push(
+      item("이미지 지우기", async () => {
+        closeFloat(true);
+        await act("이미지 지우기", async () => {
+          if (t.kind === "me") fillPrefs(await api("PUT", "/api/settings", { me_icon: "" }));
+          else if (t.kind === "group") {
+            await api("PATCH", `/api/groups/${t.id}`, { icon: "" });
+            await loadGroups();
+          } else {
+            await api("PATCH", `/api/peers/${t.id}`, { icon: "" });
+            await loadPeers(true);
+          }
+          return "이미지를 지웠습니다 — 이름 머리글자로 보입니다";
+        });
+      }),
+    );
+  if (t.kind === "group")
+    items.push(
+      item(
+        "그룹 삭제",
+        () => {
+          const g = state.groups.find((x) => x.id === t.id);
+          $("float").replaceChildren(
+            el(
+              "div",
+              { class: "float-form" },
+              el("strong", { text: `그룹 ${g?.name ?? ""} 삭제` }),
+              el("p", { class: "hint", text: "그룹만 지웁니다 — 대화는 지우지 않습니다." }),
+              el(
+                "div",
+                { class: "actions" },
+                button("취소", () => closeFloat(true)),
+                button(
+                  "삭제",
+                  async () => {
+                    closeFloat(false);
+                    await act("그룹 삭제", async () => {
+                      await api("DELETE", `/api/groups/${t.id}`);
+                      const was = state.railGroup === t.id;
+                      await loadGroups();
+                      if (was) pickTile(null);
+                      focusAfterFloat("#rail_group_add");
+                      return `그룹 ${g?.name ?? ""} 을 지웠습니다 — 대화는 그대로입니다`;
+                    });
+                  },
+                  "danger",
+                ),
+              ),
+            ),
+          );
+          $("float").setAttribute("role", "dialog");
+          $("float").querySelector("button")?.focus();
+        },
+        "danger-text",
+      ),
+    );
+  openFloat(anchor, "menu", "타일 메뉴", items);
+}
 $("tile_cancel").addEventListener("click", closeTileEdit);
 $("tile_alias").addEventListener("input", () => tileEdit && renderTilePreview());
 $("tile_icon_clear").addEventListener("click", () => {
@@ -505,15 +734,25 @@ $("tile_form").addEventListener("submit", (ev) => {
   ev.preventDefault();
   const edit = tileEdit;
   if (!edit) return;
-  const { peer, icon } = edit;
+  const { kind, id, icon } = edit;
   const alias = $("tile_alias").value;
+  if (kind === "group") {
+    const bad = groupNameError(alias, state.groups, id);
+    if (bad) {
+      $("tile_msg").textContent = bad;
+      return;
+    }
+  }
   act(
     "타일 저장",
     async () => {
-      if (peer == null) {
+      if (kind === "me") {
         fillPrefs(await api("PUT", "/api/settings", icon === undefined ? { me_alias: alias } : { me_alias: alias, me_icon: icon }));
+      } else if (kind === "group") {
+        await api("PATCH", `/api/groups/${id}`, icon === undefined ? { name: alias } : { name: alias, icon });
+        await loadGroups();
       } else {
-        await api("PATCH", `/api/peers/${peer}`, icon === undefined ? { alias } : { alias, icon });
+        await api("PATCH", `/api/peers/${id}`, icon === undefined ? { alias } : { alias, icon });
         await loadPeers(true);
         await refresh(); // 열린 대화 · 목록의 발화자 이름도 새 표시 이름으로
       }
@@ -802,8 +1041,9 @@ $("agent_form").addEventListener("submit", (ev) => {
 // ---- 대화 목록 ----
 
 async function loadConvs() {
+  const stamp = orderStamp("conv");
   try {
-    state.convs = await api("GET", "/api/conversations");
+    state.convs = keepOrder("conv", await api("GET", "/api/conversations"), stamp);
   } catch (e) {
     $("status_msg").textContent = "대화 목록 오류: " + e.message;
     return;
@@ -819,12 +1059,12 @@ function tagEl(tag) {
 }
 
 /// 대화 행 — 방향 태그 · 제목 · `{에이전트} · {상태}` · 실행 중 표시 · 자동 왕복 칩 · 안 읽음(굵게 + 점). 상대 이름은 툴팁('나' 범위에서 섞여 보인다).
-function convItem({ c, label }) {
+function convItem({ c, label }, section) {
   const meta = convMeta(c);
   const cls = [state.current?.id === c.id ? "current" : "", meta.unread ? "unread" : ""].filter(Boolean).join(" ");
   return el(
     "li",
-    { class: cls || null },
+    { class: cls || null, "data-conv": String(c.id), "data-drag": "conv", "data-id": String(c.id), "data-section": section, draggable: "true" },
     el(
       "a",
       { href: `#c/${c.id}`, title: label.sub },
@@ -844,14 +1084,26 @@ function convItem({ c, label }) {
         meta.relay ? el("span", { class: "chip", text: meta.relay }) : "",
       ),
     ),
+    // 행 ⋯ — 마우스를 올리거나 초점이 오면 보인다(#1i).
+    el("button", {
+      type: "button",
+      class: "icon-btn row-more",
+      title: "대화 메뉴 — 그룹",
+      "aria-label": `${label.title} — 대화 메뉴`,
+      "aria-haspopup": "menu",
+      text: "⋯",
+      onclick: (ev) => openConvMenu(c.id, ev.currentTarget),
+    }),
   );
 }
 
 function renderConvList() {
   const q = $("conv_search").value.trim();
-  const rows = convRows(state.convs, state.peerNames, state.railPeer, q);
+  const group = railGroupOf();
+  const rows = convRows(sortByPos(scopedConvs()), state.peerNames, null, q);
   const sections = convSections(rows, state.railPeer == null ? pairedIds() : null, state.peerNames);
-  if (unchanged($("conv_sections"), JSON.stringify([q, state.railPeer, state.current?.id, rows, sections.map((s) => s.title)]))) return;
+  const sig = [q, state.railPeer, group && [group.id, group.convs], state.groups.length, state.current?.id, rows, sections.map((s) => s.title)];
+  if (unchanged($("conv_sections"), JSON.stringify(sig))) return;
   const empty = el("li", { class: "hint", text: q ? "맞는 대화 없음" : "대화 없음" });
   const add = (peer) =>
     el("a", {
@@ -868,9 +1120,22 @@ function renderConvList() {
               newChat(peer);
             },
     });
+  // 그룹(#1i) — 목록 머리에 "대화 추가"(검색 + 체크로 여러 대화를 한 번에).
+  const head = group
+    ? [
+        el(
+          "div",
+          { class: "side-title group-head" },
+          el("span", { text: `그룹 대화 · ${group.convs.length}` }),
+          el("button", { type: "button", id: "group_pick_btn", class: "small", text: "대화 추가", onclick: (ev) => openGroupPicker(ev.currentTarget) }),
+        ),
+      ]
+    : [];
+  const groupEmpty = el("li", { class: "hint", text: q ? "맞는 대화 없음" : "그룹에 대화가 없습니다 — '대화 추가' 로 넣습니다" });
   $("conv_sections").replaceChildren(
+    ...head,
     ...sections.map((s) => {
-      const list = el("ul", { class: "side-list" }, ...(s.rows.length ? s.rows.map(convItem) : rows.length ? [] : [empty]));
+      const list = el("ul", { class: "side-list" }, ...(s.rows.length ? s.rows.map((r) => convItem(r, s.key)) : rows.length ? [] : [group ? groupEmpty : empty]));
       // '나' 의 상대별 절(#1g) — 접을 수 있고 접힘은 이 PC 에 남는다.
       if (s.peer != null) return foldEl(`convs:${s.peer}`, [el("span", { text: s.title }), add(s.peer)], [list], "side-section", "side-title");
       return el("section", { class: "side-section" }, el("h2", { class: "side-title" }, el("span", { text: s.title }), s.key === "convs" ? add(null) : ""), list);
@@ -923,10 +1188,15 @@ function refreshHome() {
 /// '나' 의 '대화' = 상대별 요약(#1g) — 머리(이름 · 접속 상태 · 대화 수 · 안 읽음 · 대기 요청 · 최근 활동) + 그 상대 대화(누르면 그 대화).
 /// 페어링된 상대가 없고 대화도 없으면 처음 안내.
 function renderHome() {
-  const groups = peerSummary(state.convs, pairedIds(), state.peerNames, state.waitingBy);
+  const group = railGroupOf();
+  const convs = scopedConvs();
+  // 그룹 요약(#1i)은 그 그룹에 대화가 있는 상대만 — '나' 는 대화 없는 페어링 상대도.
+  const groups = peerSummary(convs, group ? groupPeers(convs, pairedIds()) : pairedIds(), state.peerNames, state.waitingBy);
+  $("home_title").textContent = group ? `그룹 · ${group.name}` : "대화";
+  $("group_empty").hidden = !group || convs.length > 0;
   const peerOf = (id) => state.peers.find((x) => x.id === id);
   const sig = JSON.stringify([groups.map(({ rows, ...g }) => [g, rows.map((c) => [c.id, c.title, c.last_state, c.unread, c.last_at, c.starred])]), groups.map((g) => presence(peerOf(g.peer)).text)]);
-  $("home_intro").hidden = groups.length > 0;
+  $("home_intro").hidden = groups.length > 0 || group != null;
   if (!needsRender($("home_summary"), sig, false)) return;
   $("home_summary").replaceChildren(
     ...groups.map((g) => {
@@ -1066,7 +1336,7 @@ async function findConv(id) {
 async function render() {
   const r = route(location.hash);
   closeMenus();
-  $("rail_me").setAttribute("aria-pressed", String(state.railPeer == null));
+  $("rail_me").setAttribute("aria-pressed", String(state.railPeer == null && state.railGroup == null));
   if (r.view in PANELS) {
     const conv = await findConv(r.id);
     if (!conv) {
@@ -1075,8 +1345,8 @@ async function render() {
       return;
     }
     state.current = conv;
-    // 뒤로 가기 등으로 레일에서 고른 PC 와 다른 대화를 열면 레일을 '나'(전부)로 — 열린 대화로 보낼 수 있게.
-    if (!keepsConversation(conv, state.railPeer)) pickRail(null);
+    // 뒤로 가기 등으로 레일에서 고른 PC · 그룹과 다른 대화를 열면 레일을 '나'(전부)로 — 열린 대화로 보낼 수 있게.
+    if (!keepsConversation(conv, state.railPeer) || (railGroupOf() && !railGroupOf().convs.includes(conv.id))) pickRail(null);
     renderConvList();
     showConversation(conv, r.view);
     state.focusMsg = r.view === "conversation" ? (r.msg ?? null) : null;
@@ -1092,8 +1362,12 @@ async function render() {
   }
   state.current = null;
   // 뒤로 가기 등으로 온 상대 글 목록이면 레일도 맞춘다. 내 활동 · 전체 주고받은 글(`#p`)은 '나' 에만(#1g).
-  if (r.view === "peer" && state.railPeer !== r.id) pickRail(r.id);
+  // 그룹을 고른 채 `#p`(전체 주고받은 글)면 그 그룹 것 — 레일은 그대로(#1i).
+  if (r.view === "peer" && (r.id != null || state.railGroup == null) && state.railPeer !== r.id) pickRail(r.id);
+  if (r.view === "peer" && r.id != null && state.railGroup != null) pickRail(r.id);
   if (r.view === "activity" && state.railPeer != null) pickRail(null);
+  // 그룹에는 내 활동 · 에이전트 메뉴가 없다 — '나' 로 바꿔 연다(#1i).
+  if (groupLeaves(r.view) && state.railGroup != null) pickRail(null);
   renderConvList();
   show(r.view);
   if (r.view === "home") renderHome();
@@ -1956,6 +2230,8 @@ for (const id of ["act_kind", "act_q"])
 /// 안 본 내 활동 수 — 사이드바 내비(고른 타일 범위) · 종 점(전부).
 async function loadCounts() {
   const peer = state.railPeer;
+  const group = state.railGroup;
+  const scope = scopeQuery(peer, group);
   let r;
   try {
     r = await api("GET", "/api/activity?limit=0" + (peer != null ? `&peer=${peer}` : ""));
@@ -1965,13 +2241,13 @@ async function loadCounts() {
   let waiting = state.reqWaiting;
   let by = null;
   try {
-    const w = await api("GET", `/api/messages?side=theirs&ask=request&req=wait&limit=500${peer != null ? `&peer=${peer}` : ""}`);
+    const w = await api("GET", `/api/messages?side=theirs&ask=request&req=wait&limit=500${scope ? `&${scope}` : ""}`);
     waiting = w.length;
     if (peer == null) by = waitingByPeer(w);
   } catch {
     // 다음 새로 고침에 다시
   }
-  if (state.railPeer !== peer) return; // 그 사이 다른 타일을 골랐다
+  if (state.railPeer !== peer || state.railGroup !== group) return; // 그 사이 다른 타일을 골랐다
   state.reqWaiting = waiting;
   if (by) {
     state.waitingBy = by;
@@ -1990,7 +2266,8 @@ async function loadRequests(open = false) {
   for (const b of ["theirs", "mine"]) $(`req_tab_${b}`).setAttribute("aria-current", b === box ? "page" : "false");
   const params = new URLSearchParams({ side: box, ask: "request" });
   if ($("req_state").value) params.set("req", $("req_state").value);
-  if (state.railPeer != null) params.set("peer", state.railPeer);
+  if (state.railGroup != null) params.set("group", state.railGroup);
+  else if (state.railPeer != null) params.set("peer", state.railPeer);
   const ticket = latest.next();
   let ms;
   try {
@@ -2001,7 +2278,7 @@ async function loadRequests(open = false) {
   }
   if (!latest.is(ticket)) return;
   const rows = requestRows(ms, state.peerNames);
-  if (needsRender($("req_list"), JSON.stringify([box, state.railPeer, rows]), open))
+  if (needsRender($("req_list"), JSON.stringify([box, state.railPeer, state.railGroup, rows]), open))
     $("req_list").replaceChildren(...grouped(`requests`, rows, (rs) => requestEls(rs, box)));
 }
 
@@ -2050,14 +2327,15 @@ async function loadSaved() {
   const ticket = latest.next();
   let ms;
   try {
-    ms = await api("GET", "/api/saved" + (state.railPeer != null ? `?peer=${state.railPeer}` : ""));
+    const scope = scopeQuery(state.railPeer, state.railGroup);
+    ms = await api("GET", "/api/saved" + (scope ? `?${scope}` : ""));
   } catch (e) {
     $("status_msg").textContent = "저장된 항목 오류: " + e.message;
     return;
   }
   if (!latest.is(ticket)) return;
   const rows = inboxRows(ms, state.peerNames).map((r) => ({ ...r, href: `${r.href}/m/${r.id}` }));
-  if (needsRender($("saved_list"), JSON.stringify([state.railPeer, rows]), false))
+  if (needsRender($("saved_list"), JSON.stringify([state.railPeer, state.railGroup, rows]), false))
     $("saved_list").replaceChildren(...grouped("saved", rows, (rs) => rowEls(rs, "저장된 항목 없음 — 메시지 작업 '저장' 으로 모읍니다")));
 }
 
@@ -2121,18 +2399,20 @@ function renderAgentsView() {
 /// 주고받은 글 — 상대 하나, `id` = `null` 이면 '나' = 모든 상대를 상대별 절로(#1g).
 async function loadPeerMessages(id) {
   const p = state.peers.find((x) => x.id === id);
-  $("peer_title").textContent = id == null ? "주고받은 글 — 모든 상대" : p ? `${displayName(p)} · ${p.host}` : `상대 ${id}`;
+  const g = id == null ? railGroupOf() : null;
+  $("peer_title").textContent = g ? `주고받은 글 — 그룹 ${g.name}` : id == null ? "주고받은 글 — 모든 상대" : p ? `${displayName(p)} · ${p.host}` : `상대 ${id}`;
+  const scope = scopeQuery(id, g?.id ?? null);
   const ticket = latest.next();
   let lists;
   try {
-    lists = await Promise.all(["theirs", "mine"].map((side) => api("GET", `/api/messages?side=${side}${id == null ? "" : `&peer=${id}`}`)));
+    lists = await Promise.all(["theirs", "mine"].map((side) => api("GET", `/api/messages?side=${side}${scope ? `&${scope}` : ""}`)));
   } catch (e) {
     $("status_msg").textContent = "주고받은 글 오류: " + e.message;
     return;
   }
   if (!latest.is(ticket)) return;
   const rows = inboxRows(peerMessages(...lists), state.peerNames);
-  if (needsRender($("peer_list"), JSON.stringify([id, rows]), false)) $("peer_list").replaceChildren(...grouped("peer", rows, (rs) => rowEls(rs, "주고받은 글 없음")));
+  if (needsRender($("peer_list"), JSON.stringify([id, g?.id, rows]), false)) $("peer_list").replaceChildren(...grouped("peer", rows, (rs) => rowEls(rs, "주고받은 글 없음")));
 }
 
 async function openSent(conv) {
@@ -2218,6 +2498,8 @@ $("chat_form").addEventListener("submit", (ev) => {
     body.relay_agent = $("chat_relay_agent").value;
     body.relay_cap = Number($("chat_relay_cap").value);
   }
+  // 그룹을 고른 채 만든 대화는 그 그룹에(#1i).
+  if (state.railGroup != null) body.group = state.railGroup;
   act(
     "보내기",
     async () => {
@@ -2225,6 +2507,7 @@ $("chat_form").addEventListener("submit", (ev) => {
       $("chat_text").value = "";
       $("chat_title").value = "";
       ask.value = "query";
+      if (body.group != null) await loadGroups();
       await loadConvs();
       location.hash = `#c/${r.conversation.id}`;
       return r.warning ?? "보냄 — 답은 도착하면 보입니다";
@@ -2232,6 +2515,319 @@ $("chat_form").addEventListener("submit", (ev) => {
     "chat_msg",
   );
 });
+
+// ---- 레일 그룹(#1i) — 떠 있는 상자(메뉴 · 이름 · 대화 추가) ----
+
+let floatFrom = null; // 떠 있는 상자를 연 요소 — 닫으면 초점을 돌려준다
+
+/// 떠 있는 상자 — `anchor` 옆(레일이면 오른쪽, 그 밖은 아래)에 연다. 레일은 넘치면 잘리므로 화면 기준(`position: fixed`)으로 둔다.
+function openFloat(anchor, role, label, children) {
+  const box = $("float");
+  box.replaceChildren(...children);
+  Object.assign(box, { hidden: false });
+  box.setAttribute("role", role);
+  box.setAttribute("aria-label", label);
+  floatFrom = anchor;
+  const r = anchor.getBoundingClientRect();
+  const side = anchor.closest("#rail") != null;
+  const w = box.offsetWidth;
+  const h = box.offsetHeight;
+  const left = side ? r.right + 8 : Math.min(r.left, window.innerWidth - w - 8);
+  const top = side ? r.top : r.bottom + 4;
+  box.style.left = Math.max(8, left) + "px";
+  box.style.top = Math.max(8, Math.min(top, window.innerHeight - h - 8)) + "px";
+  box.querySelector("input, button")?.focus();
+}
+
+/// 상자 닫기 — `refocus` 면 연 요소로(다시 그려져 없으면 '나' 타일로) 초점을 돌린다. 바깥을 눌러 닫을 때는 누른 곳에 초점이 간다(돌리지 않음).
+function closeFloat(refocus) {
+  $("float").hidden = true;
+  $("float").replaceChildren();
+  if (refocus) (floatFrom?.isConnected ? floatFrom : $("rail_me")).focus();
+  floatFrom = null;
+}
+
+/// 작업 뒤 초점 — 다시 그린 새 요소(`sel`)가 있으면 거기, 없으면 `fallback`(라운드 1 — 키보드 사용자가 위치를 잃지 않게).
+function focusAfterFloat(sel, fallback = "rail_me") {
+  (document.querySelector(sel) ?? $(fallback))?.focus();
+}
+
+/// "그룹 +" — 이름 한 칸 → 만들고 그 그룹을 고른다. 거절 문구(빈 이름 · 40자 넘음 · 같은 이름)는 상자 안에.
+function openGroupNew(anchor) {
+  // 길이는 `groupNameError`(글자 = 코드 포인트, 서버와 같음)로 — HTML `maxlength` 는 UTF-16 단위라 그림 문자 이름을 20자 안팎에서 막는다(라운드 1).
+  const input = el("input", { id: "group_new_name", autocomplete: "off", placeholder: "그룹 이름 — 예: 결제 모듈", "aria-label": "그룹 이름" });
+  const msg = el("p", { class: "hint", role: "status" });
+  const form = el(
+    "form",
+    { class: "float-form" },
+    el("strong", { text: "새 그룹" }),
+    input,
+    el("p", { class: "hint", text: "이 PC 에만 있는 대화 묶음입니다 — 상대에게 보이지 않습니다." }),
+    el("div", { class: "actions" }, button("취소", () => closeFloat(true)), el("button", { type: "submit", class: "primary", text: "만들기" })),
+    msg,
+  );
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const bad = groupNameError(input.value, state.groups);
+    if (bad) {
+      msg.textContent = bad;
+      return;
+    }
+    try {
+      const g = await api("POST", "/api/groups", { name: input.value });
+      closeFloat(false);
+      await loadGroups();
+      pickGroup(g.id);
+      focusAfterFloat(`#rail_groups [data-id="${g.id}"]`);
+      $("status_msg").textContent = `그룹 ${g.name} 을 만들었습니다 — '대화 추가' 나 대화 ⋯ 메뉴로 넣습니다`;
+    } catch (e) {
+      msg.textContent = e.message;
+    }
+  });
+  openFloat(anchor, "dialog", "새 그룹", [form]);
+}
+
+$("rail_group_add").addEventListener("click", (ev) => openGroupNew(ev.currentTarget));
+
+/// 소속 바꾸기 — 성공이면 참. 어느 쪽이든 그룹을 다시 읽는다, 실패는 상태 줄에(부르는 쪽은 참일 때만 성공 문구 — 라운드 1).
+async function changeGroup(id, add, remove) {
+  let ok = true;
+  try {
+    await api("PUT", `/api/groups/${id}/conversations`, { add, remove });
+  } catch (e) {
+    ok = false;
+    $("status_msg").textContent = "그룹 바꾸기 실패: " + e.message;
+  }
+  await loadGroups();
+  return ok;
+}
+
+/// 대화 ⋯ 메뉴 — "그룹" ▸ 그룹마다 체크(누를 때마다 넣고 뺌, 메뉴는 열린 채), 그룹을 고른 채면 "그룹에서 빼기".
+function openConvMenu(convId, anchor) {
+  const items = () => {
+    const out = [el("p", { class: "menu-head", text: "그룹" })];
+    if (!state.groups.length) out.push(el("p", { class: "hint", text: "그룹이 없습니다 — 레일의 '그룹 +' 로 만듭니다" }));
+    for (const g of state.groups) {
+      const on = g.convs.includes(convId);
+      out.push(
+        el("button", {
+          type: "button",
+          role: "menuitemcheckbox",
+          "aria-checked": String(on),
+          text: g.name,
+          onclick: async (ev) => {
+            const b = ev.currentTarget;
+            await changeGroup(g.id, on ? [] : [convId], on ? [convId] : []);
+            if (!$("float").hidden && floatFrom === anchor) {
+              $("float").replaceChildren(...items());
+              ($("float").querySelector(`[data-g="${g.id}"]`) ?? b).focus?.();
+            }
+          },
+          "data-g": String(g.id),
+        }),
+      );
+    }
+    const g = railGroupOf();
+    if (g?.convs.includes(convId))
+      out.push(
+        el("button", {
+          type: "button",
+          role: "menuitem",
+          class: "danger-text",
+          text: "그룹에서 빼기",
+          onclick: async () => {
+            closeFloat(false);
+            if (await changeGroup(g.id, [], [convId])) $("status_msg").textContent = `그룹 ${g.name} 에서 뺐습니다 — 대화는 그대로입니다`;
+            focusAfterFloat("#conv_sections li[data-conv] a", "group_pick_btn");
+          },
+        }),
+      );
+    return out;
+  };
+  openFloat(anchor, "menu", "대화 메뉴", items());
+}
+
+$("conv_more_btn").addEventListener("click", (ev) => {
+  if (state.current) openConvMenu(state.current.id, ev.currentTarget);
+});
+
+/// 그룹 "대화 추가" — 제목 · 상대 검색 + 모든 대화 체크 목록(지금 소속은 체크된 채) → "적용" 으로 넣고 빼기 한 번에.
+function openGroupPicker(anchor) {
+  const g = railGroupOf();
+  if (!g) return;
+  const picked = new Set(g.convs);
+  const q = el("input", { type: "search", placeholder: "제목 · 상대 검색", "aria-label": "대화 검색", autocomplete: "off" });
+  const list = el("ul", { class: "pick-list" });
+  const draw = () => {
+    const needle = q.value.trim().toLowerCase();
+    const rows = sortByPos(state.convs)
+      .map((c) => ({ c, label: convLabel(c, state.peerNames) }))
+      .filter(({ label }) => !needle || `${label.title} ${label.sub}`.toLowerCase().includes(needle));
+    list.replaceChildren(
+      ...(rows.length
+        ? rows.map(({ c, label }) => {
+            const box = el("input", { type: "checkbox", checked: picked.has(c.id) });
+            box.addEventListener("change", () => (box.checked ? picked.add(c.id) : picked.delete(c.id)));
+            return el("li", {}, el("label", {}, box, tagEl(label.tag), el("span", { text: label.title }), el("span", { class: "hint", text: label.sub })));
+          })
+        : [el("li", { class: "hint", text: "맞는 대화 없음" })]),
+    );
+  };
+  q.addEventListener("input", draw);
+  draw();
+  const apply = async () => {
+    const d = membershipDiff(g.convs, [...picked]);
+    closeFloat(true);
+    if (!d.add.length && !d.remove.length) return;
+    if (await changeGroup(g.id, d.add, d.remove)) $("status_msg").textContent = `그룹 ${g.name} — 넣음 ${d.add.length} · 뺌 ${d.remove.length}`;
+    focusAfterFloat("#group_pick_btn");
+  };
+  openFloat(anchor, "dialog", `그룹 ${g.name} 에 대화 추가`, [
+    el("div", { class: "float-form picker" }, el("strong", { text: `${g.name} — 대화 추가` }), q, list, el("div", { class: "actions" }, button("취소", () => closeFloat(true)), button("적용", apply, "primary"))),
+  ]);
+}
+
+// ---- 손으로 놓는 순서(#1i) — 끌어 놓기 · Alt + ↑ / ↓. 같은 묶음(상대 타일 · 그룹 타일 · 같은 절의 대화) 안에서만 ----
+
+let dragging = null; // 끄는 것 `{kind, id, section}` — dragover 에서는 dataTransfer 를 읽을 수 없다
+
+/// 요소 → 끌기 정보(`data-drag` · `data-id` · `data-section`).
+function dragInfo(node) {
+  const n = node?.closest?.("[data-drag]");
+  return n ? { node: n, kind: n.dataset.drag, id: Number(n.dataset.id), section: n.dataset.section ?? null } : null;
+}
+
+/// 전체 순서(id) — 상대 = 연결 목록 순서(서버 자리 순), 그룹 = 레일 순서, 대화 = 자리 순.
+function orderOf(kind) {
+  if (kind === "peer") return state.peers.map((p) => p.id);
+  if (kind === "group") return state.groups.map((g) => g.id);
+  return sortByPos(state.convs).map((c) => c.id);
+}
+
+/// 종류별 순서 저장 — 한 번에 하나, 보내는 동안 바뀌면 마지막 순서만 이어서(`SendLatest`). `last` = 마지막으로 놓은 순서(저장이 끝나기 전 ·
+/// 그 사이 시작한 목록 읽기에는 이것을 덮어 씌운다 — 늦게 온 옛 응답이 방금 옮긴 자리를 되돌리지 않게, 라운드 1). `stamp` = 옮김 · 저장 끝마다 하나씩.
+const orderSaves = {};
+
+function orderSave(kind) {
+  if (orderSaves[kind]) return orderSaves[kind];
+  const o = { last: null, stamp: 0 };
+  o.sender = new SendLatest(async (ids) => {
+    try {
+      await api("PUT", "/api/order", { kind: { peer: "peers", group: "groups", conv: "conversations" }[kind], ids });
+    } catch (e) {
+      $("status_msg").textContent = "자리 저장 실패: " + e.message;
+      if (o.last === ids) o.last = null; // 서버 값으로 되돌린다
+    }
+    o.stamp++;
+    if (kind === "peer") await loadPeers();
+    else if (kind === "group") await loadGroups();
+    else await loadConvs();
+  });
+  orderSaves[kind] = o;
+  return o;
+}
+
+/// 목록 읽기를 시작할 때의 표 — 응답 때 `keepOrder` 에 준다.
+function orderStamp(kind) {
+  return orderSaves[kind]?.stamp ?? 0;
+}
+
+/// 받은 목록 — 순서 저장이 진행 중이거나 읽는 사이 옮김 · 저장이 있었으면 마지막으로 놓은 순서를 덮어 씌운다.
+function keepOrder(kind, items, stamp) {
+  const o = orderSaves[kind];
+  const last = orderToApply(o && { last: o.last, busy: o.sender.busy, stamp: o.stamp }, stamp);
+  if (!last) return items;
+  const fixed = withOrder(items, last);
+  return kind === "conv" ? fixed : sortByPos(fixed);
+}
+
+/// 옮기기 — 화면을 먼저 바꾸고(새 순서를 자리로) 저장한다. 실패하면 서버 값으로 되돌린다.
+function moveItem(kind, id, target, after) {
+  const order = moveInOrder(orderOf(kind), id, target, after);
+  if (kind === "peer") state.peers = sortByPos(withOrder(state.peers, order));
+  else if (kind === "group") state.groups = sortByPos(withOrder(state.groups, order));
+  else state.convs = withOrder(state.convs, order);
+  renderRail();
+  renderConvList();
+  refreshHome();
+  const o = orderSave(kind);
+  o.last = order;
+  o.stamp++;
+  o.sender.push(order);
+}
+
+/// 끌기 표시 지우기.
+function clearDrop() {
+  for (const n of document.querySelectorAll(".drop-before, .drop-after, .drop-into")) n.classList.remove("drop-before", "drop-after", "drop-into");
+}
+
+for (const box of ["rail", "conv_sections"]) {
+  $(box).addEventListener("dragstart", (ev) => {
+    const d = dragInfo(ev.target);
+    if (!d) return;
+    dragging = { kind: d.kind, id: d.id, section: d.section };
+    ev.dataTransfer.effectAllowed = "copyMove"; // 옮기기(move) · 그룹 타일에 넣기(copy)
+    ev.dataTransfer.setData("text/plain", `${d.kind}:${d.id}`);
+    d.node.classList.add("dragging");
+  });
+  $(box).addEventListener("dragend", () => {
+    for (const n of document.querySelectorAll(".dragging")) n.classList.remove("dragging");
+    clearDrop();
+    dragging = null;
+  });
+  $(box).addEventListener("dragover", (ev) => {
+    const t = dragInfo(ev.target);
+    const how = t && t.id !== dragging?.id ? dropKind(dragging, t) : null;
+    clearDrop();
+    if (!how) return; // 놓을 수 없는 곳 — 기본 동작(놓기 없음)
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = how === "join" ? "copy" : "move";
+    if (how === "join") t.node.classList.add("drop-into");
+    else {
+      const r = t.node.getBoundingClientRect();
+      t.node.classList.add(ev.clientY > r.top + r.height / 2 ? "drop-after" : "drop-before");
+    }
+  });
+  $(box).addEventListener("drop", (ev) => {
+    const t = dragInfo(ev.target);
+    const d = dragging;
+    const how = t && t.id !== d?.id ? dropKind(d, t) : null;
+    clearDrop();
+    if (!how) return;
+    ev.preventDefault();
+    if (how === "join") {
+      const g = state.groups.find((x) => x.id === t.id);
+      const already = g?.convs.includes(d.id);
+      changeGroup(t.id, [d.id], []).then((ok) => {
+        if (ok) $("status_msg").textContent = already ? `이미 그룹 ${g.name} 에 있습니다` : `그룹 ${g?.name ?? ""} 에 넣었습니다`;
+      });
+      return;
+    }
+    const r = t.node.getBoundingClientRect();
+    moveItem(d.kind, d.id, t.id, ev.clientY > r.top + r.height / 2);
+  });
+  // Alt + ↑ / ↓ — 초점이 타일 · 대화 행(링크 · ⋯)에 있으면 같은 묶음에서 한 칸.
+  $(box).addEventListener("keydown", async (ev) => {
+    if (!ev.altKey || (ev.key !== "ArrowUp" && ev.key !== "ArrowDown")) return;
+    const d = dragInfo(ev.target);
+    if (!d) return;
+    ev.preventDefault();
+    const scope = d.kind === "conv" ? $("conv_sections") : $("rail");
+    const sameSection = d.kind === "conv" ? `[data-section="${CSS.escape(d.section)}"]` : "";
+    const visible = [...scope.querySelectorAll(`[data-drag="${d.kind}"]${sameSection}`)].map((n) => Number(n.dataset.id));
+    const step = stepTarget(visible, d.id, ev.key === "ArrowUp" ? -1 : 1);
+    if (!step) return;
+    const onLink = ev.target.matches("a");
+    await moveItem(d.kind, d.id, step.target, step.after);
+    // 초점을 옮긴 항목에 다시(다시 그려 새 요소다).
+    const sel = `[data-drag="${d.kind}"][data-id="${d.id}"]${sameSection}`;
+    const moved = scope.querySelector(sel);
+    (d.kind === "conv" ? moved?.querySelector(onLink ? "a" : ".row-more") : moved)?.focus();
+    const now = [...scope.querySelectorAll(`[data-drag="${d.kind}"]${sameSection}`)].map((n) => Number(n.dataset.id));
+    const name = d.kind === "peer" ? displayName(state.peers.find((p) => p.id === d.id) ?? {}) : d.kind === "group" ? (state.groups.find((g) => g.id === d.id)?.name ?? "") : (moved?.querySelector(".title span:last-child")?.textContent ?? "대화");
+    $("order_live").textContent = movedText(name, now.indexOf(d.id));
+  });
+}
 
 // ---- 설정(트리 · 실행 · 화면 · 알림) ----
 
@@ -2381,6 +2977,7 @@ async function showSettings() {
 
 async function refresh() {
   await loadPeers();
+  await loadGroups();
   await loadConvs();
   const r = route(location.hash);
   if (state.current && r.view === "conversation") await openConversation(state.current);
@@ -2577,6 +3174,12 @@ document.addEventListener("click", (ev) => {
     $(b).setAttribute("aria-expanded", "false");
   }
   if (!ev.target.closest?.(".search")) closeSearch();
+  // 상자 안에서 눌러 바뀐 항목(그 사이 떨어져 나간 요소)은 바깥 누름이 아니다.
+  if (!$("float").hidden && ev.target.isConnected && !$("float").contains(ev.target) && !floatFrom?.contains(ev.target)) {
+    // 초점을 받지 못하는 바탕을 누르면 초점이 body 로 떨어진다 — 그때만 연 요소로 돌린다(라운드 2). 초점을 받는 곳을 눌렀으면 그대로.
+    const lost = document.activeElement === document.body || $("float").contains(document.activeElement);
+    closeFloat(lost && !ev.target.closest("a, button, input, select, textarea, summary, [tabindex]"));
+  }
 });
 // Ctrl+K = 통합 검색 칸, Esc = 메뉴 · 검색 결과 닫기.
 document.addEventListener("keydown", (ev) => {
@@ -2587,6 +3190,10 @@ document.addEventListener("keydown", (ev) => {
   } else if (ev.key === "Escape") {
     const from = MENUS.find(([, m]) => $(m).contains(document.activeElement));
     const inSearch = $("search_box").contains(document.activeElement);
+    if (!$("float").hidden) {
+      closeFloat(true);
+      return;
+    }
     closeMenus();
     closeSearch();
     if (from) $(from[0]).focus();
@@ -2688,7 +3295,7 @@ $("detail_close").addEventListener("click", () => {
 renderTree();
 window.addEventListener("hashchange", render);
 await showSettings(); // 테마 · 기본값을 먼저 — 연결 목록의 "기본값(…)" 문구가 쓴다
-await Promise.all([showStatus(), showMe(), loadPeers(), loadAgents(), loadConvs()]);
+await Promise.all([showStatus(), showMe(), loadPeers(), loadAgents(), loadConvs(), loadGroups()]);
 // 웹UI 를 열 때 페어링된 상대 연결 확인 한 번(#1c).
 pingPeers(state.peers.filter((p) => p.paired).map((p) => p.id));
 await render();

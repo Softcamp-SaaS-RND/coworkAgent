@@ -3,7 +3,7 @@
 > 절차·운영 문서 — 모듈 매뉴얼 형식(개요 / 공개 계약 / 사용 예)의 예외다([매뉴얼 등록 규약](../README.md)).
 > 모듈별 API · 계약의 정본은 [an_core](an_core.md) · [an_net](an_net.md) · [an_agent](an_agent.md) · [an_app](an_app.md) 이고, 여기는
 > 그것들이 **실행 중에 어떻게 맞물리는지**를 적는다 — 어떤 프로세스가 생기고, 어떤 서비스가 무슨 역할을 하며, `claude -p` 헤드리스
-> 대화의 세션 · 저장소 · 흐름이 어떻게 이어지는가. 결정 번호(D · S)는 [masterPlan](../../masterPlan.md). 수치 · 경로는 스키마 15 ·
+> 대화의 세션 · 저장소 · 흐름이 어떻게 이어지는가. 결정 번호(D · S)는 [masterPlan](../../masterPlan.md). 수치 · 경로는 스키마 16 ·
 > 검증 환경 Windows 11 · Claude Code 2.1.296 기준. 쓰는 사람용 안내는 [사용자 가이드](../user/user-guide.md).
 
 ## 1. 한눈에 보기
@@ -63,6 +63,8 @@ python tools/rebuild_run.py                # 떠 있는 앱 강제 종료 → �
 ```
 
 - 이미 떠 있을 때 다시 실행하면 웹UI 만 열린다(보조 실행 — 3.1). 데이터는 `%LOCALAPPDATA%\coworkAgent\`(7.1).
+- 버전은 `crates/*/Cargo.toml` 의 `version` 하나 — 화면 상태(`/api/status`)와 실행 파일 속성(파일 · 제품 버전)이 같은 값이다. `crates/app/build.rs` 가
+  빌드 때 아이콘 · 버전 리소스를 만들어 넣는다.
 
 ### 2.3 개발 — 검증 명령
 
@@ -347,14 +349,16 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 
 폴더 밖: 시작 실패 사유 `%TEMP%\coworkAgent-start-error.txt`, Claude Code 기록(7.4).
 
-### 7.2 DB 표 (스키마 15)
+### 7.2 DB 표 (스키마 16)
 
 | 표 | 한 행 | 주요 열 |
 |---|---|---|
-| `peers` | 연결한 PC | `spki`(공개키) · `name` · `host` · `addr` · `my_ok` · `their_ok` · `round`(페어링 세대) · `grp` · `model` · `effort` · `alias` · `icon` · `activity_seen_msg` · `activity_seen_event` · `seen_at`(마지막 통신 — 보내기 성공 · 요청 받기 · `Pong`) · `focus`(마지막 `Pong` · 집중 거절 때 값) |
+| `peers` | 연결한 PC | `spki`(공개키) · `name` · `host` · `addr` · `my_ok` · `their_ok` · `round`(페어링 세대) · `grp` · `model` · `effort` · `alias` · `icon` · `activity_seen_msg` · `activity_seen_event` · `seen_at`(마지막 통신 — 보내기 성공 · 요청 받기 · `Pong`) · `focus`(마지막 `Pong` · 집중 거절 때 값) · `pos`(레일 자리 — #1i, 새 상대는 맨 뒤) |
 | `settings` | 키 · 값 | 아래 키 |
 | `agents` | 내 에이전트 | `name`(UNIQUE — 상대가 부르는 이름, 바꾸지 않는다) · `folder` · `tools`(#1d 부터 읽지 않음 — 도구는 읽기 전용 5개 고정) · `prompt` · `grp` · `uid`(세대) |
-| `conversations` | 대화 | `uuid` · `peer_id` · `agent`(대화 에이전트) · `dir`(`out` 내가 엶 · `in` 상대가 엶) · `session` · `relay_agent` · `relay_cap` · `relay_count` · `relay_on` · `relay_blocked` · `title` · `starred_at` · `read_id` |
+| `conversations` | 대화 | `uuid` · `peer_id` · `agent`(대화 에이전트) · `dir`(`out` 내가 엶 · `in` 상대가 엶) · `session` · `relay_agent` · `relay_cap` · `relay_count` · `relay_on` · `relay_blocked` · `title` · `starred_at` · `read_id` · `pos`(손으로 놓은 자리 — #1i, 새 대화는 맨 위 `min - 1`) |
+| `groups` | 레일 그룹(#1i — 이 PC 에만) | `id`(AUTOINCREMENT — 지운 번호를 다시 쓰지 않는다) · `name`(UNIQUE, 1 ~ 40자) · `icon` · `pos` |
+| `group_convs` | 그룹 소속 | (`group_id`, `conversation_id`) — 외래 키를 켜지 않는 DB 라 그룹을 지우면 `groups::remove` 가 함께 지운다. 대화는 여러 그룹에 |
 | `messages` | 사람 글 · 에이전트 답 | `uuid` · `conversation_id` · `author`(`human` · `agent`) · `text` · `state` · `reply_to` · `turns` · `duration_ms` · `mine` · `exec`(실행 요청) · `lc` · `via`(`cli`) · `saved_at` · `model` · `effort` · `request` · `req_state`(`wait` · `accepted` · `rejected` · `done` — #1d) · `req_note` · `req_at` · `done_at`(#1d 부터 읽지 않음) · `agent`(멘션) · `refused` · `edited_at`(편집 시각 — #1f) |
 | `relay_events` | 자동 왕복 시작 · 끝 · 내 글이 실패로 바뀐 순간 · 상대 반영 실패(`sync_failed` — #1f) | `conversation_id` · `kind` · `detail` · `message_id` |
 | `agent_sessions` | 대화 × 멘션 에이전트 세션 | (`conversation_id`, `agent`) → `session` |
@@ -641,6 +645,8 @@ sequenceDiagram
 남는 위험: 에이전트 폴더에서 읽을 수 있는 것은 답으로 상대에게 나갈 수 있다 · 원격 요청이 수신 PC 의 Max 사용량을 상한 없이 쓴다
 (D24 개정) · 초대 메시지가 새면 5분 창 안에서 제3자가 등록된다(D8 개정) · 수신 포트를 인터넷에 열면 사내망 밖에서도 붙는다(LAN 검사 없음) ·
 답을 만들 때 질문 · 읽은 파일 내용이 Claude 모델 서비스(사내망 밖)로 나간다.
+
+쉬운 말 풀이 · 코드 근거 · 실측 · 확인 필요 항목: [외부 공격 노출 검토](../../overview/security-review.md).
 
 **보안 회귀 검사(개발 PC)**
 

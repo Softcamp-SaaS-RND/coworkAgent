@@ -228,6 +228,8 @@ pub struct Compose<'a> {
     pub title: Option<&'a str>,
     pub request: bool,
     pub mention: Option<&'a str>,
+    /// 새 대화를 넣을 레일 그룹(#1i — 이 PC 에만, 대화와 같은 트랜잭션). 이어 쓰기면 쓰지 않는다.
+    pub group: Option<i64>,
 }
 
 /// 받은 `message` 의 나머지 — 순서(`lc`) · 자동 왕복(`by_agent` · `relay`) · 출처(`via`) · 종류(`request`) · 멘션(`mention`).
@@ -239,6 +241,11 @@ type MessageExtra = (
     bool,
     Option<String>,
 );
+
+/// 새 대화를 넣을 레일 그룹이 없다(#1i) — 404 로 간다.
+fn no_group() -> io::Error {
+    io::Error::new(io::ErrorKind::NotFound, "없는 그룹")
+}
 
 /// 멘션을 받지 않는 자리(새 대화 · 받은 대화 · 자동 왕복 대화 · 빈 이름)의 오류 문구.
 const MENTION_ONLY: &str =
@@ -1197,6 +1204,12 @@ impl Chat {
                     let c = chat::open_conversation(&tx, &new_uuid(), peer_id, agent, Dir::Out)
                         .map_err(db_err)?;
                     chat::set_title(&tx, c.id, opts.title).map_err(db_err)?;
+                    // 그룹(#1i)이 그 사이 지워졌으면 대화도 만들지 않고 보내지 않는다(트랜잭션을 버린다 — 되돌림).
+                    if let Some(g) = opts.group
+                        && !an_core::groups::join(&tx, g, c.id).map_err(db_err)?
+                    {
+                        return Err(no_group());
+                    }
                     tx.commit().map_err(db_err)?;
                     c
                 }
@@ -1276,6 +1289,11 @@ impl Chat {
                 .map_err(db_err)?;
             chat::set_relay(&tx, c.id, my_agent, cap).map_err(db_err)?;
             chat::set_title(&tx, c.id, opts.title).map_err(db_err)?;
+            if let Some(g) = opts.group
+                && !an_core::groups::join(&tx, g, c.id).map_err(db_err)?
+            {
+                return Err(no_group());
+            }
             let c = chat::by_id(&tx, c.id).map_err(db_err)?.unwrap_or(c);
             tx.commit().map_err(db_err)?;
             c

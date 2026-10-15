@@ -476,3 +476,35 @@ details { margin: 8px 0; }
 
 /* 토큰 없음 · 거절 — 다시 열기 안내(1a) */
 .disconnected { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; padding: 10px 16px; background: var(--danger); color: var(--on-dark); font-weight: 600; text-align: center; }
+
+/* ---- 레일 그룹(#1i) ---- */
+.rail-sep { width: 28px; margin: 0; border: 0; border-top: 1px solid var(--rail-text); opacity: 0.4; }
+.rail-groups { display: flex; flex-direction: column; gap: 12px; }
+.rail-btn.group-add { font-size: var(--fs-xs); line-height: 1.1; padding: 0 2px; }
+.float { position: fixed; min-width: 220px; max-width: min(420px, calc(100vw - 16px)); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.float[role="menu"] button { height: 32px; display: flex; align-items: center; gap: 8px; border: 0; background: transparent; text-align: left; font-size: var(--fs-sm); }
+.float[role="menu"] button:hover, .float[role="menu"] button:focus-visible { background: var(--surface-2); outline: 0; }
+.float button[aria-checked]::before { content: ""; width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--border); flex: none; }
+.float button[aria-checked="true"]::before { background: var(--accent); border-color: var(--accent); }
+.float .menu-head { margin: 4px 8px 2px; font-size: var(--fs-xs); color: var(--muted); }
+.float .hint { margin: 4px 8px; }
+.float .danger-text { color: var(--danger, #e5484d); }
+.float-form { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+.float-form .actions { display: flex; gap: 8px; justify-content: flex-end; }
+.picker { width: 380px; max-width: calc(100vw - 32px); }
+.pick-list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.pick-list label { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: var(--radius-sm); cursor: pointer; white-space: nowrap; overflow: hidden; }
+.pick-list label:hover { background: var(--surface-2); }
+.pick-list label .hint { margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
+.group-head { margin-top: 4px; }
+.side-list li { position: relative; }
+.row-more { position: absolute; right: 6px; top: 6px; width: 24px; height: 24px; opacity: 0; }
+.side-list li:hover .row-more, .side-list li:focus-within .row-more { opacity: 1; }
+.dragging { opacity: 0.4; }
+.drop-before { box-shadow: 0 -2px 0 0 var(--accent); }
+.drop-after { box-shadow: 0 2px 0 0 var(--accent); }
+.drop-into { outline: 2px dashed var(--accent); outline-offset: 2px; }
+.side-list li[draggable="true"] { cursor: grab; }
+.pick-list input[type="checkbox"], .pick-list .tag { flex: none; width: auto; }
+.pick-list label > span:not(.tag):not(.hint) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pick-list label .hint { flex: 0 1 auto; min-width: 0; max-width: 40%; }

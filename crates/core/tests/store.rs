@@ -312,3 +312,168 @@ fn remote_order_value_bounded() {
     assert_eq!(n.lc, chat::MAX_LC + 1);
     assert_eq!(chat::messages(&c, conv.id).unwrap().len(), 3);
 }
+
+/// 스키마 16(#1i) — 첫 자리 = 지금 보이는 순서(상대 id 순 · 대화 최근 활동순), 새 대화 맨 위 · 새 상대 맨 뒤, 그룹 넣고 빼기 · 지우기, 순서 바꾸기.
+#[test]
+fn schema16_groups_and_order() {
+    use an_core::groups::{self, Order};
+    use an_core::peers;
+    let p = std::env::temp_dir().join(format!("an-core-store-s16-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&p);
+    let _ = std::fs::remove_file(db::backup_path(&p, 15));
+    {
+        // 스키마 15 가 남긴 파일 — 자리 열 · 그룹 표가 없다. 대화 1 은 오래된 글, 2 는 최근 글, 3 은 글 없음(생성 시각 중간).
+        let conn = db::open(&p).unwrap();
+        conn.execute_batch(
+            "DROP TABLE group_convs; DROP TABLE groups;
+             ALTER TABLE peers DROP COLUMN pos; ALTER TABLE conversations DROP COLUMN pos; PRAGMA user_version = 15;
+             INSERT INTO peers (id, spki, name, host, addr, round, created_at) VALUES (5, x'05', 'p5', 'h', '1.2.3.4:5', 'r', 0);
+             INSERT INTO peers (id, spki, name, host, addr, round, created_at) VALUES (2, x'02', 'p2', 'h', '1.2.3.4:2', 'r', 0);
+             INSERT INTO conversations (id, uuid, peer_id, agent, dir, created_at) VALUES (1, 'c1', 2, 'a', 'out', 10),
+               (2, 'c2', 2, 'a', 'out', 20), (3, 'c3', 5, 'a', 'in', 50);
+             INSERT INTO messages (id, uuid, conversation_id, author, text, state, created_at) VALUES
+               (1, 'm1', 1, 'human', '옛', 'done', 30), (2, 'm2', 2, 'human', '새', 'done', 90);",
+        )
+        .unwrap();
+    }
+    let conn = db::open(&p).unwrap();
+    assert_eq!(db::user_version(&conn).unwrap(), 16);
+    assert!(db::backup_path(&p, 15).exists(), "올리기 전 사본");
+    let peer_order = |c: &db::Connection| {
+        peers::list(c)
+            .unwrap()
+            .iter()
+            .map(|p| p.id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(peer_order(&conn), [2, 5], "상대 = id 순");
+    let conv_order = |c: &db::Connection| {
+        let mut s = chat::summaries(c).unwrap();
+        s.sort_by_key(|s| (s.pos, s.conversation.id));
+        s.iter().map(|s| s.conversation.id).collect::<Vec<_>>()
+    };
+    assert_eq!(
+        conv_order(&conn),
+        [2, 3, 1],
+        "대화 = 최근 활동순(글 없으면 생성 시각)"
+    );
+
+    // 새 대화는 맨 위, 새 상대는 맨 뒤.
+    let n = chat::open_conversation(&conn, "c4", 5, "a", chat::Dir::In).unwrap();
+    assert_eq!(conv_order(&conn), [n.id, 2, 3, 1]);
+    peers::upsert(&conn, &[9u8], "p9", "h", "1.2.3.4:9", "r").unwrap();
+    let p9 = peers::by_spki(&conn, &[9u8]).unwrap().unwrap().id;
+    assert_eq!(peer_order(&conn), [2, 5, p9]);
+    // 새 글이 와도 자리는 그대로.
+    chat::add_human(&conn, 1, "m3", "더 새", chat::State::Done, true, true).unwrap();
+    assert_eq!(conv_order(&conn), [n.id, 2, 3, 1]);
+
+    // 순서 바꾸기 — 준 순서대로, 겹침 · 없는 id 는 거절(아무것도 안 바뀜).
+    groups::reorder(&conn, Order::Peers, &[p9, 2, 5])
+        .unwrap()
+        .unwrap();
+    assert_eq!(peer_order(&conn), [p9, 2, 5]);
+    groups::reorder(&conn, Order::Conversations, &[1, 2, 3, n.id])
+        .unwrap()
+        .unwrap();
+    assert_eq!(conv_order(&conn), [1, 2, 3, n.id]);
+    assert!(
+        groups::reorder(&conn, Order::Conversations, &[2, 2])
+            .unwrap()
+            .is_err()
+    );
+    assert!(
+        groups::reorder(&conn, Order::Conversations, &[3, 999])
+            .unwrap()
+            .is_err()
+    );
+    assert_eq!(conv_order(&conn), [1, 2, 3, n.id], "거절이면 그대로");
+
+    // 그룹 — 이름 규칙 · 같은 이름 · 여러 그룹 소속 · 넣고 빼기 · 지워도 대화는 남는다.
+    assert!(groups::clean_name("  ").is_err());
+    assert!(groups::clean_name(&"가".repeat(41)).is_err());
+    assert_eq!(
+        groups::clean_name(&format!(" {} ", "가".repeat(40))).unwrap(),
+        "가".repeat(40)
+    );
+    let g1 = groups::add(&conn, "결제").unwrap();
+    let g2 = groups::add(&conn, "배포").unwrap();
+    assert!(groups::name_taken(&conn, "결제", None).unwrap());
+    assert!(
+        !groups::name_taken(&conn, "결제", Some(g1.id)).unwrap(),
+        "자기 이름은 겹침 아님"
+    );
+    assert!(groups::add(&conn, "결제").is_err(), "이름은 유일");
+    assert!(groups::change(&conn, g1.id, &[1, 2, 2], &[]).unwrap());
+    assert!(groups::change(&conn, g2.id, &[2], &[]).unwrap());
+    assert!(
+        groups::change(&conn, g1.id, &[], &[1, 7]).unwrap(),
+        "없는 소속 빼기는 그대로"
+    );
+    assert!(!groups::change(&conn, 999, &[1], &[]).unwrap(), "없는 그룹");
+    assert_eq!(
+        groups::unknown_conversations(&conn, &[1, 77, 77, 78]).unwrap(),
+        [77, 78]
+    );
+    let convs = |c: &db::Connection, id| groups::by_id(c, id).unwrap().unwrap().convs;
+    assert_eq!(
+        (convs(&conn, g1.id), convs(&conn, g2.id)),
+        (vec![2], vec![2]),
+        "한 대화가 두 그룹에"
+    );
+    let tx = db::write_tx(&conn).unwrap();
+    assert!(groups::join(&tx, g2.id, 3).unwrap());
+    assert!(!groups::join(&tx, 999, 3).unwrap());
+    tx.commit().unwrap();
+    assert_eq!(convs(&conn, g2.id), [2, 3]);
+    assert!(groups::remove(&conn, g2.id).unwrap());
+    let left: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM group_convs WHERE group_id = ?1",
+            [g2.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(left, 0, "그룹을 지우면 소속도");
+    assert_eq!(chat::summaries(&conn).unwrap().len(), 4, "대화는 남는다");
+    let g3 = groups::add(&conn, "새").unwrap();
+    assert!(g3.id > g2.id, "지운 그룹 번호를 다시 쓰지 않는다");
+    drop(conn);
+    // 다시 열어도 남는다.
+    let conn = db::open(&p).unwrap();
+    assert_eq!(conv_order(&conn), [1, 2, 3, n.id]);
+    assert_eq!(
+        groups::list(&conn)
+            .unwrap()
+            .iter()
+            .map(|g| (g.name.clone(), g.convs.clone()))
+            .collect::<Vec<_>>(),
+        [("결제".to_string(), vec![2]), ("새".to_string(), vec![])]
+    );
+}
+
+/// 순서 바꾸기에 개수 상한이 없다(#1i 라운드 2) — 웹UI 는 전체 순서를 보내고 대화는 지워지지 않는다. 10,001개도 그대로 저장.
+#[test]
+fn reorder_more_than_ten_thousand() {
+    use an_core::groups::{self, Order};
+    let c = conn("many");
+    let tx = db::write_tx(&c).unwrap();
+    for i in 0..10_001 {
+        chat::open_conversation(&tx, &format!("u{i}"), 1, "a", chat::Dir::Out).unwrap();
+    }
+    tx.commit().unwrap();
+    let mut ids: Vec<i64> = chat::list(&c).unwrap().iter().map(|x| x.id).collect();
+    assert_eq!(ids.len(), 10_001);
+    ids.sort();
+    groups::reorder(&c, Order::Conversations, &ids)
+        .unwrap()
+        .unwrap();
+    let first: i64 = c
+        .query_row(
+            "SELECT id FROM conversations ORDER BY pos, id LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(first, ids[0], "준 순서대로");
+}

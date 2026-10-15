@@ -3,6 +3,7 @@ pub mod autostart;
 pub mod browser;
 pub mod chat_api;
 pub mod cli;
+pub mod groups_api;
 pub mod handoff;
 pub mod notify;
 pub mod peers_api;

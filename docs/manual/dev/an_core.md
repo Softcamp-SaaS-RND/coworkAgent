@@ -14,7 +14,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   `agent_folder_problem(folder) -> Option<이유>`(데이터 루트를 품음 · 그 안 · 네트워크 경로 — 등록 · 수정 · 실행 직전) · `folder_blocked(folder, roots)`.
 - `owner_only::restrict(dir)`(#1a) — Windows 보호 DACL(토큰 사용자 SID · SYSTEM, `FILE_ALL_ACCESS`, 하위 상속) · Unix 0700.
 - `sync::lock(&Mutex<T>)`(#1a) — 오염된 잠금도 안의 값을 꺼내 계속 쓴다(warn). 원시 `.lock().expect(` 는 쓰지 않는다.
-- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(13)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
+- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(16)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
   `messages` 에 `reply_to` · `turns` · `duration_ms` — 한 트랜잭션, 있는 열은 건너뜀). 더 새 스키마면 오류. 올리기 전 `{db}.v{버전}.bak`
   사본(`db::backup_path`, `VACUUM INTO`) — 이전 실행 파일로 롤백할 때 DB 를 이 사본으로 바꿔 쓴다. → 6 `messages` 에 `mine` ·
   `exec` · `lc`(이전 이력은 방향 · id 로 채움). → 7 `conversations` 에 `relay_agent` · `relay_cap` · `relay_count` · `relay_on` ·
@@ -50,8 +50,9 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   `add_message` · `add_reply(…, reply_to, turns, duration_ms)`(에이전트 답) · `set_state` · `messages` · `message_by_uuid` ·
   `pending(conv)`(DB 대기열 — 커서 없이 매번 처음부터) · `pending_conversations` · `summaries`(`Summary{conversation, title(이 PC 에서 붙인 제목,
   없으면 첫 사람 메시지 앞 40자), last_state, last_at}`, 최근 것 먼저) · `set_title(id, title)`(`None` = 지움) ·
-  `messages_across(mine, peer, author, request, q, limit)`(대화를 가로지른 글 — 상대 · 종류 · 사람 글 종류(`request` — 사람 글만) · 본문 일치를 거른
-  뒤 최신 `limit` 건). `Message` 에 `created_at` · `reply_to` · `turns` · `duration_ms` · `mine`(이 PC 의 글) · `exec`(실행 요청) ·
+  `messages_across(mine, scope, author, request, q, limit)`(대화를 가로지른 글 — 범위 `Scope::All` · `Peer(id)` · `Group(id)`(#1i) · 종류 · 사람 글
+  종류(`request` — 사람 글만) · 본문 일치를 거른 뒤 최신 `limit` 건) · `saved(scope, conversation, limit)` · `Summary.pos`(손으로 놓은 자리 — 목록 자체는 최근
+  활동순 그대로). 새 대화 `pos = min - 1`(맨 위). `Message` 에 `created_at` · `reply_to` · `turns` · `duration_ms` · `mine`(이 PC 의 글) · `exec`(실행 요청) ·
   `lc`(양쪽 공통 순서 — 램포트 시계, `messages` 는 `(lc, uuid)` 순) · `via`(`Some("cli")` = 사용자 AI 에이전트가 CLI 로 쓴 글, 동작은 사람 글과 같다). `set_via(id, via)`(`VIA_CLI` 만 남기고 그 밖 값은 NULL — 삽입과 같은 트랜잭션에서 부른다). `add_human(…, mine, exec)` · `observe(id, lc)`(받은 글의 순서 — 1 ~ `MAX_LC` 만, 밖이면 무시) ·
   `last_exec_before(conv, &msg)` · `notes_between(conv, after, &before)`(실행 맥락) · 대기열은 실행 요청만(작성자 무관 — 에이전트발 포함).
   작업 화면(이 PC 에만): `set_starred(id, on)` · `marks(id)`(제목 · ★) · `mark_read(id, upto)`(화면이 받은 마지막 글까지 — 뒤로 가지 않음, 그 대화
@@ -92,6 +93,10 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   전역 → 기본값) · `theme` · `side_width` · `me_tile`. 읽기는 `rusqlite::Result` — 없거나 틀린 값만 기본값, DB 오류는 그대로 낸다.
 - `log_file::FileLogger::install(path, level)` — `LOG_ROTATE_BYTES`(1 MiB)를 넘게 되는 기록 전에 `.1` 로 회전(1개 보관). 패닉 훅도 단다(#1e) —
   `error` "패닉: {메시지} — {파일}:{줄}" 뒤 기본 훅(stderr).
+- `groups`(#1i — 이 PC 에만): `Group{id, name, icon, pos, convs}` · `clean_name`(1 ~ `NAME_CHARS` 40자) · `list`(자리 순) · `by_id` · `name_taken(name,
+  except)` · `add`(끝에) · `rename` · `set_icon` · `remove`(소속 함께 — 외래 키를 켜지 않는 DB) · `unknown_conversations` · `change(id, add, remove)` ·
+  `join(id, conv)`(부르는 쪽 트랜잭션 안 — 새 대화) · `reorder(Order::{Peers, Groups, Conversations}, ids)`(겹침 · 없는 id → `Err(문구)`, 빠진 id 는 제 자리).
+  스키마 16: `peers.pos`(새 상대 `max + 1`, `peers::list` = `ORDER BY pos, id`) · `conversations.pos` · `groups`(AUTOINCREMENT) · `group_convs`.
 - `instance::InstanceLock::acquire(path)` → `Acquired::Primary(lock)` | `Secondary`. `InstanceInfo { port, token }` 의
   `write` · `read`(hex 토큰만 받음).
 

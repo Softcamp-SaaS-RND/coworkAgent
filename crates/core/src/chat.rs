@@ -158,6 +158,8 @@ pub struct Summary {
     pub starred: bool,
     /// 읽은 뒤에 온 상대 쪽 글 수(이 PC 의 읽음).
     pub unread: i64,
+    /// 손으로 놓은 자리(#1i — 이 PC 에만, 작을수록 위). 목록 순서 자체는 최근 활동순 그대로.
+    pub pos: i64,
 }
 
 /// 대화 제목 길이(글자).
@@ -317,7 +319,9 @@ pub fn open_conversation(
         return Ok(c);
     }
     conn.execute(
-        "INSERT INTO conversations (uuid, peer_id, agent, dir, created_at) VALUES (?1, ?2, ?3, ?4, unixepoch())",
+        // 새 대화는 맨 위(#1i — 손으로 놓은 순서의 앞).
+        "INSERT INTO conversations (uuid, peer_id, agent, dir, created_at, pos)
+         VALUES (?1, ?2, ?3, ?4, unixepoch(), (SELECT coalesce(min(pos), 0) - 1 FROM conversations))",
         params![uuid, peer_id, agent, dir.as_str()],
     )?;
     by_id(conn, conn.last_insert_rowid()).map(|c| c.expect("방금 쓴 대화"))
@@ -425,20 +429,49 @@ pub fn delete_message(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
     Ok(gone)
 }
 
-/// 저장된 메시지 — 저장 시각 최신부터(같은 초면 id 큰 것), `peer` · `conversation` 으로 거른다.
+/// 목록 범위(#1i) — 전부 · 한 상대의 대화 · 한 그룹(이 PC 의 그룹 소속)의 대화.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Scope {
+    #[default]
+    All,
+    Peer(i64),
+    Group(i64),
+}
+
+impl Scope {
+    /// 상대 id 와 그룹 id 중 하나(둘 다 `None` = 전부) — SQL 자리표에 넣는다.
+    pub fn ids(self) -> (Option<i64>, Option<i64>) {
+        match self {
+            Scope::All => (None, None),
+            Scope::Peer(p) => (Some(p), None),
+            Scope::Group(g) => (None, Some(g)),
+        }
+    }
+
+    /// 거르는 SQL — 대화 별칭 `c`, 자리표 `?{peer}` · `?{group}`.
+    pub fn sql(peer: usize, group: usize) -> String {
+        format!(
+            "(?{peer} IS NULL OR c.peer_id = ?{peer}) AND (?{group} IS NULL OR c.id IN (SELECT conversation_id FROM group_convs WHERE group_id = ?{group}))"
+        )
+    }
+}
+
+/// 저장된 메시지 — 저장 시각 최신부터(같은 초면 id 큰 것), 범위(`scope`) · `conversation` 으로 거른다.
 pub fn saved(
     conn: &Connection,
-    peer: Option<i64>,
+    scope: Scope,
     conversation: Option<i64>,
     limit: i64,
 ) -> rusqlite::Result<Vec<Message>> {
     let cols = prefixed(MSG_COLS, "m");
+    let (peer, group) = scope.ids();
     conn.prepare(&format!(
         "SELECT {cols} FROM messages m JOIN conversations c ON c.id = m.conversation_id
-         WHERE m.saved_at IS NOT NULL AND (?1 IS NULL OR c.peer_id = ?1) AND (?2 IS NULL OR c.id = ?2)
-         ORDER BY m.saved_at DESC, m.id DESC LIMIT ?3"
+         WHERE m.saved_at IS NOT NULL AND {} AND (?2 IS NULL OR c.id = ?2)
+         ORDER BY m.saved_at DESC, m.id DESC LIMIT ?3",
+        Scope::sql(1, 4)
     ))?
-    .query_map(params![peer, conversation, limit], msg_row)?
+    .query_map(params![peer, conversation, limit, group], msg_row)?
     .collect()
 }
 
@@ -687,7 +720,7 @@ pub const SEARCH_OTHERS: usize = 10;
 pub fn search(conn: &Connection, q: &str, limit: i64) -> rusqlite::Result<Found> {
     let ql = q.to_lowercase();
     let has = |s: &str| s.to_lowercase().contains(&ql);
-    let messages = messages_across(conn, None, None, None, None, Some(q), limit)?;
+    let messages = messages_across(conn, None, Scope::All, None, None, Some(q), limit)?;
     let conversations = summaries(conn)?
         .into_iter()
         .filter(|s| has(&s.title))
@@ -964,12 +997,12 @@ pub fn messages(conn: &Connection, conversation_id: i64) -> rusqlite::Result<Vec
     .collect()
 }
 
-/// 대화를 가로지른 글 — `mine` 이 참이면 내가 쓴 글, 거짓이면 상대 쪽이 쓴 글, `None` 이면 둘 다. `peer` 로 그 상대 대화만,
+/// 대화를 가로지른 글 — `mine` 이 참이면 내가 쓴 글, 거짓이면 상대 쪽이 쓴 글, `None` 이면 둘 다. `scope` 로 그 상대 · 그룹 대화만,
 /// `author` 로 그 종류만, `q` 는 본문 부분 일치. 거른 뒤 최신 것부터 `limit` 건.
 pub fn messages_across(
     conn: &Connection,
     mine: Option<bool>,
-    peer: Option<i64>,
+    scope: Scope,
     author: Option<Author>,
     ask: Option<AskFilter>,
     q: Option<&str>,
@@ -982,15 +1015,26 @@ pub fn messages_across(
         Some(AskFilter::Query) => (Some(false), None),
         Some(AskFilter::Request(s)) => (Some(true), s.map(ReqState::as_str)),
     };
+    let (peer, group) = scope.ids();
     conn.prepare(&format!(
         "SELECT {cols} FROM messages m JOIN conversations c ON c.id = m.conversation_id
-         WHERE (?1 IS NULL OR m.mine = ?1) AND (?2 IS NULL OR c.peer_id = ?2) AND (?3 IS NULL OR m.author = ?3)
+         WHERE (?1 IS NULL OR m.mine = ?1) AND {} AND (?3 IS NULL OR m.author = ?3)
            AND (?4 IS NULL OR (m.author = 'human' AND coalesce(m.request, 0) = ?4))
            AND (?5 IS NULL OR m.text LIKE ?5 ESCAPE '\\') AND (?7 IS NULL OR m.req_state = ?7)
-         ORDER BY m.created_at DESC, m.id DESC LIMIT ?6"
+         ORDER BY m.created_at DESC, m.id DESC LIMIT ?6",
+        Scope::sql(2, 8)
     ))?
     .query_map(
-        params![mine, peer, author.map(Author::as_str), request, like, limit, req_state],
+        params![
+            mine,
+            peer,
+            author.map(Author::as_str),
+            request,
+            like,
+            limit,
+            req_state,
+            group
+        ],
         msg_row,
     )?
     .collect()
@@ -1059,7 +1103,8 @@ pub fn summaries(conn: &Connection) -> rusqlite::Result<Vec<Summary>> {
            (SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1),
            c.title,
            c.starred_at IS NOT NULL,
-           (SELECT count(*) FROM messages WHERE conversation_id = c.id AND mine = 0 AND id > coalesce(c.read_id, 0))
+           (SELECT count(*) FROM messages WHERE conversation_id = c.id AND mine = 0 AND id > coalesce(c.read_id, 0)),
+           c.pos
          FROM conversations c
          ORDER BY coalesce((SELECT max(created_at) FROM messages WHERE conversation_id = c.id), c.created_at) DESC,
            coalesce((SELECT max(id) FROM messages WHERE conversation_id = c.id), 0) DESC, c.id DESC"
@@ -1080,6 +1125,7 @@ pub fn summaries(conn: &Connection) -> rusqlite::Result<Vec<Summary>> {
             last_at: r.get(CONV_N + 2)?,
             starred: r.get(CONV_N + 4)?,
             unread: r.get(CONV_N + 5)?,
+            pos: r.get(CONV_N + 6)?,
         })
     })?
     .collect()

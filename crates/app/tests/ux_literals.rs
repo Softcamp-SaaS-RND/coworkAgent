@@ -243,3 +243,43 @@ fn rail_scope_literals() {
         assert!(APP.contains(code), "{code}");
     }
 }
+
+/// 레일 그룹(#1i) — "그룹 +" · "대화 추가" · "그룹에서 빼기" · 대화 ⋯ 메뉴 · 떠 있는 상자 · 타일 메뉴("타일 편집" · "이미지 지우기" · "그룹 삭제").
+#[test]
+fn rail_group_literals() {
+    for (file, text, label) in [
+        ("index.html", INDEX, r#"id="rail_group_add""#),
+        ("index.html", INDEX, ">그룹 +</button>"),
+        ("index.html", INDEX, r#"id="conv_more_btn""#),
+        (
+            "index.html",
+            INDEX,
+            r#"<div id="float" class="popover float" hidden></div>"#,
+        ),
+        ("app.js", APP, r#"text: "대화 추가""#),
+        ("app.js", APP, r#"text: "그룹에서 빼기""#),
+        ("app.js", APP, r#"role: "menuitemcheckbox""#),
+        ("view.js", VIEW, "같은 이름의 그룹이 있습니다"),
+        ("index.html", INDEX, r#"id="tile_more_btn""#),
+        (
+            "index.html",
+            INDEX,
+            r#"<label for="tile_alias" id="tile_alias_label">표시 이름</label>"#,
+        ),
+        ("app.js", APP, r#"item("타일 편집""#),
+        ("app.js", APP, r#"item("이미지 지우기""#),
+        ("app.js", APP, r#""그룹 삭제","#),
+        ("app.js", APP, "그룹만 지웁니다 — 대화는 지우지 않습니다."),
+        ("app.js", APP, r#""contextmenu""#),
+        (
+            "index.html",
+            INDEX,
+            r#"<p id="order_live" class="sr-only" aria-live="polite"></p>"#,
+        ),
+        ("app.js", APP, r#"draggable: "true""#),
+        ("app.js", APP, "Alt + ↑ / ↓ 로 자리를 바꿉니다"),
+        ("view.js", VIEW, "번째로 옮김"),
+    ] {
+        assert!(text.contains(label), "{file}: {label}");
+    }
+}

@@ -168,7 +168,9 @@ async fn delete_mine_only_here() {
     let db = common::db(&a);
     assert!(msg(&a, &q.uuid).is_none() && msg(&a, &r.uuid).is_none());
     assert!(
-        chat::saved(&db, None, None, 50).unwrap().is_empty(),
+        chat::saved(&db, chat::Scope::All, None, 50)
+            .unwrap()
+            .is_empty(),
         "저장된 항목"
     );
     let found = chat::search(&db, "xyzzy", 50).unwrap().messages;
@@ -176,7 +178,7 @@ async fn delete_mine_only_here() {
     let mine = chat::messages_across(
         &db,
         Some(true),
-        None,
+        chat::Scope::All,
         None,
         Some(AskFilter::Request(None)),
         None,
@@ -209,7 +211,7 @@ async fn delete_mirrored_leaves_peer_request_list() {
         chat::messages_across(
             &common::db(s),
             Some(false),
-            None,
+            chat::Scope::All,
             None,
             Some(AskFilter::Request(None)),
             None,

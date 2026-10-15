@@ -3,6 +3,7 @@ pub mod agents;
 pub mod chat;
 pub mod cli_tx;
 pub mod db;
+pub mod groups;
 pub mod instance;
 pub mod log_file;
 pub mod outbox;

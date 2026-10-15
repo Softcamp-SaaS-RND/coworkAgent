@@ -56,6 +56,9 @@ struct NewConversation {
     /// CLI 트랜잭션 키(#1c, `via: cli` 일 때만) — 같은 키가 이미 있으면 보내지 않고 그 트랜잭션을 돌려준다.
     #[serde(default)]
     tx_key: Option<String>,
+    /// 새 대화를 넣을 레일 그룹(#1i — 이 PC 에만). 없는 그룹이면 보내지 않고 404.
+    #[serde(default)]
+    group: Option<i64>,
 }
 
 /// `PATCH /api/conversations/{id}` — 이 PC 에서 붙이는 표시만, 준 항목만: 제목(빈 문자열 = 지움 → 첫 사람 글 앞부분) · ★.
@@ -154,6 +157,9 @@ struct ActivitySeen {
 struct SavedQuery {
     #[serde(default)]
     peer: Option<i64>,
+    /// 레일 그룹(#1i) — `peer` 와 함께 주면 400.
+    #[serde(default)]
+    group: Option<i64>,
     #[serde(default)]
     conversation: Option<i64>,
     #[serde(default)]
@@ -182,6 +188,9 @@ struct MessageQuery {
     side: String,
     #[serde(default)]
     peer: Option<i64>,
+    /// 레일 그룹(#1i) — 그 그룹 대화만. `peer` 와 함께 주면 400.
+    #[serde(default)]
+    group: Option<i64>,
     #[serde(default)]
     q: Option<String>,
     /// `human`(사람 글) | `agent`(에이전트 답) — 건수 제한 전에 거른다. 없으면 둘 다.
@@ -261,7 +270,8 @@ pub fn routes(chat: Arc<Chat>) -> Router {
             "/api/conversations/{id}/relay",
             axum::routing::post(switch_relay),
         )
-        .with_state(chat)
+        .with_state(chat.clone())
+        .merge(crate::groups_api::routes(chat))
 }
 
 fn fail(e: io::Error) -> Response {
@@ -273,6 +283,16 @@ fn fail(e: io::Error) -> Response {
         _ => StatusCode::BAD_GATEWAY,
     };
     (code, Json(json!({ "error": e.to_string() }))).into_response()
+}
+
+/// 목록 범위(#1i) — 상대 · 그룹 중 하나, 둘 다면 `None`.
+fn scope_of(peer: Option<i64>, group: Option<i64>) -> Option<chat::Scope> {
+    match (peer, group) {
+        (None, None) => Some(chat::Scope::All),
+        (Some(p), None) => Some(chat::Scope::Peer(p)),
+        (None, Some(g)) => Some(chat::Scope::Group(g)),
+        (Some(_), Some(_)) => None,
+    }
 }
 
 fn db_fail(e: an_core::db::Error) -> Response {
@@ -366,6 +386,7 @@ fn summary_json(s: &chat::Summary) -> Value {
     v["last_at"] = json!(s.last_at);
     v["starred"] = json!(s.starred);
     v["unread"] = json!(s.unread);
+    v["pos"] = json!(s.pos);
     v
 }
 
@@ -563,9 +584,12 @@ async fn list_across(State(chat): State<Arc<Chat>>, Query(q): Query<MessageQuery
     if !(1..=MESSAGES_MAX).contains(&limit) {
         return bad(&format!("limit 은 1 ~ {MESSAGES_MAX}"));
     }
+    let Some(scope) = scope_of(q.peer, q.group) else {
+        return bad("peer 와 group 은 함께 주지 않는다");
+    };
     let text = q.q.as_deref().map(str::trim).filter(|t| !t.is_empty());
     let db = chat.db();
-    let ms = match chat::messages_across(&db, Some(mine), q.peer, author, ask, text, limit) {
+    let ms = match chat::messages_across(&db, Some(mine), scope, author, ask, text, limit) {
         Ok(ms) => ms,
         Err(e) => return db_fail(e),
     };
@@ -619,6 +643,13 @@ async fn start_conversation(
     if let Some(again) = tx_again(&chat, key) {
         return again;
     }
+    if let Some(g) = req.group {
+        match an_core::groups::by_id(&chat.db(), g) {
+            Ok(Some(_)) => {}
+            Ok(None) => return fail(io::Error::new(io::ErrorKind::NotFound, "없는 그룹")),
+            Err(e) => return db_fail(e),
+        }
+    }
     let started = match req.relay_agent.as_deref().map(str::trim) {
         Some(mine) if !mine.is_empty() && via.is_some() => {
             return bad("자동 왕복 시작에는 via 를 쓰지 않는다");
@@ -634,6 +665,7 @@ async fn start_conversation(
             let opts = Compose {
                 title: title.as_deref(),
                 request: req.request,
+                group: req.group,
                 ..Compose::default()
             };
             chat.start_relay_with(req.peer_id, &req.agent, mine, cap, &req.text, opts)
@@ -645,6 +677,7 @@ async fn start_conversation(
                 tx_key: key,
                 title: title.as_deref(),
                 request: req.request,
+                group: req.group,
                 ..Compose::default()
             };
             chat.send_with(req.peer_id, &req.agent, None, &req.text, opts)
@@ -903,9 +936,12 @@ async fn saved_list(State(chat): State<Arc<Chat>>, Query(q): Query<SavedQuery>) 
     if !(1..=MESSAGES_MAX).contains(&limit) {
         return bad(&format!("limit 은 1 ~ {MESSAGES_MAX}"));
     }
+    let Some(scope) = scope_of(q.peer, q.group) else {
+        return bad("peer 와 group 은 함께 주지 않는다");
+    };
     let db = chat.db();
     let list =
-        chat::saved(&db, q.peer, q.conversation, limit).and_then(|ms| Ok((ms, summary_map(&db)?)));
+        chat::saved(&db, scope, q.conversation, limit).and_then(|ms| Ok((ms, summary_map(&db)?)));
     match list {
         Ok((ms, sums)) => {
             Json(ms.iter().map(|m| message_in(m, &sums)).collect::<Vec<_>>()).into_response()

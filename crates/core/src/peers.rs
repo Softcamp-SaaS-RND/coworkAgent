@@ -73,7 +73,8 @@ pub fn upsert(
     round: &str,
 ) -> rusqlite::Result<Peer> {
     conn.execute(
-        "INSERT INTO peers (spki, name, host, addr, round, created_at) VALUES (?1, ?2, ?3, ?4, ?5, unixepoch())
+        "INSERT INTO peers (spki, name, host, addr, round, created_at, pos)
+         VALUES (?1, ?2, ?3, ?4, ?5, unixepoch(), (SELECT coalesce(max(pos), -1) + 1 FROM peers))
          ON CONFLICT(spki) DO UPDATE SET name = ?2, host = ?3, addr = ?4, round = ?5, my_ok = 0, their_ok = 0",
         params![spki, name, host, addr, round],
     )?;
@@ -99,7 +100,8 @@ pub fn by_id(conn: &Connection, id: i64) -> rusqlite::Result<Option<Peer>> {
 }
 
 pub fn list(conn: &Connection) -> rusqlite::Result<Vec<Peer>> {
-    conn.prepare(&format!("SELECT {COLS} FROM peers ORDER BY id"))?
+    // 레일 순서(#1i — 손으로 놓은 자리, 같으면 id).
+    conn.prepare(&format!("SELECT {COLS} FROM peers ORDER BY pos, id"))?
         .query_map([], row)?
         .collect()
 }
@@ -147,7 +149,10 @@ pub fn remove_spki(conn: &Connection, spki: &[u8]) -> rusqlite::Result<bool> {
 
 /// 상대 수신 주소를 바꾼다(승인 · 세대 그대로) — 페어링된 키가 다른 출처 · 포트로 `Ping` 했을 때(1b).
 pub fn set_addr(conn: &Connection, id: i64, addr: &str) -> rusqlite::Result<bool> {
-    Ok(conn.execute("UPDATE peers SET addr = ?2 WHERE id = ?1", params![id, addr])? == 1)
+    Ok(conn.execute(
+        "UPDATE peers SET addr = ?2 WHERE id = ?1",
+        params![id, addr],
+    )? == 1)
 }
 
 /// 접속 상태 — 상대가 지금 응답했다(`Pong` · 실행 요청 거절), 그때의 집중과 함께. 없는 상대면 `false`.
@@ -169,7 +174,10 @@ pub fn touch(conn: &Connection, spki: &[u8]) -> rusqlite::Result<()> {
         )
         .optional()?;
     if fresh == Some(false) {
-        conn.execute("UPDATE peers SET seen_at = unixepoch() WHERE spki = ?1", [spki])?;
+        conn.execute(
+            "UPDATE peers SET seen_at = unixepoch() WHERE spki = ?1",
+            [spki],
+        )?;
     }
     Ok(())
 }
