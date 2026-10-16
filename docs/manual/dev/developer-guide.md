@@ -3,7 +3,7 @@
 > 절차·운영 문서 — 모듈 매뉴얼 형식(개요 / 공개 계약 / 사용 예)의 예외다([매뉴얼 등록 규약](../README.md)).
 > 모듈별 API · 계약의 정본은 [an_core](an_core.md) · [an_net](an_net.md) · [an_agent](an_agent.md) · [an_app](an_app.md) 이고, 여기는
 > 그것들이 **실행 중에 어떻게 맞물리는지**를 적는다 — 어떤 프로세스가 생기고, 어떤 서비스가 무슨 역할을 하며, `claude -p` 헤드리스
-> 대화의 세션 · 저장소 · 흐름이 어떻게 이어지는가. 결정 번호(D · S)는 [masterPlan](../../masterPlan.md). 수치 · 경로는 스키마 16 ·
+> 대화의 세션 · 저장소 · 흐름이 어떻게 이어지는가. 결정 번호(D · S)는 [masterPlan](../../masterPlan.md). 수치 · 경로는 스키마 18 ·
 > 검증 환경 Windows 11 · Claude Code 2.1.296 기준. 쓰는 사람용 안내는 [사용자 가이드](../user/user-guide.md).
 
 ## 1. 한눈에 보기
@@ -293,7 +293,7 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 | Claude Code 버전 낮음 | 실행하지 않음 → 내 쪽 "실행 실패: Claude Code x.y.z — 2.1.267 이상이 필요하다(`claude update`)" · 상대 "실행 실패: 받는 PC 의 Claude Code 버전이 낮다" |
 | 에이전트 폴더가 데이터 폴더를 품음 · 네트워크 경로 | 실행 직전 다시 거른다 — 실행하지 않음 → 상대 "실행 실패: 받는 PC 의 에이전트 폴더를 쓸 수 없다 — 받는 PC 에서 폴더를 바꿔야 한다" |
 | 그 밖 실행 오류 | 내 쪽에 원문(종료 상태 · stderr), 상대에게는 "실행 실패: 받는 PC 에서 실행하지 못했다 — 원인은 받는 PC 화면에 있다"(1a — stderr · 경로를 상대에게 보내지 않는다) |
-| 세션 기록 파일이 없음 | `--resume` 이 종료 1 · 표준 출력 비움 · stderr "No conversation found with session ID: …"(2.1.296 실측) → 실패 답. 세션 ID 는 남아 **그 대화의 다음 요청도 같은 실패** — [원장](../../overview/ledger.md) `#15 R2-F2r`(열림). 우회는 새 대화 |
+| 세션 기록 파일이 없음 | `--resume` 이 종료 1 — 결과 줄 `is_error` · `errors: ["No conversation found with session ID: …"]`(2.1.299 실측) 또는 표준 출력 비움 · stderr 같은 문장(2.1.296 실측). #1h 부터 `SessionMissing` → **새 세션(`--session-id`)으로 한 번 다시 실행**해 답하고 새 세션을 기록한다(앞 대화 기억 없음 — 대화 메모 앞붙임은 그대로). 다른 실패는 다시 실행하지 않는다 |
 | 기록 트랜잭션 실패 | 요청 `error`, 내 쪽 답 "실행 실패: 받는 PC 기록 오류 — …" · 상대 "실행 실패: 받는 PC 기록 오류" |
 | 보내기 · 답 전송 오류(상대 꺼짐 · 네트워크) | 오류가 아니다 — outbox 에 보관하고 상대 줄이 다시 보낸다(아래). 글은 `sent` 그대로, 화면 "보내는 중". 같은 uuid 라 몇 번 다시 보내도 상대에서 한 번만 실행 |
 | 받는 쪽 처리 오류(DB 잠금 등) | 받는 쪽이 `Error{retry}` — 보낸 쪽은 거절로 확정하지 않고 전송 오류처럼 다시 보낸다 |
@@ -336,7 +336,7 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 
 ```text
 %LOCALAPPDATA%\coworkAgent\              macOS: ~/Library/Application Support/coworkAgent/
-├── coworkAgent.db                      SQLite — 연결 · 에이전트 · 대화 · 글 · 설정 · 보내기 보관 · CLI 트랜잭션(스키마 13)
+├── coworkAgent.db                      SQLite — 연결 · 에이전트 · 대화 · 글 · 설정 · 보내기 보관 · CLI 트랜잭션(스키마 18)
 ├── coworkAgent.db.v{N}.bak             스키마 N 에서 올리기 직전 사본(VACUUM INTO, 버전마다 한 번)
 ├── identity.key                        설치 신원 ed25519(PKCS#8) — 리포 · 로그 · UI 로 내보내지 않는다
 ├── instance.lock                       단일 인스턴스 잠금
@@ -349,16 +349,17 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 
 폴더 밖: 시작 실패 사유 `%TEMP%\coworkAgent-start-error.txt`, Claude Code 기록(7.4).
 
-### 7.2 DB 표 (스키마 16)
+### 7.2 DB 표 (스키마 18)
 
 | 표 | 한 행 | 주요 열 |
 |---|---|---|
-| `peers` | 연결한 PC | `spki`(공개키) · `name` · `host` · `addr` · `my_ok` · `their_ok` · `round`(페어링 세대) · `grp` · `model` · `effort` · `alias` · `icon` · `activity_seen_msg` · `activity_seen_event` · `seen_at`(마지막 통신 — 보내기 성공 · 요청 받기 · `Pong`) · `focus`(마지막 `Pong` · 집중 거절 때 값) · `pos`(레일 자리 — #1i, 새 상대는 맨 뒤) |
+| `peers` | 연결한 PC — `id` AUTOINCREMENT(#1h 스키마 17 — 지운 상대의 번호를 다시 쓰지 않는다, 그 대화 · 보낼 글은 그 번호로 남는다) | `spki`(공개키) · `name` · `host` · `addr` · `my_ok` · `their_ok` · `round`(페어링 세대) · `grp`(옛 자유 입력 그룹 — 스키마 18 에서 같은 이름 레일 그룹으로 옮기고 읽지 않음) · `model` · `effort` · `alias` · `icon` · `activity_seen_msg` · `activity_seen_event` · `seen_at`(마지막 통신 — 보내기 성공 · 요청 받기 · `Pong`) · `focus`(마지막 `Pong` · 집중 거절 때 값) · `pos`(레일 자리 — #1i, 새 상대는 맨 뒤) |
 | `settings` | 키 · 값 | 아래 키 |
-| `agents` | 내 에이전트 | `name`(UNIQUE — 상대가 부르는 이름, 바꾸지 않는다) · `folder` · `tools`(#1d 부터 읽지 않음 — 도구는 읽기 전용 5개 고정) · `prompt` · `grp` · `uid`(세대) |
+| `agents` | 내 에이전트 | `name`(UNIQUE — 상대가 부르는 이름, 바꾸지 않는다) · `folder` · `tools`(#1d 부터 읽지 않음 — 도구는 읽기 전용 5개 고정) · `prompt` · `grp`(#1j 부터 읽지 않음 — 열만 남음) · `uid`(세대) |
 | `conversations` | 대화 | `uuid` · `peer_id` · `agent`(대화 에이전트) · `dir`(`out` 내가 엶 · `in` 상대가 엶) · `session` · `relay_agent` · `relay_cap` · `relay_count` · `relay_on` · `relay_blocked` · `title` · `starred_at` · `read_id` · `pos`(손으로 놓은 자리 — #1i, 새 대화는 맨 위 `min - 1`) |
 | `groups` | 레일 그룹(#1i — 이 PC 에만) | `id`(AUTOINCREMENT — 지운 번호를 다시 쓰지 않는다) · `name`(UNIQUE, 1 ~ 40자) · `icon` · `pos` |
-| `group_convs` | 그룹 소속 | (`group_id`, `conversation_id`) — 외래 키를 켜지 않는 DB 라 그룹을 지우면 `groups::remove` 가 함께 지운다. 대화는 여러 그룹에 |
+| `group_convs` | 그룹 소속(대화 하나씩) | (`group_id`, `conversation_id`) — 외래 키를 켜지 않는 DB 라 그룹을 지우면 `groups::remove` 가 함께 지운다. 대화는 여러 그룹에 |
+| `group_peers` | 그룹 소속(상대 단위 — #1j 스키마 18) | (`group_id`, `peer_id`) PRIMARY KEY · 색인 `group_peers_peer`. 그룹의 대화 = `group_convs` ∪ 그 상대들의 대화 전부(뒤에 생긴 대화 포함 — 계산, `chat::Scope::Group`). 상대를 빼도 `group_convs` 는 남고, 그룹을 지우면 `groups::remove` 가 함께 지운다 |
 | `messages` | 사람 글 · 에이전트 답 | `uuid` · `conversation_id` · `author`(`human` · `agent`) · `text` · `state` · `reply_to` · `turns` · `duration_ms` · `mine` · `exec`(실행 요청) · `lc` · `via`(`cli`) · `saved_at` · `model` · `effort` · `request` · `req_state`(`wait` · `accepted` · `rejected` · `done` — #1d) · `req_note` · `req_at` · `done_at`(#1d 부터 읽지 않음) · `agent`(멘션) · `refused` · `edited_at`(편집 시각 — #1f) |
 | `relay_events` | 자동 왕복 시작 · 끝 · 내 글이 실패로 바뀐 순간 · 상대 반영 실패(`sync_failed` — #1f) | `conversation_id` · `kind` · `detail` · `message_id` |
 | `agent_sessions` | 대화 × 멘션 에이전트 세션 | (`conversation_id`, `agent`) → `session` |
@@ -405,6 +406,8 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
   남긴다 — 10 → 13 을 한 번에 올리면 `.v10.bak` 하나.
 - 이 실행 파일보다 새 스키마면 열지 않는다("DB 스키마 N 가 이 실행 파일(M)보다 새롭다" — 시작 실패). 이전 실행 파일로 돌아가려면
   앱을 끄고 사본을 `coworkAgent.db` 로 바꿔 쓴다 — 사본 뒤에 생긴 데이터는 잃으므로 지금 DB 를 먼저 다른 이름으로 보존한다.
+- v18(#1j)은 한 트랜잭션으로 `group_peers` 를 만들고 옛 `peers.grp` 값을 같은 이름 레일 그룹으로 옮긴다(없으면 만든다 — 이름은 `groups::fit_name`: 제어
+  문자 빼고 앞뒤 공백 지운 앞 40자, 남는 글자가 없으면 건너뜀). `agents.grp` 는 읽지 않는다.
 - 같은 버전의 사본이 이미 있으면 새로 뜨지 않는다(`backup_before_migration`) — 되돌린 뒤 다시 올려도 `.v{N}.bak` 은 처음 시점 그대로다.
 - 배포 전 하위 호환은 두지 않지만(D32) 사용자 데이터는 순방향 마이그레이션으로 보존한다.
 
@@ -430,7 +433,7 @@ sequenceDiagram
   UB->>B: 초대 생성
   B-->>UB: 초대 텍스트(주소 · 초대 코드 · 지문), 5분 · 1번
   UB->>UA: 메신저 등으로 전달
-  UA->>A: 초대 수락에 붙여 넣기 → 추가 · 승인
+  UA->>A: 초대 수락에 붙여 넣기 → "초대 수락"(추가 · 승인)
   A->>B: Hello(이름 · PC · 포트 · 세대 · 코드) — 초대의 지문으로 B 키 고정
   B->>B: 처음 보는 키 + 코드 일치 → B 쪽 승인 자동, 새 연결 등록 알림
   B-->>A: Hello(approved = true)
@@ -438,8 +441,8 @@ sequenceDiagram
   B-->>A: Ok — 양쪽 my_ok · their_ok = 페어링
 ```
 
-- 아는 키의 다시 추가는 양쪽 승인을 초기화하고 사람 승인을 기다린다. "주소 · 코드로 직접 추가" 는 지문을 고정하지 않는다(D8 개정 —
-  사내망 전용 위험 수용).
+- 아는 키의 다시 추가는 양쪽 승인을 초기화하고 사람 승인을 기다린다. 주소 · 코드 직접 추가(`POST /api/peers {addr, code}`)는 지문을 고정하지 않는다(D8 개정 —
+  사내망 전용 위험 수용). 웹UI 의 "주소 · 코드로 직접 추가" 칸은 #1j 에서 없앴다 — 서버 경로만 시험 · 하위 호환으로 남는다.
 
 ### 8.2 질의 1왕복
 
@@ -669,7 +672,7 @@ python tools/pe_imports.py target/release/coworkAgent.exe                   # vc
 - **실행 실패 원문**은 **답하는 PC** 의 답 본문("실행 실패: …")에 있다 — `claude` 의 종료 상태 · stderr 를 포함한다. 묻는 PC 에는 정해진
   문구만 간다(6.6).
 - **세션 추적** — DB `conversations.session` · `agent_sessions.session` → 7.6 으로 Claude Code 기록 파일을 찾는다.
-- **포트** — 피어 수신이 47100 을 못 잡으면 임의 포트로 뜨고 잡은 프로세스(이름 · PID)를 로그 · 트레이 툴팁 · 웹UI 설정 → 내 정보
+- **포트** — 피어 수신이 47100 을 못 잡으면 임의 포트로 뜨고 잡은 프로세스(이름 · PID)를 로그 · 트레이 툴팁 · 웹UI 프로필 → 사용자 정보
   "피어 포트" 에 보인다(`/api/me` 의 `peer_port_*` · `open_connections`). 페어링된 상대는 시작 알림(`announce`) `Ping` 의 `port` 로 새 주소를 따라온다(8.8). 강제 종료 뒤
   포트 풀림 · 남은 `instance.json` 으로 다시 띄우기는 `python tools/port_check.py`(떠 있는 앱을 강제 종료한다 · `--occupy` 는 47100 을 먼저 잡고
   잡은 프로세스 표시를 잰다).

@@ -37,6 +37,16 @@ struct Membership {
     remove: Vec<i64>,
 }
 
+/// `PUT /api/groups/{id}/peers` — 넣고 뺄 상대 id(#1j — 그 상대의 대화가 모두 그룹에, 이미 있음 · 없음은 그대로).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PeerMembership {
+    #[serde(default)]
+    add: Vec<i64>,
+    #[serde(default)]
+    remove: Vec<i64>,
+}
+
 /// `PUT /api/order` — 그 목록의 새 순서(앞부터).
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,12 +60,14 @@ pub fn routes(chat: Arc<Chat>) -> Router {
         .route("/api/groups", get(list).post(add))
         .route("/api/groups/{id}", patch(update).delete(remove))
         .route("/api/groups/{id}/conversations", put(change))
+        .route("/api/groups/{id}/peers", put(change_peers))
+        .route("/api/peers/{id}/groups", put(change_peer_groups))
         .route("/api/order", put(reorder))
         .with_state(chat)
 }
 
 fn group_json(g: &Group) -> Value {
-    json!({ "id": g.id, "name": g.name, "icon": g.icon, "pos": g.pos, "convs": g.convs })
+    json!({ "id": g.id, "name": g.name, "icon": g.icon, "pos": g.pos, "convs": g.convs, "peers": g.peers })
 }
 
 fn err(code: StatusCode, msg: &str) -> Response {
@@ -171,6 +183,53 @@ async fn change(
     {
         Ok(Some(g)) => Json(group_json(&g)).into_response(),
         Ok(None) => err(StatusCode::NOT_FOUND, MISSING),
+        Err(e) => db_fail(e),
+    }
+}
+
+async fn change_peers(
+    State(chat): State<Arc<Chat>>,
+    Path(id): Path<i64>,
+    Json(req): Json<PeerMembership>,
+) -> Response {
+    let db = chat.db();
+    // 넣기 · 빼기 모두 있는 상대여야 한다 — 대화 소속(`change`)과 같은 규칙.
+    let all: Vec<i64> = req.add.iter().chain(&req.remove).copied().collect();
+    match groups::unknown_peers(&db, &all) {
+        Ok(u) if !u.is_empty() => {
+            return err(StatusCode::BAD_REQUEST, &format!("없는 상대 {u:?}"));
+        }
+        Ok(_) => {}
+        Err(e) => return db_fail(e),
+    }
+    match groups::change_peers(&db, id, &req.add, &req.remove)
+        .and_then(|ok| Ok(if ok { groups::by_id(&db, id)? } else { None }))
+    {
+        Ok(Some(g)) => Json(group_json(&g)).into_response(),
+        Ok(None) => err(StatusCode::NOT_FOUND, MISSING),
+        Err(e) => db_fail(e),
+    }
+}
+
+/// `PUT /api/peers/{id}/groups {add, remove}`(#1j 라운드 1) — 한 상대를 여러 그룹에 넣고 빼기를 한 트랜잭션으로(연결 목록 끌어 옮기기). 모르는 상대 404 ·
+/// 모르는 그룹 400(아무것도 바꾸지 않음). 응답 = 그룹 목록 전체.
+async fn change_peer_groups(
+    State(chat): State<Arc<Chat>>,
+    Path(id): Path<i64>,
+    Json(req): Json<PeerMembership>,
+) -> Response {
+    let db = chat.db();
+    match groups::unknown_peers(&db, &[id]) {
+        Ok(u) if !u.is_empty() => return err(StatusCode::NOT_FOUND, "없는 상대"),
+        Ok(_) => {}
+        Err(e) => return db_fail(e),
+    }
+    match groups::change_peer_groups(&db, id, &req.add, &req.remove) {
+        Ok(Ok(())) => match groups::list(&db) {
+            Ok(gs) => Json(gs.iter().map(group_json).collect::<Vec<_>>()).into_response(),
+            Err(e) => db_fail(e),
+        },
+        Ok(Err(m)) => err(StatusCode::BAD_REQUEST, &format!("없는 그룹 {m:?}")),
         Err(e) => db_fail(e),
     }
 }

@@ -1,4 +1,5 @@
 //! 레일 그룹(#1i) — 이 PC 에만 있는 대화 묶음(한 대화는 여러 그룹에) · 상대 · 그룹 · 대화의 손으로 놓은 자리(`pos`).
+//! 그룹에는 대화를 하나씩(`group_convs`) 또는 상대 단위(`group_peers`, #1j — 그 상대의 대화 전부, 뒤에 생긴 것도)로 넣는다.
 //! 상대 PC 에 알리지 않는다. 외래 키를 켜지 않는 DB 라 그룹을 지우면 소속도 여기서 함께 지운다.
 use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashSet;
@@ -13,8 +14,10 @@ pub struct Group {
     /// 타일 그림 — PNG data URL(`run_opts::clean_icon`), 없으면 머리글자.
     pub icon: Option<String>,
     pub pos: i64,
-    /// 소속 대화 id(작은 것부터).
+    /// 하나씩 넣은 대화 id(작은 것부터).
     pub convs: Vec<i64>,
+    /// 넣은 상대 id(작은 것부터, #1j) — 그 상대의 대화가 모두 이 그룹에 보인다.
+    pub peers: Vec<i64>,
 }
 
 /// 손으로 놓는 자리가 있는 목록.
@@ -53,6 +56,14 @@ pub fn clean_name(name: &str) -> Result<String, String> {
     Ok(n.to_string())
 }
 
+/// 옛 자유 입력 그룹 이름(`peers.grp`) → 그룹 이름(스키마 18) — 제어 문자를 빼고 앞뒤 공백을 지운 앞 [`NAME_CHARS`]자. 남는 글자가 없으면 `None`.
+pub fn fit_name(raw: &str) -> Option<String> {
+    let kept: String = raw.chars().filter(|c| !c.is_control()).collect();
+    let cut: String = kept.trim().chars().take(NAME_CHARS).collect();
+    let name = cut.trim_end();
+    (!name.is_empty()).then(|| name.to_string())
+}
+
 /// 레일 순서(자리, 같으면 id).
 pub fn list(conn: &Connection) -> rusqlite::Result<Vec<Group>> {
     let mut groups: Vec<Group> = conn
@@ -64,6 +75,7 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Vec<Group>> {
                 icon: r.get(2)?,
                 pos: r.get(3)?,
                 convs: Vec::new(),
+                peers: Vec::new(),
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
@@ -71,11 +83,20 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Vec<Group>> {
         .prepare("SELECT group_id, conversation_id FROM group_convs ORDER BY conversation_id")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
+    let peer_pairs: Vec<(i64, i64)> = conn
+        .prepare("SELECT group_id, peer_id FROM group_peers ORDER BY peer_id")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
     for g in &mut groups {
         g.convs = pairs
             .iter()
             .filter(|(gid, _)| *gid == g.id)
             .map(|(_, c)| *c)
+            .collect();
+        g.peers = peer_pairs
+            .iter()
+            .filter(|(gid, _)| *gid == g.id)
+            .map(|(_, p)| *p)
             .collect();
     }
     Ok(groups)
@@ -125,6 +146,7 @@ pub fn set_icon(conn: &Connection, id: i64, icon: Option<&str>) -> rusqlite::Res
 pub fn remove(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
     let tx = crate::db::write_tx(conn)?;
     tx.execute("DELETE FROM group_convs WHERE group_id = ?1", [id])?;
+    tx.execute("DELETE FROM group_peers WHERE group_id = ?1", [id])?;
     let gone = tx.execute("DELETE FROM groups WHERE id = ?1", [id])? == 1;
     tx.commit()?;
     Ok(gone)
@@ -165,6 +187,86 @@ pub fn change(conn: &Connection, id: i64, add: &[i64], remove: &[i64]) -> rusqli
     }
     tx.commit()?;
     Ok(exists)
+}
+
+/// 없는 상대 id(준 순서대로, 겹치면 한 번, #1j).
+pub fn unknown_peers(conn: &Connection, ids: &[i64]) -> rusqlite::Result<Vec<i64>> {
+    let mut seen = HashSet::new();
+    let mut stmt = conn.prepare("SELECT 1 FROM peers WHERE id = ?1")?;
+    let mut out = Vec::new();
+    for &id in ids {
+        if seen.insert(id) && !stmt.exists([id])? {
+            out.push(id);
+        }
+    }
+    Ok(out)
+}
+
+/// 상대 소속 넣고 빼기(#1j) — 이미 있는 것 · 없는 것은 그대로. 상대를 빼도 그 상대의 대화를 하나씩 넣은 것(`group_convs`)은 남는다. 상대 id 검증은
+/// 부르는 쪽([`unknown_peers`]). 없는 그룹이면 `false`.
+pub fn change_peers(
+    conn: &Connection,
+    id: i64,
+    add: &[i64],
+    remove: &[i64],
+) -> rusqlite::Result<bool> {
+    let tx = crate::db::write_tx(conn)?;
+    let exists = tx
+        .prepare("SELECT 1 FROM groups WHERE id = ?1")?
+        .exists([id])?;
+    if exists {
+        for p in add {
+            tx.execute(
+                "INSERT OR IGNORE INTO group_peers (group_id, peer_id) VALUES (?1, ?2)",
+                params![id, p],
+            )?;
+        }
+        for p in remove {
+            tx.execute(
+                "DELETE FROM group_peers WHERE group_id = ?1 AND peer_id = ?2",
+                params![id, p],
+            )?;
+        }
+    }
+    tx.commit()?;
+    Ok(exists)
+}
+
+/// 한 상대의 그룹 소속을 한 번에(#1j 라운드 1 — 끌어 옮기기가 넣기만 되고 빼기가 실패해 두 그룹에 남지 않게) — `add` 그룹에 넣고 `remove` 그룹에서
+/// 뺀다(이미 있음 · 없음은 그대로). 모르는 그룹이 하나라도 있으면 아무것도 바꾸지 않고 `Ok(Err(그 id))`. 상대 id 검증은 부르는 쪽([`unknown_peers`]).
+pub fn change_peer_groups(
+    conn: &Connection,
+    peer: i64,
+    add: &[i64],
+    remove: &[i64],
+) -> rusqlite::Result<Result<(), Vec<i64>>> {
+    let tx = crate::db::write_tx(conn)?;
+    let mut missing = Vec::new();
+    {
+        let mut has = tx.prepare("SELECT 1 FROM groups WHERE id = ?1")?;
+        for &g in add.iter().chain(remove) {
+            if !missing.contains(&g) && !has.exists([g])? {
+                missing.push(g);
+            }
+        }
+    }
+    if !missing.is_empty() {
+        return Ok(Err(missing));
+    }
+    for g in add {
+        tx.execute(
+            "INSERT OR IGNORE INTO group_peers (group_id, peer_id) VALUES (?1, ?2)",
+            params![g, peer],
+        )?;
+    }
+    for g in remove {
+        tx.execute(
+            "DELETE FROM group_peers WHERE group_id = ?1 AND peer_id = ?2",
+            params![g, peer],
+        )?;
+    }
+    tx.commit()?;
+    Ok(Ok(()))
 }
 
 /// 새 대화를 그룹에 — 부르는 쪽 트랜잭션 안에서(대화와 함께). 없는 그룹이면 `false`(아무것도 하지 않음).

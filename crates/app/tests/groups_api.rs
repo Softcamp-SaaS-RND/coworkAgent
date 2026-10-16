@@ -708,3 +708,164 @@ async fn group_deleted_after_check_sends_nothing() {
         "상대에 간 것 없음"
     );
 }
+
+fn peers_of(g: &Value) -> Vec<i64> {
+    g["peers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p.as_i64().unwrap())
+        .collect()
+}
+
+/// 상대 소속(#1j) — 넣기 · 빼기(이미 있음 · 없음은 그대로) · 모르는 상대 400 · 없는 그룹 404 · 대화 소속과 따로 · 상대 PC 로 보내지 않음.
+#[tokio::test(flavor = "multi_thread")]
+async fn peer_membership() {
+    let (a, b) = (side("pm-a").await, side("pm-b").await);
+    let pb = pair(&a, &b).await;
+    let g = a.group("결제").await;
+    let sent = a.outbox();
+    let path = format!("/api/groups/{g}/peers");
+    let (code, r) = a.call("PUT", &path, json!({ "add": [pb, pb] })).await;
+    assert_eq!(
+        (code, peers_of(&r), convs_of(&r)),
+        (200, vec![pb], vec![]),
+        "{r}"
+    );
+    let (code, r) = a.call("PUT", &path, json!({ "add": [pb] })).await;
+    assert_eq!((code, peers_of(&r)), (200, vec![pb]), "이미 있으면 그대로");
+    assert_eq!(peers_of(&a.groups().await[0]), [pb]);
+    for body in [json!({ "add": [999] }), json!({ "remove": [999] })] {
+        let (code, r) = a.call("PUT", &path, body).await;
+        assert_eq!(code, 400, "{r}");
+        assert!(r["error"].as_str().unwrap().contains("없는 상대"), "{r}");
+    }
+    assert_eq!(peers_of(&a.groups().await[0]), [pb], "거절이면 그대로");
+    let (code, _) = a
+        .call("PUT", "/api/groups/999/peers", json!({ "add": [pb] }))
+        .await;
+    assert_eq!(code, 404);
+    let (code, _) = a.call("PUT", &path, json!({ "bogus": [] })).await;
+    assert!(code == 400 || code == 422, "모르는 칸 {code}");
+    let (code, r) = a.call("PUT", &path, json!({ "remove": [pb] })).await;
+    assert_eq!((code, peers_of(&r)), (200, vec![]));
+    assert_eq!(a.outbox(), sent, "이 PC 에만 — 상대에게 보내지 않는다");
+}
+
+/// 그룹 거르기에 넣은 상대의 대화 — 넣은 뒤 생긴 대화도. 상대를 빼면 하나씩 넣은 대화만 남는다.
+#[tokio::test(flavor = "multi_thread")]
+async fn group_scope_includes_peer_conversations() {
+    let (a, _b, pb, [c1, c2, c3]) = three("pscope").await;
+    let g = a.group("결제").await;
+    a.call(
+        "PUT",
+        &format!("/api/groups/{g}/conversations"),
+        json!({ "add": [c1] }),
+    )
+    .await;
+    a.call(
+        "PUT",
+        &format!("/api/groups/{g}/peers"),
+        json!({ "add": [pb] }),
+    )
+    .await;
+    let c4 = ask(&a, pb, "넷", None).await;
+    let convs_in = |v: &Value| {
+        let mut ids: Vec<i64> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["conversation"]["id"].as_i64().unwrap())
+            .collect();
+        ids.sort();
+        ids.dedup();
+        ids
+    };
+    let (code, ms) = a
+        .call(
+            "GET",
+            &format!("/api/messages?side=mine&group={g}"),
+            Value::Null,
+        )
+        .await;
+    assert_eq!((code, convs_in(&ms)), (200, vec![c1, c2, c3, c4]));
+    a.call(
+        "PUT",
+        &format!("/api/groups/{g}/peers"),
+        json!({ "remove": [pb] }),
+    )
+    .await;
+    let (code, ms) = a
+        .call(
+            "GET",
+            &format!("/api/messages?side=mine&group={g}"),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (code, convs_in(&ms)),
+        (200, vec![c1]),
+        "하나씩 넣은 대화는 남는다"
+    );
+}
+
+/// 그룹을 지우면 상대 소속도 지운다 — 상대 · 대화는 그대로.
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_group_clears_peers() {
+    let (a, _b, pb, [c1, _, _]) = three("pdel").await;
+    let g = a.group("결제").await;
+    a.call(
+        "PUT",
+        &format!("/api/groups/{g}/peers"),
+        json!({ "add": [pb] }),
+    )
+    .await;
+    let (code, _) = a
+        .call("DELETE", &format!("/api/groups/{g}"), Value::Null)
+        .await;
+    assert_eq!(code, 204);
+    let left: i64 = a
+        .db()
+        .query_row("SELECT count(*) FROM group_peers", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(left, 0);
+    assert_eq!(a.peer_ids().await, [pb]);
+    assert!(a.conv_order().await.contains(&c1));
+}
+
+/// 한 상대의 그룹 옮기기를 한 트랜잭션으로(#1j 라운드 1) — 넣기 · 빼기 함께, 모르는 그룹이 하나라도 있으면 아무것도 바꾸지 않음(넣기만 되고 남지 않음) ·
+/// 모르는 상대 404.
+#[tokio::test(flavor = "multi_thread")]
+async fn peer_groups_move_atomic() {
+    let (a, b) = (side("pmove-a").await, side("pmove-b").await);
+    let pb = pair(&a, &b).await;
+    let (g1, g2) = (a.group("가").await, a.group("나").await);
+    a.call(
+        "PUT",
+        &format!("/api/groups/{g1}/peers"),
+        json!({ "add": [pb] }),
+    )
+    .await;
+    let path = format!("/api/peers/{pb}/groups");
+    let (code, gs) = a
+        .call("PUT", &path, json!({ "add": [g2], "remove": [g1] }))
+        .await;
+    assert_eq!(code, 200, "{gs}");
+    let members =
+        |gs: &Value| -> Vec<Vec<i64>> { gs.as_array().unwrap().iter().map(peers_of).collect() };
+    assert_eq!(members(&gs), vec![vec![], vec![pb]]);
+    let (code, r) = a
+        .call("PUT", &path, json!({ "add": [g1], "remove": [999] }))
+        .await;
+    assert_eq!(code, 400, "{r}");
+    assert!(r["error"].as_str().unwrap().contains("없는 그룹"), "{r}");
+    assert_eq!(
+        members(&Value::Array(a.groups().await)),
+        vec![vec![], vec![pb]],
+        "모르는 그룹이면 넣기도 하지 않는다"
+    );
+    let (code, _) = a
+        .call("PUT", "/api/peers/999/groups", json!({ "add": [g1] }))
+        .await;
+    assert_eq!(code, 404);
+}

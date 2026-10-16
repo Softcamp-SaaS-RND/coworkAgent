@@ -21,26 +21,56 @@ export function peerState(p) {
   return "상대 승인 대기";
 }
 
-/// 사이드바 · 머리글의 대화 이름. 제목이 없으면(메시지 없음) 방향 · 에이전트로. 방향은 화살표 대신 태그(`보냄` · `받음`).
+/// 사이드바 · 머리글의 대화(대화방) 이름. 제목이 없으면(메시지 없음) 에이전트로. 보냄 · 받음 표시는 없다(#1j — 대화방 하나에 주고받은 글이 이어진다).
 export function convLabel(conv, peerNames) {
   const who = peerNames.get(conv.peer_id) ?? "알 수 없는 상대";
   const out = conv.dir === "out";
   const title = conv.title || (out ? `${conv.agent} 에게` : `내 ${conv.agent} 가 받은 요청`);
   const sub = out ? `${who} 의 ${conv.agent}` : `${who} 의 요청 · 내 ${conv.agent}`;
-  return { title, sub, tag: out ? "보냄" : "받음" };
+  return { title, sub };
+}
+
+/// 대화방 줄 미리보기(#1j) — 마지막 글 `{말한 이}: {본문 한 줄}`(서버 `last`), 글이 없으면 빈 글자.
+export function roomPreview(conv, peerName) {
+  const l = conv.last;
+  if (!l) return "";
+  return `${authorLabel(conv, l, peerName)}: ${preview(l.text)}`;
+}
+
+/// 말풍선 쪽(#1j) — 이 PC 쪽 글(`mine` — 보낸 대화의 내 글 · 받은 대화의 내 에이전트 답)은 오른쪽, 그 밖은 왼쪽.
+export function bubbleSide(m) {
+  return m.mine === true ? "mine" : "theirs";
+}
+
+/// 날짜 구분선 열쇠 — 지역 날짜(`YYYY-M-D`).
+export function dayKey(ts) {
+  const d = new Date(ts * 1000);
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+/// 날짜 구분선 글자 — 오늘 · 어제 · `M.D`(올해) · `YYYY.M.D`.
+export function dayLabel(ts, now = Date.now() / 1000) {
+  const d = new Date(ts * 1000);
+  const today = new Date(now * 1000);
+  if (dayKey(ts) === dayKey(now)) return "오늘";
+  if (dayKey(ts) === dayKey(now - 86400)) return "어제";
+  return d.getFullYear() === today.getFullYear() ? `${d.getMonth() + 1}.${d.getDate()}` : `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+}
+
+/// 말풍선 목록 사이 날짜 구분선 자리 — 글마다 `{day}`(새 날짜면 그 글자, 아니면 `null`).
+export function dayBreaks(ms, now = Date.now() / 1000) {
+  let prev = null;
+  return ms.map((m) => {
+    const k = dayKey(m.created_at);
+    const day = k === prev ? null : dayLabel(m.created_at, now);
+    prev = k;
+    return day;
+  });
 }
 
 /// 이 PC 에서 부르는 상대 이름 — 표시 이름(별칭)이 있으면 그것.
 export function displayName(p) {
   return p.alias || p.name;
-}
-
-/// 타일 글자 — 이름의 앞 두 글자(글자 묶음 단위 — 이모지 · 결합 문자를 반으로 자르지 않는다).
-export function tileText(name) {
-  const graphemes = new Intl.Segmenter("ko", { granularity: "grapheme" }).segment(name ?? "");
-  return Array.from(graphemes, (g) => g.segment)
-    .slice(0, 2)
-    .join("");
 }
 
 /// 사이드바 대화 목록 — 레일에서 고른 타일의 대화만, `q` 가 있으면 제목으로만 거른다(대소문자 무시).
@@ -51,7 +81,7 @@ export function convRows(convs, peerNames, railPeer, q = "") {
     .filter(({ label }) => !needle || label.title.toLowerCase().includes(needle));
 }
 
-/// 타일을 눌러도 열린 대화를 그대로 둘까 — 대화 화면(대화 · 보낸 메시지)이고 그 대화가 그 타일 것일 때만.
+/// 타일을 눌러도 열린 대화를 그대로 둘까 — 대화 화면(옛 `#s/` 포함)이고 그 대화가 그 타일 것일 때만.
 export function tileKeeps(view, conv, railPeer) {
   return ["conversation", "sent"].includes(view) && keepsConversation(conv, railPeer);
 }
@@ -84,13 +114,6 @@ export function shortName(full) {
 
 /// CLI 로 쓴 글(`via = "cli"`)의 발화자 — 사용자의 AI 에이전트.
 const CLI_LABEL = "AI 에이전트(CLI)";
-
-/// 글 종류 칸 — 에이전트 답 · 실행 요청(→ 에이전트) · 실행 없는 글, CLI 글은 사람 대신 AI 에이전트(CLI).
-export function kindText(m) {
-  if (m.author === "agent") return "에이전트";
-  const who = m.via === "cli" ? CLI_LABEL : "사람";
-  return m.exec ? `${who} → 에이전트` : who;
-}
 
 /// 대화 머리글의 자동 왕복 표시(D24)와 누를 수 있는 동작 — 보낸 쪽: 멈춤 · 재개, 받은 쪽: 멈춤만(재개는 연 쪽). 아니면 `null`.
 export function relayText(conv, messages) {
@@ -196,7 +219,7 @@ export function unlinkedReplies(messages) {
 }
 
 /// 화면 위치(해시) — `#c/{id}` 대화(`/m/{글}` = 그 글 위치) · `#s/{id}` 그 대화 상대에게 보낸 글 · `#p/{id}` 상대와 주고받은 글 ·
-/// `#activity` 내 활동 · `#requests` 요청 목록 · `#saved` 저장된 항목 · `#agents` 에이전트 · `#settings`(`/{절}` = 그 절, 모르는 절은 처음) · `#me`(설정의 내 정보) ·
+/// `#activity` 내 활동 · `#requests` 요청 목록 · `#starred` 즐겨찾기(#1j) · `#saved` 북마크 항목 · `#agents` 에이전트 · `#settings`(`/{절}` = 그 절, 모르는 절은 처음) ·
 /// `#new` 새 대화. 그 밖은 안내 화면.
 export function route(hash) {
   const h = (hash ?? "").replace(/^#/, "");
@@ -206,13 +229,12 @@ export function route(hash) {
   if (m) return { view: "sent", id: Number(m[1]) };
   m = /^p(?:\/(\d+))?$/.exec(h);
   if (m) return { view: "peer", id: m[1] ? Number(m[1]) : null };
-  if (["activity", "requests", "saved", "agents", "new"].includes(h)) return { view: h };
+  if (["activity", "requests", "starred", "saved", "agents", "new"].includes(h)) return { view: h };
   m = /^settings(?:\/(\w+))?$/.exec(h);
   if (m) {
     const known = settingsTree().some((n) => n.id === m[1] || (n.children ?? []).some((c) => c.id === m[1]));
     return { view: "settings", focus: known ? m[1] : null };
   }
-  if (h === "me") return { view: "settings", focus: "me" };
   return { view: "home" };
 }
 
@@ -270,55 +292,78 @@ export class Latest {
 
 // ---- 설정 트리 ----
 
-/// 설정 화면 왼쪽 트리 — 항목 `id` = 그 절의 요소 id(누르면 그 절로).
+/// 설정 화면 왼쪽 트리 — 항목 `id` = 그 절의 요소 id(누르면 그 절로), `icon` = `.ico-{이름}`(#1l). 내 정보는 프로필 메뉴 "사용자 정보" 팝업(#1l).
 export function settingsTree() {
   return [
-    { id: "me", label: "내 정보" },
     {
       id: "conn",
       label: "연결",
+      icon: "link",
       children: [
-        { id: "invite_make", label: "초대 생성" },
-        { id: "invite_accept", label: "초대 수락" },
-        { id: "peers", label: "연결 목록" },
+        { id: "invite_make", label: "초대 생성", icon: "plus" },
+        { id: "invite_accept", label: "초대 수락", icon: "enter" },
+        { id: "peers", label: "연결 목록", icon: "users" },
       ],
     },
-    { id: "agents", label: "내 에이전트" },
-    { id: "run", label: "실행 — 모델 · effort" },
-    { id: "screen", label: "화면 — 테마" },
-    { id: "startup", label: "시작 — 자동 실행" },
-    { id: "notify", label: "알림" },
+    { id: "agents", label: "내 에이전트", icon: "bot" },
+    { id: "run", label: "실행 — 모델 · effort", icon: "play" },
+    { id: "screen", label: "화면 — 테마 · 타일 순서", icon: "monitor" },
+    { id: "startup", label: "시작 — 자동 실행", icon: "power" },
+    { id: "notify", label: "알림", icon: "bell" },
   ];
 }
 
-// ---- 그룹 · 거르기 · 검색 ----
+// ---- 검색 · 연결 목록의 그룹(#1j) ----
 
-/// 그룹 이름이 없는 항목의 묶음 이름.
-export const NO_GROUP = "그룹 없음";
-
-/// 그룹 필터(`""` = 전체) · 검색(`fields` 값에 부분 일치, 대소문자 무시) 뒤 그룹별 묶음 — 그룹 이름순, 그룹 없음은 끝.
-export function groupFilter(items, { group = "", q = "", fields = ["name"] } = {}) {
-  const needle = q.trim().toLowerCase();
-  const kept = items.filter(
-    (it) =>
-      (!group || (it.group ?? NO_GROUP) === group) &&
-      (!needle || fields.some((f) => String(it[f] ?? "").toLowerCase().includes(needle))),
-  );
-  const groups = new Map();
-  for (const it of kept) {
-    const g = it.group ?? NO_GROUP;
-    if (!groups.has(g)) groups.set(g, []);
-    groups.get(g).push(it);
-  }
-  return [...groups.entries()]
-    .sort(([a], [b]) => (a === NO_GROUP) - (b === NO_GROUP) || a.localeCompare(b, "ko"))
-    .map(([name, list]) => ({ group: name, items: list }));
+/// 검색 — `fields` 값에 부분 일치(대소문자 · 앞뒤 공백 무시), 빈 검색이면 전부(순서 그대로).
+export function searchItems(items, q, fields) {
+  const needle = (q ?? "").trim().toLowerCase();
+  return needle ? items.filter((it) => fields.some((f) => String(it[f] ?? "").toLowerCase().includes(needle))) : items;
 }
 
-/// 그룹 필터 선택지 — 쓰인 그룹 이름(정렬), 그룹 없는 항목이 있으면 끝에 [`NO_GROUP`].
-export function groupNames(items) {
-  const names = [...new Set(items.map((it) => it.group).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
-  return items.some((it) => !it.group) ? [...names, NO_GROUP] : names;
+/// 연결 목록의 그룹 밖 절 이름.
+export const NO_PEER_GROUP = "그룹에 없는 연결";
+
+/// 연결 목록 절(#1j) — 레일 그룹 순서대로 그 그룹에 넣은 상대(한 상대는 여러 절에), 끝에 "그룹에 없는 연결". 상대는 `peers` 순서, 그룹 절은 비어도
+/// 둔다(끌어 놓을 자리). 그룹의 모르는 상대 id 는 보이지 않는다.
+export function peerSections(peers, groups) {
+  const inSome = new Set(groups.flatMap((g) => g.peers ?? []));
+  return [
+    ...groups.map((g) => ({ key: `g:${g.id}`, group: g.id, title: g.name, peers: peers.filter((p) => (g.peers ?? []).includes(p.id)) })),
+    { key: "none", group: null, title: NO_PEER_GROUP, peers: peers.filter((p) => !inSome.has(p.id)) },
+  ];
+}
+
+/// 연결 줄을 다른 절에 놓기(#1j) — 놓은 그룹에 넣고(이미 있으면 그대로) 옛 그룹에서 뺀다. "그룹에 없는 연결"(`null`)에서 왔으면 빼기 없음, 거기에 놓으면
+/// 빼기만. 같은 절이면 할 일 없음. 반환 = `{group, add, remove}` 목록(넣기 먼저).
+export function peerMove(peer, from, to, groups) {
+  if (from === to) return [];
+  const ops = [];
+  const target = groups.find((g) => g.id === to);
+  if (target && !(target.peers ?? []).includes(peer)) ops.push({ group: to, add: [peer], remove: [] });
+  if (from != null) ops.push({ group: from, add: [], remove: [peer] });
+  return ops;
+}
+
+/// 상대의 그룹 고르기 항목(#1j — 타일 메뉴 · 연결 목록 "그룹 ▾") — 레일 그룹 순서, 체크 = 그 상대를 넣은 그룹, `count` = 그 그룹에 보이는 대화 수.
+export function peerGroupItems(groups, convs, peer) {
+  return groups.map((g) => ({ id: g.id, name: g.name, checked: (g.peers ?? []).includes(peer), count: inGroup(convs, g).length }));
+}
+
+/// 받침에 맞춘 조사 — 한글로 끝나면 받침 있음 `withB` · 없음 `withoutB`, 그 밖(영문 · 숫자 등)은 `withB(withoutB)`.
+export function josa(word, withB, withoutB) {
+  const last = (word ?? "").at(-1) ?? "";
+  const code = last.charCodeAt(0) - 0xac00;
+  if (!(code >= 0 && code <= 11171)) return `${withB}(${withoutB})`; // 빈 글자(NaN)도
+  return code % 28 ? withB : withoutB;
+}
+
+/// 상대를 그룹에 넣고 뺀 안내(#1j) — 넣으면 함께 보이는 대화 수, 빼면 하나씩 넣은 대화는 남는다는 것.
+export function peerGroupText(peer, group, on, n = 0) {
+  const obj = `${peer}${josa(peer, "을", "를")}`;
+  return on
+    ? `${obj} 그룹 "${group}" 에 넣었습니다 — ${peer}${josa(peer, "과", "와")}의 대화 ${n}개가 함께 보입니다`
+    : `${obj} 그룹 "${group}" 에서 뺐습니다 — 대화를 하나씩 넣은 것은 그대로입니다`;
 }
 
 // ---- 주고받은 글 · 보낸 글 ----
@@ -329,11 +374,14 @@ export function inboxRows(messages, peerNames, { kind = "" } = {}) {
     .filter((m) => m.conversation && (!kind || m.author === kind))
     .map((m) => {
       const conv = m.conversation;
+      // 방향 라벨(보냄 · 받음 등)은 없다(#1j) — 이름 · 요청 칩 · 대화방 제목.
       return {
         id: m.id,
         who: authorLabel(conv, m, peerNames.get(conv.peer_id)),
-        kind: [kindText(m), askTag(m)].filter(Boolean).join(" · "),
-        tag: conv.dir === "out" ? "보냄" : "받음",
+        // 어느 에이전트와의 대화인지(#1k — 주고받은 글 칩): 보낸 대화 = 상대 에이전트, 받은 대화 = 내 에이전트.
+        agent: conv.dir === "out" ? conv.agent : `내 ${conv.agent}`,
+        kind: askTag(m),
+        room: conv.title || "",
         preview: preview(m.text),
         at: m.created_at,
         href: `#c/${conv.id}`,
@@ -355,46 +403,67 @@ export function preview(text) {
 
 // ---- 작업 화면 — 상단 바 · 사이드바 · 내 활동 · 대화 · 실행 상세 · 통합 검색 ----
 
-/// 사이드바 내비(#1g) — '나'(`tile` = `null`) = 전부를 상대별로 묶어 보는 6개, 상대 타일 = 그 상대만 4개(대화는 아래 목록, 내 활동은 '나' 에만).
-/// 그룹 타일(`tile` = `"group"`, #1i) = 대화(그룹 요약) · 요청 · 저장된 항목 · 주고받은 글 4개 — 내 활동('나' 에만) · 에이전트(대화 단위 아님) 없음.
-/// 내 활동은 안 본 수(`count`), 요청은 받은 요청 중 대기 수(`waiting`).
-export function sideNav(tile, unseen = 0, waiting = 0) {
-  if (tile === "group")
-    return [
-      { label: "대화", href: "#" },
-      { label: "요청", href: "#requests", count: waiting },
-      { label: "저장된 항목", href: "#saved" },
-      { label: "주고받은 글", href: "#p" },
-    ];
-  const scoped = [
-    { label: "요청", href: "#requests", count: waiting },
-    { label: "저장된 항목", href: "#saved" },
-    { label: "주고받은 글", href: tile == null ? "#p" : `#p/${tile}` },
-    { label: "에이전트", href: "#agents" },
+/// 사이드바 내비(#1g) — '나'(`tile` = `null`) = 전부를 상대별로 묶어 보는 6개, 상대 타일 = 그 상대만 4개(개요는 아래 목록, 내 활동은 '나' 에만).
+/// 그룹 타일(`tile` = `"group"`, #1i) = 개요(그룹 요약) · 요청 · 북마크 항목 · 주고받은 글 4개 — 내 활동('나' 에만) · 에이전트(대화 단위 아님) 없음.
+/// 세 절(#1h) — 상단 개요 / 중단 내 활동 · 요청 · 주고받은 글 / 하단 북마크 항목 · 에이전트(사용자가 모은 · 등록한 것), 절 사이 `{ sep: true }`
+/// (빈 절은 건너뛴다). 내 활동은 안 본 수(`count`), 요청은 받은 요청 중 대기 수(`waiting`).
+export function sideNav(tile, unseen = 0, waiting = 0, starred = 0) {
+  const me = tile == null;
+  const group = tile === "group";
+  // 상대 타일의 첫 화면이 그 상대 개요라(#1j) 상대에는 '개요' 메뉴가 없다. '주고받은 글' 은 '나' 에만 — 상대 · 그룹은 대화방 목록이 같은 글을 보인다.
+  // `icon` = `app.css` `.ico-{이름}`(#1l — 화면 머리 제목과 같은 아이콘).
+  const top = me || group ? [{ label: "개요", href: "#", icon: "home" }] : [];
+  const mid = [
+    ...(me ? [{ label: "내 활동", href: "#activity", count: unseen, icon: "bell" }] : []),
+    { label: "요청", href: "#requests", count: waiting, icon: "inbox" },
+    ...(me ? [{ label: "주고받은 글", href: "#p", icon: "swap" }] : []),
   ];
-  if (tile != null) return scoped;
-  return [{ label: "대화", href: "#" }, { label: "내 활동", href: "#activity", count: unseen }, ...scoped];
+  const end = [
+    { label: "즐겨찾기", href: "#starred", count: starred, icon: "star" },
+    { label: "북마크 항목", href: "#saved", icon: "bookmark" },
+    ...(group ? [] : [{ label: "에이전트", href: "#agents", icon: "bot" }]),
+  ];
+  return [top, mid, end].filter((s) => s.length).flatMap((s, i) => (i ? [{ sep: true }, ...s] : s));
 }
 
-/// 상단 바 "+ 새로 만들기" 메뉴 — 각 화면과 그 화면에서 초점을 줄 칸.
+/// 상단 바 "+ 새로 만들기" 메뉴 — 각 화면과 그 화면에서 초점을 줄 칸 · 아이콘. 자동 왕복은 새 대화 화면 안에서(#1l — 메뉴에서 뺌).
 export function newMenu() {
   return [
-    { label: "새 대화", href: "#new", focus: "chat_peer" },
-    { label: "자동 왕복 대화", href: "#new", focus: "chat_relay_agent" },
-    { label: "초대 생성", href: "#settings/invite_make", focus: "window_btn" },
-    { label: "초대 수락", href: "#settings/invite_accept", focus: "invite_text" },
-    { label: "에이전트 등록", href: "#settings/agents", focus: "agent_name" },
+    { label: "새 대화", href: "#new", focus: "chat_peer", icon: "chat" },
+    { label: "초대 생성", href: "#settings/invite_make", focus: "window_btn", icon: "plus" },
+    { label: "초대 수락", href: "#settings/invite_accept", focus: "invite_text", icon: "enter" },
+    { label: "에이전트 등록", href: "#settings/agents", focus: "agent_name", icon: "bot" },
   ];
 }
 
-/// 상단 바 프로필 메뉴 — 표시 이름 · 아이콘('나' 타일 편집) · 집중(켜짐 표시) · 알림 일시 중지(켜짐 표시) · 환경설정.
-export function profileMenu(paused, focus) {
+/// 상단 바 프로필 메뉴(#1j) — 상태 고르기(받기 가능 · 집중 — 하나만 켜짐) · 앱과 연결 끊김(자동 표시, 고를 수 없음) | 사용자 정보(팝업 — #1l) · 표시 이름 · 아이콘('나' 타일 편집) ·
+/// 알림 일시 중지(켜짐 표시) · 환경설정. `state` = 그 상태의 색(`presenceOf` 열쇠).
+export function profileMenu(paused, focus, offline = false) {
   return [
+    { key: "avail", label: "받기 가능", hint: "새 요청을 받는다", state: "online", radio: true, checked: focus !== true },
+    { key: "focus", label: "집중", hint: "새 요청을 거절", state: "focus", radio: true, checked: focus === true },
+    { key: "offline", label: "앱과 연결 끊김", hint: "자동 표시", state: "offline", info: true, current: offline === true },
+    { sep: true },
+    { key: "me", label: "사용자 정보" },
     { key: "tile", label: "표시 이름 · 아이콘" },
-    { key: "focus", label: "집중 — 요청 받지 않음", checked: focus === true },
     { key: "pause", label: "알림 일시 중지", checked: paused === true },
     { key: "settings", label: "환경설정", href: "#settings" },
   ];
+}
+
+/// 내 상태(#1j — 프로필 아이콘 테두리 · 점) — 앱과 연결 끊김(붉음)이 먼저, 그다음 집중(주황), 그 밖은 받기 가능(초록).
+export function presenceOf(focus, offline) {
+  if (offline === true) return { key: "offline", text: "앱과 연결 끊김" };
+  return focus === true ? { key: "focus", text: "집중" } : { key: "online", text: "받기 가능" };
+}
+
+/// 즐겨찾기 화면(#1j) — ★ 대화방만, 대화방 절 그대로(`paired` 를 주면 상대별 절). 빈 절은 뺀다 — 하나도 없으면 빈 배열.
+export function starredSections(convs, peerNames, paired = null) {
+  return convSections(
+    convRows(convs.filter((c) => c.starred === true), peerNames, null),
+    paired,
+    peerNames,
+  ).filter((s) => s.rows.length);
 }
 
 /// 상대 접속 상태(`GET /api/peers` 의 `seen_at` · `focus`, #1c — 통신할 때만 갱신) — 레일 점 · 사이드바 머리 · 대화 머리글. "방금 통신"(75초 안) ·
@@ -422,7 +491,7 @@ export function refusedText(m) {
       ? "요청자에게 상태를 알리지 못함 — 상대에 오래 닿지 않았다(다시 알리기)"
       : `요청자에게 상태를 알리지 못함 — 상대가 받지 않았다(${m.refused}, 다시 알리기)`;
   if (!m.refused || m.state !== "error") return "";
-  if (m.refused === "unreachable") return "보내지 못함 — 상대에 오래 닿지 않았다(다시 보내기로 다시 보낼 수 있다)";
+  if (m.refused === "unreachable") return "보내지 못함 — 상대에 오래 닿지 않았다(입력창에서 다시 보낼 수 있다)";
   return m.refused === "focus" ? "상대가 집중 중" : `상대가 거절(${m.refused})`;
 }
 
@@ -568,19 +637,16 @@ export function requestRows(messages, peerNames) {
     });
 }
 
-/// 사이드바 대화 섹션 — ★ 켠 대화는 '★ 즐겨찾기' 에만 보인다(대화 섹션에서 빠진다). 즐겨찾기가 없으면 그 섹션도 없다. `paired`(레일 순서
-/// 상대 id)를 주면('나', #1g) ★ 아래를 상대별 절(`peer:{id}`)로 — 대화가 하나도 없으면 빈 '대화' 절 하나.
+/// 사이드바 대화방 절 — ★ 는 줄의 별로 보이고 대화방은 제자리에 남는다(#1j — 모아 보기는 메뉴 "즐겨찾기"). `paired`(레일 순서 상대 id)를 주면
+/// ('나', #1g) 상대별 절(`peer:{id}`)로 — 대화가 하나도 없으면 빈 '대화방' 절 하나.
 export function convSections(rows, paired = null, peerNames = new Map()) {
-  const starred = rows.filter((r) => r.c.starred);
-  const rest = rows.filter((r) => !r.c.starred);
-  const head = starred.length ? [{ key: "starred", title: "★ 즐겨찾기", rows: starred }] : [];
-  if (paired == null) return [...head, { key: "convs", title: "대화", rows: rest }];
+  if (paired == null) return [{ key: "convs", title: "대화방", rows }];
   const groups = peerGroups(
-    rest.map((r) => ({ ...r, peer: r.c.peer_id })),
+    rows.map((r) => ({ ...r, peer: r.c.peer_id })),
     paired,
     peerNames,
   ).map((g) => ({ key: `peer:${g.peer}`, peer: g.peer, title: g.name, rows: g.rows }));
-  return [...head, ...(groups.length ? groups : [{ key: "convs", title: "대화", rows: [] }])];
+  return groups.length ? groups : [{ key: "convs", title: "대화방", rows: [] }];
 }
 
 /// 상대별 절(#1g, '나') — 행(`peer` = 상대 id)을 레일 순서(`paired`)로 묶고, 그 뒤 페어링이 풀린 상대를 id 순으로. 행 없는 상대는 뺀다.
@@ -668,9 +734,9 @@ export function movedText(name, index) {
   return `${name} — ${index + 1}번째로 옮김`;
 }
 
-/// 그룹 타일을 고른 채 열 수 없는 화면(#1i) — 내 활동('나' 에만) · 에이전트(대화 단위 아님) → '나' 로 바꿔 연다.
+/// 그룹 타일을 고른 채 열 수 없는 화면(#1i) — 내 활동 · 주고받은 글(#1j — '나' 에만) · 에이전트(대화 단위 아님) → '나' 로 바꿔 연다.
 export function groupLeaves(view) {
-  return view === "activity" || view === "agents";
+  return view === "activity" || view === "agents" || view === "peer";
 }
 
 /// 그룹의 안 읽음 합(레일 배지).
@@ -696,10 +762,11 @@ export function dropKind(drag, target) {
   return "move";
 }
 
-/// 그룹(`{convs: [대화 id]}`)의 대화만 — 순서는 들어온 그대로.
+/// 그룹의 대화 — 하나씩 넣은 대화(`convs`) + 넣은 상대(`peers`, #1j)의 대화 전부. 순서는 들어온 그대로.
 export function inGroup(convs, group) {
   const ids = new Set(group?.convs ?? []);
-  return convs.filter((c) => ids.has(c.id));
+  const peers = new Set(group?.peers ?? []);
+  return convs.filter((c) => ids.has(c.id) || peers.has(c.peer_id));
 }
 
 /// 그룹 요약에 머리를 둘 페어링된 상대 — 레일 순서 중 그 그룹에 대화가 있는 상대만('나' 처럼 대화 없는 상대를 늘어놓지 않는다).
@@ -755,12 +822,12 @@ export function activityRows(items, peerNames) {
         peer: conv.peer_id,
         at: a.at,
         unseen: a.unseen === true,
-        tag: conv.dir === "out" ? "보냄" : "받음",
         title: convLabel(conv, peerNames).title,
       };
       if (m) {
-        const kind = [kindText(m), askTag(m)].filter(Boolean).join(" · ");
-        const label = a.kind === "failed" ? "실패" : m.state === "error" ? `${kind} · 실패` : kind;
+        // 방향 라벨은 없다(#1j) — 요청 칩 · 실패만.
+        const kind = askTag(m);
+        const label = a.kind === "failed" ? "실패" : m.state === "error" ? [kind, "실패"].filter(Boolean).join(" · ") : kind;
         return { ...row, label, who: authorLabel(conv, m, peer), preview: preview(m.text), href: `#c/${conv.id}/m/${m.id}` };
       }
       if (a.kind === "sync_failed") {
@@ -777,12 +844,11 @@ export function activityRows(items, peerNames) {
     });
 }
 
-/// 메시지 작업 막대 — 모두 "저장"(저장됨이면 "저장 해제"), 내 실행 요청 · 요청만 "다시 보내기"(같은 대화 · 같은 대상에 새 글 — 같은 종류),
+/// 메시지 작업 막대(말풍선 아래 작은 단추) — 북마크 · 복사는 말풍선 우상단 아이콘(#1j), "다시 보내기" 는 없앴다(#1k — 입력창에서 다시 쓴다).
 /// 받은 요청만 상태 바꾸기(`req:{상태}` — [`reqMoves`], 쓴 쪽에 간다). 복사는 말풍선 우상단 아이콘(#1f), 편집 · 삭제는 편집 모드(#1f) —
 /// 막대에는 없다. 원문 보기는 머리글 하나.
 export function messageActions(m) {
-  const acts = [{ key: "save", label: m.saved ? "저장 해제" : "저장" }];
-  if (m.author === "human" && m.mine === true && (m.exec !== false || m.request)) acts.push({ key: "resend", label: "다시 보내기" });
+  const acts = [];
   for (const r of reqMoves(m)) acts.push({ key: `req:${r.to}`, label: r.label });
   if (reqResend(m)) acts.push({ key: "req-again", label: "다시 알리기" });
   return acts;

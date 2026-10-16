@@ -130,6 +130,52 @@ pub fn claude_args(agent: &Agent, session: &Session, model: &str, effort: &str) 
     a
 }
 
+/// 이어 쓸 Claude 세션이 없다(#1h — 원장 #15 R2-F2r) — 세션 파일이 지워졌거나 옮겨졌다. 실행(`chat`)은 새 세션으로 한 번 다시 돌린다.
+#[derive(Debug)]
+pub struct SessionMissing(pub String);
+
+impl std::fmt::Display for SessionMissing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "이어 쓸 세션이 없다 — {}", self.0)
+    }
+}
+
+impl std::error::Error for SessionMissing {}
+
+// ponytail: claude 출력의 영문 문장에 기댄다 — 문장이 바뀌면 판별이 빠지고 예전 동작(실패 답 · 세션 유지)으로 돌아간다.
+const NO_SESSION: &str = "No conversation found with session ID";
+
+/// 실행 오류가 [`SessionMissing`] 인가.
+pub fn session_missing(e: &io::Error) -> bool {
+    e.get_ref().is_some_and(|x| x.is::<SessionMissing>())
+}
+
+/// `--resume` 한 세션이 없다는 출력이면 그 문장 — 마지막 결과 줄이 실패이고 `errors` 에 그 문장(claude 2.1.299 실측), 결과 줄이 없으면 stderr
+/// (2.1.296 실측). 성공한 답 · 다른 실패는 `None`(본문에 같은 문장이 있어도).
+pub fn session_gone(stdout: &[u8], stderr: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(stdout);
+    let found = |s: &str| s.contains(NO_SESSION).then(|| s.trim().to_string());
+    match text
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|l| l.starts_with('{'))
+    {
+        Some(line) => {
+            let v: serde_json::Value = serde_json::from_str(line).ok()?;
+            if v["type"] != "result" || v["is_error"] != true {
+                return None;
+            }
+            v["errors"]
+                .as_array()?
+                .iter()
+                .filter_map(|e| e.as_str())
+                .find_map(found)
+        }
+        None => String::from_utf8_lossy(stderr).lines().find_map(found),
+    }
+}
+
 /// 결과 줄(`stream-json` 의 마지막 `result` 이벤트 · 예전 `json` 한 줄) — 마지막 JSON 줄의 `result` · `session_id` · `is_error` · `num_turns` · `duration_ms`.
 pub fn parse_output(stdout: &[u8]) -> io::Result<RunOutput> {
     let text = String::from_utf8_lossy(stdout);
@@ -391,7 +437,11 @@ pub fn count_step(detail: &mut StepDetail, event: &serde_json::Value) -> bool {
                 .filter(|c| c["type"] == "tool_use")
                 .filter_map(|c| c["name"].as_str())
             {
-                let name = if name.starts_with("mcp__") { "MCP" } else { name };
+                let name = if name.starts_with("mcp__") {
+                    "MCP"
+                } else {
+                    name
+                };
                 *detail.tools.entry(name.to_string()).or_insert(0) += 1;
                 changed = true;
             }
@@ -432,6 +482,9 @@ pub fn run_claude(program: &Path, input: &RunInput) -> io::Result<RunOutput> {
             false
         },
     )?;
+    if let Some(why) = session_gone(&out.stdout, &out.stderr) {
+        return Err(io::Error::other(SessionMissing(why)));
+    }
     parse_output(&out.stdout).map_err(|e| {
         let stderr = String::from_utf8_lossy(&out.stderr);
         io::Error::new(

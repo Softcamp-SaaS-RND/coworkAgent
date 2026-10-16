@@ -1,7 +1,8 @@
+use rusqlite::OptionalExtension;
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 16;
+pub const SCHEMA_VERSION: i64 = 18;
 
 /// 쓰기 트랜잭션 — `BEGIN IMMEDIATE`. 읽고 나서 쓰는 지연(deferred) 트랜잭션은 다른 연결(피어 노드 · 알림)이 쓰는 중이면 잠금을 올리지 못해
 /// `busy_timeout` 을 기다리지 않고 바로 `database is locked` 로 실패한다(SQLite 교착 회피) — 처음부터 쓰기 잠금을 잡아 기다린다.
@@ -334,6 +335,94 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
              CREATE INDEX IF NOT EXISTS group_convs_conv ON group_convs(conversation_id);
              PRAGMA user_version = 16;",
         )?;
+        tx.commit()?;
+    }
+    if v < 17 {
+        // 상대 번호를 다시 쓰지 않는다(#1h — 원장 #17 S1-P): 가장 큰 번호의 상대를 지우면 다음 상대가 그 번호를 받아 남은 대화 · 보낼 글이 새 상대에
+        // 붙었다. SQLite 는 AUTOINCREMENT 를 제자리에서 못 붙인다 — 지금 정의(뒤에 붙인 열 포함)로 새 표 → 번호째 복사 → 옛 표 지움 → 이름 바꿈.
+        // 순번 시작 = 지운 상대가 남긴 대화 · 보낼 글 번호까지(이미 지운 상대의 번호도 다시 쓰지 않는다). 외래 키는 꺼져 있다(이 DB 기본).
+        let tx = conn.unchecked_transaction()?;
+        let sql: String = tx.query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'peers'",
+            [],
+            |r| r.get(0),
+        )?;
+        if !sql.contains("AUTOINCREMENT") {
+            // 이름 바꾸기를 거친 표의 정의는 `CREATE TABLE "peers"` 로 남는다 — 두 꼴 모두.
+            let new = sql
+                .replacen("CREATE TABLE \"peers\"", "CREATE TABLE peers", 1)
+                .replacen("CREATE TABLE peers", "CREATE TABLE peers_new", 1)
+                .replacen(
+                    "id INTEGER PRIMARY KEY",
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT",
+                    1,
+                );
+            if !new.contains("CREATE TABLE peers_new") || !new.contains("AUTOINCREMENT") {
+                return Err(rusqlite::Error::InvalidParameterName(format!(
+                    "스키마 17 — peers 정의를 알 수 없다: {sql}"
+                )));
+            }
+            tx.execute_batch(&format!(
+                "{new};
+                 INSERT INTO peers_new SELECT * FROM peers;
+                 DROP TABLE peers;
+                 ALTER TABLE peers_new RENAME TO peers;"
+            ))?;
+        }
+        // 접힘 설정 열쇠(`{화면}:{상대 번호}`)의 번호도 — 대화 없이 지운 상대의 남은 흔적이다(라운드 2, 남은 접힘이 새 상대에 붙지 않게).
+        // 흔적이 하나도 없는 지운 번호는 되살릴 수 없다 — 붙을 데이터도 없다(원장 #1h R1-M1).
+        let folded = crate::run_opts::folded(&tx)?
+            .iter()
+            .filter_map(|k| k.split_once(':')?.1.parse::<i64>().ok())
+            .max()
+            .unwrap_or(0);
+        tx.execute("DELETE FROM sqlite_sequence WHERE name = 'peers'", [])?;
+        tx.execute(
+            "INSERT INTO sqlite_sequence (name, seq) VALUES ('peers', max(
+               (SELECT coalesce(max(id), 0) FROM peers),
+               (SELECT coalesce(max(peer_id), 0) FROM conversations),
+               (SELECT coalesce(max(peer_id), 0) FROM outbox),
+               ?1))",
+            [folded],
+        )?;
+        tx.execute_batch("PRAGMA user_version = 17;")?;
+        tx.commit()?;
+    }
+    if v < 18 {
+        // 상대 단위 그룹(#1j): 그룹에 상대를 넣으면 그 상대의 대화(뒤에 생긴 것도)가 그 그룹에 보인다. 옛 자유 입력 그룹(`peers.grp`)은 같은 이름
+        // 레일 그룹으로 옮긴다(없으면 만든다 — 이름은 `groups::fit_name`). `agents.grp` 는 읽지 않는다(열은 그대로 둔다).
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS group_peers (
+               group_id INTEGER NOT NULL,
+               peer_id INTEGER NOT NULL,
+               PRIMARY KEY (group_id, peer_id)
+             );
+             CREATE INDEX IF NOT EXISTS group_peers_peer ON group_peers(peer_id);",
+        )?;
+        let old: Vec<(i64, String)> = tx
+            .prepare("SELECT id, grp FROM peers WHERE grp IS NOT NULL ORDER BY pos, id")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (peer, grp) in old {
+            let Some(name) = crate::groups::fit_name(&grp) else {
+                continue;
+            };
+            let found: Option<i64> = tx
+                .query_row("SELECT id FROM groups WHERE name = ?1", [&name], |r| {
+                    r.get(0)
+                })
+                .optional()?;
+            let id = match found {
+                Some(id) => id,
+                None => crate::groups::add(&tx, &name)?.id,
+            };
+            tx.execute(
+                "INSERT OR IGNORE INTO group_peers (group_id, peer_id) VALUES (?1, ?2)",
+                rusqlite::params![id, peer],
+            )?;
+        }
+        tx.execute_batch("PRAGMA user_version = 18;")?;
         tx.commit()?;
     }
     Ok(conn)

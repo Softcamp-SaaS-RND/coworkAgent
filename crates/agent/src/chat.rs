@@ -2991,6 +2991,7 @@ impl Chat {
         let session = saved
             .map(Session::Resume)
             .unwrap_or_else(|| Session::New(new_uuid()));
+        let resumed = matches!(session, Session::Resume(_));
         // 그 상대의 덮어쓰기 → 전역 설정 → 기본값.
         let (model, effort) = {
             let db = self.db();
@@ -3036,7 +3037,20 @@ impl Chat {
             steps,
         };
         let run = self.run.clone();
-        let ran = tokio::task::spawn_blocking(move || run(input)).await;
+        let first = input.clone();
+        let ran = match tokio::task::spawn_blocking(move || run(first)).await {
+            // 이어 쓸 세션이 사라졌다(#1h) — 새 세션으로 한 번 더. 답과 새 세션은 아래 기록에서 그대로 남아 다음 요청은 새 세션을 잇는다.
+            Ok(Err(e)) if resumed && crate::runner::session_missing(&e) => {
+                log::warn!("대화 {} — {e} · 새 세션으로 다시 실행", conv.id);
+                let run = self.run.clone();
+                let again = RunInput {
+                    session: Session::New(new_uuid()),
+                    ..input
+                };
+                tokio::task::spawn_blocking(move || run(again)).await
+            }
+            other => other,
+        };
         if let Some(t) = ticker {
             t.abort();
         }

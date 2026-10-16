@@ -431,6 +431,32 @@ async fn theme_setting_persists() {
     assert_eq!(s["ui_theme"], "light");
 }
 
+/// 레일 타일 순서(#1l) — 기본 상대 → 그룹, 바꾸면 남고, 틀린 값은 400.
+#[tokio::test(flavor = "multi_thread")]
+async fn rail_order_setting_persists() {
+    let a = side("ro").await;
+    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
+    assert_eq!(s["ui_rail_order"], "peers_first", "기본은 상대 → 그룹");
+    let (code, s) = a
+        .call(
+            "PUT",
+            "/api/settings",
+            json!({ "ui_rail_order": "groups_first" }),
+        )
+        .await;
+    assert_eq!(code, 200, "{s}");
+    assert_eq!(s["ui_rail_order"], "groups_first");
+    let (code, _) = a
+        .call("PUT", "/api/settings", json!({ "ui_rail_order": "random" }))
+        .await;
+    assert_eq!(code, 400);
+    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
+    assert_eq!(
+        s["ui_rail_order"], "groups_first",
+        "틀린 값은 바꾸지 않는다"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn to_human_rejected() {
     let (a, b) = (side("th-a").await, side("th-b").await);

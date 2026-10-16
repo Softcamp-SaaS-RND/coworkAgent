@@ -228,6 +228,13 @@ impl Notifier {
         {
             return Err(invalid("ui_theme 은 light · dark"));
         }
+        if patch
+            .ui_rail_order
+            .as_deref()
+            .is_some_and(|t| !run_opts::RAIL_ORDERS.contains(&t))
+        {
+            return Err(invalid("ui_rail_order 는 peers_first · groups_first"));
+        }
         if let Some(w) = patch.ui_side_width
             && !run_opts::SIDE_WIDTHS.contains(&w)
         {
@@ -276,6 +283,7 @@ impl Notifier {
             (run_opts::MODEL_KEY, &patch.claude_model),
             (run_opts::EFFORT_KEY, &patch.claude_effort),
             (run_opts::THEME_KEY, &patch.ui_theme),
+            (run_opts::RAIL_ORDER_KEY, &patch.ui_rail_order),
         ] {
             if let Some(v) = v {
                 writes.push((key, v.clone()));
@@ -369,6 +377,11 @@ impl Notifier {
         let db = an_core::sync::lock(&self.db);
         let (model, effort) = run_opts::defaults(&db).map_err(db_err)?;
         Ok((model, effort, run_opts::theme(&db).map_err(db_err)?))
+    }
+
+    /// 레일 타일 순서(#1l).
+    pub fn rail_order(&self) -> io::Result<String> {
+        run_opts::rail_order(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
 
     /// 화면 — 사이드바 폭 · '나' 타일(표시 이름, 아이콘).
@@ -501,6 +514,8 @@ pub struct SettingsPatch {
     pub claude_effort: Option<String>,
     /// 화면 테마 — `light` · `dark`.
     pub ui_theme: Option<String>,
+    /// 레일 타일 순서(#1l) — `peers_first` · `groups_first`.
+    pub ui_rail_order: Option<String>,
     /// 사이드바(대화 목록) 폭(px, [`run_opts::SIDE_WIDTHS`]).
     pub ui_side_width: Option<i64>,
     /// 접은 절 열쇠 목록(#1g, [`run_opts::clean_folded`]) — 통째로 바꾼다.
@@ -529,6 +544,7 @@ fn settings_json(n: &Notifier) -> io::Result<serde_json::Value> {
     v["claude_model"] = json!(model);
     v["claude_effort"] = json!(effort);
     v["ui_theme"] = json!(theme);
+    v["ui_rail_order"] = json!(n.rail_order()?);
     let (side, alias, icon) = n.screen()?;
     v["ui_side_width"] = json!(side);
     v["me_alias"] = json!(alias);

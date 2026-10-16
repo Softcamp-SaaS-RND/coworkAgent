@@ -387,6 +387,14 @@ fn summary_json(s: &chat::Summary) -> Value {
     v["starred"] = json!(s.starred);
     v["unread"] = json!(s.unread);
     v["pos"] = json!(s.pos);
+    // 대화방 목록 미리보기(#1j) — 마지막 글.
+    v["last"] = json!(s.last.as_ref().map(|l| json!({
+        "text": l.text,
+        "author": l.author.as_str(),
+        "mine": l.mine,
+        "agent": l.agent,
+        "via": l.via,
+    })));
     v
 }
 

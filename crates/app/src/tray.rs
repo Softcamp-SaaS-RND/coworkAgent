@@ -3,6 +3,7 @@
 use crate::browser;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
@@ -13,6 +14,13 @@ pub enum TrayEvent {
     Menu(MenuEvent),
     /// 아직 보지 않은 알림 수(0 = 지움).
     Attention(usize),
+}
+
+/// 트레이 만들기를 다시 시도할 간격 — `n` 번째 실패 뒤(0부터). 합 60초, 그 뒤는 `None`(#1h — 로그인 직후 알림 영역이 아직 준비되지 않은 경우).
+pub fn retry_after(n: u32) -> Option<Duration> {
+    [1, 2, 4, 8, 15, 30]
+        .get(n as usize)
+        .map(|s| Duration::from_secs(*s))
 }
 
 /// 메인 스레드에서 만든 이벤트 루프. `run` · `run_error` 중 하나로 돌린다.
@@ -86,31 +94,51 @@ impl Tray {
         let mut menu = Some((open, quit));
         let mut tray: Option<TrayIcon> = None;
         let mut on_quit = Some(on_quit);
+        // 트레이 만들기 실패 횟수 · 다음 시도 시각(#1h) — 기다리는 동안에도 다른 이벤트(새 요청 표시 등)는 돈다.
+        let mut failures = 0;
+        let mut retry_at: Option<Instant> = None;
+        // 마지막 "새 요청" 수 — 트레이가 아직 없을 때(다시 시도 중) 온 값도 남겨 만들 때 그대로 그린다(라운드 1).
+        let mut attention = 0;
 
         self.event_loop.run(move |event, _, control_flow| {
-            *control_flow = ControlFlow::Wait;
+            *control_flow = retry_at.map_or(ControlFlow::Wait, ControlFlow::WaitUntil);
             match event {
-                // macOS 는 이벤트 루프가 돈 뒤에 트레이를 만들어야 한다.
-                Event::NewEvents(StartCause::Init) => {
-                    if let Some((open, quit)) = menu.take() {
-                        match build(&[&open, &quit], &tip(0, note.as_deref()), icon(Mark::None)) {
-                            Ok(t) => tray = Some(t),
-                            Err(e) => {
-                                // 트레이 없이는 쓸 수 없다 — 사유를 보이고 정리 뒤 끝낸다(조용히 사라지지 않는다).
-                                show_failure(&format!("트레이 아이콘을 만들 수 없다: {e}"));
-                                if let Some(f) = on_quit.take() {
-                                    f();
-                                }
-                                *control_flow = ControlFlow::Exit;
+                // macOS 는 이벤트 루프가 돈 뒤에 트레이를 만들어야 한다. 실패하면 간격을 늘려 다시(`retry_after`).
+                Event::NewEvents(StartCause::Init | StartCause::ResumeTimeReached { .. }) => {
+                    if let Some((open, quit)) = &menu {
+                        retry_at = None;
+                        match build(&[open, quit], &tip(attention, note.as_deref()), icon(mark_of(attention))) {
+                            Ok(t) => {
+                                tray = Some(t);
+                                menu = None;
+                                *control_flow = ControlFlow::Wait;
                             }
+                            Err(e) => match retry_after(failures) {
+                                Some(wait) => {
+                                    failures += 1;
+                                    log::warn!("트레이 아이콘을 만들 수 없다({failures}번째) — {}초 뒤 다시: {e}", wait.as_secs());
+                                    let at = Instant::now() + wait;
+                                    retry_at = Some(at);
+                                    *control_flow = ControlFlow::WaitUntil(at);
+                                }
+                                None => {
+                                    // 트레이 없이는 쓸 수 없다 — 사유를 보이고 정리 뒤 끝낸다(조용히 사라지지 않는다). 종료 코드 0 — 감시가 다시 띄우면
+                                    // 같은 다시 시도를 되풀이하며 사유 파일을 매번 연다(1h plan 해석 7).
+                                    show_failure(&format!("트레이 아이콘을 만들 수 없다: {e}"));
+                                    if let Some(f) = on_quit.take() {
+                                        f();
+                                    }
+                                    *control_flow = ControlFlow::Exit;
+                                }
+                            },
                         }
                     }
                 }
                 Event::UserEvent(TrayEvent::Attention(n)) => {
+                    attention = n;
                     if let Some(t) = &tray {
-                        let mark = if n > 0 { Mark::Attention } else { Mark::None };
                         let tip = tip(n, note.as_deref());
-                        if let Err(e) = t.set_icon(Some(icon(mark))) {
+                        if let Err(e) = t.set_icon(Some(icon(mark_of(n)))) {
                             log::warn!("트레이 아이콘 갱신 실패(새 요청 {n}건): {e}");
                         }
                         if let Err(e) = t.set_tooltip(Some(tip)) {
@@ -235,6 +263,11 @@ fn show_failure(message: &str) {
     }
 }
 
+/// 새 요청 수의 표시 — 있으면 주황 점.
+fn mark_of(n: usize) -> Mark {
+    if n > 0 { Mark::Attention } else { Mark::None }
+}
+
 #[derive(Clone, Copy)]
 enum Mark {
     None,
@@ -274,9 +307,25 @@ mod tests {
     #[test]
     fn tip_lines_and_windows_limit() {
         assert_eq!(super::tip(0, None), "coworkAgent");
-        assert_eq!(super::tip(2, Some("둘째")), "coworkAgent — 새 요청 2건\n둘째");
+        assert_eq!(
+            super::tip(2, Some("둘째")),
+            "coworkAgent — 새 요청 2건\n둘째"
+        );
         let long = super::tip(1, Some(&"가".repeat(200)));
         assert_eq!(long.encode_utf16().count(), 127);
         assert!(long.ends_with('…'));
+    }
+
+    /// 다시 시도 간격(#1h) — 1 · 2 · 4 · 8 · 15 · 30초(합 60초), 그 뒤 없음.
+    #[test]
+    fn retry_after_schedule() {
+        let secs: Vec<u64> = (0..10)
+            .map_while(super::retry_after)
+            .map(|d| d.as_secs())
+            .collect();
+        assert_eq!(secs, [1, 2, 4, 8, 15, 30]);
+        assert_eq!(secs.iter().sum::<u64>(), 60);
+        assert_eq!(super::retry_after(6), None);
+        assert_eq!(super::retry_after(u32::MAX), None);
     }
 }

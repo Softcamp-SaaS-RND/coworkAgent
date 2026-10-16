@@ -263,6 +263,18 @@ async fn conversation_summaries_and_message_meta() {
     assert_eq!(list[0]["title"], "스키마 초안을 잡아 줘");
     assert_eq!(list[0]["last_state"], "done");
     assert!(list[0]["last_at"].as_i64().unwrap() > 0);
+    // 대화방 미리보기(#1j) — 마지막 글 = 상대 에이전트 답.
+    let last = &list[0]["last"];
+    assert_eq!(
+        (&last["text"], &last["author"], &last["mine"]),
+        (
+            &ms[1]["text"],
+            &serde_json::json!("agent"),
+            &serde_json::json!(false)
+        ),
+        "{last}"
+    );
+    assert_eq!(last["via"], serde_json::Value::Null, "웹UI 글 — CLI 출처 아님(라운드 2 `via`)");
     // 화면 로직 모듈도 같은 guard 뒤에서 나간다.
     let (code, raw) = common::send(port, "GET", "/view.js", &h[..3]).await;
     assert_eq!(code, 200);

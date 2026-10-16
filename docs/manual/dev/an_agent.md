@@ -43,8 +43,9 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
   저장(`queued`)이 대기열 등록 — 대화별 작업이 id 순으로 `running` → 실행 → 세션 · 상태 · 답을 한 트랜잭션(실패 → 오류 답) →
   `reply`(실행 정보 · 원 요청 대응 · 실행한 model · effort 를 싣는다 — 양쪽 답에 남는다, outbox 로 — 상대가 거절했거나 24시간 닿지 않으면 `undelivered`). 실행 옵션은 실행 직전 `run_opts::resolve`(그 상대 덮어쓰기 → 전역 →
   기본값) — 설정을 못 읽으면(DB 오류) 기본값으로 돌리지 않고 실패 답. 세션은 실행한 에이전트의 폴더가 그대로일 때만 남긴다(실행 도중 폴더가
-  바뀌면 `agents::update` 가 지운 세션을 되살리지 않는다). 재개할 세션이 사라졌으면(`claude` 종료 1 · JSON 없음) 실패 답이고 세션은 남는다
-  (원장 #15 R2-F2r).
+  바뀌면 `agents::update` 가 지운 세션을 되살리지 않는다). 재개할 세션이 사라졌으면(`runner::session_gone` — 결과 줄 `errors` 의
+  "No conversation found with session ID"(2.1.299) · 결과 줄 없으면 stderr(2.1.296)) `run_claude` 가 `SessionMissing` 을 돌려주고, 실행은 새 세션으로
+  **한 번** 다시 돌린다 — 답 · 새 세션을 기록해 다음 요청은 새 세션을 잇는다(#1h — 원장 #15 R2-F2r). 다른 실패는 다시 돌리지 않는다.
 - `Chat::post(conv, text, to_agent) -> (Conversation, Message, 경고)` · `post_via(…, via)` — 양쪽 사람 발화(D18 · D23): 보낸 대화의 실행 요청은 `send`, 그 밖은
   내 이력 + `post` 미러. 로컬 API 는 늘 `to_agent = true`(D23 개정 — 새 글은 모두 실행 요청), 실행 없는 사람 글 받기는 이전 이력용으로 남는다. 받은 쪽 실행 요청은 사람 글을 먼저 미러한 뒤 실행(미러가 거절되거나 보관조차 못 하면 실행 · 성공 + 경고, 닿지 않으면 보관 — 경고 없음), 답은 `post`(agent).
   받기 `post`: 그 상대 소유 대화만, 에이전트 답 · 실행 요청 글은 에이전트가 상대 쪽인 대화(`out`)만, 에이전트 답은 상대가 쓴 `sent`

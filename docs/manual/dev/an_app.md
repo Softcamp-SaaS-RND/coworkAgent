@@ -12,14 +12,15 @@
 - `peers_api::routes(node)` — `GET /api/me`(#1b: `ui_port` — 요청 Host 의 포트 · `peer_port_fixed`(47100 인가) · `peer_port_holder{name, pid}|null` ·
   `peer_port_note` · `open_connections`) · `GET/POST /api/peers`(본문 `{addr, code}` 또는 `{invite}` — 초대는 지문 대조 ·
   추가 · 내 승인, 주소+코드 직접 추가도 코드가 맞아 상대가 승인했으면 내 승인까지 — 양쪽 페어링(D8 개정), 아는 키 다시 추가는 승인 대기) ·
-  `PATCH /api/peers/{id} {group?, model?, effort?, alias?, icon?}`(빈 문자열 = 지움, 틀린 값 400 — 이 PC 에만, 피어 JSON 에 같은 이름) ·
+  `PATCH /api/peers/{id} {group?, model?, effort?, alias?, icon?}`(빈 문자열 = 지움, 틀린 값 400 — 이 PC 에만, 피어 JSON 에 같은 이름. `group` = 옛 자유 입력
+  이름표 — #1j 웹UI 는 쓰지 않는다, 상대의 그룹은 `PUT /api/groups/{id}/peers`) ·
   `DELETE /api/peers/{id}` → `{notified}` · `POST /api/peers/{id}/approve` · `/ping`(204 — `Node::refresh(id, 60)`: 60초 안에 통신했으면 보내지
   않음, 받은 `Pong` 은 접속 상태로 — #1c) · 피어 JSON 에 `online`(마지막 통신 75초 안) · `focus`(온라인일 때만 — #18) · `seen_at`(마지막으로
   주고받기에 성공한 유닉스 초 · 없으면 `null` — 화면이 "n분 전 통신" 을 센다, #1c) ·
   `POST /api/pairing-window`(초대 생성) → `{seconds, code, invite}`. 오류 404 · 400 · 502, JSON 아닌 본문 415.
 - `chat_api::routes(chat)` — `GET/POST /api/agents`(이름 1 ~ 64자 · 폴더는 있는 절대 경로 · 데이터 루트를 품거나 네트워크 경로면 400(`an_core::paths::agent_folder_problem`, #1a) · 같은 이름 409 · 도구 칸 없음 — `tools` 를 주면 422(#1d)) ·
-  `PATCH /api/agents/{id} {folder?, prompt?, group?}`(이름은 바꾸지 않는다 — 주면 400) · 에이전트 JSON 에 `group` ·
-  `DELETE /api/agents/{id}` · `GET /api/peers/{id}/agents` → `{names}` · `GET/POST /api/conversations`(목록 = 요약 `title` · `last_state` · `last_at`;
+  `PATCH /api/agents/{id} {folder?, prompt?, group?}`(이름은 바꾸지 않는다 — 주면 400) · 에이전트 JSON 에 `group`(#1j 웹UI 는 쓰지 않는다) ·
+  `DELETE /api/agents/{id}` · `GET /api/peers/{id}/agents` → `{names}` · `GET/POST /api/conversations`(목록 = 요약 `title` · `last_state` · `last_at` · `last{text, author, mine, agent, via}|null`(#1j — 마지막 글, `text` 앞 120자);
   `{peer_id, agent, text, title?}` → 201 `{conversation, message}`) · `PATCH /api/conversations/{id} {title}`(이 PC 에만, 빈 문자열 = 지움) ·
   `GET /api/messages?side=theirs|mine&peer=&kind=human|agent&q=&limit=`(대화를 가로지른 글 — 거른 뒤 최신순, 기본 200 · 최대 500) · `GET /api/runs` `{cap, running, waiting}`(항목 `message_id` · `conversation_id` · `peer_id` · `peer` · `agent` · `text` 앞 40자 — #1b) ·
   `PUT /api/runs {cap}`(정수 1 ~ 8 아니면 400, 저장 + 문에 바로) · `GET/POST /api/conversations/{id}/messages`(대화 글 목록 메시지에
@@ -49,10 +50,11 @@
   #1f: `PATCH /api/messages/{id} {text, mirror?}`(끝난 내 사람 글만 — 그 밖 400, `text` 는 다른 항목과 함께 못 씀 · `mirror` 는 `text` 와 함께만 →
   `{id, text, edited_at, warning?}`) · `POST /api/messages/delete {ids, mirror?}`(1 ~ 200개 · 한 대화 · 하나라도 안 되면 아무것도 안 지움 →
   `{deleted, warning?}`) · 대화 글 JSON 에 `editable`(`Chat::tidy_ok`) · 메시지 JSON 에 `edited_at` · 내 활동 항목 `kind = sync_failed`(`detail` = 사유).
-  #1i(`groups_api.rs` — 이 PC 에만, 상대 PC 로 가는 프레임 없음): `GET /api/groups` → `[{id, name, icon, pos, convs}]`(레일 순서) · `POST /api/groups {name}`
+  #1i(`groups_api.rs` — 이 PC 에만, 상대 PC 로 가는 프레임 없음): `GET /api/groups` → `[{id, name, icon, pos, convs, peers}]`(레일 순서 — `peers` #1j) · `POST /api/groups {name}`
   → 201(이름 = 앞뒤 공백 뺀 1 ~ 40자 · 제어 문자 없음 — 400, 같은 이름 409 "같은 이름의 그룹이 있습니다") · `PATCH /api/groups/{id} {name?, icon?}`(둘 다
   검증한 뒤 쓴다, 빈 `icon` = 지움, 없으면 404) · `DELETE /api/groups/{id}` → 204(소속도, 대화는 그대로) · `PUT /api/groups/{id}/conversations {add?,
-  remove?}`(이미 있음 · 없음은 무시, 없는 대화 400, 합쳐 10000개까지) · `PUT /api/order {kind: peers|groups|conversations, ids}` → 204(준 순서대로 자리
+  remove?}`(이미 있음 · 없음은 무시, 없는 대화 400, 합쳐 10000개까지) · `PUT /api/groups/{id}/peers {add?, remove?}`(#1j — 상대 단위: 그 상대의 대화
+  전부(뒤에 생길 것도)가 그 그룹에, 이미 있음 · 없음은 무시, 없는 상대 400 · 없는 그룹 404 → 그룹 JSON, 상대를 빼도 하나씩 넣은 대화는 남음) · `PUT /api/peers/{id}/groups {add?, remove?}`(#1j 라운드 1 — 한 상대를 여러 그룹에 넣고 빼기를 한 트랜잭션으로 · 연결 목록 끌어 옮기기, 없는 상대 404 · 없는 그룹 400 — 아무것도 안 바뀜 → 그룹 목록) · `PUT /api/order {kind: peers|groups|conversations, ids}` → 204(준 순서대로 자리
   0 ..; 겹침 · 없는 id 400 — 아무것도 안 바뀜, 빠진 id 는 제 자리 · 같은 자리면 id 순). `GET /api/messages` · `GET /api/saved` 에 `group`(`peer` 와 함께면
   400), 새 대화 본문 `group?`(없는 그룹 404 — 보내지 않음, 소속은 대화와 같은 트랜잭션), 대화 요약 JSON 에 `pos`, `GET /api/peers` 순서 = 자리.
   거절(`focus` 등)은 403 + 글 `refused`. CLI `ask --conv N --agent X` — X 가 대화 에이전트가 아니면 멘션(자동 왕복 대화는 오류, 상대 PC 목록에 없으면
@@ -93,8 +95,8 @@
   `cli::run(args, instance_file, out, err, wait_limit)` — 테스트 진입(임시 경로 · 짧은 대기).
 - `browser::open(url 또는 파일 경로)` — Windows `ShellExecuteW`(반환 ≤ 32 = 실패) · macOS `open` 종료 상태(두 OS 같은 동작 — D30).
 - `tray::Tray::new() -> (Tray, Attention)` — 메인 스레드 이벤트 루프. `Attention::set(n)` 은 프록시로 "새 요청" 표시(주황 점 · 툴팁).
-  `Tray::run(url, note, on_seen, on_quit)`(`note` = 툴팁 둘째 줄 — 피어 포트를 남이 잡았을 때 `peer_port_note`, `tray::tip(n, note)`) — "열기" · "종료"(S4 개정 — 내 정보는 웹UI 설정 `#me`), 열기 성공 시 `on_seen`. 트레이를 못 만들면
-  사유 파일을 열고 끝냄. `Tray::run_error(message, file)` — 붉은 아이콘 · "오류 보기" · "종료". `write_start_error(message)` — 임시 폴더
+  `Tray::run(url, note, on_seen, on_quit)`(`note` = 툴팁 둘째 줄 — 피어 포트를 남이 잡았을 때 `peer_port_note`, `tray::tip(n, note)`) — "열기" · "종료"(S4 개정 — 내 정보는 웹UI 프로필 "사용자 정보" 팝업 `#me_dialog`, #1l), 열기 성공 시 `on_seen`. 트레이를 못 만들면
+  `tray::retry_after(n)`(1 · 2 · 4 · 8 · 15 · 30초 — #1h, `ControlFlow::WaitUntil`) 뒤 다시, 끝내 못 만들면 사유 파일을 열고 끝냄(종료 코드 0). `Tray::run_error(message, file)` — 붉은 아이콘 · "오류 보기" · "종료". `write_start_error(message)` — 임시 폴더
   `coworkAgent-start-error.txt`. 종료 순서: 런타임 정지 → `instance.json` 삭제 → 잠금 해제.
 - `watchdog`(#1e) — `ENV`(`COWORKAGENT_SUPERVISED`, 값 = 다시 띄운 횟수 · 없으면 감시 프로세스) · `MAX_CRASHES`(3) · `CRASH_WINDOW`(60초) ·
   `RESTART_DELAY`(1초) · `supervise(spawn: FnMut(u32) -> io::Result<bool>, delay) -> Outcome`(`Done` = 자식 정상 종료 · `GaveUp(사유)` = 창 안 3번 ·
@@ -110,27 +112,61 @@
   `Node::announce`(시작 알림 — 주기 접속 확인은 없다, #1c).
 
 - 웹UI(`web/`, 빌드 없는 ES 모듈 — D10): 시안 v4(Nocturne) 5영역(상단 바 · 레일 · 사이드바 · 대화 · 실행 상세) + 설정 + 새 대화, 화면은 해시로만
-  바뀐다(`#c/{id}`(`/m/{글}`) 대화 · `#s/{id}` 보낸 메시지 · `#p/{id}` 상대와 주고받은 글(`#p` = 모든 상대) · `#activity` 내 활동 · `#saved` 저장된 항목 · `#agents`
-  에이전트 · `#settings/{절}` · `#me` · `#new`, 옛 `#inbox` · `#t/` 는 첫 화면). 색 · 글꼴 크기는 `app.css` 첫 `:root` 토큰만(다크 값은 `--dark-*` 토큰을
-  `:root[data-theme="dark"]` 가 가리킨다). 상단 바 통합 검색(Ctrl K) · "+ 새로 만들기" · 알림(내 활동) · 프로필 메뉴, 사이드바 내비 · ★ 즐겨찾기 ·
-  대화 섹션, 말풍선 우상단 복사 아이콘(늘 보임 — #1f) · 메시지 작업(저장 · 다시 보내기) · 입력창 위 "편집"(편집 모드 — 끝난 내 사람 글 체크박스 ·
+  바뀐다(`#c/{id}`(`/m/{글}`) 대화 · `#p` 주고받은 글('나' 만) · `#activity` 내 활동 · `#starred` 즐겨찾기(#1j) · `#saved` 북마크 항목 · `#agents`
+  에이전트 · `#settings/{절}` · `#me` · `#new`, 옛 `#inbox` · `#t/` 는 첫 화면, 옛 `#s/{id}`(보낸 메시지 — #1j 에서 없앰)는 `#c/{id}`, 옛 `#p/{id}` 는 그 상대를 고르고 `#`). 색 · 글꼴 크기는 `app.css` 첫 `:root` 토큰만(다크 값은 `--dark-*` 토큰을
+  `:root[data-theme="dark"]` 가 가리킨다). 상단 바 통합 검색(Ctrl K) · "+ 새로 만들기" · 알림(내 활동) · 프로필 단추(#1j — 아이콘 또는 사람 모양 + 표시 이름 한 번 `.avatar-name` 12em 말줄임 · `title` 전체,
+  테두리 · 점 = `view.presenceOf(focus, offline)` → `st-online` 초록 · `st-focus` 주황 · `st-offline` 붉음 — 끊김 = `api()` 의 fetch 가 연달아 `OFFLINE_AFTER`(2)번
+  닿지 못함, 닿으면 0 · `netResult` · `appOffline`) · 프로필 메뉴 `view.profileMenu(paused, focus, offline)`(머리 "상태 — 아이콘 테두리 색" · `menuitemradio`
+  받기 가능 / 집중 · 앱과 연결 끊김 자동 표시 | 표시 이름 · 아이콘 · 알림 일시 중지 · 환경설정 — 집중 칩 없음),
+  레일 타일 A안(#1j — `tileFace(icon, group)` 사람 `PERSON_SVG` · 사람 + 그림자 `GROUP_SVG`, 그림이 있으면 그림 · 아래 이름 `.tile-name` 11px 말줄임, 레일 72px —
+  #1h `tileText` 글자 · 겹친 카드 대체), 사이드바 내비 · 대화방 목록(#1j — 줄 = ☆ `starButton`(`PATCH starred`) · 아바타 · 제목 · `view.roomPreview`
+  "말한 이: 본문" · 시각 · 안 읽음, ★ 절 없음), 말풍선(#1j — `view.bubbleSide`(`mine` 오른쪽 · 그 밖 왼쪽 + 아바타 · 이름 · 시각) · 날짜 구분선
+  `view.dayBreaks` · `dayLabel`(오늘 · 어제 · M.D) · 최대 폭 대화 칸의 90% · 방향 라벨 없음) · 우상단 아이콘 북마크(`bookmarkButton` — 넣기 · 빼기 `aria-pressed`,
+  열쇠 `save`) · 복사(늘 보임 — #1f) · 말풍선 아래 작은 단추 `view.messageActions`(요청 상태 · 다시 알리기 — 북마크 없음, 다시 보내기는 #1k 에서 없앰 — 입력창에서 다시 쓴다) · 대화 머리 "대화 보기 / 원문 보기"
+  (`role=group` + `aria-pressed`) · "북마크 n"(`saved_n` — 세부정보 북마크 절을 연다) · "세부정보" · 보낸 메시지 탭 없음 · 입력창 위 "편집"(편집 모드 — 끝난 내 사람 글 체크박스 ·
   연필, 입력창 자리 `#edit_bar` "n개 선택 · 삭제 · 완료", 반영 범위 `<dialog id="scope_dialog">` "내 창에서만" · "상대 창에도" · 취소 — 본문을 고치는
-  동안은 5초 새로 고침이 대화를 다시 그리지 않는다, `view.keepPicked` · `editedTag`) · 입력창 서식 · Enter 보내기, 실행 상세(진행 · 대화 정보 · 자동 왕복 · 저장된 항목). 레일 범위(#1g, `view.sideNav`):
-  '나' = 메뉴 6개(대화 · 내 활동 · 요청 · 저장된 항목 · 주고받은 글 · 에이전트), 목록은 `view.peerGroups`(레일 순서 · 풀린 상대 뒤 · 빈 상대 숨김)로 상대별
-  `<details>` 절, '대화'(`#`) = `view.peerSummary` 상대별 요약(대기 요청 = `view.waitingByPeer`), 사이드바 = `convSections(rows, paired)` ★ 아래 상대별 절.
-  상대 타일 = 메뉴 4개(요청 · 저장된 항목 · 주고받은 글 · 에이전트), 첫 화면 `#p/{id}`, 그 상대 것만 — 상대 타일인 채 `#` 는 `#p/{id}`, `#activity` 는
-  '나' 로. 절 접힘은 설정 `ui_folded`(`{화면}:{상대 id | me}`, 시작할 때만 읽는다). 사이드바 에이전트 절은 없다(에이전트 화면만). 레일 그룹(#1i): 그룹 타일 =
-  메뉴 4개(`sideNav("group")` — 대화 · 요청 · 저장된 항목 · 주고받은 글 `#p`), 목록 · 요약은 그 그룹 대화만(`view.inGroup` · `groupPeers` — 대화 있는 상대만,
+  동안은 5초 새로 고침이 대화를 다시 그리지 않는다, `view.keepPicked` · `editedTag`) · 입력창 서식 · Enter 보내기, 실행 상세(진행 · 대화 정보 · 자동 왕복 · 북마크 항목). 레일 범위(#1g, `view.sideNav`):
+  '나' = 메뉴 7개 세 절(#1h · #1j — 개요 / 내 활동 · 요청 · 주고받은 글 / 즐겨찾기 · 북마크 항목 · 에이전트, 절 사이 `{ sep: true }` → `li.nav-sep[role=separator]`), 목록은 `view.peerGroups`(레일 순서 · 풀린 상대 뒤 · 빈 상대 숨김)로 상대별
+  `<details>` 절, '개요'(`#`, `#home_title`) = `view.peerSummary` 상대별 요약(대기 요청 = `view.waitingByPeer`), 사이드바 = `convSections(rows, paired)` 상대별 절(제목 "대화방"). 즐겨찾기 `#starred` = `view.starredSections`(그 범위 ★ 대화방 —
+  '나' 는 상대별 절, 메뉴에 ★ 수 — `sideNav(tile, unseen, waiting, starred)`).
+  상대 타일 = 메뉴 4개(#1j — 요청 / 즐겨찾기 · 북마크 항목 · 에이전트), 첫 화면 `#` = 그 상대 하나의 개요(`renderHome` "개요 · {이름}"), 그 상대 것만 —
+  `#activity` · `#p` 는 '나' 로. 절 접힘은 설정 `ui_folded`(`{화면}:{상대 id | me}`, 시작할 때만 읽는다). 사이드바 에이전트 절은 없다(에이전트 화면만). 레일 그룹(#1i): 그룹 타일 =
+  메뉴 4개(`sideNav("group")` — 개요 / 요청 / 즐겨찾기 · 북마크 항목 — #1j), 목록 · 요약은 그 그룹 대화만(`view.inGroup` — `convs` 또는 `peers`(#1j) · `groupPeers` — 대화 있는 상대만,
   서버 거르기 `group=`), 그룹인 채 `#activity` · `#agents` 는 '나' 로(`view.groupLeaves`). 접힘 열쇠는 '나' 와 같은 화면 열쇠. 떠 있는 상자 `#float`(화면 기준 —
-  "그룹 +" · 대화 ⋯ "그룹" 체크 · "그룹에서 빼기" · "대화 추가" · 타일 메뉴 "타일 편집" · "이미지 지우기" · "그룹 삭제"(상자 안 확인)) — 레일 우클릭 · 메뉴 키 ·
+  "그룹 +" · 대화 ⋯ "그룹" 체크 · "그룹에서 빼기" · "대화 추가" · 타일 메뉴 "타일 편집" · "이미지 지우기"("사람 모양으로 보입니다") · 상대 그룹 체크(#1j `peerGroupMenu` — "그룹 — 체크하면 넣고, 풀면 뺀다" ·
+  "+ 새 그룹에 넣기…" → `PUT /api/groups/{id}/peers`, 안내 `view.peerGroupText`) · "위로 옮기기 · 아래로 옮기기"(#1j `stepMove` — Alt + ↑ / ↓ 와 같음, 끝이면 꺼짐) ·
+  "그룹 삭제"(상자 안 확인)) — 레일 우클릭 · 메뉴 키 ·
   사이드 머리 ⋯. 순서 = 손으로 놓은 자리(`view.sortByPos` — 대화 · 상대 · 그룹 모두): 끌어 놓기(HTML 기본 드래그, `view.dropKind` — 같은 종류 · 대화는 같은
-  절, 대화 → 그룹 타일 = 넣기) · Alt + ↑ / ↓(`view.stepTarget`, `#order_live` 알림 `movedText`) → 전체 순서에 끼워(`view.moveInOrder`) `PUT /api/order`.
+  절, 대화 → 그룹 타일 = 넣기) · Alt + ↑ / ↓(`view.stepTarget`, `#order_live` 알림 `movedText`) → 전체 순서에 끼워(`view.moveInOrder`) `PUT /api/order`. 레일 · 대화방 목록은 다시 그려도 초점 항목을 되돌린다(`keepFocus` — #1j, 누른 뒤 바로 Alt + ↑ / ↓).
+  설정(#1j): "페어링" 카드(초대 생성 · 초대 수락 같은 `primary` 단추, "주소 · 코드로 직접 추가" 없음 — 서버 경로는 남음) · 내 정보 · 연결 상세(`kvTable`)에 "읽기 전용"
+  없음 · 연결 목록 카드 = `view.peerSections`(레일 그룹 절 + `NO_PEER_GROUP` "그룹에 없는 연결", 한 상대는 여러 절에) · 줄 끌기 `view.peerMove`(넣기 먼저 · 옛 절
+  빼기) · "그룹 ▾" `view.peerGroupItems` · "+ 그룹 추가" · 절 머리 이름 바꾸기 · 삭제 · 검색 `view.searchItems` · 내 에이전트 평평한 목록(그룹 칸 없음).
+  설정(#1k — 디자인 캔버스 ④): `.settings-cols` 두 열(왼쪽 페어링 · 연결 목록, 오른쪽 내 정보 · 내 에이전트 — 1100px 미만 한 열, 실행 · 화면 · 시작 · 알림은
+  아래 전체 폭) · 페어링 큰 단추 둘 `.pair-btns`(`window_btn` "초대 생성" · `accept_btn` "초대 수락" = `showAccept(on)` — `invite_accept` 여닫기 ·
+  `aria-expanded`, 제출 단추 "추가 · 승인") · 레일 "+" = `showAccept(true)` + `goSettings("conn", "invite_text")`(카드 맨 위 · 칸 초점), 트리 · 새로 만들기
+  "초대 수락"(`#settings/invite_accept`)도 `render` 가 펼친다 · 관리 줄 `manageItem(key, label, head, ...body)`(머리 + "관리" `{key}_manage` 로 여닫는
+  `detail_{key}`, 펼침 `state.open` — `<details>` `remembered` 대체) · 줄 타일 `rowTile(cls, icon, group)`(`tileFace`) · 절 머리 그림 단추
+  `svgButton(svg, label, onClick, cls)`(`PENCIL_SVG` 이름 바꾸기 · `TRASH_SVG` 삭제) · 연결 줄 = ⋮⋮ · 타일 · 이름 · 부제(이름 · PC · 접속 상태) · "그룹 ▾" ·
+  "관리"(지문 · 주소 · 모델 · effort · 단추, 끌기는 `.manage-head` 만) · 내 에이전트 줄 = 타일 · 이름 · 폴더 · "관리", 머리 `agent_new_btn` "에이전트 등록"
+  (1l 에서 `showAgentNew(on)` 보이기 · 숨기기로 바뀜). 에이전트 화면(#1k): 머리 안내문 없음 · 내 에이전트 줄 오른쪽 ✎(`aria-label` "{이름} 편집") · 줄 누르기 =
+  `editAgent(id)`(`state.open` 에 넣고 `goSettings("agents", "agent{id}_manage")` — 상세 펼침 · "관리" 초점), 상대 에이전트 = 새 대화. 주고받은 글(#1k):
+  머리 안내문 없음 · `rowEls(rows, empty, {tile: true})`(주고받은 글만 — 왼쪽 상대 타일 `.row-tile` · 이름 옆 에이전트 칩 `.agent-chip`) ·
+  `view.inboxRows` 줄 `agent`(보낸 대화 = 상대 에이전트 · 받은 대화 = "내 {에이전트}").
   타일 색 = `view.colorOf(id)`. 아이콘 그림은 data URL 로 읽는다(CSP `img-src` 가 `blob:` 을 막는다). 타일을 누르면 사이드바에 그 타일 대화
-  목록, 메시지 본문은 markdown 뷰어 · HTML 문서는 `<iframe sandbox srcdoc>`(머리글 "원문 보기" 하나로 전체 전환), 설정은 전체 폭 트리. 판단 로직은 `view.js`(DOM 없음) — `node --test` 로 시험(`view.test.mjs`),
+  목록, 메시지 본문은 markdown 뷰어 · HTML 문서는 `<iframe sandbox srcdoc>`(대화 머리 "대화 보기 / 원문 보기" 로 전체 전환), 설정은 전체 폭 트리. 판단 로직은 `view.js`(DOM 없음) — `node --test` 로 시험(`view.test.mjs`),
   `app.js` 는 조립만(`textContent` · `replaceChildren`). #1c: `view.presence(p, now)`(피어 `seen_at` → "방금 통신"(75초 안) · "n분 · n시간 · n일 전
   통신" · "통신 기록 없음", 방금일 때만 점 · 집중 "집중 중 · …") · `outboxText`("보내는 중" · "보내는 중 — 상대에 닿지 않아 다시 보냄(n회)") ·
-  `stepText`("2턴 · Read 3 · Grep 1 · 41초") · `progressText`("처리 중 — {단계}") · `refusedText`(`unreachable` → "보내지 못함 — …"). `app.js` 는
+  `stepText`("2턴 · Read 3 · Grep 1 · 41초") · `progressText`("처리 중 — {단계}") · `refusedText`(`unreachable` → "보내지 못함 — 상대에 오래 닿지 않았다(입력창에서 다시 보낼 수 있다)"). `app.js` 는
   웹UI 를 열 때 페어링된 상대 모두 · 레일 타일을 고를 때 그 상대 ping(`pingPeers` — 서버가 60초로 거른다).
+  아이콘 · 설정 정리(#1l): 아이콘 한 벌 = `app.css` `.ico`(16px 하나 · `currentColor` 를 SVG 모양 `mask` 로) + `.ico-{이름}`(data URI), HTML ·
+  JS 는 `<span class="ico ico-{이름}">` · `ico(name)` 만 — 사이드바(`view.sideNav` 항목 `icon`) · 화면 머리 제목(동적 제목은 안쪽 `span` 이 id) · 설정 트리
+  (`view.settingsTree` `icon`) · 타일 ⋯ · 대화 ⋯ · 상대 그룹 체크 · "+ 새로 만들기"(`view.newMenu` `icon`, "자동 왕복 대화" 없음 — 새 대화 화면 안). 말풍선
+  색 = 내 글 `--accent` · `--on-accent`, 상대 글 = `article[data-tone=colorOf(peer_id)]` → `--tone` 12% `color-mix` 바탕 + 3px 띠. 설정 한 열(`.settings-cols`
+  없앰 — 페어링 → 연결 목록 → 내 에이전트 → 실행 → 화면 → 시작 → 알림) · 카드 안내 = 제목 옆 `.help-wrap`(`button.help` + `.tip[role=tooltip]`,
+  `aria-describedby`, `:hover` · `:focus` 에 뜸) · 내 정보 = `<dialog id="me_dialog">`(프로필 `profileMenu` 열쇠 `me` → `showModal`, 트리 · `#me` 경로
+  없음) · 내 에이전트 검색 칸 없음 · 등록 칸 `<div id="agent_new" hidden>` = `showAgentNew(on)`("에이전트 등록" · 새로 만들기). 타일 순서 = 설정
+  `ui_rail_order`(`peers_first` 기본 · `groups_first`, `an_core::run_opts::RAIL_ORDER_KEY` — 틀린 값 400) → `applyRailOrder` 가 레일 DOM 을 옮긴다
+  (Tab 순서 = 화면 순서).
 
 ## 사용 예
 

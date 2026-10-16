@@ -14,6 +14,9 @@ pub const EFFORT_KEY: &str = "claude_effort";
 /// 화면 테마 — `dark`(기본) · `light`.
 pub const THEME_KEY: &str = "ui_theme";
 pub const THEMES: [&str; 2] = ["light", "dark"];
+/// 레일 타일 순서(#1l) — `peers_first`(기본, 상대 → 그룹) · `groups_first`.
+pub const RAIL_ORDER_KEY: &str = "ui_rail_order";
+pub const RAIL_ORDERS: [&str; 2] = ["peers_first", "groups_first"];
 /// 그룹 이름 · 표시 이름(별칭) 최대 글자 수.
 pub const MAX_GROUP_CHARS: usize = 32;
 pub const MAX_ALIAS_CHARS: usize = 32;
@@ -110,6 +113,13 @@ pub fn theme(conn: &Connection) -> rusqlite::Result<String> {
     Ok(settings::get(conn, THEME_KEY)?
         .filter(|t| THEMES.contains(&t.as_str()))
         .unwrap_or_else(|| "dark".into()))
+}
+
+/// 레일 타일 순서 — 없거나 틀리면 `peers_first`.
+pub fn rail_order(conn: &Connection) -> rusqlite::Result<String> {
+    Ok(settings::get(conn, RAIL_ORDER_KEY)?
+        .filter(|t| RAIL_ORDERS.contains(&t.as_str()))
+        .unwrap_or_else(|| RAIL_ORDERS[0].into()))
 }
 
 /// 사이드바 폭 — 없거나 범위 밖이면 [`DEFAULT_SIDE_WIDTH`].

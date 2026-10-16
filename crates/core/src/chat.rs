@@ -160,7 +160,24 @@ pub struct Summary {
     pub unread: i64,
     /// 손으로 놓은 자리(#1i — 이 PC 에만, 작을수록 위). 목록 순서 자체는 최근 활동순 그대로.
     pub pos: i64,
+    /// 마지막 글(#1j — 대화방 목록 미리보기): 본문 앞 [`PREVIEW_CHARS`] 글자 · 쓴 쪽(`human` · `agent`) · 이 PC 쪽 글인가 · 멘션 에이전트. 글이 없으면 `None`.
+    pub last: Option<LastMessage>,
 }
+
+/// 대화방 목록 미리보기의 마지막 글(#1j) — 대화 화면과 같은 순서(`(lc, uuid)`)의 마지막(라운드 1 — 로컬 `id` 순이 아니다). 요약의 마지막 상태 · 시각도
+/// 같은 글에서 읽는다(라운드 2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LastMessage {
+    pub text: String,
+    pub author: Author,
+    pub mine: bool,
+    pub agent: Option<String>,
+    /// 글 출처(`cli` = AI 에이전트(CLI) 가 쓴 글, 라운드 2 — 말한 이 표시).
+    pub via: Option<String>,
+}
+
+/// 대화방 미리보기 길이(글자).
+pub const PREVIEW_CHARS: usize = 120;
 
 /// 대화 제목 길이(글자).
 pub const TITLE_CHARS: usize = 40;
@@ -429,7 +446,7 @@ pub fn delete_message(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
     Ok(gone)
 }
 
-/// 목록 범위(#1i) — 전부 · 한 상대의 대화 · 한 그룹(이 PC 의 그룹 소속)의 대화.
+/// 목록 범위(#1i) — 전부 · 한 상대의 대화 · 한 그룹(이 PC 의 그룹 소속 — 하나씩 넣은 대화 + 넣은 상대의 대화, #1j)의 대화.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Scope {
     #[default]
@@ -451,7 +468,8 @@ impl Scope {
     /// 거르는 SQL — 대화 별칭 `c`, 자리표 `?{peer}` · `?{group}`.
     pub fn sql(peer: usize, group: usize) -> String {
         format!(
-            "(?{peer} IS NULL OR c.peer_id = ?{peer}) AND (?{group} IS NULL OR c.id IN (SELECT conversation_id FROM group_convs WHERE group_id = ?{group}))"
+            "(?{peer} IS NULL OR c.peer_id = ?{peer}) AND (?{group} IS NULL OR c.id IN (SELECT conversation_id FROM group_convs WHERE group_id = ?{group}) \
+             OR c.peer_id IN (SELECT peer_id FROM group_peers WHERE group_id = ?{group}))"
         )
     }
 }
@@ -1099,12 +1117,17 @@ pub fn summaries(conn: &Connection) -> rusqlite::Result<Vec<Summary>> {
     conn.prepare(&format!(
         "SELECT {cols},
            (SELECT text FROM messages WHERE conversation_id = c.id AND author = 'human' ORDER BY id LIMIT 1),
-           (SELECT state FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1),
-           (SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1),
+           (SELECT state FROM messages WHERE conversation_id = c.id ORDER BY lc DESC, uuid DESC LIMIT 1),
+           (SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY lc DESC, uuid DESC LIMIT 1),
            c.title,
            c.starred_at IS NOT NULL,
            (SELECT count(*) FROM messages WHERE conversation_id = c.id AND mine = 0 AND id > coalesce(c.read_id, 0)),
-           c.pos
+           c.pos,
+           (SELECT substr(text, 1, {PREVIEW_CHARS}) FROM messages WHERE conversation_id = c.id ORDER BY lc DESC, uuid DESC LIMIT 1),
+           (SELECT author FROM messages WHERE conversation_id = c.id ORDER BY lc DESC, uuid DESC LIMIT 1),
+           (SELECT mine FROM messages WHERE conversation_id = c.id ORDER BY lc DESC, uuid DESC LIMIT 1),
+           (SELECT agent FROM messages WHERE conversation_id = c.id ORDER BY lc DESC, uuid DESC LIMIT 1),
+           (SELECT via FROM messages WHERE conversation_id = c.id ORDER BY lc DESC, uuid DESC LIMIT 1)
          FROM conversations c
          ORDER BY coalesce((SELECT max(created_at) FROM messages WHERE conversation_id = c.id), c.created_at) DESC,
            coalesce((SELECT max(id) FROM messages WHERE conversation_id = c.id), 0) DESC, c.id DESC"
@@ -1126,6 +1149,23 @@ pub fn summaries(conn: &Connection) -> rusqlite::Result<Vec<Summary>> {
             starred: r.get(CONV_N + 4)?,
             unread: r.get(CONV_N + 5)?,
             pos: r.get(CONV_N + 6)?,
+            last: match r.get::<_, Option<String>>(CONV_N + 7)? {
+                None => None,
+                Some(text) => {
+                    let author: String = r.get(CONV_N + 8)?;
+                    Some(LastMessage {
+                        text,
+                        author: match author.as_str() {
+                            "human" => Author::Human,
+                            "agent" => Author::Agent,
+                            v => return Err(bad(CONV_N + 8, v)),
+                        },
+                        mine: r.get::<_, Option<bool>>(CONV_N + 9)?.unwrap_or(false),
+                        agent: r.get(CONV_N + 10)?,
+                        via: r.get(CONV_N + 11)?,
+                    })
+                }
+            },
         })
     })?
     .collect()

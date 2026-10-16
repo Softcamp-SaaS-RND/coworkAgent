@@ -14,7 +14,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   `agent_folder_problem(folder) -> Option<이유>`(데이터 루트를 품음 · 그 안 · 네트워크 경로 — 등록 · 수정 · 실행 직전) · `folder_blocked(folder, roots)`.
 - `owner_only::restrict(dir)`(#1a) — Windows 보호 DACL(토큰 사용자 SID · SYSTEM, `FILE_ALL_ACCESS`, 하위 상속) · Unix 0700.
 - `sync::lock(&Mutex<T>)`(#1a) — 오염된 잠금도 안의 값을 꺼내 계속 쓴다(warn). 원시 `.lock().expect(` 는 쓰지 않는다.
-- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(16)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
+- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(18)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
   `messages` 에 `reply_to` · `turns` · `duration_ms` — 한 트랜잭션, 있는 열은 건너뜀). 더 새 스키마면 오류. 올리기 전 `{db}.v{버전}.bak`
   사본(`db::backup_path`, `VACUUM INTO`) — 이전 실행 파일로 롤백할 때 DB 를 이 사본으로 바꿔 쓴다. → 6 `messages` 에 `mine` ·
   `exec` · `lc`(이전 이력은 방향 · id 로 채움). → 7 `conversations` 에 `relay_agent` · `relay_cap` · `relay_count` · `relay_on` ·
@@ -36,21 +36,23 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   집중 — `Pong` · 집중 거절 둘 다) · `touch(conn, spki)`(#1c — 통신 성공: 그 키의 `seen_at` = 지금, 집중은 그대로, 없는 키면 아무 일도 없음. 10초
   안에 이미 적었으면 쓰지 않는다 — 읽기로 먼저 걸러 다른 연결의 쓰기를 막지 않게) · `set_addr(id, addr)`. `upsert(…, round)`(있으면 승인 초기화) ·
   `by_spki` · `by_id` · `list` · `count_unapproved` · `set_my_ok` · `set_their_ok(spki, round)`(같은 세대 · 실제 전이만 true) ·
-  `remove` · `remove_spki` · `set_meta(id, group, model, effort)` · `set_tile(id, alias, icon)`(통째로 바꿈, `None` = 지움 — 이 PC 만의 표시 ·
+  `remove` · `remove_spki` · `set_meta(id, group, model, effort)`(`group` = 옛 자유 입력 이름표 — #1j 화면은 쓰지 않는다) · `set_tile(id, alias, icon)`(통째로 바꿈, `None` = 지움 — 이 PC 만의 표시 ·
   실행 설정).
 - `settings::get(conn, key)` · `set(conn, key, value)` — 문자열 설정. `FOCUS_KEY`(`focus`) · `focus(conn)`(값 `1` 만 켜짐 — 읽기 오류는 그대로). `AUTOSTART_KEY`(`autostart`) ·
   `autostart(conn)`(없으면 켜짐 — D13, 값 `0` 만 꺼짐, #1e).
 - `agents::READ_ONLY_TOOLS`(`Read` · `Grep` · `Glob` · `LS` · `NotebookRead`, D31) — 모든 실행의 도구(#1d — 프로필마다 고르지 않는다).
 - `agents` — `Agent { id, name, folder, prompt, group, uid }`(`uid` = 세대 — 등록 · 폴더 변경 때 새 값) · `add(conn, name, folder, prompt)`(`agents.tools`
   열은 `NOT NULL` 이라 5개를 적어 두고 읽지 않는다) · `by_name` ·
-  `by_id` · `list` · `remove` · `update(id, folder, prompt, group)`(이름은 바꾸지 않는다 — 대화 · 상대 PC 가 이름으로 부른다. 폴더가 바뀌면
+  `by_id` · `list` · `remove` · `update(id, folder, prompt, group)`(`group` 은 #1j 화면이 쓰지 않는다 · 이름은 바꾸지 않는다 — 대화 · 상대 PC 가 이름으로 부른다. 폴더가 바뀌면
   그 에이전트가 이어 가던 세션(받은 대화 · 내가 연 자동 왕복 · 멘션 `agent_sessions`)을 비운다 — `forget_sessions(name)`, `remove` 도 같다 — Claude 세션은 폴더에 묶여 있다).
 - `chat` — `Dir{Out,In}` · `Author{Human,Agent}` · `State{Sent,Queued,Running,Done,Error,Undelivered}` · `Conversation` · `Message`.
   `open_conversation(uuid, peer_id, agent, dir)`(다른 상대의 같은 uuid 는 오류) · `find(uuid, peer_id)` · `by_id` · `list` · `set_session` ·
   `add_message` · `add_reply(…, reply_to, turns, duration_ms)`(에이전트 답) · `set_state` · `messages` · `message_by_uuid` ·
   `pending(conv)`(DB 대기열 — 커서 없이 매번 처음부터) · `pending_conversations` · `summaries`(`Summary{conversation, title(이 PC 에서 붙인 제목,
-  없으면 첫 사람 메시지 앞 40자), last_state, last_at}`, 최근 것 먼저) · `set_title(id, title)`(`None` = 지움) ·
-  `messages_across(mine, scope, author, request, q, limit)`(대화를 가로지른 글 — 범위 `Scope::All` · `Peer(id)` · `Group(id)`(#1i) · 종류 · 사람 글
+  없으면 첫 사람 메시지 앞 40자), last_state, last_at}`, 최근 것 먼저) · `Summary.last: Option<LastMessage{text, author, mine, agent, via}>`(#1j — 대화방
+  목록 미리보기: 마지막 글 본문 앞 `PREVIEW_CHARS`(120)자 · 쓴 쪽 · 이 PC 쪽 글인가 · 멘션 에이전트 · 출처(`cli`), 글이 없으면 `None` — 마지막 = 화면과 같은 `(lc, uuid)` 순서, `last_state` · `last_at` 도 그 글) · `set_title(id, title)`(`None` = 지움) ·
+  `messages_across(mine, scope, author, request, q, limit)`(대화를 가로지른 글 — 범위 `Scope::All` · `Peer(id)` · `Group(id)`(#1i — 하나씩 넣은 대화
+  `group_convs` ∪ 넣은 상대의 대화 `group_peers`, #1j) · 종류 · 사람 글
   종류(`request` — 사람 글만) · 본문 일치를 거른 뒤 최신 `limit` 건) · `saved(scope, conversation, limit)` · `Summary.pos`(손으로 놓은 자리 — 목록 자체는 최근
   활동순 그대로). 새 대화 `pos = min - 1`(맨 위). `Message` 에 `created_at` · `reply_to` · `turns` · `duration_ms` · `mine`(이 PC 의 글) · `exec`(실행 요청) ·
   `lc`(양쪽 공통 순서 — 램포트 시계, `messages` 는 `(lc, uuid)` 순) · `via`(`Some("cli")` = 사용자 AI 에이전트가 CLI 로 쓴 글, 동작은 사람 글과 같다). `set_via(id, via)`(`VIA_CLI` 만 남기고 그 밖 값은 NULL — 삽입과 같은 트랜잭션에서 부른다). `add_human(…, mine, exec)` · `observe(id, lc)`(받은 글의 순서 — 1 ~ `MAX_LC` 만, 밖이면 무시) ·
@@ -93,10 +95,19 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   전역 → 기본값) · `theme` · `side_width` · `me_tile`. 읽기는 `rusqlite::Result` — 없거나 틀린 값만 기본값, DB 오류는 그대로 낸다.
 - `log_file::FileLogger::install(path, level)` — `LOG_ROTATE_BYTES`(1 MiB)를 넘게 되는 기록 전에 `.1` 로 회전(1개 보관). 패닉 훅도 단다(#1e) —
   `error` "패닉: {메시지} — {파일}:{줄}" 뒤 기본 훅(stderr).
-- `groups`(#1i — 이 PC 에만): `Group{id, name, icon, pos, convs}` · `clean_name`(1 ~ `NAME_CHARS` 40자) · `list`(자리 순) · `by_id` · `name_taken(name,
-  except)` · `add`(끝에) · `rename` · `set_icon` · `remove`(소속 함께 — 외래 키를 켜지 않는 DB) · `unknown_conversations` · `change(id, add, remove)` ·
+- `groups`(#1i — 이 PC 에만): `Group{id, name, icon, pos, convs, peers}`(`convs` = 하나씩 넣은 대화 · `peers` = 넣은 상대 — #1j, 그 상대의 대화가 모두 보인다) ·
+  `clean_name`(1 ~ `NAME_CHARS` 40자) · `fit_name(raw)`(#1j — 옛 자유 입력 그룹 이름 → 그룹 이름: 제어 문자 빼고 앞뒤 공백 지운 앞 40자, 빈 값 `None`) ·
+  `list`(자리 순) · `by_id` · `name_taken(name,
+  except)` · `add`(끝에) · `rename` · `set_icon` · `remove`(소속 `group_convs` · `group_peers` 함께 — 외래 키를 켜지 않는 DB) · `unknown_conversations` · `change(id, add, remove)` ·
+  `unknown_peers(ids)`(없는 상대 id — 준 순서, 겹치면 한 번) · `change_peers(id, add, remove)`(#1j — 이미 있음 · 없음은 그대로, 상대를 빼도 하나씩 넣은 대화는
+  남음, 없는 그룹이면 `false` — 상대 검증은 부르는 쪽) ·
   `join(id, conv)`(부르는 쪽 트랜잭션 안 — 새 대화) · `reorder(Order::{Peers, Groups, Conversations}, ids)`(겹침 · 없는 id → `Err(문구)`, 빠진 id 는 제 자리).
   스키마 16: `peers.pos`(새 상대 `max + 1`, `peers::list` = `ORDER BY pos, id`) · `conversations.pos` · `groups`(AUTOINCREMENT) · `group_convs`.
+  스키마 17(#1h): `peers.id` AUTOINCREMENT — 지금 정의(뒤에 붙인 열 포함)로 새 표 · 번호째 복사 · 옛 표 지움 · 이름 바꿈(정의 머리 `CREATE TABLE peers` ·
+  `CREATE TABLE "peers"` 둘 다, 그 밖이면 오류), 순번 = `max(peers.id, conversations.peer_id, outbox.peer_id)` — 지운 상대의 번호를 다시 쓰지 않는다.
+  있는 상대의 `upsert`(충돌 → 갱신)도 순번을 하나 쓴다(빈 번호만 생김).
+  스키마 18(#1j, 한 트랜잭션): `group_peers(group_id, peer_id)` PRIMARY KEY · 색인 `group_peers_peer` · 옛 `peers.grp` 값(`ORDER BY pos, id`)을 `fit_name` 한
+  같은 이름 그룹(없으면 `add`)에 넣는다 — 빈 이름은 건너뜀. `agents.grp` 는 읽지 않는다(열은 그대로).
 - `instance::InstanceLock::acquire(path)` → `Acquired::Primary(lock)` | `Secondary`. `InstanceInfo { port, token }` 의
   `write` · `read`(hex 토큰만 받음).
 

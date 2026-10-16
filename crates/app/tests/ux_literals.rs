@@ -5,6 +5,7 @@ const INDEX: &str = include_str!("../web/index.html");
 const APP: &str = include_str!("../web/app.js");
 const VIEW: &str = include_str!("../web/view.js");
 const TRAY: &str = include_str!("../src/tray.rs");
+const CSS: &str = include_str!("../web/app.css");
 
 /// 알림 절의 자동 왕복 상한 라벨 = 원문 "대화 턴에 대한 상한 기본값".
 #[test]
@@ -17,8 +18,7 @@ fn turn_label_literal() {
 #[test]
 fn invite_labels_without_messenger() {
     for label in [
-        r#"<h2>초대 생성</h2>"#,
-        r#"<button type="button" id="window_btn">초대 생성</button>"#,
+        r#"id="window_btn" class="primary big">"#,
         r#"<label for="invite_text">초대 수락</label>"#,
         "'초대 생성' 에서 만든 초대 메시지를 통째로 붙여 넣으세요",
     ] {
@@ -76,7 +76,6 @@ fn workspace_labels() {
         "검색 — 메시지 · 대화 · 사람 · 에이전트",
         "+ 새로 만들기",
         "새 대화",
-        "자동 왕복 대화",
         "초대 생성",
         "초대 수락",
         "에이전트 등록",
@@ -84,19 +83,17 @@ fn workspace_labels() {
         "알림 일시 중지",
         "환경설정",
         "내 활동",
-        "저장된 항목",
+        "북마크 항목",
         "에이전트",
         "주고받은 글",
         "제목 검색",
-        "★ 즐겨찾기",
         "즐겨찾기",
         "제목 편집",
-        "보낸 메시지",
+        "대화 보기",
         "원문 보기",
         "세부정보",
-        "저장",
+        "북마크",
         "복사",
-        "다시 보내기",
         "굵게",
         "목록",
         "코드",
@@ -155,7 +152,6 @@ fn focus_mention_labels() {
     for label in [
         "받기 가능",
         "집중",
-        "집중 — 요청 받지 않음",
         "방금 통신",
         "집중 중",
         "통신 기록 없음",
@@ -222,11 +218,13 @@ fn tidy_literals() {
 #[test]
 fn rail_scope_literals() {
     for code in [
-        r##"{ label: "요청", href: "#requests", count: waiting },"##,
-        r##"{ label: "저장된 항목", href: "#saved" },"##,
-        r##"{ label: "주고받은 글", href: tile == null ? "#p" : `#p/${tile}` },"##,
-        r##"{ label: "에이전트", href: "#agents" },"##,
-        r##"[{ label: "대화", href: "#" }, { label: "내 활동", href: "#activity", count: unseen }, ...scoped]"##,
+        r##"{ label: "요청", href: "#requests", count: waiting, icon: "inbox" },"##,
+        r##"{ label: "북마크 항목", href: "#saved", icon: "bookmark" }"##,
+        r##"{ label: "주고받은 글", href: "#p", icon: "swap" }"##,
+        r##"{ label: "즐겨찾기", href: "#starred", count: starred, icon: "star" }"##,
+        r##"{ label: "에이전트", href: "#agents", icon: "bot" }"##,
+        r##"[{ label: "개요", href: "#", icon: "home" }]"##,
+        r##"{ label: "내 활동", href: "#activity", count: unseen, icon: "bell" }"##,
     ] {
         assert!(VIEW.contains(code), "{code}");
     }
@@ -266,8 +264,8 @@ fn rail_group_literals() {
             INDEX,
             r#"<label for="tile_alias" id="tile_alias_label">표시 이름</label>"#,
         ),
-        ("app.js", APP, r#"item("타일 편집""#),
-        ("app.js", APP, r#"item("이미지 지우기""#),
+        ("app.js", APP, r#"item("pencil", "타일 편집""#),
+        ("app.js", APP, r#"item("image-off", "이미지 지우기""#),
         ("app.js", APP, r#""그룹 삭제","#),
         ("app.js", APP, "그룹만 지웁니다 — 대화는 지우지 않습니다."),
         ("app.js", APP, r#""contextmenu""#),
@@ -282,4 +280,327 @@ fn rail_group_literals() {
     ] {
         assert!(text.contains(label), "{file}: {label}");
     }
+}
+
+/// 안정화(#1h) — "저장된 항목" → "북마크 항목" · 메시지 작업 "북마크"(편집 · 설정의 "저장" 은 그대로) · 첫 화면 "개요" · 메뉴 절 구분선 · 긴 타일 글자 ·
+/// 그룹 겹친 카드 · 프로필 알약.
+#[test]
+fn stabilization_literals() {
+    for (file, text) in [("index.html", INDEX), ("app.js", APP), ("view.js", VIEW)] {
+        assert!(!text.contains("저장된 항목"), "{file} 에 저장된 항목");
+    }
+    for label in [
+        r#"<strong><span class="ico ico-bookmark" aria-hidden="true"></span>북마크 항목</strong>"#,
+        "메시지 작업 '북마크' 로 모은 글",
+        "<h3>북마크 항목 ",
+        r#"<strong><span class="ico ico-home" aria-hidden="true"></span><span id="home_title">개요</span></strong>"#,
+    ] {
+        assert!(INDEX.contains(label), "{label}");
+    }
+    for code in [
+        r#"act(on ? "북마크" : "북마크 해제""#,
+        r#""북마크 — 북마크 항목에 모았다(이 PC 에만)""#,
+        r#"el("li", { class: "nav-sep", role: "separator" })"#,
+        r#"el("span", { class: "avatar-name", text: name })"#,
+        "`${name} — ${st.text} · 프로필`",
+        r#": "개요";"#,
+        // 북마크가 아닌 "저장" 은 그대로 — 편집 모드 · 연결 설정
+        r#"askScope("고친 본문 저장")"#,
+        r#"peerAct("연결 설정 저장""#,
+    ] {
+        assert!(APP.contains(code), "{code}");
+    }
+    assert!(APP.contains(r#"iconButton(BOOKMARK_SVG, on ? "북마크 해제" : "북마크""#));
+    for rule in [".side-nav .nav-sep {", ".avatar-name { max-width: 12em;"] {
+        assert!(CSS.contains(rule), "{rule}");
+    }
+}
+
+/// 메신저형 대화(#1j) — 말풍선 · 대화 보기 / 원문 보기 · 머리 북마크 n · 말풍선 아이콘(북마크 · 복사) · 대화방 줄 별.
+/// "보낸 메시지" 탭 · 보냄 / 받음 태그 · 방향 라벨(사람 → 에이전트) · 막대의 북마크 단추 · '★ 즐겨찾기' 절은 없다.
+#[test]
+fn messenger_view_literals() {
+    for label in [
+        r#"<button id="view_btn" type="button" aria-pressed="true">대화 보기</button>"#,
+        r#"<button id="raw_btn" type="button" aria-pressed="false">원문 보기</button>"#,
+        r#"<span id="saved_n" class="count"></span>"#,
+        r#"id="star_btn" class="star-btn" aria-label="즐겨찾기""#,
+    ] {
+        assert!(INDEX.contains(label), "{label}");
+    }
+    for code in [
+        "side-${side}",
+        r#"class: "day-break""#,
+        r#"class: "room-preview""#,
+        "function starButton(",
+        "function bookmarkButton(",
+    ] {
+        assert!(APP.contains(code), "{code}");
+    }
+    for gone in [
+        "tab_sent",
+        "panel_sent",
+        "sent_list",
+        "conv_tag",
+        "보낸 메시지",
+    ] {
+        assert!(!INDEX.contains(gone), "index.html 에 {gone}");
+    }
+    for (file, text) in [("app.js", APP), ("view.js", VIEW)] {
+        for gone in [
+            "kindText",
+            "사람 → 에이전트",
+            r#"tag: conv.dir"#,
+            "★ 즐겨찾기",
+            "보낸 메시지",
+        ] {
+            assert!(!text.contains(gone), "{file} 에 {gone}");
+        }
+    }
+    assert!(
+        !VIEW.contains(r#"key: "save""#),
+        "북마크는 말풍선 아이콘 — 막대에 없음"
+    );
+    for rule in [".msg.side-mine", ".day-break", ".seg", ".star-btn"] {
+        assert!(CSS.contains(rule), "{rule}");
+    }
+}
+
+/// 메뉴 · 상태 색 · 레일 아이콘 A안(#1j) — 즐겨찾기 화면 · 프로필 상태 고르기 · 앱과 연결 끊김 · 사람 / 사람 + 그림자 모양 + 아래 이름(레일 72px) ·
+/// 타일 메뉴 위로 · 아래로. 없어진 것 — 상단 "받기 가능" 칩 · 1h 글자 타일 · 겹친 카드.
+#[test]
+fn menu_status_rail_literals() {
+    for label in [
+        r#"<section id="starred" class="view" hidden>"#,
+        r#"<strong><span class="ico ico-star" aria-hidden="true"></span>즐겨찾기</strong>"#,
+        r#"<div id="starred_list" class="starred-list"></div>"#,
+    ] {
+        assert!(INDEX.contains(label), "{label}");
+    }
+    for code in [
+        r#""상태 — 아이콘 테두리 색""#,
+        r#""menuitemradio""#,
+        "const OFFLINE_AFTER = 2;",
+        "function keepFocus(",
+        "function stepMove(",
+        r#"["위로 옮기기", -1],"#,
+        r#"["아래로 옮기기", 1],"#,
+        r#"class: "tile-name""#,
+        "tileFace(g.icon, true)",
+        "이미지를 지웠습니다 — 사람 모양으로 보입니다",
+        r##"go("#");"##,
+    ] {
+        assert!(APP.contains(code), "{code}");
+    }
+    for code in [
+        r#"{ key: "avail", label: "받기 가능", hint: "새 요청을 받는다""#,
+        r#"{ key: "focus", label: "집중", hint: "새 요청을 거절""#,
+        r#"{ key: "offline", label: "앱과 연결 끊김", hint: "자동 표시""#,
+        r#""starred", "saved""#,
+    ] {
+        assert!(VIEW.contains(code), "{code}");
+    }
+    for rule in [
+        "grid-template-columns: 72px ",
+        ".st-online { --st: var(--ok); }",
+        ".st-focus { --st: var(--run); }",
+        ".st-offline { --st: var(--danger); }",
+        ".rail-btn .tile-name {",
+        ".msg { gap: 10px; max-width: 90%; }",
+    ] {
+        assert!(CSS.contains(rule), "{rule}");
+    }
+    for (file, text) in [("index.html", INDEX), ("app.js", APP), ("app.css", CSS)] {
+        for gone in [
+            "focus_chip",
+            "status-chip",
+            "tile-text",
+            "tileText",
+            "renderFocusChip",
+        ] {
+            assert!(!text.contains(gone), "{file} 에 {gone}");
+        }
+    }
+    assert!(!VIEW.contains("export function tileText"));
+    assert!(!CSS.contains(".rail-btn.group { box-shadow"));
+    assert!(
+        !VIEW.contains("집중 — 요청 받지 않음"),
+        "프로필 메뉴는 받기 가능 · 집중 고르기"
+    );
+}
+
+/// 상대 그룹 · 설정 정리(#1j) — "페어링" 카드 · 초대 두 단추 같은 모양 · 연결 목록 = 레일 그룹별 절(끌기 · "그룹 ▾" · "+ 그룹 추가" · 이름 바꾸기 ·
+/// 삭제) · 타일 메뉴 그룹 체크. 없어진 것 — "주소 · 코드로 직접 추가" · "읽기 전용" 표시 · 연결 · 에이전트의 그룹 칸("그룹 없음").
+#[test]
+fn peer_group_settings_literals() {
+    for label in [
+        "<h2>페어링<span class=\"help-wrap\">",
+        r#"<button type="submit" class="primary">추가 · 승인</button>"#,
+        r#"<button type="button" id="peer_group_add">+ 그룹 추가</button>"#,
+        r#"<section id="peers" class="card">"#,
+        r#"<p id="invite_msg" role="status"></p>"#,
+    ] {
+        assert!(INDEX.contains(label), "{label}");
+    }
+    for code in [
+        r#"text: "그룹 ▾","#,
+        r#"el("span", { text: "그룹 — 체크하면 넣고, 풀면 뺀다" })"#,
+        r#"ico("plus"), el("span", { text: "새 그룹에 넣기…" })"#,
+        "/api/groups/${id}/peers",
+        r#""data-peer-section""#,
+        "function openGroupRename(",
+        "function groupDeleteForm(",
+        "peerMove(d.peer, d.from, to, state.groups)",
+    ] {
+        assert!(APP.contains(code), "{code}");
+    }
+    for code in [
+        r#"export const NO_PEER_GROUP = "그룹에 없는 연결";"#,
+        "에 넣었습니다 — ${peer}${josa(peer, \"과\", \"와\")}의 대화 ${n}개가 함께 보입니다",
+    ] {
+        assert!(VIEW.contains(code), "{code}");
+    }
+    for gone in [
+        "주소 · 코드로 직접 추가",
+        r#"id="add_form""#,
+        "읽기 전용</span>",
+        r#"id="peer_group""#,
+        r#"id="agent_group""#,
+    ] {
+        assert!(!INDEX.contains(gone), "index.html 에 {gone}");
+    }
+    for (file, text) in [("app.js", APP), ("view.js", VIEW)] {
+        for gone in [
+            "그룹 없음",
+            "add_form",
+            "groupFilter",
+            "fillGroupSelect",
+            r#""읽기 전용""#,
+        ] {
+            assert!(!text.contains(gone), "{file} 에 {gone}");
+        }
+    }
+}
+
+/// 다듬기(#1k) — 에이전트 화면 · 주고받은 글 안내문 없음 · 내 에이전트 연필 · 주고받은 글 상대 타일 · 에이전트 칩 · "다시 보내기" 없음 · 레일 + → 페어링 ·
+/// 설정 두 열(페어링 단추 둘 · 관리 줄 · 줄 타일 · 에이전트 등록).
+#[test]
+fn polish_literals() {
+    for gone in [
+        "상대 에이전트를 누르면 새 대화, 내 에이전트를 누르면 설정으로",
+        "주고받은 글 — 모든 대화, 최신순",
+    ] {
+        assert!(!INDEX.contains(gone), "index.html 에 {gone}");
+    }
+    for (file, text) in [("index.html", INDEX), ("app.js", APP), ("view.js", VIEW)] {
+        for gone in [
+            r#"label: "다시 보내기""#,
+            r#"key === "resend""#,
+            "다시 보내기로",
+        ] {
+            assert!(!text.contains(gone), "{file} 에 {gone}");
+        }
+    }
+    for label in [
+        r#"<button type="button" id="accept_btn" class="primary big" aria-expanded="false" aria-controls="invite_accept">"#,
+        r#"<section id="invite_accept" class="sub" hidden>"#,
+        r#"<button type="button" id="agent_new_btn" class="primary" aria-expanded="false" aria-controls="agent_new">에이전트 등록</button>"#,
+        "한쪽이 초대를 만들어 보내고, 받은 쪽이 붙여 넣으면 연결됩니다.",
+    ] {
+        assert!(INDEX.contains(label), "{label}");
+    }
+    for code in [
+        "function manageItem(",
+        r#"text: "관리","#,
+        "`${a.name} 편집`",
+        "function editAgent(",
+        r#""data-peer-sub": String(p.id)"#,
+        "function peerSub(",
+        "`peer${p.id}_${s.group ?? \"none\"}`",
+        r#"rowEls(rs, "주고받은 글 없음", { tile: true })"#,
+        r#"class: "chip agent-chip""#,
+        r#"goSettings("conn", "invite_text")"#,
+        r#"rowTile("agent-tile", null)"#,
+    ] {
+        assert!(APP.contains(code), "{code}");
+    }
+    assert!(VIEW.contains("agent: conv.dir === \"out\" ? conv.agent : `내 ${conv.agent}`"));
+    for rule in [".pair-btns {", ".manage-head {", ".rows a.row-with-tile {"] {
+        assert!(CSS.contains(rule), "{rule}");
+    }
+}
+
+/// 아이콘 · 말풍선 색 · 설정 정리(#1l) — 메뉴 · 화면 제목 · 설정 트리 · ⋯ · 새로 만들기 아이콘(16px 한 벌), 상대 글 = 타일 색, 설정 '?' 도움말 · 한 열 ·
+/// 사용자 정보 팝업 · 등록 칸 보이기 · 숨기기 · 타일 순서. 없어진 것 — 내 정보 카드 · 에이전트 검색 · "새 에이전트 등록" · 늘 보이는 카드 안내 · 두 열.
+#[test]
+fn icons_settings_literals() {
+    for label in [
+        r#"<dialog id="me_dialog" class="me-dialog" aria-labelledby="me_title">"#,
+        r#"<span class="ico ico-user" aria-hidden="true"></span>사용자 정보</h2>"#,
+        r#"<span id="me_fingerprint" class="mono">"#,
+        r#"<div id="agent_new" class="new-agent" hidden>"#,
+        r#"<label for="agent_prompt">추가 지시</label><span class="help-wrap">"#,
+        "추가 지시 사용 예",
+        r#"<select id="ui_rail_order">"#,
+        r#"<option value="peers_first">사용자 → 그룹</option>"#,
+        r#"<option value="groups_first">그룹 → 사용자</option>"#,
+        "<h2>화면 — 테마 · 타일 순서</h2>",
+        r#"<button type="button" class="help" aria-label="도움말" aria-describedby="tip_conn">?</button>"#,
+        "\"프로필 → 사용자 정보 → 지문\"",
+        r#"<strong><span class="ico ico-bot" aria-hidden="true"></span><span id="agents_title">에이전트</span></strong>"#,
+        r#"<strong><span class="ico ico-swap" aria-hidden="true"></span><span id="peer_title"></span></strong>"#,
+        r#"<strong><span class="ico ico-bell" aria-hidden="true"></span>내 활동</strong>"#,
+        r#"<strong><span class="ico ico-inbox" aria-hidden="true"></span>요청</strong>"#,
+    ] {
+        assert!(INDEX.contains(label), "{label}");
+    }
+    for gone in [
+        r#"<section id="me" class="card">"#,
+        r#"id="agent_q""#,
+        "<summary>새 에이전트 등록</summary>",
+        r#"<details class="guide">"#,
+        "settings-cols",
+        r#"<p class="hint">한쪽이 초대를 만들어 보내고"#,
+        r#"<p class="hint">페어링된 상대가 부를 수 있는"#,
+        "\"내 정보 → 지문\"",
+        r#"width="15" height="15""#,
+    ] {
+        assert!(!INDEX.contains(gone), "index.html 에 {gone}");
+    }
+    for code in [
+        "function ico(name)",
+        r#"el("span", { class: "nav-label" }, ico(n.icon), el("span", { text: n.label }))"#,
+        r#""data-tone": colorOf(conv.peer_id)"#,
+        r#"$("me_dialog").showModal();"#,
+        "function showAgentNew(on)",
+        r#"if (i.focus === "agent_name") showAgentNew(true);"#,
+        "function applyRailOrder(order)",
+        r#""ui_rail_order","#,
+        r#"item(dir < 0 ? "arrow-up" : "arrow-down", text"#,
+    ] {
+        assert!(APP.contains(code), "{code}");
+    }
+    assert!(!APP.contains("agent_q"));
+    assert!(
+        !VIEW.contains("자동 왕복 대화"),
+        "새로 만들기 메뉴에 자동 왕복 대화 없음"
+    );
+    assert!(VIEW.contains(r#"{ key: "me", label: "사용자 정보" }"#));
+    assert!(!VIEW.contains(r#"{ id: "me", label: "내 정보" }"#));
+    for rule in [
+        ".ico { display: inline-block; flex: none; width: 16px; height: 16px;",
+        r#".msg[data-tone="peer-1"] { --tone: var(--peer-1); }"#,
+        ".msg.side-theirs .bubble::before { content: \"\"; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--tone, var(--wait)); opacity: 0.12;",
+        ".msg.side-mine .bubble { background: var(--accent); color: var(--on-accent);",
+        ".help-wrap:hover .tip, .help:focus + .tip { display: block; }",
+    ] {
+        assert!(CSS.contains(rule), "{rule}");
+    }
+    assert!(!CSS.contains("color-mix("), "macOS 12 Safari 15 에 없는 color-mix 안 씀");
+    assert_eq!(
+        CSS.matches("
+.ico { ").count(),
+        1,
+        "아이콘 크기 정의는 한 곳(16px)"
+    );
 }
