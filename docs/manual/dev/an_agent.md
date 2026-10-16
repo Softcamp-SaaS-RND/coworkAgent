@@ -15,8 +15,9 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
   `--append-system-prompt`(가드 + `[수신자 추가 지시]` 프로필 지시) · `--system-prompt-snapshot off`(재개 세션에도 지금 가드) · 도구는
   `agents::read_only`. `MIN_CLAUDE`(2.1.267) · `parse_version` · `version_ok` — `run_claude` 는 낮은 버전이면 실행하지 않는다(`--effort` 다섯 값
   모두 그 위에서 받는다 — 공식 CHANGELOG 근거는 `runner.rs` 주석).
-- `runner::parse_output(stdout) -> RunOutput{text, session, is_error, turns, duration_ms}` — 마지막 JSON 줄(stream-json 의 `result` 이벤트 · 예전
-  `json` 한 줄, `num_turns` · `duration_ms` 는 없으면 `None`), `session_id` 없으면 오류.
+- `runner::parse_output(stdout) -> RunOutput{text, session, is_error, turns, duration_ms, ctx_tokens}` — 마지막 JSON 줄(stream-json 의 `result` 이벤트 · 예전
+  `json` 한 줄, `num_turns` · `duration_ms` 는 없으면 `None`), `session_id` 없으면 오류. `ctx_tokens`(#1m) = `usage.iterations` 마지막 항목(없으면 `usage`)의
+  입력 + 캐시 쓰기 · 읽기 + 출력 토큰 — 실행 뒤 세션의 창 사용량. `RunOutput` 은 `Default`. `SUMMARY_PROMPT` — 압축 요약 지시.
 - `runner::run_process_lines(program, args, cwd, stdin, timeout, on_line)`(#1c) — 표준 출력을 줄마다(끝 줄바꿈 뗀 채) `on_line` 에 넘기고 참을
   돌려준 줄만 `stdout` 에 남긴다. `runner::run_process(…)` = 모든 줄을 남기는 `run_process_lines` — 표준 입력 쓰기 · 출력 읽기를 스레드로. 시간 초과면 `TimedOut`, 끝나거나
   죽인 뒤 `ProcessTree` 로 자손까지 종료(Windows kill-on-close Job Object ↔ 그 밖 프로세스 그룹). Windows 는 `CREATE_NO_WINDOW`.
@@ -28,7 +29,10 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
 - `chat::Chat::new(conn, node, run: Run)` — `Run = Arc<dyn Fn(RunInput) -> io::Result<RunOutput>>`(운영 `run_claude`, 테스트 대역,
   `spawn_blocking` 에서 부름). `attach()`(노드 대화 요청 처리기) · `recover()`(시작 시, 런타임 안에서 — `queued` 실행 · `running` 은
   오류 답) · `send(peer_id, agent, Option<conv>, text) -> (Conversation, Message)` · `send_via(…, via, title)`(글의 출처 — `Some("cli")` 면 내 이력 · `message` 요청에 싣는다, `title` 은 새 대화에 이 PC 에서만 붙이는 제목) · `remote_agents(peer_id)` · `db()`(await 를 넘겨
-  쥐지 않는다) · `new_uuid()`.
+  쥐지 않는다) · `new_uuid()`. `context(conv, op)`(#1m — `compact` · `clear`, 진행 중이면 `AlreadyExists`) — 구분선 글(`Author::Context`) +
+  이 PC 세션이면 대화 줄(`run_context` → 비우기 · `compact` 요약 실행), 상대 쪽이면 outbox `context`(보내기 전 `knows_context` — 모르면 `unsupported`).
+  받은 요청은 다시 넘기지 않는다. 자동 압축 = `process` 뒤 창 사용량 ≥ `settings::AUTO_COMPACT_AT`(800k) · `settings::auto_compact`. 새 세션 첫 실행에
+  `ctx_seeds` 요약을 `<대화 요약>` 으로 붙이고(`execute`) 세션을 남기면 지운다(`record`).
 - 실행 문(#1b, D24 개정) — `gate::Gate`(FIFO): `enter(id) -> (Ticket, Option<앞 사람 수>)` · `Ticket::ready()` · 티켓 drop = 자리 놓기(실패 ·
   panic · 취소에도) · `set_cap`(늘면 바로 당김) · `snapshot()`. `Chat` 하나 = PC 전체 문 — `process` 첫 줄 `admit` 에서 줄을 서고 **차례가 온 뒤**
   대화 · 에이전트 · 자동 왕복 멈춤을 읽는다(사람 요청 · 자동 왕복 · 이 PC 사람 요청 모두 같은 문). 상한 `max_runs(conn)`(설정 `MAX_RUNS_KEY`

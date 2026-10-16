@@ -215,6 +215,13 @@ struct RelaySwitch {
     on: bool,
 }
 
+/// 컨텍스트 압축 · 비우기(#1m) — `op` = `compact` · `clear`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ContextOp {
+    op: String,
+}
+
 #[derive(Deserialize)]
 struct NewMessage {
     text: String,
@@ -269,6 +276,10 @@ pub fn routes(chat: Arc<Chat>) -> Router {
         .route(
             "/api/conversations/{id}/relay",
             axum::routing::post(switch_relay),
+        )
+        .route(
+            "/api/conversations/{id}/context",
+            axum::routing::post(context_op),
         )
         .with_state(chat.clone())
         .merge(crate::groups_api::routes(chat))
@@ -353,6 +364,7 @@ fn message_json(m: &Message) -> Value {
         "via": m.via, "model": m.model, "effort": m.effort, "saved": m.saved_at.is_some(),
         "request": m.request, "req_state": m.req_state.map(ReqState::as_str), "req_note": m.req_note, "req_at": m.req_at,
         "agent": m.agent, "refused": m.refused, "edited_at": m.edited_at,
+        "ctx_tokens": m.ctx_tokens, "ctx_op": m.ctx_op,
     })
 }
 
@@ -966,6 +978,18 @@ async fn switch_relay(
 ) -> Response {
     match chat.relay(id, req.on).await {
         Ok(c) => Json(conversation_json(&c)).into_response(),
+        Err(e) => fail(e),
+    }
+}
+
+/// 대화 컨텍스트 압축 · 비우기(#1m) — 구분선 글을 돌려준다. 틀린 `op` 400 · 없는 대화 404 · 진행 중 409.
+async fn context_op(
+    State(chat): State<Arc<Chat>>,
+    Path(id): Path<i64>,
+    Json(req): Json<ContextOp>,
+) -> Response {
+    match chat.context(id, &req.op) {
+        Ok(m) => Json(message_json(&m)).into_response(),
         Err(e) => fail(e),
     }
 }

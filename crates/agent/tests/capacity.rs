@@ -39,6 +39,7 @@ fn metered(meter: Arc<Meter>, delay: Delay) -> impl FnOnce(Arc<Mutex<Vec<RunInpu
                 is_error: false,
                 turns: Some(1),
                 duration_ms: Some(10),
+                ctx_tokens: None,
             })
         })
     }

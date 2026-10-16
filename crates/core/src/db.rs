@@ -2,7 +2,7 @@ use rusqlite::OptionalExtension;
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 18;
+pub const SCHEMA_VERSION: i64 = 19;
 
 /// 쓰기 트랜잭션 — `BEGIN IMMEDIATE`. 읽고 나서 쓰는 지연(deferred) 트랜잭션은 다른 연결(피어 노드 · 알림)이 쓰는 중이면 잠금을 올리지 못해
 /// `busy_timeout` 을 기다리지 않고 바로 `database is locked` 로 실패한다(SQLite 교착 회피) — 처음부터 쓰기 잠금을 잡아 기다린다.
@@ -423,6 +423,26 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
             )?;
         }
         tx.execute_batch("PRAGMA user_version = 18;")?;
+        tx.commit()?;
+    }
+    if v < 19 {
+        // 컨텍스트(#1m): 답의 창 사용량(`ctx_tokens`) · 압축 · 비우기 구분선 글(`author = 'context'`, `ctx_op`) · 압축 요약(다음 새 세션 첫 실행에 한 번 —
+        // `agent` 빈 글자 = 대화 에이전트).
+        let tx = conn.unchecked_transaction()?;
+        for (col, ty) in [("ctx_tokens", "INTEGER"), ("ctx_op", "TEXT")] {
+            if !has_column(&tx, "messages", col)? {
+                tx.execute_batch(&format!("ALTER TABLE messages ADD COLUMN {col} {ty};"))?;
+            }
+        }
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS ctx_seeds (
+               conversation_id INTEGER NOT NULL,
+               agent TEXT NOT NULL,
+               text TEXT NOT NULL,
+               PRIMARY KEY (conversation_id, agent)
+             );
+             PRAGMA user_version = 19;",
+        )?;
         tx.commit()?;
     }
     Ok(conn)

@@ -35,6 +35,7 @@ pub fn fake_run(runs: Arc<Mutex<Vec<RunInput>>>, delay: Duration) -> Run {
             is_error: input.text.contains("실패하라"),
             turns: Some(2),
             duration_ms: Some(1500),
+            ctx_tokens: None,
         })
     })
 }

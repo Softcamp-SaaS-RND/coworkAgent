@@ -211,6 +211,9 @@
               <button id="view_btn" type="button" aria-pressed="true">대화 보기</button>
               <button id="raw_btn" type="button" aria-pressed="false">원문 보기</button>
             </div>
+            <button id="ctx_btn" type="button" class="tool-btn ctx-btn" aria-haspopup="menu" data-level="unknown" aria-label="컨텍스트 — 압축 · 비우기">
+              <span class="ico ico-gauge" aria-hidden="true"></span><span id="ctx_text">컨텍스트 알 수 없음</span>
+            </button>
             <button id="saved_btn" type="button" class="tool-btn" title="이 대화의 북마크 — 세부정보에서" aria-label="이 대화의 북마크">
               <span class="ico ico-bookmark" aria-hidden="true"></span>북마크 <span id="saved_n" class="count"></span>
             </button>
@@ -351,7 +354,7 @@
           </section>
 
           <section id="run" class="card">
-            <h2>실행 — 모델 · effort<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_run">?</button><span id="tip_run" class="tip" role="tooltip">받은 요청 실행(<span class="mono">claude -p</span>)의 기본값입니다. 상대별로 덮어쓰려면 연결 목록에서 그 상대를 펼치세요. 동시 실행 상한(1 ~ 8, 이 PC)을 넘는 요청은 거절하지 않고 닿은 순서로 기다립니다.</span></span></h2>
+            <h2>실행 — 모델 · effort<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_run">?</button><span id="tip_run" class="tip" role="tooltip">받은 요청 실행(<span class="mono">claude -p</span>)의 기본값입니다. 상대별로 덮어쓰려면 연결 목록에서 그 상대를 펼치세요. 동시 실행 상한(1 ~ 8, 이 PC)을 넘는 요청은 거절하지 않고 닿은 순서로 기다립니다. 자동 압축 — 이 PC 에서 돈 대화 세션이 컨텍스트 80%(800k / 1M)를 넘으면 그 에이전트가 대화를 요약하고 다음 글부터 새 세션으로 이어 갑니다(이 PC 의 Claude 사용량을 씁니다).</span></span></h2>
             <div class="form-grid">
               <label for="claude_model">모델</label>
               <select id="claude_model"></select>
@@ -359,6 +362,8 @@
               <select id="claude_effort"></select>
               <label for="max_runs">동시 실행 상한</label>
               <input type="number" id="max_runs" min="1" max="8">
+              <label for="auto_compact">자동 압축 — 컨텍스트 80% 넘으면</label>
+              <input type="checkbox" id="auto_compact">
             </div>
           </section>
 

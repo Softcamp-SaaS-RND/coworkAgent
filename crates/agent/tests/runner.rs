@@ -37,7 +37,10 @@ fn args_follow_d22() {
         assert!(args.iter().any(|a| a == flag), "{flag} 없음: {args:?}");
     }
     assert_eq!(value_of(&args, "--output-format"), Some("stream-json"));
-    assert!(args.iter().any(|a| a == "--verbose"), "stream-json 은 --verbose 필요");
+    assert!(
+        args.iter().any(|a| a == "--verbose"),
+        "stream-json 은 --verbose 필요"
+    );
     assert_eq!(value_of(&args, "--permission-prompts"), Some("none"));
     assert_eq!(value_of(&args, "--permission-mode"), Some("dontAsk"));
     assert_eq!(
@@ -138,6 +141,23 @@ fn parse_claude_json() {
         parse_output(br#"{"result":"x"}"#).is_err(),
         "session_id 없으면 오류"
     );
+}
+
+#[test]
+fn parse_context_tokens() {
+    // 2.1.299 실측 꼴 — `usage` 는 실행 합계, 창 사용량은 마지막 호출(iterations 끝)의 입력 + 캐시 + 출력.
+    let multi = r#"{"type":"result","is_error":false,"result":"x","session_id":"s","usage":{"input_tokens":9,"cache_creation_input_tokens":900,"cache_read_input_tokens":90000,"output_tokens":99,"iterations":[{"input_tokens":2,"cache_creation_input_tokens":30000,"cache_read_input_tokens":0,"output_tokens":50},{"input_tokens":3,"cache_creation_input_tokens":400,"cache_read_input_tokens":30050,"output_tokens":20}]}}"#;
+    assert_eq!(
+        parse_output(multi.as_bytes()).unwrap().ctx_tokens,
+        Some(3 + 400 + 30050 + 20)
+    );
+    let flat = r#"{"type":"result","is_error":false,"result":"x","session_id":"s","usage":{"input_tokens":2,"cache_creation_input_tokens":30379,"output_tokens":166}}"#;
+    assert_eq!(
+        parse_output(flat.as_bytes()).unwrap().ctx_tokens,
+        Some(2 + 30379 + 166)
+    );
+    let none = r#"{"type":"result","is_error":false,"result":"x","session_id":"s"}"#;
+    assert_eq!(parse_output(none.as_bytes()).unwrap().ctx_tokens, None);
 }
 
 #[test]

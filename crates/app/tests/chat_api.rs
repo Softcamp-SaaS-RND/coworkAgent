@@ -29,6 +29,7 @@ fn echo() -> Run {
             is_error: false,
             turns: Some(2),
             duration_ms: Some(1500),
+            ctx_tokens: None,
         })
     })
 }

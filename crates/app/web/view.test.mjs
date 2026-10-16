@@ -95,6 +95,12 @@ import {
   mentionTarget,
   hasMention,
   mentionToken,
+  contextSize,
+  contextLabel,
+  contextBusy,
+  ctxMenu,
+  contextNote,
+  CONTEXT_LIMIT,
 } from "./view.js";
 
 test("상태 문구", () => {
@@ -1545,4 +1551,62 @@ test("order_to_apply — 저장 중 · 읽는 사이 옮김이면 마지막으�
   ];
   const keep = orderToApply({ last, busy: true, stamp: 1 }, 0);
   assert.deepEqual(sortByPos(withOrder(old, keep)).map((x) => x.id), [3, 1, 2]);
+});
+
+test("context_size — 마지막 끝난 구분선 뒤 세션별 마지막 값의 최대 · 구분선 뒤 답 없음 0 · 모름 null(#1m)", () => {
+  const a = (ctx, extra = {}) => ({ author: "agent", mine: false, agent: null, ctx_tokens: ctx, state: "done", ...extra });
+  assert.equal(contextSize([]), null);
+  assert.equal(contextSize([a(null)]), null, "0.4.0 상대 답");
+  assert.equal(contextSize([a(100), a(300), a(200)]), 200, "같은 세션은 마지막 값");
+  assert.equal(contextSize([a(500), a(900, { agent: "doc" }), a(200)]), 900, "멘션 세션이 더 크면 그 값");
+  assert.equal(contextSize([a(500), a(700, { mine: true })]), 700, "자동 왕복 — 내 세션");
+  const done = { author: "context", state: "done", ctx_op: "compact" };
+  assert.equal(contextSize([a(900), done]), 0, "압축 뒤 답 없음");
+  assert.equal(contextSize([a(900), done, a(40)]), 40);
+  assert.equal(contextSize([a(900), { ...done, state: "sent" }]), 900, "진행 중 구분선은 아직 아님");
+  // 자동 왕복 부분 처리 — 이 PC 쪽만 비웠다, 상대 세션 값은 남는다(라운드 2).
+  const partial = { ...done, refused: "peer_compact_failed" };
+  assert.equal(contextSize([a(850_000), a(400_000, { mine: true }), partial]), 850_000);
+  assert.equal(contextSize([a(400_000, { mine: true }), partial]), 0);
+});
+
+test("context_label — 1M 기준 표기 · 60% 주황 · 80% 붉음(#1m)", () => {
+  assert.equal(CONTEXT_LIMIT, 1_000_000);
+  assert.deepEqual(contextLabel(null), { text: "컨텍스트 알 수 없음", level: "unknown" });
+  assert.deepEqual(contextLabel(950), { text: "950 / 1M", level: "ok" });
+  assert.deepEqual(contextLabel(42_300), { text: "42k / 1M", level: "ok" });
+  assert.equal(contextLabel(599_999).level, "ok");
+  assert.equal(contextLabel(600_000).level, "warn");
+  assert.equal(contextLabel(800_000).level, "high");
+  assert.deepEqual(contextLabel(1_200_000), { text: "1.2M / 1M", level: "high" });
+});
+
+test("ctx_menu — 실행 중 · 답 없음이면 꺼짐, 아이콘은 app.css 에(#1m)", () => {
+  const css = readFileSync(new URL("./app.css", import.meta.url), "utf8");
+  assert.deepEqual(ctxMenu(false, true).map((i) => [i.key, i.disabled]), [["compact", false], ["clear", false]]);
+  assert.ok(ctxMenu(true, true).every((i) => i.disabled));
+  assert.ok(ctxMenu(false, false).every((i) => i.disabled));
+  for (const i of ctxMenu(false, true)) assert.ok(css.includes(`.ico-${i.icon} {`), i.icon);
+  assert.ok(css.includes(".ico-gauge {"));
+  assert.equal(contextBusy([{ author: "human", state: "done", exec: true }]), false);
+  assert.equal(contextBusy([{ author: "human", state: "sent", exec: true }]), true, "상대 답 기다림");
+  assert.equal(contextBusy([{ author: "human", state: "sent", exec: false }]), false, "메모");
+  assert.equal(contextBusy([{ author: "context", state: "sent", exec: false }]), true);
+  assert.equal(contextBusy([{ author: "agent", state: "queued" }]), true);
+});
+
+test("context_note — 종류 · 상태 · 실패 사유(#1m)", () => {
+  const m = (ctx_op, state, refused = null) => ({ author: "context", ctx_op, state, refused });
+  assert.equal(contextNote(m("compact", "done")), "컨텍스트 압축 — 이후 새 세션이 요약을 이어 받습니다");
+  assert.equal(contextNote(m("auto_compact", "running")), "자동 압축(80%) — 요약 중…");
+  assert.equal(contextNote(m("clear", "done")), "컨텍스트 비움 — 이후 새 세션(앞 대화 기억 없음)");
+  assert.equal(contextNote(m("clear", "sent")), "컨텍스트 비움 — 상대 PC 처리 대기");
+  assert.equal(contextNote(m("compact", "error", "unsupported")), "컨텍스트 압축 — 상대가 0.5.0 이상이어야 합니다");
+  assert.equal(contextNote(m("compact", "error", "unreachable")), "컨텍스트 압축 — 상대에 닿지 않음");
+  assert.equal(contextNote(m("compact", "error", "compact_failed")), "컨텍스트 압축 — 요약 실행 실패 — 세션은 그대로");
+  assert.equal(
+    contextNote(m("compact", "done", "peer_unsupported")),
+    "컨텍스트 압축 — 이후 새 세션이 요약을 이어 받습니다 · 상대 PC 쪽은 실패(상대가 0.5.0 이상이어야 합니다) — 다시 누르면 다시 요청",
+    "자동 왕복 부분 처리(라운드 1)",
+  );
 });

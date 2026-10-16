@@ -259,6 +259,7 @@ async fn unpaired_or_unknown_agent_refused() {
             lc: None,
             model: None,
             effort: None,
+            ctx: None,
         },
         Request::ReqState {
             conv: "c".into(),
@@ -338,6 +339,7 @@ async fn forged_or_duplicate_reply_refused() {
             lc: None,
             model: None,
             effort: None,
+            ctx: None,
         };
         let (resp, _) = b.node.send(a.addr, None, &req).await.unwrap();
         assert_eq!(resp, Response::error("unknown"), "{reply_to}");
@@ -469,6 +471,7 @@ async fn unconfirmed_delivery_keeps_waiting_for_reply() {
         lc: None,
         model: None,
         effort: None,
+        ctx: None,
     };
     let (resp, _) = b.node.send(a.addr, None, &req).await.unwrap();
     assert_eq!(resp, Response::Ok);
@@ -623,6 +626,7 @@ async fn reply_records_model_effort_both_sides() {
         lc: None,
         model: Some("bad model!".into()),
         effort: Some("turbo".into()),
+        ctx: None,
     };
     let (resp, _) = b.node.send(a.addr, None, &req).await.unwrap();
     assert_eq!(resp, Response::Ok);
@@ -896,6 +900,7 @@ async fn empty_answer_is_failure_and_refused() {
                 is_error: false,
                 turns: Some(1),
                 duration_ms: Some(10),
+                ctx_tokens: None,
             })
         })
     })
@@ -926,6 +931,7 @@ async fn empty_answer_is_failure_and_refused() {
         lc: None,
         model: None,
         effort: None,
+        ctx: None,
     };
     let (resp, _) = b
         .node
@@ -948,6 +954,7 @@ async fn empty_answer_is_failure_and_refused() {
         model: None,
         effort: None,
         request: false,
+        ctx: None,
     };
     let (resp, _) = b.node.send(a.addr, pin, &empty_post).await.unwrap();
     assert_eq!(resp, Response::error("bad_request"));

@@ -93,6 +93,12 @@ pub fn forget_sessions(conn: &Connection, name: &str) -> rusqlite::Result<()> {
         [name],
     )?;
     conn.execute("DELETE FROM agent_sessions WHERE agent = ?1", [name])?;
+    // 압축 요약(#1m)도 — 옛 폴더의 사실을 새 세대 첫 실행에 넣지 않게(라운드 1).
+    conn.execute(
+        "DELETE FROM ctx_seeds WHERE agent = ?1 OR (agent = '' AND conversation_id IN
+           (SELECT id FROM conversations WHERE (dir = 'in' AND agent = ?1) OR (dir = 'out' AND relay_agent = ?1)))",
+        [name],
+    )?;
     Ok(())
 }
 

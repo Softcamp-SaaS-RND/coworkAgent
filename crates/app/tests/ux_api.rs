@@ -30,6 +30,7 @@ fn echo() -> Run {
             is_error: false,
             turns: Some(1),
             duration_ms: Some(10),
+            ctx_tokens: None,
         })
     })
 }
@@ -455,6 +456,51 @@ async fn rail_order_setting_persists() {
         s["ui_rail_order"], "groups_first",
         "틀린 값은 바꾸지 않는다"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn context_api_and_auto_compact_setting() {
+    let (a, b) = (side("cx-a").await, side("cx-b").await);
+    let (pb, _) = pair(&a, &b).await;
+    agents::add(&b.db(), "review", ".", "").unwrap();
+    // 자동 압축 — 기본 켜짐, 끄면 그대로 남는다.
+    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
+    assert_eq!(s["auto_compact"], true);
+    let (code, s) = a
+        .call("PUT", "/api/settings", json!({ "auto_compact": false }))
+        .await;
+    assert_eq!((code, &s["auto_compact"]), (200, &json!(false)), "{s}");
+    let conv = ask(&a, pb, "질문").await;
+    let path = format!("/api/conversations/{conv}/context");
+    let (code, _) = a.call("POST", &path, json!({ "op": "shrink" })).await;
+    assert_eq!(code, 400);
+    let (code, _) = a
+        .call(
+            "POST",
+            "/api/conversations/9999/context",
+            json!({ "op": "clear" }),
+        )
+        .await;
+    assert_eq!(code, 404);
+    let (code, m) = a.call("POST", &path, json!({ "op": "compact" })).await;
+    assert_eq!(code, 200, "{m}");
+    assert_eq!(
+        (&m["author"], &m["ctx_op"], &m["state"]),
+        (&json!("context"), &json!("compact"), &json!("sent"))
+    );
+    let (code, _) = a.call("POST", &path, json!({ "op": "clear" })).await;
+    assert_eq!(code, 409, "진행 중");
+    // 글 목록에 구분선 · 크기 필드가 실린다.
+    let (_, list) = a
+        .call(
+            "GET",
+            &format!("/api/conversations/{conv}/messages"),
+            Value::Null,
+        )
+        .await;
+    let rows = list.as_array().unwrap();
+    assert!(rows.iter().any(|r| r["author"] == "context"));
+    assert!(rows.iter().all(|r| r.get("ctx_tokens").is_some()));
 }
 
 #[tokio::test(flavor = "multi_thread")]

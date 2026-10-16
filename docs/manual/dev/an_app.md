@@ -29,7 +29,8 @@
   `turns` · `duration_ms` · `mine` · `exec` · `via`; 새 대화 · 이어 쓰기 본문의 `via` 는 `cli` 만(그 밖 400, 자동 왕복 시작에 주면 400); `to` 는 생략 또는 `agent` 만(`human` · 그 밖 400 — 새 대화 ·
   이어 쓰기 모두, D23 개정); 이어 쓰기는 양쪽 대화 `{text, to?}`, 실행은 받았지만 미러 실패면 201 + `warning`;
   새 대화 `relay_agent?` · `relay_cap?` → 자동 왕복, 대화 JSON 에 `relay_agent` · `relay_cap` · `relay_count` · `relay_on` · `relay_blocked`) ·
-  `POST /api/conversations/{id}/relay {on}`(멈춤 · 재개, 받은 쪽 재개 · 보통 대화는 400). 오류 404 · 400 · 409 ·
+  `POST /api/conversations/{id}/relay {on}`(멈춤 · 재개, 받은 쪽 재개 · 보통 대화는 400) · `POST /api/conversations/{id}/context {op}`(#1m — `compact` ·
+  `clear` → 구분선 글, 틀린 값 400 · 없는 대화 404 · 진행 중 409; 글 JSON 에 `ctx_tokens` · `ctx_op`). 오류 404 · 400 · 409 ·
   403(페어링 아님 · 상대 거절, 본문에 코드) · 502. 상대에 닿지 않은 새 글은 오류가 아니다 — 보관하고 201(글 `outbox`).
   CLI 트랜잭션(#1c): 새 대화 · 이어 쓰기 본문 `tx_key?`(`via: cli` 일 때만 — 아니면 400, 규칙 `an_core::cli_tx::key_ok` 밖 400) — 같은 키가 있으면
   보내지 않고 그 트랜잭션 JSON 을 200, 없으면 보내고 201 `{conversation, message, tx}`(`via: cli` 면 트랜잭션을 만든다 — 키 없어도, 기록 실패면
@@ -104,7 +105,7 @@
 - `autostart`(#1e, S7 · D13) — `sync(on)`(이 OS 의 실제 자리: Windows `RUN_KEY` 값 `VALUE_NAME` = `"exe"`, macOS `~/Library/LaunchAgents/{LABEL}.plist` —
   같으면 쓰지 않음 · 끄면 지움 · 없어도 성공) · `launch_agent_plist(exe)`(`RunAtLoad` · `KeepAlive` 없음 · 경로 XML 이스케이프) · Windows
   `registered(key)` · `register(key, exe) -> 바뀜` · `unregister(key)`(키 경로 인자 — 시험은 시험 키). 설정 `autostart`(`GET/PUT /api/settings`, 없으면
-  켜짐): `Notifier::set_autostart_hook(f)` 가 있으면 켜기는 `f(true)` → 저장(저장 실패면 `f(이전 값)`), 끄기는 저장 → `f(false)`(실패면 저장을 이전 값으로 되돌림) — 훅 실패는 500.
+  켜짐) · 설정 `auto_compact`(#1m — 없으면 켜짐, `Notifier::auto_compact`): `Notifier::set_autostart_hook(f)` 가 있으면 켜기는 `f(true)` → 저장(저장 실패면 `f(이전 값)`), 끄기는 저장 → `f(false)`(실패면 저장을 이전 값으로 되돌림) — 훅 실패는 500.
   중단돼도 "저장 켜짐 · OS 꺼짐" 이 남지 않는 순서(남는 것은 "OS 켜짐 · 저장 꺼짐" 뿐 — 다음 로그인 시작 맞추기가 지움) · 훅 잠금을
   저장 끝까지 쥔다(동시 요청 순서 = 저장 순서). 앱은 릴리스 빌드에서만 훅 설치 · 시작마다 설정 값으로 `sync`. `write_atomic(path, content)` — 같은
   폴더 `.tmp` 에 쓰고 `sync_all` 뒤 이름 바꾸기(실패하면 원래 파일 그대로 — plist).
@@ -161,7 +162,7 @@
   아이콘 · 설정 정리(#1l): 아이콘 한 벌 = `app.css` `.ico`(16px 하나 · `currentColor` 를 SVG 모양 `mask` 로) + `.ico-{이름}`(data URI), HTML ·
   JS 는 `<span class="ico ico-{이름}">` · `ico(name)` 만 — 사이드바(`view.sideNav` 항목 `icon`) · 화면 머리 제목(동적 제목은 안쪽 `span` 이 id) · 설정 트리
   (`view.settingsTree` `icon`) · 타일 ⋯ · 대화 ⋯ · 상대 그룹 체크 · "+ 새로 만들기"(`view.newMenu` `icon`, "자동 왕복 대화" 없음 — 새 대화 화면 안). 말풍선
-  색 = 내 글 `--accent` · `--on-accent`, 상대 글 = `article[data-tone=colorOf(peer_id)]` → `--tone` 12% `color-mix` 바탕 + 3px 띠. 설정 한 열(`.settings-cols`
+  색 = 내 글 `--accent` · `--on-accent`, 상대 글 = `article[data-tone=colorOf(peer_id)]` → `--tone` 층(`::before` 불투명도 0.12 — Safari 15 때문에 `color-mix` 아님) + 3px 띠. 설정 한 열(`.settings-cols`
   없앰 — 페어링 → 연결 목록 → 내 에이전트 → 실행 → 화면 → 시작 → 알림) · 카드 안내 = 제목 옆 `.help-wrap`(`button.help` + `.tip[role=tooltip]`,
   `aria-describedby`, `:hover` · `:focus` 에 뜸) · 내 정보 = `<dialog id="me_dialog">`(프로필 `profileMenu` 열쇠 `me` → `showModal`, 트리 · `#me` 경로
   없음) · 내 에이전트 검색 칸 없음 · 등록 칸 `<div id="agent_new" hidden>` = `showAgentNew(on)`("에이전트 등록" · 새로 만들기). 타일 순서 = 설정

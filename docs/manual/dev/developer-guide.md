@@ -3,7 +3,7 @@
 > 절차·운영 문서 — 모듈 매뉴얼 형식(개요 / 공개 계약 / 사용 예)의 예외다([매뉴얼 등록 규약](../README.md)).
 > 모듈별 API · 계약의 정본은 [an_core](an_core.md) · [an_net](an_net.md) · [an_agent](an_agent.md) · [an_app](an_app.md) 이고, 여기는
 > 그것들이 **실행 중에 어떻게 맞물리는지**를 적는다 — 어떤 프로세스가 생기고, 어떤 서비스가 무슨 역할을 하며, `claude -p` 헤드리스
-> 대화의 세션 · 저장소 · 흐름이 어떻게 이어지는가. 결정 번호(D · S)는 [masterPlan](../../masterPlan.md). 수치 · 경로는 스키마 18 ·
+> 대화의 세션 · 저장소 · 흐름이 어떻게 이어지는가. 결정 번호(D · S)는 [masterPlan](../../masterPlan.md). 수치 · 경로는 스키마 19 ·
 > 검증 환경 Windows 11 · Claude Code 2.1.296 기준. 쓰는 사람용 안내는 [사용자 가이드](../user/user-guide.md).
 
 ## 1. 한눈에 보기
@@ -186,13 +186,16 @@ PC 사이는 앱끼리 직접 통신한다.
 
 - **프레임** = 4바이트 big-endian 길이 + JSON(최대 64 KiB), 글 본문은 16 KiB(`MAX_TEXT`). 요청 1건에 응답 1건, 그리고 연결을 닫는다.
 - **요청**(`proto::Request`): 페어링 `Hello` · `Approve` · `Remove` · 접속 `Ping` · 대화 `Agents` · `Message` · `Reply` · `Post` ·
-  `Relay` · `ReqState`(요청 상태 — #1d) · `Progress`(받는 쪽 차례 · 단계 요약) · `Status`(보낸 쪽 상태 질의) · `Edit` · `Delete`(이력 정리 — #1f). **응답**: `Hello` · `Ok` · `Pong{focus}` ·
+  `Relay` · `ReqState`(요청 상태 — #1d) · `Progress`(받는 쪽 차례 · 단계 요약) · `Status`(보낸 쪽 상태 질의) · `Edit` · `Delete`(이력 정리 — #1f) ·
+  `Context`(컨텍스트 압축 · 비우기 요청 · 결과 — #1m). 답 `Reply` · `Post` 는 `ctx`(그 답 세션의 창 사용량)를 싣는다. **응답**: `Hello` · `Ok` · `Pong{focus, ctx}`(`ctx` = `Context` 를 앎) ·
   `Agents{names}` · `Status{state, ahead}` · `Error{code}`. 필드 정본은 [an_net](an_net.md).
 - 미페어링 상대는 `Hello` · `Approve` · `Remove` 만. 대화 요청은 페어링(`my_ok ∧ their_ok`)된 키만 처리기로 간다(SC2).
 - 수신 제한 — 연결당 3초 · 동시 32 · 출처 IP 당 4.
 - 상대가 준 오류 코드는 영소문자 · `_` 1 ~ 32 자만 남긴다(그 밖 `unknown`) — 원격 문자열은 신뢰하지 않는 입력.
 - 응답 코드 `retry` — 받는 쪽이 처리 중 오류(DB 잠금 등)로 잠시 처리하지 못했다. 거절이 아니다 — 보낸 쪽은 전송 오류처럼 다시 보낸다.
-- **outbox 를 거치는 프레임**: `Message` · `Post` · `Reply` · `ReqState` · `Edit` · `Delete` · `Progress` · `Relay{on: false}`(받은 쪽 멈춤 알림). **바로 보내는 것**: `Hello` ·
+- **outbox 를 거치는 프레임**: `Message` · `Post` · `Reply` · `ReqState` · `Edit` · `Delete` · `Progress` · `Relay{on: false}`(받은 쪽 멈춤 알림) · `Context`
+  (#1m — 바로 보내지 않고 줄이 보낸다. 보내기 전 `Ping` 으로 `Pong.ctx` 를 묻는다: 0.4.0 은 모르는 `type` 을 읽지 못해 응답 없이 연결을 끊으므로, 모르면 보내지 않고
+  `unsupported` 로 정산 · 닿지 않으면 보통 줄처럼 다시). **바로 보내는 것**: `Hello` ·
   `Approve` · `Remove` · `Agents` · `Ping` · `Status` · `Relay{on: true}`(연 쪽 재개) — 사람이 화면에서 결과를 바로 본다.
 
 ### 5.3 순서 그림
@@ -235,6 +238,12 @@ PC 사이는 앱끼리 직접 통신한다.
 4. **비우기** — 에이전트 폴더 변경 · 삭제 → `agents::forget_sessions(이름)`: 그 이름의 받은 대화(`in` · `agent`) · 자동 왕복 대화
    (`out` · `relay_agent`) 세션을 NULL 로, 멘션 세션(`agent_sessions`)을 지운다 + 새 세대(`uid`). 다음 실행은 새 세션.
 5. 대화 내용(맥락)은 Claude Code 기록 파일에 있다 — coworkAgent 는 세션 ID 만 갖는다(7.4).
+6. **압축 · 비우기**(#1m) — 대화 머리 단추 · 자동 압축(실행 결과 창 사용량 ≥ 800k, 설정 `auto_compact`). 구분선 글(`author = 'context'` ·
+   `ctx_op` = `compact` · `auto_compact` · `clear`)이 그 대화 줄 맨 앞에 서서(`pending` 정렬) 앞 실행이 끝난 뒤 · 다음 글보다 먼저 처리된다.
+   비우기 = `chat::clear_sessions`(대화 · 멘션 세션 전부). 압축 = 세션마다 `--resume` 으로 `SUMMARY_PROMPT` 실행(실행 문 통과) → 세션 비움 + 요약을
+   `ctx_seeds` 에 → 다음 **새 세션 첫 실행** 앞에 `<대화 요약>` 으로 한 번 붙이고(`execute`) 세션을 남기면 지운다(`record`). 하나라도 요약이 실패하면
+   세션은 그대로. 세션이 이 PC 에 있으면(받은 대화 · 자동 왕복 연 쪽) 이 PC 가, 상대에 있을 수 있으면(보낸 대화 · 자동 왕복) `Context` 로 상대에 —
+   받은 요청은 다시 넘기지 않는다(자동 왕복 되풀이 없음). 창 사용량 = 결과 `usage.iterations` 마지막 항목의 입력 + 캐시 쓰기 · 읽기 + 출력.
 
 ### 6.4 직렬화 · 순서
 
@@ -336,7 +345,7 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 
 ```text
 %LOCALAPPDATA%\coworkAgent\              macOS: ~/Library/Application Support/coworkAgent/
-├── coworkAgent.db                      SQLite — 연결 · 에이전트 · 대화 · 글 · 설정 · 보내기 보관 · CLI 트랜잭션(스키마 18)
+├── coworkAgent.db                      SQLite — 연결 · 에이전트 · 대화 · 글 · 설정 · 보내기 보관 · CLI 트랜잭션(스키마 19)
 ├── coworkAgent.db.v{N}.bak             스키마 N 에서 올리기 직전 사본(VACUUM INTO, 버전마다 한 번)
 ├── identity.key                        설치 신원 ed25519(PKCS#8) — 리포 · 로그 · UI 로 내보내지 않는다
 ├── instance.lock                       단일 인스턴스 잠금
@@ -349,7 +358,7 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 
 폴더 밖: 시작 실패 사유 `%TEMP%\coworkAgent-start-error.txt`, Claude Code 기록(7.4).
 
-### 7.2 DB 표 (스키마 18)
+### 7.2 DB 표 (스키마 19)
 
 | 표 | 한 행 | 주요 열 |
 |---|---|---|
@@ -360,15 +369,16 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 | `groups` | 레일 그룹(#1i — 이 PC 에만) | `id`(AUTOINCREMENT — 지운 번호를 다시 쓰지 않는다) · `name`(UNIQUE, 1 ~ 40자) · `icon` · `pos` |
 | `group_convs` | 그룹 소속(대화 하나씩) | (`group_id`, `conversation_id`) — 외래 키를 켜지 않는 DB 라 그룹을 지우면 `groups::remove` 가 함께 지운다. 대화는 여러 그룹에 |
 | `group_peers` | 그룹 소속(상대 단위 — #1j 스키마 18) | (`group_id`, `peer_id`) PRIMARY KEY · 색인 `group_peers_peer`. 그룹의 대화 = `group_convs` ∪ 그 상대들의 대화 전부(뒤에 생긴 대화 포함 — 계산, `chat::Scope::Group`). 상대를 빼도 `group_convs` 는 남고, 그룹을 지우면 `groups::remove` 가 함께 지운다 |
-| `messages` | 사람 글 · 에이전트 답 | `uuid` · `conversation_id` · `author`(`human` · `agent`) · `text` · `state` · `reply_to` · `turns` · `duration_ms` · `mine` · `exec`(실행 요청) · `lc` · `via`(`cli`) · `saved_at` · `model` · `effort` · `request` · `req_state`(`wait` · `accepted` · `rejected` · `done` — #1d) · `req_note` · `req_at` · `done_at`(#1d 부터 읽지 않음) · `agent`(멘션) · `refused` · `edited_at`(편집 시각 — #1f) |
+| `messages` | 사람 글 · 에이전트 답 · 컨텍스트 구분선(#1m) | `uuid` · `conversation_id` · `author`(`human` · `agent` · `context`) · `text` · `state` · `reply_to` · `turns` · `duration_ms` · `mine` · `exec`(실행 요청) · `lc` · `via`(`cli`) · `saved_at` · `model` · `effort` · `request` · `req_state`(`wait` · `accepted` · `rejected` · `done` — #1d) · `req_note` · `req_at` · `done_at`(#1d 부터 읽지 않음) · `agent`(멘션) · `refused` · `edited_at`(편집 시각 — #1f) · `ctx_tokens`(답 세션의 창 사용량 — #1m) · `ctx_op`(구분선 종류) |
 | `relay_events` | 자동 왕복 시작 · 끝 · 내 글이 실패로 바뀐 순간 · 상대 반영 실패(`sync_failed` — #1f) | `conversation_id` · `kind` · `detail` · `message_id` |
 | `agent_sessions` | 대화 × 멘션 에이전트 세션 | (`conversation_id`, `agent`) → `session` |
+| `ctx_seeds` | 압축 요약(#1m) — 다음 새 세션 첫 실행에 한 번 | (`conversation_id`, `agent` — 빈 글자 = `conversations.session` 주인) → `text` |
 | `outbox` | 상대에게 보낼 대화 프레임 1개(#1c) | `peer_id` · `conv_id` · `msg_id` · `kind` · `frame`(직렬화한 요청 JSON) · `key`(진행 합침) · `state`(`pending` 기다림 · `inflight` 보내는 중 · `failed` 실패 보관) · `tries` · `waited`(기다린 초 합) · `next_at` · `last_try` · `last_error` · `created_at`. 응답을 받으면 행을 지운다 |
 | `cli_tx` | CLI `ask` 트랜잭션 1개(#1c) | `key`(UNIQUE — `--id`) · `message_id`(보낸 실행 요청 글) · `created_at` · `asked_at`(마지막 상태 질의) · `unreachable_since` · `stalled_at` |
 
 - 글 상태 `state`: `sent` 보냄 · `queued` 실행 대기 · `running` 실행 중 · `done` 끝 · `error` 실패 · `undelivered` 답을 상대에 못 보냄.
 - `settings` 키: `notify_inbound` · `notify_pair` · `notify_request` · `notify_reply` · `notify_relay` · `notify_preview` · `notify_paused` ·
-  `relay_cap_default` · `claude_model` · `claude_effort` · `ui_theme` · `ui_side_width` · `ui_folded` · `me_alias` · `me_icon` · `focus`.
+  `relay_cap_default` · `claude_model` · `claude_effort` · `ui_theme` · `ui_side_width` · `ui_folded` · `me_alias` · `me_icon` · `focus` · `auto_compact`(#1m — 없으면 켜짐).
 
 ### 7.3 양쪽에 남는 것 · 이 PC 에만 있는 것
 
@@ -408,6 +418,7 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
   앱을 끄고 사본을 `coworkAgent.db` 로 바꿔 쓴다 — 사본 뒤에 생긴 데이터는 잃으므로 지금 DB 를 먼저 다른 이름으로 보존한다.
 - v18(#1j)은 한 트랜잭션으로 `group_peers` 를 만들고 옛 `peers.grp` 값을 같은 이름 레일 그룹으로 옮긴다(없으면 만든다 — 이름은 `groups::fit_name`: 제어
   문자 빼고 앞뒤 공백 지운 앞 40자, 남는 글자가 없으면 건너뜀). `agents.grp` 는 읽지 않는다.
+- v19(#1m)는 한 트랜잭션으로 `messages.ctx_tokens` · `ctx_op` 열과 `ctx_seeds` 표를 더한다.
 - 같은 버전의 사본이 이미 있으면 새로 뜨지 않는다(`backup_before_migration`) — 되돌린 뒤 다시 올려도 `.v{N}.bak` 은 처음 시점 그대로다.
 - 배포 전 하위 호환은 두지 않지만(D32) 사용자 데이터는 순방향 마이그레이션으로 보존한다.
 

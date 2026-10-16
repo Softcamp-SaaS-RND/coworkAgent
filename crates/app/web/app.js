@@ -49,6 +49,11 @@ import {
   keepPicked,
   searchGroups,
   lastRun,
+  contextSize,
+  contextLabel,
+  contextBusy,
+  ctxMenu,
+  contextNote,
   presence,
   refusedText,
   progressText,
@@ -1722,7 +1727,85 @@ function renderConvHead(conv) {
   $("saved_n").textContent = saved ? String(saved) : "";
   const pr = presence(state.peers.find((p) => p.id === conv.peer_id));
   Object.assign($("conv_presence"), { textContent: pr.text, className: `presence ${pr.key}`, hidden: false });
+  renderCtx(conv);
 }
+
+/// 머리 컨텍스트 표시 겸 단추(#1m) — "42k / 1M" · 60% 주황 · 80% 붉음 · 모름.
+function renderCtx(conv) {
+  const ms = state.msgsOf === conv.id ? state.msgs : [];
+  const lab = contextLabel(contextSize(ms));
+  const b = $("ctx_btn");
+  b.dataset.level = lab.level;
+  $("ctx_text").textContent = lab.text;
+  b.title = `${lab.text} — 압축 · 비우기`;
+}
+
+/// 압축 · 비우기 메뉴(#1m) — 고르면 확인 한 번.
+function openCtxMenu(conv, anchor) {
+  const ms = state.msgsOf === conv.id ? state.msgs : [];
+  const answered = ms.some((m) => m.author === "agent");
+  const items = ctxMenu(contextBusy(ms), answered).map((it) =>
+    el(
+      "button",
+      {
+        type: "button",
+        role: "menuitem",
+        disabled: it.disabled,
+        onclick: () => {
+          $("float").replaceChildren(ctxConfirm(conv, it.key));
+          $("float").setAttribute("role", "dialog");
+          $("float").querySelector("button")?.focus();
+        },
+      },
+      ico(it.icon),
+      el("span", { text: it.label }),
+    ),
+  );
+  const why = contextBusy(ms) ? "실행 · 압축이 끝난 뒤에 할 수 있습니다" : answered ? "" : "에이전트 답이 있어야 세션이 생깁니다";
+  openFloat(anchor, "menu", "컨텍스트", [el("p", { class: "menu-head" }, ico("gauge"), el("span", { text: "컨텍스트 — 상한 1M" })), ...items, why ? el("p", { class: "hint", text: why }) : ""].filter(Boolean));
+}
+
+/// 압축 · 비우기 확인(#1m).
+function ctxConfirm(conv, op) {
+  const compact = op === "compact";
+  return el(
+    "div",
+    { class: "float-form" },
+    el("strong", { text: compact ? "컨텍스트 압축" : "컨텍스트 비우기" }),
+    el("p", {
+      class: "hint",
+      text: compact
+        ? "답하는 PC 의 에이전트가 지금까지 대화를 요약하고, 다음 글부터 그 요약으로 새 세션을 시작합니다 — 답하는 PC 의 Claude 사용량을 씁니다."
+        : "다음 글부터 새 세션으로 시작합니다 — 에이전트는 앞 대화를 기억하지 않습니다. 대화 이력은 그대로입니다.",
+    }),
+    el(
+      "div",
+      { class: "actions" },
+      button("취소", () => closeFloat(true)),
+      button(
+        compact ? "압축" : "비우기",
+        async () => {
+          closeFloat(false);
+          await act(
+            compact ? "압축" : "비우기",
+            async () => {
+              await api("POST", `/api/conversations/${conv.id}/context`, { op });
+              return compact ? "압축을 시작했습니다 — 끝나면 대화에 요약이 보입니다" : "컨텍스트를 비웁니다 — 다음 글부터 새 세션";
+            },
+            "status_msg",
+            () => (state.current?.id === conv.id ? openConversation(state.current) : null),
+          );
+          focusAfterFloat("#ctx_btn", "reply_text");
+        },
+        "primary",
+      ),
+    ),
+  );
+}
+
+$("ctx_btn").addEventListener("click", (ev) => {
+  if (state.current) openCtxMenu(state.current, ev.currentTarget);
+});
 
 /// 대화 머리글(#1j — 탭 없음, 대화 보기 · 원문 보기). 입력창 안내 = 대화 에이전트에게.
 function showConversation(conv) {
@@ -1913,10 +1996,21 @@ function redrawMessages() {
   box.replaceChildren(...messageEls(conv, state.msgs));
 }
 
-/// 말풍선 목록(#1j) — 날짜가 바뀌면 구분선.
+/// 말풍선 목록(#1j) — 날짜가 바뀌면 구분선. 컨텍스트 압축 · 비우기(#1m)는 말풍선이 아니라 구분선(압축은 요약 펼치기).
 function messageEls(conv, ms) {
   const days = dayBreaks(ms);
-  return ms.flatMap((m, i) => [days[i] ? el("div", { class: "day-break", role: "separator", text: days[i] }) : "", messageEl(conv, m)].filter(Boolean));
+  return ms.flatMap((m, i) =>
+    [days[i] ? el("div", { class: "day-break", role: "separator", text: days[i] }) : "", m.author === "context" ? contextEl(m) : messageEl(conv, m)].filter(Boolean),
+  );
+}
+
+function contextEl(m) {
+  return el(
+    "div",
+    { class: "ctx-break", role: "separator", "data-msg": String(m.id), "data-state": m.state },
+    el("span", { class: "ctx-line" }, ico(m.ctx_op === "clear" ? "reset" : "compress"), el("span", { text: `${contextNote(m)} · ${formatTime(m.created_at)}` })),
+    m.text ? el("details", { class: "ctx-summary" }, el("summary", { text: "요약 보기" }), el("div", { class: "ctx-text", text: m.text })) : "",
+  );
 }
 
 /// 편집 모드 켜고 끄기 — 켜면 입력창 대신 "n개 선택 · 삭제 · 완료" 막대(보내기 없음), 끝난 내 글에 체크박스 · 연필.
@@ -3266,6 +3360,7 @@ const PREFS = [
   "ui_theme",
   "ui_rail_order",
   "autostart",
+  "auto_compact",
 ];
 
 function fillPrefs(s) {

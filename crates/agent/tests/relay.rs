@@ -314,6 +314,7 @@ async fn late_reply_after_transport_error_accepted() {
         lc: None,
         model: None,
         effort: None,
+        ctx: None,
     };
     let (resp, _) = b
         .node

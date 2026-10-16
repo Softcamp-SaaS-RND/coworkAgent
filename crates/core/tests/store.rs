@@ -717,7 +717,7 @@ fn schema18_peer_groups_from_old_text() {
         .unwrap();
     }
     let c = db::open(&p).unwrap();
-    assert_eq!(db::user_version(&c).unwrap(), 18);
+    assert_eq!(db::user_version(&c).unwrap(), db::SCHEMA_VERSION);
     assert!(db::backup_path(&p, 17).exists(), "올리기 전 사본");
     // 같은 이름은 한 그룹(있던 그룹 포함) · 앞뒤 공백 · 제어 문자 뺌 · 40자 · 빈 이름 · 없음은 건너뜀, 새 그룹은 상대 순서대로 끝에.
     assert_eq!(

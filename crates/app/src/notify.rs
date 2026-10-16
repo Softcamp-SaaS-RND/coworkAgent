@@ -182,6 +182,10 @@ impl Notifier {
         settings::autostart(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
 
+    pub fn auto_compact(&self) -> io::Result<bool> {
+        settings::auto_compact(&an_core::sync::lock(&self.db)).map_err(db_err)
+    }
+
     pub fn prefs(&self) -> Prefs {
         self.status().prefs.clone()
     }
@@ -296,6 +300,7 @@ impl Notifier {
             ("notify_preview", patch.notify_preview),
             ("notify_paused", patch.notify_paused),
             (settings::FOCUS_KEY, patch.focus),
+            (settings::AUTO_COMPACT_KEY, patch.auto_compact),
         ] {
             if let Some(v) = v {
                 writes.push((key, flag(v)));
@@ -525,6 +530,8 @@ pub struct SettingsPatch {
     pub me_icon: Option<String>,
     /// 로그인 때 자동 시작(이 PC).
     pub autostart: Option<bool>,
+    /// 자동 압축(#1m, 이 PC) — 이 PC 에서 돈 세션이 컨텍스트 80% 를 넘으면 요약 후 새 세션.
+    pub auto_compact: Option<bool>,
 }
 
 /// `GET/PUT /api/settings` · `GET /api/events`(SSE) — `server::router_with` 의 guard 뒤에 붙는다.
@@ -551,6 +558,7 @@ fn settings_json(n: &Notifier) -> io::Result<serde_json::Value> {
     v["me_icon"] = json!(icon);
     v["ui_folded"] = json!(n.folded()?);
     v["autostart"] = json!(n.autostart()?);
+    v["auto_compact"] = json!(n.auto_compact()?);
     Ok(v)
 }
 

@@ -151,6 +151,7 @@ async fn post_refused_when_foreign() {
             model: None,
             effort: None,
             request: false,
+            ctx: None,
         };
     // 없는 대화 · 이상한 작성자.
     let (r, _) = a

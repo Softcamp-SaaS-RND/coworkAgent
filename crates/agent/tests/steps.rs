@@ -94,6 +94,7 @@ fn stepping(
                 is_error: false,
                 turns: Some(1),
                 duration_ms: Some(1),
+                ctx_tokens: None,
             })
         })
     }

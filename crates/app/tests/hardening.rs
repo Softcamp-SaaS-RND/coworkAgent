@@ -70,6 +70,7 @@ fn echo() -> Run {
             is_error: false,
             turns: None,
             duration_ms: None,
+            ctx_tokens: None,
         })
     })
 }

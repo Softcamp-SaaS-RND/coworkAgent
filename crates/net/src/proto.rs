@@ -116,6 +116,9 @@ pub enum Request {
         model: Option<String>,
         #[serde(default)]
         effort: Option<String>,
+        /// 그 답을 낸 세션의 창 사용량(토큰, #1m) — 이전 버전 상대는 싣지 않는다(크기 모름).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ctx: Option<i64>,
     },
     /// 실행 없이 상대 이력에 남기는 글(D18 · D23) — `author = "human"` 사람 글(`exec` = 보낸 쪽 에이전트에게 한 실행 요청인가),
     /// `author = "agent"` 보낸 쪽 에이전트의 답(`reply_to` = 그 실행 요청 사람 글 uuid). 페어링된 상대만.
@@ -152,6 +155,9 @@ pub enum Request {
         /// 사람 글의 종류 — `Message` 의 `request` 와 같다.
         #[serde(default)]
         request: bool,
+        /// 에이전트 답의 창 사용량 — `Reply` 의 `ctx` 와 같다.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ctx: Option<i64>,
     },
     /// 실행 진행 — 받는 쪽이 상대가 보낸 실행 요청 글(`msg`)의 차례를 알린다(1b). `state` = `queued`(실행 문에서 기다림, `ahead` = 앞 사람 수) |
     /// `running`(실행 시작). 페어링된 상대만.
@@ -191,7 +197,20 @@ pub enum Request {
         conv: String,
         msg: String,
     },
+    /// 컨텍스트(#1m) — 대화의 Claude 세션 압축 · 비우기. `op` = `compact` · `auto_compact` · `clear`(해 달라 — 받은 쪽은 자기 세션을 처리하고 다시
+    /// 넘기지 않는다) · `done`(처리했다 — `text` = 요약, 비우기는 빈 값) · `failed`(`text` = 사유 코드). `msg` = 양쪽 같은 구분선 글 uuid(멱등).
+    /// 이 종류를 모르는 상대(0.4.0)는 연결을 끊으므로 보내기 전에 `Pong.ctx` 를 본다. 페어링된 상대만.
+    Context {
+        conv: String,
+        msg: String,
+        op: String,
+        #[serde(default)]
+        text: String,
+    },
 }
+
+/// `Request::Context` 의 `op` 값(#1m).
+pub const CTX_OPS: [&str; 5] = ["compact", "auto_compact", "clear", "done", "failed"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -208,6 +227,9 @@ pub enum Response {
     Pong {
         #[serde(default)]
         focus: bool,
+        /// `Request::Context` 를 아는가(#1m) — 이전 버전은 싣지 않는다(거짓).
+        #[serde(default)]
+        ctx: bool,
     },
     Agents {
         names: Vec<String>,
@@ -308,7 +330,8 @@ impl Request {
             | Request::Progress { conv, msg, .. }
             | Request::Status { conv, msg }
             | Request::Edit { conv, msg, .. }
-            | Request::Delete { conv, msg } => is_uuid(conv) && is_uuid(msg),
+            | Request::Delete { conv, msg }
+            | Request::Context { conv, msg, .. } => is_uuid(conv) && is_uuid(msg),
             Request::Reply {
                 conv,
                 msg,

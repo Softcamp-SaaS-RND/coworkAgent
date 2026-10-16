@@ -86,6 +86,7 @@ async fn error_result_hides_detail() {
                 is_error: true,
                 turns: Some(1),
                 duration_ms: Some(10),
+                ctx_tokens: None,
             })
         })
     })

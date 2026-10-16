@@ -12,6 +12,8 @@ pub enum Dir {
 pub enum Author {
     Human,
     Agent,
+    /// 컨텍스트 구분선(#1m) — 압축 · 비우기. 본문 = 요약(압축이 끝났으면) · 종류는 `Message.ctx_op`.
+    Context,
 }
 
 /// `Sent` 보냄 · `Queued` 실행 대기 · `Running` 실행 중 · `Done` 끝 · `Error` 실패 · `Undelivered` 답을 상대에 못 보냄.
@@ -144,6 +146,10 @@ pub struct Message {
     pub refused: Option<String>,
     /// 편집한 시각(#1f — 내 사람 글 · 상대가 편집해 보낸 글) — 편집하지 않았으면 `None`.
     pub edited_at: Option<i64>,
+    /// 답을 낸 세션의 창 사용량(토큰, #1m) — 모르면 `None`.
+    pub ctx_tokens: Option<i64>,
+    /// 컨텍스트 구분선의 종류(#1m) — `compact` · `auto_compact` · `clear`.
+    pub ctx_op: Option<String>,
 }
 
 /// 대화 목록 한 줄.
@@ -196,6 +202,7 @@ impl Author {
         match self {
             Author::Human => "human",
             Author::Agent => "agent",
+            Author::Context => "context",
         }
     }
 }
@@ -265,9 +272,9 @@ fn conv_row(r: &Row) -> rusqlite::Result<Conversation> {
     })
 }
 
-const MSG_COLS: &str = "id, uuid, conversation_id, author, text, state, created_at, reply_to, turns, duration_ms, mine, exec, lc, via, saved_at, model, effort, request, req_state, req_note, req_at, agent, refused, edited_at";
+const MSG_COLS: &str = "id, uuid, conversation_id, author, text, state, created_at, reply_to, turns, duration_ms, mine, exec, lc, via, saved_at, model, effort, request, req_state, req_note, req_at, agent, refused, edited_at, ctx_tokens, ctx_op";
 /// `MSG_COLS` 열 수 — 그 뒤에 붙는 열의 위치.
-const MSG_N: usize = 24;
+const MSG_N: usize = 26;
 
 /// 열 목록에 표 별칭을 붙인다(`id, uuid` → `m.id, m.uuid`).
 fn prefixed(cols: &str, alias: &str) -> String {
@@ -299,6 +306,7 @@ fn msg_row(r: &Row) -> rusqlite::Result<Message> {
         author: match author.as_str() {
             "human" => Author::Human,
             "agent" => Author::Agent,
+            "context" => Author::Context,
             v => return Err(bad(3, v)),
         },
         text: r.get(4)?,
@@ -320,6 +328,8 @@ fn msg_row(r: &Row) -> rusqlite::Result<Message> {
         agent: r.get(21)?,
         refused: r.get(22)?,
         edited_at: r.get(23)?,
+        ctx_tokens: r.get(24)?,
+        ctx_op: r.get(25)?,
         state: state_of(&state).ok_or_else(|| bad(5, &state))?,
     })
 }
@@ -571,7 +581,7 @@ pub struct Activity {
 }
 
 /// 내 활동에 드는 글 — 상대 쪽 글 전부 · 실패한 내 쪽 글. `messages m` 문맥의 SQL 식.
-const ACTIVITY_MESSAGES: &str = "(m.mine = 0 OR m.state = 'error')";
+const ACTIVITY_MESSAGES: &str = "(m.author <> 'context' AND (m.mine = 0 OR m.state = 'error'))";
 
 /// 내 활동 — 최신 것부터 `limit` 건. `peer` 로 그 상대 대화만, `q` 는 글 본문 · 자동 왕복 기록 사유의 부분 일치.
 pub fn activity(
@@ -587,7 +597,9 @@ pub fn activity(
         ActivityFilter::All => Some(ACTIVITY_MESSAGES),
         ActivityFilter::Human => Some("m.mine = 0 AND m.author = 'human'"),
         ActivityFilter::Agent => Some("m.mine = 0 AND m.author = 'agent'"),
-        ActivityFilter::Failed => Some("m.mine = 1 AND m.state = 'error'"),
+        ActivityFilter::Failed => {
+            Some("m.mine = 1 AND m.state = 'error' AND m.author <> 'context'")
+        }
         ActivityFilter::Relay => None,
     };
     if let Some(w) = msg_where {
@@ -870,6 +882,129 @@ pub fn set_agent_session(
     .map(drop)
 }
 
+/// 답의 창 사용량(#1m) — `None` 이면 그대로(모름).
+pub fn set_ctx_tokens(conn: &Connection, id: i64, tokens: Option<i64>) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE messages SET ctx_tokens = ?2 WHERE id = ?1",
+        params![id, tokens],
+    )
+    .map(drop)
+}
+
+/// 컨텍스트 구분선 글(#1m) — `exec` = 이 PC 가 세션을 처리한다(대화 작업자 줄에 든다), `mine` = 이 PC 에서 눌렀다(자동 압축 포함).
+pub fn add_context(
+    conn: &Connection,
+    conversation_id: i64,
+    uuid: &str,
+    op: &str,
+    state: State,
+    mine: bool,
+    exec: bool,
+) -> rusqlite::Result<Message> {
+    conn.execute(
+        "INSERT INTO messages (uuid, conversation_id, author, text, state, created_at, mine, exec, ctx_op)
+         VALUES (?1, ?2, 'context', '', ?3, unixepoch(), ?4, ?5, ?6)",
+        params![uuid, conversation_id, state.as_str(), mine, exec, op],
+    )?;
+    let id = conn.last_insert_rowid();
+    stamp(conn, id)?;
+    conn.query_row(
+        &format!("SELECT {MSG_COLS} FROM messages WHERE id = ?1"),
+        [id],
+        msg_row,
+    )
+}
+
+/// 구분선 글 끝 — 요약(압축) · 상태. 구분선이 아니면 아무것도 바꾸지 않는다(거짓).
+pub fn finish_context(
+    conn: &Connection,
+    id: i64,
+    state: State,
+    text: &str,
+) -> rusqlite::Result<bool> {
+    Ok(conn.execute(
+        "UPDATE messages SET state = ?2, text = ?3 WHERE id = ?1 AND author = 'context'",
+        params![id, state.as_str(), text],
+    )? > 0)
+}
+
+/// 대화의 Claude 세션 전부(#1m) — (에이전트, 세션). 대화 에이전트는 `None`, 멘션한 에이전트는 이름.
+pub fn sessions(
+    conn: &Connection,
+    conv: &Conversation,
+) -> rusqlite::Result<Vec<(Option<String>, String)>> {
+    let mut out: Vec<(Option<String>, String)> =
+        conv.session.iter().map(|s| (None, s.clone())).collect();
+    let rows = conn
+        .prepare(
+            "SELECT agent, session FROM agent_sessions WHERE conversation_id = ?1 ORDER BY agent",
+        )?
+        .query_map([conv.id], |r| Ok((Some(r.get(0)?), r.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    out.extend(rows);
+    Ok(out)
+}
+
+/// 대화 세션을 모두 비운다(#1m — 비우기 · 압축 뒤). 남은 요약은 `keep_seeds` 가 거짓이면 함께 지운다.
+pub fn clear_sessions(
+    conn: &Connection,
+    conversation_id: i64,
+    keep_seeds: bool,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE conversations SET session = NULL WHERE id = ?1",
+        [conversation_id],
+    )?;
+    conn.execute(
+        "DELETE FROM agent_sessions WHERE conversation_id = ?1",
+        [conversation_id],
+    )?;
+    if !keep_seeds {
+        conn.execute(
+            "DELETE FROM ctx_seeds WHERE conversation_id = ?1",
+            [conversation_id],
+        )?;
+    }
+    Ok(())
+}
+
+/// 압축 요약(#1m) — 다음 새 세션의 첫 실행 앞에 붙인다. `agent` 빈 글자 = 대화 에이전트.
+pub fn set_ctx_seed(
+    conn: &Connection,
+    conversation_id: i64,
+    agent: &str,
+    text: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO ctx_seeds (conversation_id, agent, text) VALUES (?1, ?2, ?3)
+         ON CONFLICT(conversation_id, agent) DO UPDATE SET text = ?3",
+        params![conversation_id, agent, text],
+    )
+    .map(drop)
+}
+
+pub fn ctx_seed(
+    conn: &Connection,
+    conversation_id: i64,
+    agent: &str,
+) -> rusqlite::Result<Option<String>> {
+    conn.query_row(
+        "SELECT text FROM ctx_seeds WHERE conversation_id = ?1 AND agent = ?2",
+        params![conversation_id, agent],
+        |r| r.get(0),
+    )
+    .optional()
+}
+
+/// 요약을 쓴 실행이 세션을 남겼다 — 그 요약은 지운다(한 번만).
+pub fn drop_ctx_seed(conn: &Connection, conversation_id: i64, agent: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "DELETE FROM ctx_seeds WHERE conversation_id = ?1 AND agent = ?2",
+        params![conversation_id, agent],
+    )
+    .map(drop)
+}
+
 pub fn set_session(conn: &Connection, id: i64, session: &str) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE conversations SET session = ?2 WHERE id = ?1",
@@ -988,7 +1123,7 @@ pub fn last_exec_before(
     conn.query_row(
         &format!(
             "SELECT {MSG_COLS} FROM messages WHERE conversation_id = ?1 AND (lc, uuid) < (?2, ?3)
-               AND exec = 1 ORDER BY lc DESC, uuid DESC LIMIT 1"
+               AND exec = 1 AND author <> 'context' ORDER BY lc DESC, uuid DESC LIMIT 1"
         ),
         params![conversation_id, before.lc, before.uuid],
         msg_row,
@@ -1036,7 +1171,7 @@ pub fn messages_across(
     let (peer, group) = scope.ids();
     conn.prepare(&format!(
         "SELECT {cols} FROM messages m JOIN conversations c ON c.id = m.conversation_id
-         WHERE (?1 IS NULL OR m.mine = ?1) AND {} AND (?3 IS NULL OR m.author = ?3)
+         WHERE (?1 IS NULL OR m.mine = ?1) AND {} AND (?3 IS NULL OR m.author = ?3) AND m.author <> 'context'
            AND (?4 IS NULL OR (m.author = 'human' AND coalesce(m.request, 0) = ?4))
            AND (?5 IS NULL OR m.text LIKE ?5 ESCAPE '\\') AND (?7 IS NULL OR m.req_state = ?7)
          ORDER BY m.created_at DESC, m.id DESC LIMIT ?6",
@@ -1073,7 +1208,7 @@ pub fn message_by_uuid(conn: &Connection, uuid: &str) -> rusqlite::Result<Option
 pub fn pending(conn: &Connection, conversation_id: i64) -> rusqlite::Result<Vec<Message>> {
     conn.prepare(&format!(
         "SELECT {MSG_COLS} FROM messages WHERE conversation_id = ?1
-           AND exec = 1 AND state IN ('queued', 'running') ORDER BY id"
+           AND exec = 1 AND state IN ('queued', 'running') ORDER BY coalesce(ctx_op = 'auto_compact', 0) DESC, id"
     ))?
     .query_map([conversation_id], msg_row)?
     .collect()
@@ -1121,13 +1256,13 @@ pub fn summaries(conn: &Connection) -> rusqlite::Result<Vec<Summary>> {
            (SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY lc DESC, uuid DESC LIMIT 1),
            c.title,
            c.starred_at IS NOT NULL,
-           (SELECT count(*) FROM messages WHERE conversation_id = c.id AND mine = 0 AND id > coalesce(c.read_id, 0)),
+           (SELECT count(*) FROM messages WHERE conversation_id = c.id AND mine = 0 AND author <> 'context' AND id > coalesce(c.read_id, 0)),
            c.pos,
-           (SELECT substr(text, 1, {PREVIEW_CHARS}) FROM messages WHERE conversation_id = c.id ORDER BY lc DESC, uuid DESC LIMIT 1),
-           (SELECT author FROM messages WHERE conversation_id = c.id ORDER BY lc DESC, uuid DESC LIMIT 1),
-           (SELECT mine FROM messages WHERE conversation_id = c.id ORDER BY lc DESC, uuid DESC LIMIT 1),
-           (SELECT agent FROM messages WHERE conversation_id = c.id ORDER BY lc DESC, uuid DESC LIMIT 1),
-           (SELECT via FROM messages WHERE conversation_id = c.id ORDER BY lc DESC, uuid DESC LIMIT 1)
+           (SELECT substr(text, 1, {PREVIEW_CHARS}) FROM messages WHERE conversation_id = c.id AND author <> 'context' ORDER BY lc DESC, uuid DESC LIMIT 1),
+           (SELECT author FROM messages WHERE conversation_id = c.id AND author <> 'context' ORDER BY lc DESC, uuid DESC LIMIT 1),
+           (SELECT mine FROM messages WHERE conversation_id = c.id AND author <> 'context' ORDER BY lc DESC, uuid DESC LIMIT 1),
+           (SELECT agent FROM messages WHERE conversation_id = c.id AND author <> 'context' ORDER BY lc DESC, uuid DESC LIMIT 1),
+           (SELECT via FROM messages WHERE conversation_id = c.id AND author <> 'context' ORDER BY lc DESC, uuid DESC LIMIT 1)
          FROM conversations c
          ORDER BY coalesce((SELECT max(created_at) FROM messages WHERE conversation_id = c.id), c.created_at) DESC,
            coalesce((SELECT max(id) FROM messages WHERE conversation_id = c.id), 0) DESC, c.id DESC"
@@ -1158,6 +1293,7 @@ pub fn summaries(conn: &Connection) -> rusqlite::Result<Vec<Summary>> {
                         author: match author.as_str() {
                             "human" => Author::Human,
                             "agent" => Author::Agent,
+                            "context" => Author::Context,
                             v => return Err(bad(CONV_N + 8, v)),
                         },
                         mine: r.get::<_, Option<bool>>(CONV_N + 9)?.unwrap_or(false),

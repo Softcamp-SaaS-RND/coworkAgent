@@ -501,6 +501,7 @@ impl Node {
                 | Request::Status { .. }
                 | Request::Edit { .. }
                 | Request::Delete { .. }
+                | Request::Context { .. }
         ) {
             let peer = peers::by_spki(&self.db(), spki).map_err(db_err)?;
             let resp = match (peer, self.requests.get()) {
@@ -618,7 +619,7 @@ impl Node {
                         log::warn!("집중 설정 읽기 실패 — 꺼짐으로 답한다: {e}");
                         false
                     });
-                    Response::Pong { focus }
+                    Response::Pong { focus, ctx: true }
                 } else {
                     Response::error("not_paired")
                 }
@@ -633,7 +634,8 @@ impl Node {
             | Request::Progress { .. }
             | Request::Status { .. }
             | Request::Edit { .. }
-            | Request::Delete { .. } => Response::error("bad_request"),
+            | Request::Delete { .. }
+            | Request::Context { .. } => Response::error("bad_request"),
         };
         Ok((resp, event))
     }
@@ -846,6 +848,15 @@ impl Node {
 
     /// 연결 확인 — 상대가 집중 중인가를 돌려주고, 받은 `Pong` 을 접속 상태로 남긴다(거절 · 전송 오류는 남기지 않는다).
     pub async fn ping(&self, id: i64) -> io::Result<bool> {
+        self.pong(id).await.map(|(focus, _)| focus)
+    }
+
+    /// 상대가 `Request::Context` 를 아는가(#1m) — [`ping`](Self::ping) 처럼 접속 상태를 남긴다. 닿지 않으면 오류(보내는 줄은 다시 보낸다).
+    pub async fn knows_context(&self, id: i64) -> io::Result<bool> {
+        self.pong(id).await.map(|(_, ctx)| ctx)
+    }
+
+    async fn pong(&self, id: i64) -> io::Result<(bool, bool)> {
         let peer = self.peer(id)?;
         match self
             .send(
@@ -855,9 +866,9 @@ impl Node {
             )
             .await?
         {
-            (Response::Pong { focus }, _) => {
+            (Response::Pong { focus, ctx }, _) => {
                 peers::set_presence(&self.db(), id, focus).map_err(db_err)?;
-                Ok(focus)
+                Ok((focus, ctx))
             }
             (other, _) => Err(refused(other)),
         }

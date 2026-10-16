@@ -108,6 +108,10 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   있는 상대의 `upsert`(충돌 → 갱신)도 순번을 하나 쓴다(빈 번호만 생김).
   스키마 18(#1j, 한 트랜잭션): `group_peers(group_id, peer_id)` PRIMARY KEY · 색인 `group_peers_peer` · 옛 `peers.grp` 값(`ORDER BY pos, id`)을 `fit_name` 한
   같은 이름 그룹(없으면 `add`)에 넣는다 — 빈 이름은 건너뜀. `agents.grp` 는 읽지 않는다(열은 그대로).
+  스키마 19(#1m, 한 트랜잭션): `messages.ctx_tokens` · `ctx_op` · `ctx_seeds(conversation_id, agent, text)`. `chat::Author::Context` · `set_ctx_tokens` ·
+  `add_context` · `finish_context` · `sessions(conv)` · `clear_sessions(conv, keep_seeds)` · `set_ctx_seed` · `ctx_seed` · `drop_ctx_seed`, `pending` 은 구분선
+  글 먼저 · 구분선은 내 활동 · 미리보기 · 안 읽음 · 가로지른 글 · 메모 범위에서 뺌. `settings::AUTO_COMPACT_KEY` · `auto_compact()` · `CONTEXT_LIMIT`(1M) ·
+  `AUTO_COMPACT_AT`(800k).
 - `instance::InstanceLock::acquire(path)` → `Acquired::Primary(lock)` | `Secondary`. `InstanceInfo { port, token }` 의
   `write` · `read`(hex 토큰만 받음).
 

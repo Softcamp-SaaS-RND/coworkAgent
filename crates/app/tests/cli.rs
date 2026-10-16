@@ -32,6 +32,7 @@ fn echo() -> Run {
             is_error: body.starts_with("실패"),
             turns: Some(1),
             duration_ms: Some(10),
+            ctx_tokens: None,
         })
     })
 }

@@ -1,6 +1,6 @@
 //! 대화 왕복 조율(S1 · D17 · D19) — 보내기(사람 → 원격 에이전트), 받기(대기열 → `claude -p` → 답 되돌리기), 답 받기.
 //! 원격에서 온 것은 신뢰하지 않는 입력: 페어링 확인은 `Node`, 에이전트 이름 · 본문 크기 · 대화 소유는 여기서 본다.
-use crate::runner::{RunInput, RunOutput, Session, StepSink};
+use crate::runner::{RunInput, RunOutput, SUMMARY_PROMPT, Session, StepSink};
 use an_core::chat::{self, Author, Conversation, Dir, Message, ReqState, State};
 use an_core::db::Connection;
 use an_core::peers::Peer;
@@ -73,6 +73,22 @@ const RELAY_LAST: &str = "relay_last";
 const REQ_STATE: &str = "req_state";
 const RELAY: &str = "relay";
 const PROGRESS: &str = "progress";
+/// 컨텍스트(#1m) — 압축 · 비우기 요청(내 구분선 글) · 처리 결과(상대가 요청한 구분선 글). 보내기 전에 상대가 이 종류를 아는지 본다.
+const CTX: &str = "context";
+const CTX_DONE: &str = "context_done";
+
+/// 컨텍스트 요청 거절 코드(#1m) — 상대가 이 기능을 모른다(0.4.0 이하) · 요약 실행 실패.
+pub const CTX_UNSUPPORTED: &str = "unsupported";
+const CTX_FAILED: &str = "compact_failed";
+/// 이 PC 도 처리한 구분선 글에 남기는 상대 쪽 실패 코드(#1m — 부분 처리).
+fn peer_code(code: &str) -> String {
+    format!("peer_{code}")
+}
+
+/// 압축 요약 상한(바이트, #1m) — 통신 본문 한도 안.
+const MAX_SUMMARY: usize = 8 * 1024;
+/// 받은 창 사용량의 상한(원격 값 검증).
+const MAX_CTX_TOKENS: i64 = 100_000_000;
 
 /// 다시 보내기를 포기한 내 글의 거절 코드 — 화면 "보내지 못함".
 pub const UNREACHABLE: &str = "unreachable";
@@ -128,7 +144,14 @@ const INTERRUPTED: &str = "실행 도중 상대 앱이 종료돼 결과가 없�
 pub const MAX_NOTES: usize = 20;
 pub const MAX_NOTES_BYTES: usize = 32 * 1024;
 /// 실행 입력의 구분자 — 원격 글 안에서는 지운다.
-const FRAMES: [&str; 4] = ["</원격 본문>", "<원격 본문>", "</대화 메모>", "<대화 메모>"];
+const FRAMES: [&str; 6] = [
+    "</원격 본문>",
+    "<원격 본문>",
+    "</대화 메모>",
+    "<대화 메모>",
+    "</대화 요약>",
+    "<대화 요약>",
+];
 
 /// 원격 글에서 구분자 글자를 지운다(지운 자리에 새 구분자가 생기지 않을 때까지).
 fn unframe(text: &str) -> String {
@@ -196,11 +219,15 @@ fn preview(text: &str) -> String {
 }
 
 /// `MAX_TEXT` 바이트 안으로(글자 경계에서) 자른다.
-fn fit(mut text: String) -> String {
-    if text.len() <= MAX_TEXT {
+fn fit(text: String) -> String {
+    fit_to(text, MAX_TEXT)
+}
+
+fn fit_to(mut text: String, max: usize) -> String {
+    if text.len() <= max {
         return text;
     }
-    let mut cut = MAX_TEXT - "\n…(잘림)".len();
+    let mut cut = max - "\n…(잘림)".len();
     while !text.is_char_boundary(cut) {
         cut -= 1;
     }
@@ -270,6 +297,37 @@ fn request_ok(opts: &Compose<'_>, conv_agent: &str) -> io::Result<()> {
         ));
     }
     Ok(())
+}
+
+/// 압축 요약 하나(#1m) — `key` = `ctx_seeds.agent`(빈 글자 = 대화 세션 주인), `agent` · `uid` = 요약을 만든 에이전트와 그 세대.
+struct Seed {
+    key: String,
+    agent: String,
+    uid: String,
+    text: String,
+}
+
+/// 구분선에 보일 요약 — 세션 하나면 그 글, 여럿이면 에이전트별 머리.
+fn summary_text(conv: &Conversation, seeds: &[Seed]) -> String {
+    let text = match seeds {
+        [one] => one.text.clone(),
+        many => many
+            .iter()
+            .map(|s| {
+                format!(
+                    "## {}\n{}",
+                    if s.key.is_empty() {
+                        &conv.agent
+                    } else {
+                        &s.key
+                    },
+                    s.text
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+    };
+    fit_to(text, MAX_SUMMARY)
 }
 
 /// 끝난 실행 — 결과 · 실행한 에이전트 · 정한 실행 옵션.
@@ -764,6 +822,10 @@ impl Chat {
             queued.len()
         );
         for it in queued {
+            // 컨텍스트 처리 결과(#1m)는 포기하지 않는다 — 요청자 구분선이 `sent` 에 영영 묶이지 않게, 돌아오면 줄이 보낸다(라운드 2).
+            if it.kind == CTX_DONE {
+                continue;
+            }
             // 편집 · 삭제 반영(#1f)은 실패 보관과 '상대 반영 실패' 기록을 한 트랜잭션으로 — 하나만 남지 않게(실패하면 행은 줄에 남아 다시 포기한다).
             if matches!(it.kind.as_str(), outbox::EDIT | outbox::DELETE) {
                 let failed = (|| {
@@ -845,6 +907,20 @@ impl Chat {
             log::warn!("보낼 글 {} 상태 기록 실패: {e}", item.id);
             tokio::time::sleep(Duration::from_secs(5)).await;
             return;
+        }
+        // 컨텍스트 프레임(#1m) — 이 종류를 모르는 상대(0.4.0)는 응답 없이 연결을 끊어 24시간 다시 보내게 된다. 먼저 Ping 으로 묻는다.
+        if matches!(item.kind.as_str(), CTX | CTX_DONE) {
+            match self.node.knows_context(item.peer_id).await {
+                Ok(true) => {}
+                Ok(false) => {
+                    let resp = Response::error(CTX_UNSUPPORTED);
+                    if self.acked(item.id, &resp) {
+                        self.settle(&item, &resp);
+                    }
+                    return;
+                }
+                Err(e) => return self.backoff(item.id, &e),
+            }
         }
         match self.send_to(item.peer_id, &req).await {
             Ok(resp) => {
@@ -945,6 +1021,13 @@ impl Chat {
                 let _ = chat::set_state(&self.db(), msg_id, State::Undelivered);
             }
             (REQ_STATE, false) => self.req_state_refused(msg_id, resp),
+            (CTX, false) => {
+                let code = match resp {
+                    Response::Error { code } => an_net::proto::clean_code(code).to_string(),
+                    _ => "unknown".into(),
+                };
+                self.context_refused(msg_id, &code);
+            }
             (_, false) => log::info!(
                 "상대 {} 가 {} 를 받지 않았다: {resp:?}",
                 item.peer_id,
@@ -977,6 +1060,7 @@ impl Chat {
             REPLY | REPLY_POST | RELAY_LAST => {
                 let _ = chat::set_state(&self.db(), msg_id, State::Undelivered);
             }
+            CTX => self.context_refused(msg_id, UNREACHABLE),
             // 받은 요청의 상태를 요청자에 알리지 못했다 — 그 글에 표시, 받은 사람이 "다시 알리기"(#1d R1).
             REQ_STATE => {
                 let _ = chat::set_refused(&self.db(), msg_id, Some(UNREACHABLE));
@@ -1502,6 +1586,7 @@ impl Chat {
                 model: None,
                 effort: None,
                 request: msg.request,
+                ctx: None,
             };
             let kind = if to_agent { MIRROR } else { NOTE };
             // 보내기 행도 같은 트랜잭션(#1c).
@@ -1596,6 +1681,12 @@ impl Chat {
             Request::Status { conv, msg } => self.inbound_status(peer, conv, msg),
             Request::Edit { conv, msg, text } => self.inbound_edit(peer, conv, msg, text),
             Request::Delete { conv, msg } => self.inbound_delete(peer, conv, msg),
+            Request::Context {
+                conv,
+                msg,
+                op,
+                text,
+            } => self.inbound_context(peer, conv, msg, op, text),
             reply @ Request::Reply { .. } => self.inbound_reply(peer, reply),
             post @ Request::Post { .. } => self.inbound_post(peer, post),
             _ => Ok(Response::error("bad_request")),
@@ -1740,10 +1831,12 @@ impl Chat {
             model,
             effort,
             request,
+            ctx,
         } = post
         else {
             return Ok(Response::error("bad_request"));
         };
+        let ctx = ctx.filter(|v| (0..=MAX_CTX_TOKENS).contains(v));
         let (model, effort) = run_meta(model, effort);
         // 에이전트 답은 비어 있으면 받지 않는다 — 조용한 빈 성공 · 자동 왕복의 빈 입력(1a R1).
         if text.len() > MAX_TEXT || msg.is_empty() || (author == "agent" && text.trim().is_empty())
@@ -1807,6 +1900,7 @@ impl Chat {
                     )
                     .map_err(db_err)?;
                     chat::observe(&tx, m.id, lc).map_err(db_err)?;
+                    chat::set_ctx_tokens(&tx, m.id, ctx).map_err(db_err)?;
                     tx.commit().map_err(db_err)?;
                     kind = MessageKind::RelayEnd;
                 }
@@ -1846,6 +1940,7 @@ impl Chat {
                     )
                     .map_err(db_err)?;
                     chat::observe(&tx, r.id, lc).map_err(db_err)?;
+                    chat::set_ctx_tokens(&tx, r.id, ctx).map_err(db_err)?;
                     chat::set_state(&tx, asked.id, state).map_err(db_err)?;
                     tx.commit().map_err(db_err)?;
                 }
@@ -2484,10 +2579,12 @@ impl Chat {
             lc,
             model,
             effort,
+            ctx,
         } = reply
         else {
             return Ok(Response::error("bad_request"));
         };
+        let ctx = ctx.filter(|v| (0..=MAX_CTX_TOKENS).contains(v));
         let (model, effort) = run_meta(model, effort);
         if text.len() > MAX_TEXT || msg.is_empty() || text.trim().is_empty() {
             return Ok(Response::error("bad_request"));
@@ -2531,6 +2628,7 @@ impl Chat {
             )
             .map_err(db_err)?;
             chat::observe(&tx, reply.id, lc).map_err(db_err)?;
+            chat::set_ctx_tokens(&tx, reply.id, ctx).map_err(db_err)?;
             chat::set_state(&tx, asked.id, state).map_err(db_err)?;
             // 멘션한 요청의 답 — 실행한 에이전트는 요청이 부른 이름 그대로(해석 4).
             if asked.agent.is_some() {
@@ -2606,7 +2704,10 @@ impl Chat {
     }
 
     /// 사람 메시지 하나 — 실행 → 기록(한 트랜잭션) → 답 보내기. 기록이 실패하면 성공 답을 보내지 않는다.
-    async fn process(&self, conversation_id: i64, asked: Message) {
+    async fn process(self: &Arc<Self>, conversation_id: i64, asked: Message) {
+        if asked.author == Author::Context {
+            return self.run_context(conversation_id, asked).await;
+        }
         // 실행 문 — 먼저 줄을 서고, 차례가 온 뒤의 대화 · 에이전트 · 멈춤 상태로 판단한다(기다리는 동안 바뀐 것을 따른다).
         let ticket = self.admit(conversation_id, &asked).await;
         let loaded = {
@@ -2687,6 +2788,7 @@ impl Chat {
             run.as_ref().map(|r| r.model.clone()),
             run.as_ref().map(|r| r.effort.clone()),
         );
+        let ctx = run.as_ref().and_then(|r| r.out.ctx_tokens);
         // 상대의 실행 요청이면 답(`reply`), 이 PC 사람의 실행 요청이면 상대 이력에 미러(`post`).
         let reply_req = |sent: String, lc: Option<i64>, ok: bool| {
             if asked.mine {
@@ -2705,6 +2807,7 @@ impl Chat {
                     model: model.clone(),
                     effort: effort.clone(),
                     request: false,
+                    ctx,
                 }
             } else {
                 Request::Reply {
@@ -2718,6 +2821,7 @@ impl Chat {
                     lc,
                     model: model.clone(),
                     effort: effort.clone(),
+                    ctx,
                 }
             }
         };
@@ -2740,6 +2844,16 @@ impl Chat {
             Ok((id, staged)) => (Ok(id), staged),
             Err(e) => (Err(e), None),
         };
+        // 자동 압축(#1m) — 이 PC 에서 돈 세션이 문턱을 넘었다. 구분선 글은 대화 줄 맨 앞에 서서 다음 글보다 먼저 처리된다.
+        if recorded.is_ok() && ok && ctx.is_some_and(|n| n >= an_core::settings::AUTO_COMPACT_AT) {
+            let on = an_core::settings::auto_compact(&self.db()).unwrap_or_else(|e| {
+                log::warn!("자동 압축 설정 읽기 실패 — 켜짐으로 본다: {e}");
+                true
+            });
+            if on && let Err(e) = self.request_context(&conv, "auto_compact") {
+                log::warn!("대화 {} 자동 압축 요청 실패: {e}", conv.uuid);
+            }
+        }
         if let Err(e) = &recorded {
             log::error!("대화 {} 기록 실패: {e}", conv.uuid);
             let _ = chat::set_state(&self.db(), asked.id, State::Error);
@@ -2852,6 +2966,7 @@ impl Chat {
                 model: msg.model.clone(),
                 effort: msg.effort.clone(),
                 request: false,
+                ctx: msg.ctx_tokens,
             };
             let sent = self.ship(conv, Some(msg.id), RELAY_LAST, &req).await;
             if !matches!(sent, Ok(Shipped::Answered(Response::Ok) | Shipped::Kept)) {
@@ -3028,10 +3143,22 @@ impl Chat {
                 }
             })
         });
+        let mut text = self.with_notes(conv, asked).map_err(Failure::record)?;
+        // 압축 뒤 첫 실행(#1m) — 새 세션 앞에 요약을 한 번 붙인다(세션을 남기면 `record` 가 지운다).
+        if !resumed {
+            let seed = chat::ctx_seed(&self.db(), conv.id, asked.agent.as_deref().unwrap_or(""))
+                .map_err(Failure::record)?;
+            if let Some(seed) = seed {
+                text = format!(
+                    "[이전 대화 요약 — 컨텍스트 압축, 실행 요청 아님]\n<대화 요약>\n{}\n</대화 요약>\n\n{text}",
+                    unframe(&seed)
+                );
+            }
+        }
         let input = RunInput {
             agent: agent.clone(),
             session,
-            text: self.with_notes(conv, asked).map_err(Failure::record)?,
+            text,
             model: model.clone(),
             effort: effort.clone(),
             steps,
@@ -3133,6 +3260,316 @@ impl Chat {
         Ok(text)
     }
 
+    /// 컨텍스트 압축 · 비우기(#1m, 화면) — `op` = `compact` · `clear`. 이 PC 에 그 대화 세션이 있으면(받은 대화 · 자동 왕복) 대화 줄에서 처리하고,
+    /// 상대 PC 에 있을 수 있으면(보낸 대화 · 자동 왕복) 상대에 요청한다(꺼져 있으면 보관했다 보낸다). 진행 중인 압축 · 비우기가 있으면 거절.
+    pub fn context(self: &Arc<Self>, conversation_id: i64, op: &str) -> io::Result<Message> {
+        if !matches!(op, "compact" | "clear") {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "op 는 compact · clear",
+            ));
+        }
+        let conv = chat::by_id(&self.db(), conversation_id)
+            .map_err(db_err)?
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "없는 대화"))?;
+        self.request_context(&conv, op)
+    }
+
+    /// 구분선 글 + (이 PC 처리면) 대화 줄 깨우기 + (상대 쪽이면) 요청 줄 — 한 트랜잭션. 자동 압축도 여기로.
+    fn request_context(self: &Arc<Self>, conv: &Conversation, op: &str) -> io::Result<Message> {
+        let local = conv.dir == Dir::In || conv.relay.is_some();
+        let remote = conv.dir == Dir::Out || conv.relay.is_some();
+        let marker = {
+            let db = self.db();
+            let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+            // 수동은 실행 대기 · 실행 중 글이 있으면 거절 — 앞 요청이 기대한 맥락을 먼저 비우지 않게(라운드 2). 자동 압축은 방금 끝난 실행 뒤라 줄 앞으로.
+            let manual = op != "auto_compact";
+            let busy = chat::messages(&tx, conv.id)
+                .map_err(db_err)?
+                .into_iter()
+                .any(|m| {
+                    let ctx = m.author == Author::Context
+                        && matches!(m.state, State::Queued | State::Running | State::Sent);
+                    let run = manual && m.exec && matches!(m.state, State::Queued | State::Running);
+                    ctx || run
+                });
+            if busy {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    "압축 · 비우기 · 실행이 진행 중 — 끝난 뒤에",
+                ));
+            }
+            let state = if local { State::Queued } else { State::Sent };
+            let marker = chat::add_context(&tx, conv.id, &new_uuid(), op, state, true, local)
+                .map_err(db_err)?;
+            if remote {
+                let req = Request::Context {
+                    conv: conv.uuid.clone(),
+                    msg: marker.uuid.clone(),
+                    op: op.into(),
+                    text: String::new(),
+                };
+                let frame = serde_json::to_string(&req).map_err(io::Error::other)?;
+                outbox::add(
+                    &tx,
+                    conv.peer_id,
+                    Some(conv.id),
+                    Some(marker.id),
+                    CTX,
+                    &frame,
+                    None,
+                    "pending",
+                )
+                .map_err(db_err)?;
+            }
+            tx.commit().map_err(db_err)?;
+            marker
+        };
+        if local {
+            self.wake(conv.id);
+        }
+        if remote {
+            self.kick(conv.peer_id);
+        }
+        Ok(marker)
+    }
+
+    /// 상대가 보낸 컨텍스트 프레임(#1m) — 요청(`compact` · `auto_compact` · `clear`)은 내 세션을 대화 줄에서 처리하고 다시 넘기지 않는다. 결과
+    /// (`done` · `failed`)는 내가 상대에 요청한 구분선 글에 적는다.
+    fn inbound_context(
+        self: &Arc<Self>,
+        peer: &Peer,
+        conv: String,
+        msg: String,
+        op: String,
+        text: String,
+    ) -> io::Result<Response> {
+        if !an_net::proto::CTX_OPS.contains(&op.as_str()) || text.len() > MAX_TEXT {
+            return Ok(Response::error("bad_request"));
+        }
+        let db = self.db();
+        let Some(c) = chat::find(&db, &conv, peer.id).map_err(db_err)? else {
+            return Ok(Response::error("unknown"));
+        };
+        let found = chat::message_by_uuid(&db, &msg).map_err(db_err)?;
+        match op.as_str() {
+            "done" | "failed" => {
+                let Some(m) =
+                    found.filter(|m| m.conversation_id == c.id && m.author == Author::Context)
+                else {
+                    return Ok(Response::error("unknown"));
+                };
+                // 이 PC 도 처리한 글(자동 왕복) — 상대 실패는 숨기지 않고 `peer_{코드}` 로(내 처리 결과 · 상태는 그대로, 라운드 1).
+                if m.exec {
+                    if op == "failed" {
+                        chat::set_refused(
+                            &db,
+                            m.id,
+                            Some(&peer_code(an_net::proto::clean_code(&text))),
+                        )
+                        .map_err(db_err)?;
+                    }
+                    return Ok(Response::Ok);
+                }
+                if m.state != State::Sent {
+                    return Ok(Response::Ok);
+                }
+                if op == "done" {
+                    chat::finish_context(&db, m.id, State::Done, &text).map_err(db_err)?;
+                } else {
+                    let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+                    chat::finish_context(&tx, m.id, State::Error, "").map_err(db_err)?;
+                    chat::set_refused(&tx, m.id, Some(an_net::proto::clean_code(&text)))
+                        .map_err(db_err)?;
+                    tx.commit().map_err(db_err)?;
+                }
+                Ok(Response::Ok)
+            }
+            _ => {
+                if found.is_some() {
+                    return Ok(Response::Ok); // 같은 요청 재전송
+                }
+                // 내게 그 대화 세션이 없는 대화(내가 보낸 대화 · 자동 왕복 아님) — 처리할 것이 없다.
+                if c.dir == Dir::Out && c.relay.is_none() {
+                    return Ok(Response::error("bad_request"));
+                }
+                chat::add_context(&db, c.id, &msg, &op, State::Queued, false, true)
+                    .map_err(db_err)?;
+                drop(db);
+                self.wake(c.id);
+                Ok(Response::Ok)
+            }
+        }
+    }
+
+    /// 상대에 보낸 컨텍스트 요청이 거절 · 포기됐다(#1m) — 이 PC 가 처리하지 않는 글만 실패로(자동 왕복이면 내 처리 결과가 그대로).
+    fn context_refused(&self, msg_id: i64, code: &str) {
+        let db = self.db();
+        match chat::message_by_id(&db, msg_id) {
+            Ok(Some(m)) if !m.exec && m.state == State::Sent => {
+                let _ = chat::finish_context(&db, m.id, State::Error, "");
+                let _ = chat::set_refused(&db, m.id, Some(code));
+            }
+            Ok(Some(m)) if m.exec => {
+                let _ = chat::set_refused(&db, m.id, Some(&peer_code(code)));
+            }
+            Ok(_) => log::info!("컨텍스트 요청 {msg_id} 상대 거절({code}) — 이미 끝난 글"),
+            Err(e) => log::warn!("컨텍스트 요청 {msg_id} 읽기 실패: {e}"),
+        }
+    }
+
+    /// 대화 줄의 구분선 글 처리(#1m) — 비우기는 세션만, 압축은 세션마다 요약 실행 뒤 세션을 비우고 요약을 다음 첫 실행용으로 남긴다. 세션 비우기 ·
+    /// 요약 남기기 · 구분선 끝 · (상대가 요청한 글이면) 결과 회신 줄은 한 트랜잭션 — 사이에 꺼져도 요청자가 결과를 영영 못 받는 일이 없다(라운드 1).
+    async fn run_context(&self, conversation_id: i64, marker: Message) {
+        let conv = match chat::by_id(&self.db(), conversation_id) {
+            Ok(Some(c)) => c,
+            Ok(None) => return log::error!("대화 {conversation_id} 를 찾지 못했다"),
+            Err(e) => return log::error!("대화 {conversation_id} 읽기 실패: {e}"),
+        };
+        let op = marker.ctx_op.clone().unwrap_or_default();
+        let result: Result<Vec<Seed>, &'static str> = if marker.state == State::Running {
+            Err(CTX_FAILED) // 앱이 도중에 끝났다 — 세션은 그대로(비우기 · 요약 기록은 끝 트랜잭션에서만)
+        } else {
+            let _ = chat::set_state(&self.db(), marker.id, State::Running);
+            if op == "clear" {
+                Ok(Vec::new())
+            } else {
+                self.compact(&conv, &marker).await
+            }
+        };
+        let summary = match &result {
+            Ok(seeds) => summary_text(&conv, seeds),
+            Err(_) => String::new(),
+        };
+        let reply = (!marker.mine).then(|| Request::Context {
+            conv: conv.uuid.clone(),
+            msg: marker.uuid.clone(),
+            op: if result.is_ok() { "done" } else { "failed" }.into(),
+            text: match result {
+                Ok(_) => summary.clone(),
+                Err(code) => code.to_string(),
+            },
+        });
+        let saved = (|| -> io::Result<()> {
+            let db = self.db();
+            let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+            match &result {
+                Ok(seeds) => {
+                    chat::clear_sessions(&tx, conv.id, false).map_err(db_err)?;
+                    for s in seeds {
+                        // 요약 실행 뒤 그 에이전트 폴더가 바뀌었거나 지웠다 다시 등록됐으면(세대가 다르다) 옛 요약을 남기지 않는다(라운드 1).
+                        let same = agents::by_name(&tx, &s.agent)
+                            .map_err(db_err)?
+                            .is_some_and(|a| a.uid == s.uid);
+                        if same {
+                            chat::set_ctx_seed(&tx, conv.id, &s.key, &s.text).map_err(db_err)?;
+                        }
+                    }
+                    chat::finish_context(&tx, marker.id, State::Done, &summary).map_err(db_err)?;
+                }
+                Err(code) => {
+                    chat::finish_context(&tx, marker.id, State::Error, "").map_err(db_err)?;
+                    chat::set_refused(&tx, marker.id, Some(code)).map_err(db_err)?;
+                }
+            }
+            if let Some(req) = &reply {
+                let frame = serde_json::to_string(req).map_err(io::Error::other)?;
+                outbox::add(
+                    &tx,
+                    conv.peer_id,
+                    Some(conv.id),
+                    Some(marker.id),
+                    CTX_DONE,
+                    &frame,
+                    None,
+                    "pending",
+                )
+                .map_err(db_err)?;
+            }
+            tx.commit().map_err(db_err)
+        })();
+        if let Err(e) = saved {
+            log::error!("대화 {} 컨텍스트 기록 실패: {e}", conv.uuid);
+            let _ = chat::set_state(&self.db(), marker.id, State::Error);
+            return;
+        }
+        if reply.is_some() {
+            self.kick(conv.peer_id);
+        }
+    }
+
+    /// 압축 — 대화 세션마다 그 세션을 이어 요약 실행(실행 문을 지난다). 하나라도 실패하면 아무것도 바꾸지 않는다(세션 그대로). 사라진 세션은 건너뛴다.
+    /// 기록(세션 비우기 · 요약)은 부른 쪽 끝 트랜잭션이 한다.
+    async fn compact(
+        &self,
+        conv: &Conversation,
+        marker: &Message,
+    ) -> Result<Vec<Seed>, &'static str> {
+        let sessions = chat::sessions(&self.db(), conv).map_err(|e| {
+            log::warn!("대화 {} 세션 읽기 실패: {e}", conv.uuid);
+            CTX_FAILED
+        })?;
+        if sessions.is_empty() {
+            return Ok(Vec::new());
+        }
+        let (mut ticket, ahead) = self.gate.enter(marker.id);
+        if ahead.is_some() {
+            ticket.ready().await;
+        }
+        let mut seeds = Vec::new();
+        for (name, session) in sessions {
+            // 대화 에이전트 세션 — 받은 대화는 대화 에이전트, 자동 왕복을 연 쪽은 내 왕복 에이전트.
+            let who = name
+                .clone()
+                .unwrap_or_else(|| match (&conv.dir, &conv.relay) {
+                    (Dir::Out, Some(r)) => r.agent.clone(),
+                    _ => conv.agent.clone(),
+                });
+            let (agent, opts) = {
+                let db = self.db();
+                let agent = agents::by_name(&db, &who).ok().flatten();
+                let peer = an_core::peers::by_id(&db, conv.peer_id).ok().flatten();
+                (agent, an_core::run_opts::resolve(&db, peer.as_ref()).ok())
+            };
+            let (Some(agent), Some((model, effort))) = (agent, opts) else {
+                log::warn!(
+                    "대화 {} 압축 — 에이전트 {who} 없음 · 실행 옵션 읽기 실패",
+                    conv.uuid
+                );
+                return Err(CTX_FAILED);
+            };
+            if an_core::paths::agent_folder_problem(std::path::Path::new(&agent.folder)).is_some() {
+                return Err(CTX_FAILED);
+            }
+            let uid = agent.uid.clone();
+            let input = RunInput {
+                agent,
+                session: Session::Resume(session),
+                text: SUMMARY_PROMPT.to_string(),
+                model,
+                effort,
+                steps: StepSink::default(),
+            };
+            let run = self.run.clone();
+            match tokio::task::spawn_blocking(move || run(input)).await {
+                Ok(Ok(out)) if !out.is_error && !out.text.trim().is_empty() => seeds.push(Seed {
+                    key: name.unwrap_or_default(),
+                    agent: who,
+                    uid,
+                    text: fit_to(out.text, MAX_SUMMARY),
+                }),
+                Ok(Err(e)) if crate::runner::session_missing(&e) => {
+                    log::info!("대화 {} 압축 — 사라진 세션 건너뜀: {e}", conv.uuid);
+                }
+                other => {
+                    log::warn!("대화 {} 압축 요약 실패: {other:?}", conv.uuid);
+                    return Err(CTX_FAILED);
+                }
+            }
+        }
+        Ok(seeds)
+    }
+
     /// 세션 · 사람 메시지 상태 · 에이전트 답(원 요청 · 실행 정보)을 한 트랜잭션으로. `run` = 끝난 실행(실패면 없음).
     /// 돌려주는 값: 답 메시지 id.
     fn record(
@@ -3153,6 +3590,7 @@ impl Chat {
                     Some(name) => chat::set_agent_session(&tx, conv.id, name, &ran.out.session)?,
                     None => chat::set_session(&tx, conv.id, &ran.out.session)?,
                 }
+                chat::drop_ctx_seed(&tx, conv.id, asked.agent.as_deref().unwrap_or(""))?;
             }
         }
         chat::set_state(&tx, asked.id, state)?;
@@ -3171,6 +3609,7 @@ impl Chat {
         if asked.agent.is_some() {
             chat::set_agent(&tx, reply.id, asked.agent.as_deref())?;
         }
+        chat::set_ctx_tokens(&tx, reply.id, run.and_then(|r| r.out.ctx_tokens))?;
         // 답을 보낼 행(#1c) — 답과 같은 트랜잭션.
         let staged = match staging {
             Some((kind, frame)) => {

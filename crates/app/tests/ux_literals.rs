@@ -596,11 +596,53 @@ fn icons_settings_literals() {
     ] {
         assert!(CSS.contains(rule), "{rule}");
     }
-    assert!(!CSS.contains("color-mix("), "macOS 12 Safari 15 에 없는 color-mix 안 씀");
+    assert!(
+        !CSS.contains("color-mix("),
+        "macOS 12 Safari 15 에 없는 color-mix 안 씀"
+    );
     assert_eq!(
-        CSS.matches("
-.ico { ").count(),
+        CSS.matches(
+            "
+.ico { "
+        )
+        .count(),
         1,
         "아이콘 크기 정의는 한 곳(16px)"
     );
+}
+
+/// 컨텍스트 표시 · 압축 · 비우기(#1m) — 대화 머리 단추 · 메뉴 · 구분선 · 설정 자동 압축.
+#[test]
+fn context_literals() {
+    for label in [
+        r#"<button id="ctx_btn" type="button" class="tool-btn ctx-btn" aria-haspopup="menu""#,
+        r#"<span class="ico ico-gauge" aria-hidden="true"></span><span id="ctx_text">컨텍스트 알 수 없음</span>"#,
+        r#"<label for="auto_compact">자동 압축 — 컨텍스트 80% 넘으면</label>"#,
+        r#"<input type="checkbox" id="auto_compact">"#,
+    ] {
+        assert!(INDEX.contains(label), "{label}");
+    }
+    for label in [
+        "압축 — 요약 후 새 세션",
+        "비우기 — 세션만, 이력은 그대로",
+        "자동 압축(80%)",
+        "상대가 0.5.0 이상이어야 합니다",
+        "export const CONTEXT_LIMIT = 1_000_000;",
+    ] {
+        assert!(VIEW.contains(label), "{label}");
+    }
+    for label in [
+        "/api/conversations/${conv.id}/context",
+        "\"auto_compact\",",
+        "m.author === \"context\" ? contextEl(m) : messageEl(conv, m)",
+    ] {
+        assert!(APP.contains(label), "{label}");
+    }
+    for rule in [
+        ".ctx-break {",
+        ".ctx-btn[data-level=\"warn\"]",
+        ".ctx-btn[data-level=\"high\"]",
+    ] {
+        assert!(CSS.contains(rule), "{rule}");
+    }
 }
