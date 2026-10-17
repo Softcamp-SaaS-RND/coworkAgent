@@ -3,7 +3,7 @@
 > 절차·운영 문서 — 모듈 매뉴얼 형식(개요 / 공개 계약 / 사용 예)의 예외다([매뉴얼 등록 규약](../README.md)).
 > 모듈별 API · 계약의 정본은 [an_core](an_core.md) · [an_net](an_net.md) · [an_agent](an_agent.md) · [an_app](an_app.md) 이고, 여기는
 > 그것들이 **실행 중에 어떻게 맞물리는지**를 적는다 — 어떤 프로세스가 생기고, 어떤 서비스가 무슨 역할을 하며, `claude -p` 헤드리스
-> 대화의 세션 · 저장소 · 흐름이 어떻게 이어지는가. 결정 번호(D · S)는 [masterPlan](../../masterPlan.md). 수치 · 경로는 스키마 19 ·
+> 대화의 세션 · 저장소 · 흐름이 어떻게 이어지는가. 결정 번호(D · S)는 [masterPlan](../../masterPlan.md). 수치 · 경로는 스키마 20 ·
 > 검증 환경 Windows 11 · Claude Code 2.1.296 기준. 쓰는 사람용 안내는 [사용자 가이드](../user/user-guide.md).
 
 ## 1. 한눈에 보기
@@ -88,10 +88,10 @@ python tools/check_crates.py
 
 | 프로세스 | 언제 생기나 | 수명 · 개수 | 하는 일 |
 |---|---|---|---|
-| `coworkAgent.exe`(인자 없음 · 환경 변수 `COWORKAGENT_SUPERVISED` 없음) — **감시 프로세스**(#1e) | 사용자 · 로그인 자동 실행 | 자식이 끝날 때까지 | 같은 실행 파일을 자식(주 인스턴스 또는 보조 실행)으로 띄워 기다린다. 자식이 0 으로 끝나면 함께 끝, 아니면 1초 뒤 다시(변수 = 다시 띄운 횟수) — 60초 안 3번이면 멈추고 스스로 오류 트레이. 로거 · DB · 잠금 없음 · 자식을 Job 에 넣지 않음 |
-| `coworkAgent.exe`(인자 없음 · 감시의 자식) — **주 인스턴스** | 감시 프로세스가 띄움 | OS 사용자당 1개(`instance.lock`), 트레이 "종료" 까지 | 트레이 · 로컬 웹 서버 · 피어 노드 · 대화 엔진 · 실행기를 모두 담는다. 시작만으로는 브라우저를 열지 않는다(트레이 "열기") |
+| `coworkAgent.exe`(인자 없음 · 환경 변수 `COWORKAGENT_SUPERVISED` 없음) — **감시 프로세스**(#1e) | 사용자 · 로그인 자동 실행 · `start` · `open`(8.10) | OS 사용자당 1개(`supervisor.lock`, #1n), 자식이 끝날 때까지 | 같은 실행 파일을 자식(주 인스턴스 또는 보조 실행)으로 띄워 기다린다. 자식이 0 으로 끝나면 함께 끝, 시작 실패 코드 3(`START_FAILED`)이면 다시 띄우지 않음, 그 밖 1초 뒤 다시(변수 = 다시 띄운 횟수) — 60초 안 3번이면 멈춤. 시작 실패 · 멈춤 = 트레이 모드는 오류 트레이(잠금 안 — 하나), 트레이 없는 모드는 사유 파일 · 코드 3. 잠금을 못 잡으면 이미 떠 있는 것 — 트레이 없는 모드 요청은 0, 인자 없는 실행은 화면 넘기기(실패 = 사유 파일 열기 · 1). 로거 · DB 없음 · 자식을 Job 에 넣지 않음 |
+| `coworkAgent.exe`(인자 없음 · 감시의 자식) — **주 인스턴스** | 감시 프로세스가 띄움 | OS 사용자당 1개(`instance.lock`), 트레이 "종료" · `/api/quit` · (트레이 없는 모드) 부모 끝까지 | 트레이 · 로컬 웹 서버 · 피어 노드 · 대화 엔진 · 실행기를 모두 담는다. 시작만으로는 브라우저를 열지 않는다(트레이 "열기"). 감시가 `COWORKAGENT_PARENT` 를 물려주면 트레이 없는 모드(8.10). 시작 실패는 사유 파일 + 코드 3(오류 트레이는 감시가) |
 | `coworkAgent.exe`(인자 없음) — 보조 실행 | 주 인스턴스가 이미 있을 때 다시 실행 | 보통 수 초(최악 약 53초) | `instance.json` 을 읽어 `POST /api/open`(브라우저 열기)을 넘기고 끝 — 300 ms 간격 최대 10번, 요청당 5초 |
-| `coworkAgent.exe <명령>` — CLI | 사용자 · 사용자 AI 에이전트가 `peers` · `ask` · `wait` · `status` · `history` | 명령 하나(`ask` · `wait` 는 앱의 트랜잭션 판정 — 답 · 실패 · 멈춤까지, 안전판 24시간 — 8.7) | 트레이 · 잠금 · 로거 없이 주 인스턴스의 로컬 API 를 부르고 종료 코드로 끝 |
+| `coworkAgent.exe <명령>` — CLI | 사용자 · 사용자 AI 에이전트가 `peers` · `ask` · `wait` · `status` · `history`, 부모 도구가 `start` · `open` · `stop`(8.10 — 감시를 떼어 띄운다) | 명령 하나(`ask` · `wait` 는 앱의 트랜잭션 판정 — 답 · 실패 · 멈춤까지, 안전판 24시간 — 8.7) | 트레이 · 잠금 · 로거 없이 주 인스턴스의 로컬 API 를 부르고 종료 코드로 끝 |
 | `claude --version` | `claude -p` 실행 직전마다 | 30초 상한 | 버전 확인 — 2.1.267(`MIN_CLAUDE`) 미만이면 실행하지 않는다 |
 | `claude -p …` | 대기열의 실행 요청 1건마다 | 끝날 때까지 · 30분 상한(`RUN_TIMEOUT`) | 에이전트 폴더(cwd)에서 답을 만든다. 콘솔 창 없음(`CREATE_NO_WINDOW`) |
 | `claude` 의 자손 | 도구 실행이 띄울 때 | `claude` 와 한 묶음 | Windows 는 kill-on-close Job Object, macOS 는 프로세스 그룹 — 끝나거나 시간 초과면 묶음째 종료 |
@@ -132,7 +132,7 @@ flowchart TB
 | 서비스 | 위치 · 주소 · 주기 | 역할 | 코드 |
 |---|---|---|---|
 | 트레이 | 메인 스레드 | 메뉴 "열기" · "종료". 새 요청 건수를 주황 점 · 툴팁 "coworkAgent — 새 요청 N건" 으로. 시작 실패면 오류 모드(붉은 아이콘 · "오류 보기" · "종료") | `app::tray` |
-| 로컬 웹 서버 | `127.0.0.1:{임의 포트}` | 웹UI 정적 파일 · `/api/*` · SSE `/api/events` · 핸드오프 `POST /api/open`. 실행마다 새 토큰, Host · Origin 검사(D9) | `app::server` · `*_api` |
+| 로컬 웹 서버 | `127.0.0.1:{임의 포트}` | 웹UI 정적 파일 · `/api/*` · SSE `/api/events` · 핸드오프 `POST /api/open` · 종료 `POST /api/quit`(#1n). 실행마다 새 토큰, Host · Origin 검사(D9) | `app::server` · `*_api` |
 | 피어 수신 | `0.0.0.0:47100`(사용 중이면 OS 임의 포트) | 상대 요청 1건 = 연결 1개. TLS 1.3 상호 인증(서로 ed25519 키) → 인가(페어링 여부) → 처리기. 연결당 3초 · 동시 32 · 출처 IP 당 4 | `net::node::serve` |
 | 실행 문 | `Chat` 안 | PC 전체 `claude -p` 동시 실행 상한(기본 2 · 1 ~ 8, 설정 `max_runs`) — 넘으면 닿은 순서로 대기 · 상대에 `Progress` 알림(#1b) | `agent::gate` · `chat::admit` |
 | 피어 발신 | 상대의 `peers.addr` | 요청마다 새 TCP + TLS 연결, 상대 키 고정, 요청 · 응답 전체 10초 상한. 응답을 받으면 그 상대 `peers.seen_at` 갱신 | `net::node::send` |
@@ -141,20 +141,20 @@ flowchart TB
 | 대화 엔진 | 피어 처리기 + 대화별 작업 | 받은 요청 검증 · 저장(= 대기열 등록) · 대화별 순차 실행 · 답 보관 · 자동 왕복 · 완료 동기화 · 멘션 · 상태 질의 · CLI 트랜잭션. 피어 처리기는 막히지 않는다 — 실행은 대기열로 | `agent::chat::Chat` |
 | 실행기 | blocking 풀 | `claude -p` 인자 · 표준 입력 · 시간 제한 · 출력(stream-json 줄 — 단계 요약을 세고 마지막 `result` 줄만 남김) 읽기 | `agent::runner` |
 | 알림 | 노드 · 대화 엔진 이벤트 | 설정이 허락하면 건수 +1 → 트레이 표시 · SSE → 브라우저 알림(기본 꺼짐) | `app::notify` |
-| 감시 · 자동 시작 | 감시 = 별도 프로세스(3.1), 자동 시작 = HKCU `Run` 값 `coworkAgent` · macOS `com.coworkagent.plist` | 비정상 종료면 다시 띄움 · 로그인 때 실행. 다시 띄워도 남은 일은 `recover`(6.6)가 이어 간다 | `app::watchdog` · `app::autostart` |
+| 감시 · 자동 시작 | 감시 = 별도 프로세스(3.1), 자동 시작 = HKCU `Run` 값 `coworkAgent` · macOS `com.coworkagent.plist` | 비정상 종료면 다시 띄움 · 로그인 때 실행. 다시 띄워도 남은 일은 `recover`(6.6)가 이어 간다. 감시 잠금 `supervisor.lock`(#1n) | `app::watchdog` · `app::autostart` |
 | 로그 | `logs\coworkAgent.log` | 1 MiB 를 넘기 전에 `.1` 로 회전(1개 보관) | `core::log_file` |
-| 단일 인스턴스 | `instance.lock` · `instance.json` | OS 파일 잠금(프로세스가 죽으면 OS 가 푼다) · 핸드오프 정보(포트 · 토큰) | `core::instance` |
+| 단일 인스턴스 | `instance.lock` · `instance.json` · `instance.pid` | OS 파일 잠금(프로세스가 죽으면 OS 가 푼다) · 핸드오프 정보(포트 · 토큰) · `stop` 의 강제 종료용 PID | `core::instance` |
 
 웹UI 는 5초마다 목록 · 대화를 다시 읽고(`setInterval`), 알림만 SSE 로 받는다.
 
 ### 4.1 시작 · 종료 순서 (`crates/app/src/main.rs`)
 
 1. 인자가 있으면 CLI(`cli::main`)로 끝낸다 — 주 인스턴스가 되지 않는다.
-   `COWORKAGENT_SUPERVISED` 가 없으면 감시 프로세스(`watchdog::supervise(spawn_app)`)로 돌고 끝낸다(3.1) — 아래는 그 자식.
-2. 트레이 객체를 만든다(메인 스레드).
+   `COWORKAGENT_SUPERVISED` 가 없으면 감시 프로세스(`supervisor.lock` → `watchdog::supervise(spawn_app)`)로 돌고 끝낸다(3.1) — 아래는 그 자식.
+2. 트레이 객체를 만든다(메인 스레드). 트레이 없는 모드(`COWORKAGENT_PARENT`)면 만들지 않고 종료 채널(`mpsc`)을 둔다 — 부모가 이미 없으면 여기서 끝.
 3. 데이터 루트(D15) → 개명 전 `agentNetwork` 데이터 이어받기 → 폴더 · `logs` 만들기 → 파일 로거(패닉 훅 포함 — "패닉: 메시지 — 파일:줄").
    감시가 다시 띄운 자식이면 "감시 프로세스가 다시 띄움(n번째)".
-4. `instance.lock` 잠금 — 못 잡으면 보조 실행(핸드오프 후 종료).
+4. `instance.lock` 잠금 — 못 잡으면 보조 실행(핸드오프 후 종료). 잡으면 `instance.pid`.
 5. DB 열기(스키마 올리기 · 올리기 전 `.v{N}.bak`) → 신원 키 읽기 · 없으면 생성.
 6. tokio 런타임 · 웹 포트(`127.0.0.1:0`) · 실행마다 새 토큰 · 피어 포트(47100, 사용 중이면 임의).
 7. 피어 노드 · 알림 · 대화 엔진 — 셋이 같은 DB 파일을 **각자 연결**로 연다(`busy_timeout` 5초). 실행기는 `claude` 를 실행마다 찾는다
@@ -162,8 +162,9 @@ flowchart TB
 7.1 릴리스 빌드만: 자동 시작 훅(`autostart::sync`)을 알림에 설치하고, 설정 `autostart` 값으로 맞춘다 — 켜짐 = 등록 · 경로 고침, 꺼짐 = 지움(지난 실행에서 어긋난 것도 고친다, 실패는 `warn`).
 8. `chat.attach()`(노드 요청 처리기 · `Ping` 받기 알림) → `chat.recover()`(남은 대기열 · 남은 outbox 의 상대 줄을 지금 다시 · 7일 지난 실패
    보관 지움 — 6.6).
-9. 피어 수신 루프 · 시작 알림(`announce`) · 웹 서버를 띄우고 `instance.json` 을 쓴다 → 트레이 루프.
-10. 트레이 "종료": 런타임 정지(1초) → `instance.json` 삭제 → 잠금 해제(마지막 — 그 사이 뜬 새 프로세스는 보조 실행으로 남는다).
+9. 피어 수신 루프 · 시작 알림(`announce`) · 웹 서버를 띄우고 `instance.json` 을 쓴다 → 트레이 루프(트레이 없는 모드는 부모 감시 스레드 + 종료 채널 대기).
+10. 트레이 "종료" · `/api/quit` · 부모 끝: 런타임 정지(1초) → `instance.json` · `instance.pid` 삭제 → 잠금 해제(마지막 — 그 사이 뜬 새 프로세스는 보조 실행으로 남는다).
+- 2 ~ 9 의 실패는 사유 파일(`write_start_error`) + 종료 코드 3 — 감시가 다시 띄우지 않고 오류를 보인다(3.1).
 
 ## 5. 통신 구성 · 피어 프로토콜
 
@@ -187,13 +188,13 @@ PC 사이는 앱끼리 직접 통신한다.
 - **프레임** = 4바이트 big-endian 길이 + JSON(최대 64 KiB), 글 본문은 16 KiB(`MAX_TEXT`). 요청 1건에 응답 1건, 그리고 연결을 닫는다.
 - **요청**(`proto::Request`): 페어링 `Hello` · `Approve` · `Remove` · 접속 `Ping` · 대화 `Agents` · `Message` · `Reply` · `Post` ·
   `Relay` · `ReqState`(요청 상태 — #1d) · `Progress`(받는 쪽 차례 · 단계 요약) · `Status`(보낸 쪽 상태 질의) · `Edit` · `Delete`(이력 정리 — #1f) ·
-  `Context`(컨텍스트 압축 · 비우기 요청 · 결과 — #1m). 답 `Reply` · `Post` 는 `ctx`(그 답 세션의 창 사용량)를 싣는다. **응답**: `Hello` · `Ok` · `Pong{focus, ctx}`(`ctx` = `Context` 를 앎) ·
+  `Context`(컨텍스트 압축 · 비우기 요청 · 결과 — #1m) · `Share` · `SharePost` · `ShareDelete` · `ShareEnd` · `ShareNotice`(공유 대화 — #1o, 8.11). 답 `Reply` · `Post` 는 `ctx`(그 답 세션의 창 사용량)를 싣는다. **응답**: `Hello` · `Ok` · `Pong{focus, ctx, share}`(`ctx` = `Context` · `share` = 공유 프레임을 앎) ·
   `Agents{names}` · `Status{state, ahead}` · `Error{code}`. 필드 정본은 [an_net](an_net.md).
 - 미페어링 상대는 `Hello` · `Approve` · `Remove` 만. 대화 요청은 페어링(`my_ok ∧ their_ok`)된 키만 처리기로 간다(SC2).
 - 수신 제한 — 연결당 3초 · 동시 32 · 출처 IP 당 4.
 - 상대가 준 오류 코드는 영소문자 · `_` 1 ~ 32 자만 남긴다(그 밖 `unknown`) — 원격 문자열은 신뢰하지 않는 입력.
 - 응답 코드 `retry` — 받는 쪽이 처리 중 오류(DB 잠금 등)로 잠시 처리하지 못했다. 거절이 아니다 — 보낸 쪽은 전송 오류처럼 다시 보낸다.
-- **outbox 를 거치는 프레임**: `Message` · `Post` · `Reply` · `ReqState` · `Edit` · `Delete` · `Progress` · `Relay{on: false}`(받은 쪽 멈춤 알림) · `Context`
+- **outbox 를 거치는 프레임**: `Message` · `Post` · `Reply` · `ReqState` · `Edit` · `Delete` · `Progress` · `Relay{on: false}`(받은 쪽 멈춤 알림) · 공유 프레임 전부(#1o — `Pong.share` 를 같은 방식으로 묻는다) · `Context`
   (#1m — 바로 보내지 않고 줄이 보낸다. 보내기 전 `Ping` 으로 `Pong.ctx` 를 묻는다: 0.4.0 은 모르는 `type` 을 읽지 못해 응답 없이 연결을 끊으므로, 모르면 보내지 않고
   `unsupported` 로 정산 · 닿지 않으면 보통 줄처럼 다시). **바로 보내는 것**: `Hello` ·
   `Approve` · `Remove` · `Agents` · `Ping` · `Status` · `Relay{on: true}`(연 쪽 재개) — 사람이 화면에서 결과를 바로 본다.
@@ -345,31 +346,37 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 
 ```text
 %LOCALAPPDATA%\coworkAgent\              macOS: ~/Library/Application Support/coworkAgent/
-├── coworkAgent.db                      SQLite — 연결 · 에이전트 · 대화 · 글 · 설정 · 보내기 보관 · CLI 트랜잭션(스키마 19)
+├── coworkAgent.db                      SQLite — 연결 · 에이전트 · 대화 · 글 · 설정 · 보내기 보관 · CLI 트랜잭션 · 관람자(스키마 20)
 ├── coworkAgent.db.v{N}.bak             스키마 N 에서 올리기 직전 사본(VACUUM INTO, 버전마다 한 번)
 ├── identity.key                        설치 신원 ed25519(PKCS#8) — 리포 · 로그 · UI 로 내보내지 않는다
 ├── instance.lock                       단일 인스턴스 잠금
 ├── instance.json                       실행 중에만 — {"port":…, "token":"…"}(핸드오프 · CLI)
+├── instance.pid · supervisor.pid       앱 · 감시의 PID — stop 의 강제 종료용(그 잠금이 잡혀 있을 때만 믿는다)
+├── supervisor.lock                     감시 프로세스 잠금(#1n)
 └── logs\coworkAgent.log(.1)            1 MiB 회전, 1개 보관
 ```
 
 폴더 권한(1a): 주 인스턴스가 시작할 때마다 루트를 **소유자 전용**으로 맞춘다 — Windows 보호 DACL(현재 사용자 · SYSTEM, 하위 상속, 상위 폴더의
 상속 끊음) · Unix 루트 · 하위 폴더 0700 + 파일 0600, 프로세스 `umask 077`(새 DB · 사본 · 회전 로그 — macOS 실동작 확인은 Phase 4). 실패하면 로그 경고 후 계속. 확인: `icacls "%LOCALAPPDATA%\coworkAgent\identity.key"` → 두 줄(사용자 · SYSTEM).
 
-폴더 밖: 시작 실패 사유 `%TEMP%\coworkAgent-start-error.txt`, Claude Code 기록(7.4).
+폴더 밖: 시작 실패 사유 `%TEMP%\coworkAgent-start-error.txt`(디버그 빌드 + `COWORKAGENT_DATA_DIR` 면 그 폴더 안), Claude Code 기록(7.4).
 
-### 7.2 DB 표 (스키마 19)
+디버그 빌드만 환경 변수 `COWORKAGENT_DATA_DIR` 가 데이터 루트를 바꾼다(옛 데이터 이어받기 없음) — 시험이 실제 인스턴스 · 데이터를 건드리지 않게
+(`crates/app/tests/lifecycle.rs`). 릴리스 빌드는 읽지 않는다.
+
+### 7.2 DB 표 (스키마 20)
 
 | 표 | 한 행 | 주요 열 |
 |---|---|---|
 | `peers` | 연결한 PC — `id` AUTOINCREMENT(#1h 스키마 17 — 지운 상대의 번호를 다시 쓰지 않는다, 그 대화 · 보낼 글은 그 번호로 남는다) | `spki`(공개키) · `name` · `host` · `addr` · `my_ok` · `their_ok` · `round`(페어링 세대) · `grp`(옛 자유 입력 그룹 — 스키마 18 에서 같은 이름 레일 그룹으로 옮기고 읽지 않음) · `model` · `effort` · `alias` · `icon` · `activity_seen_msg` · `activity_seen_event` · `seen_at`(마지막 통신 — 보내기 성공 · 요청 받기 · `Pong`) · `focus`(마지막 `Pong` · 집중 거절 때 값) · `pos`(레일 자리 — #1i, 새 상대는 맨 뒤) |
 | `settings` | 키 · 값 | 아래 키 |
 | `agents` | 내 에이전트 | `name`(UNIQUE — 상대가 부르는 이름, 바꾸지 않는다) · `folder` · `tools`(#1d 부터 읽지 않음 — 도구는 읽기 전용 5개 고정) · `prompt` · `grp`(#1j 부터 읽지 않음 — 열만 남음) · `uid`(세대) |
-| `conversations` | 대화 | `uuid` · `peer_id` · `agent`(대화 에이전트) · `dir`(`out` 내가 엶 · `in` 상대가 엶) · `session` · `relay_agent` · `relay_cap` · `relay_count` · `relay_on` · `relay_blocked` · `title` · `starred_at` · `read_id` · `pos`(손으로 놓은 자리 — #1i, 새 대화는 맨 위 `min - 1`) |
+| `conversations` | 대화 | `uuid` · `peer_id` · `agent`(대화 에이전트) · `dir`(`out` 내가 엶 · `in` 상대가 엶 · `shared` 남이 나를 관람자로 넣은 사본 — #1o) · `session` · `relay_agent` · `relay_cap` · `relay_count` · `relay_on` · `relay_blocked` · `title` · `starred_at` · `read_id` · `pos`(손으로 놓은 자리 — #1i, 새 대화는 맨 위 `min - 1`) · `share_other` · `share_dir` · `share_ended`(사본 — 원 상대 이름 · 넣은 쪽 방향 · 빠진 시각, #1o) · `watchers`(원 상대 쪽 — 알림 받은 관람자 수) |
+| `shares` | 관람자 1명(#1o — 넣은 쪽) | (`conversation_id`, `peer_id`) PRIMARY KEY · `sent_upto`(그 관람자 줄에 넣은 마지막 `messages.id` — 커서) · `created_at`. 상대 페어링을 지우면 함께 지운다 |
 | `groups` | 레일 그룹(#1i — 이 PC 에만) | `id`(AUTOINCREMENT — 지운 번호를 다시 쓰지 않는다) · `name`(UNIQUE, 1 ~ 40자) · `icon` · `pos` |
 | `group_convs` | 그룹 소속(대화 하나씩) | (`group_id`, `conversation_id`) — 외래 키를 켜지 않는 DB 라 그룹을 지우면 `groups::remove` 가 함께 지운다. 대화는 여러 그룹에 |
 | `group_peers` | 그룹 소속(상대 단위 — #1j 스키마 18) | (`group_id`, `peer_id`) PRIMARY KEY · 색인 `group_peers_peer`. 그룹의 대화 = `group_convs` ∪ 그 상대들의 대화 전부(뒤에 생긴 대화 포함 — 계산, `chat::Scope::Group`). 상대를 빼도 `group_convs` 는 남고, 그룹을 지우면 `groups::remove` 가 함께 지운다 |
-| `messages` | 사람 글 · 에이전트 답 · 컨텍스트 구분선(#1m) | `uuid` · `conversation_id` · `author`(`human` · `agent` · `context`) · `text` · `state` · `reply_to` · `turns` · `duration_ms` · `mine` · `exec`(실행 요청) · `lc` · `via`(`cli`) · `saved_at` · `model` · `effort` · `request` · `req_state`(`wait` · `accepted` · `rejected` · `done` — #1d) · `req_note` · `req_at` · `done_at`(#1d 부터 읽지 않음) · `agent`(멘션) · `refused` · `edited_at`(편집 시각 — #1f) · `ctx_tokens`(답 세션의 창 사용량 — #1m) · `ctx_op`(구분선 종류) |
+| `messages` | 사람 글 · 에이전트 답 · 컨텍스트 구분선(#1m) | `uuid` · `conversation_id` · `author`(`human` · `agent` · `context`) · `text` · `state` · `reply_to` · `turns` · `duration_ms` · `mine` · `exec`(실행 요청) · `lc` · `via`(`cli`) · `saved_at` · `model` · `effort` · `request` · `req_state`(`wait` · `accepted` · `rejected` · `done` — #1d) · `req_note` · `req_at` · `done_at`(#1d 부터 읽지 않음) · `agent`(멘션) · `refused` · `edited_at`(편집 시각 — #1f) · `ctx_tokens`(답 세션의 창 사용량 — #1m) · `ctx_op`(구분선 종류) · `owner`(사본 글이 넣은 사람 쪽 글인가 — #1o) |
 | `relay_events` | 자동 왕복 시작 · 끝 · 내 글이 실패로 바뀐 순간 · 상대 반영 실패(`sync_failed` — #1f) | `conversation_id` · `kind` · `detail` · `message_id` |
 | `agent_sessions` | 대화 × 멘션 에이전트 세션 | (`conversation_id`, `agent`) → `session` |
 | `ctx_seeds` | 압축 요약(#1m) — 다음 새 세션 첫 실행에 한 번 | (`conversation_id`, `agent` — 빈 글자 = `conversations.session` 주인) → `text` |
@@ -640,14 +647,85 @@ sequenceDiagram
   편집도 `Ok`(재전송 멱등).
 - 실행 맥락: 이미 돈 실행은 Claude 세션이 원문을 기억한다. 다음 실행의 앞붙임(`notes_between` — 6.5)은 고친 · 지운 상태의 DB 를 읽는다.
 
+### 8.10 부모 도구 메뉴 — `start` · `open` · `stop` (#1n · D14 보강)
+
+```mermaid
+sequenceDiagram
+  participant P as 부모 도구
+  participant C as coworkAgent start
+  participant S as 감시(supervisor.lock)
+  participant A as 앱(instance.lock)
+  P->>C: coworkAgent start [--parent PID]
+  C->>C: 부모 = --parent 또는 부른 프로세스(살아 있어야 — 아니면 2)
+  loop 최대 30초 · 200 ms
+    C->>A: GET /api/status(1초) — headless 면 0, tray 면 POST /api/quit 뒤 잠금 풀림 대기
+    C->>S: 두 잠금이 모두 풀려 있으면 떼어 띄움(COWORKAGENT_PARENT=PID)
+    S->>A: 자식으로 띄움(같은 값) — 트레이 · 이벤트 루프 없음
+  end
+  C-->>P: "시작함" · 0
+  Note over A: 부모 끝(Windows 핸들 대기 · Unix 1초 폴링) → on_quit → 감시도 0 으로 끝
+```
+
+- **떼어 띄우기**(`proc::spawn_detached`) — 표준 입출력 비움(부모 도구의 파이프가 끝나지 않는 일 방지) · `COWORKAGENT_SUPERVISED` 지움 · 새 프로세스
+  그룹(부모 콘솔의 Ctrl+C 가 닿지 않음). Windows `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP` + 자기 표준 핸들 상속 끔, Unix `process_group(0)`.
+- **`start`** — 한 30초 되풀이: 응답 → 모드(`/api/status` `mode`), 트레이면 끄기, 띄운 감시가 끝났으면 코드 확인(0 = 겹친 `start` — 다시 판단 · 3 =
+  사유 파일의 사유로 8 · 그 밖 8), 잠금이 모두 풀려 있으면 띄우기. 끝에 잠금이 잡혀 있으면 6 "실행 중이지만 응답이 없다 — stop 뒤 다시", 아니면 8.
+  겹친 `start` 는 감시 잠금이 하나만 남긴다(나머지 감시는 0). 이미 트레이 없는 모드면 지켜보는 부모는 처음 것 그대로.
+- **`open`** — 응답이 없으면 `start` 와 같이 띄운 뒤 `POST /api/open`(204 → 0, 아니면 4).
+- **`stop`** — 전체 상한 10초 하나(넘으면 6). 응답 있으면 `POST /api/quit` → 두 잠금 풀림. 404 면 종료 API 없는 이전 버전 — 기다리지 않고 4
+  (`start` 도 같다). 응답 없음 + 잠금 잡힘(오류 트레이 · 시작 중 · 멈춘 앱)이면 5초 응답을 기다린 뒤 `supervisor.pid` → `instance.pid` 순으로
+  `proc::kill_tree`(그 잠금이 잡혀 있을 때만 — 감시와 그 자식 앱을 함께 끊어 다시 띄우지 않게 · 막 뜬 앱이 잠금을 잡기 전이어도). Windows 는 핸들을
+  연 채 실행 파일 이름이 같은지 보고 끊는다(PID 재사용 방지), Unix 는 감시가 프로세스 그룹 우두머리면 그룹째. 끊은 뒤 잠금이 300 ms 풀린 채
+  머무는지 보고, 다시 잡혔으면 되풀이. 잠금 풀림 판정은
+  `InstanceLock::is_held`(잠깐 잡아 보고 놓기) — 그 사이 진짜 획득자가 보조로 판정되지 않게 `acquire` 는 `WouldBlock` 을 50 ms 간격 4번까지 다시 잡는다.
+- **시작 실패 판정** — 코드 3 은 MSVC `abort()` 와 같다. `watchdog::spawn_app` 은 사유 파일을 그 자식이 썼을 때만(끝 줄 `PID: n` —
+  자식 핸들을 쥔 채 확인) 시작 실패로 넘기고(`tray::start_error_by`), 아니면 비정상 종료로 다시 띄운다.
+- **`/api/quit`** — 같은 토큰 guard, 204 를 먼저 보내고 100 ms 뒤 종료 호출(트레이 모드 = 이벤트 루프에 종료 이벤트, 트레이 없는 모드 = 종료 채널).
+  `server::router_control(…, mode, quit, extra)` 에 `quit` 이 있을 때만 경로가 생긴다.
+- 출력 · 종료 코드 — 표준 출력 한 줄("시작함" · "이미 실행 중" · "열었음" · "종료함" · "실행 중이 아님"), 실패는 표준 오류. 0 · 2 · 4 · 6 · 8
+  (`EXIT_START_FAILED` — 새). handshake(`cli_api`) 없이 동작한다.
+- **시험** — `crates/app/tests/lifecycle.rs`(디버그 실행 파일 + 시험마다 임시 `COWORKAGENT_DATA_DIR` + 대역 부모 — 실제 인스턴스 비파괴).
+- macOS 는 같은 코드 길(`getppid` · `kill(pid, 0)` 폴링 · `SIGKILL` · `process_group(0)`) — 실기 확인은 원장.
+### 8.11 공유 대화 — 관람자 (#1o)
+
+```mermaid
+sequenceDiagram
+  participant B as B(원 상대)
+  participant A as A(대화를 가진 PC)
+  participant C as C(관람자)
+  A->>A: share_add(대화, C) — 사본 · 원 상대 · 페어링 안 됨 · 5명 · 이미 관람자 거절, C 에 Ping → Pong.share 아니면 409
+  A->>C: Share{conv, title, agent, owner_dir, other} — C 는 dir=shared 사본(peer_id = A)을 만들거나 비우고 다시
+  loop 글마다 한 프레임(outbox — 꺼져 있으면 보관, 24시간 닿지 않으면 관람 끝)
+    A->>C: SharePost{conv, msg} — 새 글 · 같은 uuid 면 편집 / ShareDelete
+  end
+  A->>B: ShareNotice{conv, n} — 관람자 수만(이름 없음) · B 머리 "관람자 n" · 알림 1회
+  C->>A: ShareEnd{conv} — 나가기(A 는 관람자 행 삭제 · B 에 n) / A->>C ShareEnd = 빼기(C 사본 share_ended)
+```
+
+- **퍼뜨리기** — `Chat::fan_share(conv)` 가 관람자마다 `id > sent_upto` 인 글(컨텍스트 구분선 제외)을 `SharePost` 행으로 넣고 커서를 올린다(한 트랜잭션 —
+  몇 번 불러도 두 번 가지 않음). 부르는 자리 = `dispatch` · `enqueue` · `handle` 끝. 편집 · 삭제는 `id <= sent_upto` 글만 바로. 행은 `msg_id` NULL(그 글의
+  편집 막힘 · 보관 표시에 끼지 않게) · `has_before` 예외. 관람자에 24시간 닿지 않으면 그 관람을 끝낸다(공유 행을 지우고 관람자에서 뺀다 — 꺼진 관람자 몫이 끝없이
+  쌓이지 않게) — 빼기 표시(`ShareEnd`) 한 행은 남겨 돌아온 관람자 사본이 "공유 해제됨" 이 된다. 보내기 바로 앞(능력 확인 뒤)에서 아직 관람자인지 보고,
+  빠졌으면 그 행을 지운다(`ShareEnd` 는 보낸다 — 확인 ~ 보내기 사이 ms 창은 남는다). 끝 글을 지우면 SQLite 가 id 를 다시 줄 수 있어
+  `sent_upto` 를 함께 낮춘다. 64 KiB 를 넘을 것 같은 프레임은 본문을 4 KiB 로 줄인다.
+- **사본 막기** — 사본 글은 `share::upsert`(`mine 0 · exec 0 · request 0` — 실행을 깨우지 않음, 같은 uuid 가 이 사본 것일 때만 덮어씀). 글쓰기 · 컨텍스트 ·
+  자동 왕복 · 요청 상태 · CLI 보내기는 "공유 대화는 읽기 전용", 내 활동 집계에서 뺀다. 받는 처리기는 그 상대가 보낸 **Shared 사본**인지 본다(A 가 C↔A 자기
+  대화에 끼어들지 못하게). C 가 `not_paired` · `unsupported` 로 답하면 그 관람자를 뺀다.
+- **API** — `POST /api/conversations/{id}/observers {peer_id}`(204 · 400 · 404 · 409) · `DELETE …/observers/{peer}` · `POST …/leave`. 대화 JSON
+  `observers` · `watchers` · `share{other, owner_dir, ended}`, 글 JSON `owner`. 화면 — 목록 셋째 묶음 "공유 대화", 사본은 입력창 · 편집 · 컨텍스트 없음,
+  세부정보 "관람자".
+- ponytail: share 행마다 `Ping` 한 번 더(능력 확인) · 글 하나 = 연결 하나 — 긴 이력이 느리면 상대별 능력 기억 · 묶어 보내기.
+- 남은 것: 페어링 해제로 관람자가 지워질 때 원 상대 관람자 수는 갱신하지 않는다 · 사본 글 상태는 처음 보낼 때 값.
+
 ## 9. 보안 경계 요약
 
 | 경계 | 막는 것 | 장치 |
 |---|---|---|
 | 브라우저 ↔ 로컬 서버 | 다른 사이트 · DNS rebinding · 같은 PC 의 다른 포트 · 클릭재킹 | 127.0.0.1 · 실행마다 토큰 · 탭 메모리 + `Authorization: Bearer`(쿠키 없음) · Host · Origin 검사 · 모든 응답 CSP(`frame-ancestors 'none'`) · `X-Frame-Options: DENY` · `nosniff` · `no-referrer`(D9 · 1a) |
 | 데이터 폴더 | 같은 PC 의 다른 주체(샌드박스 · 서비스 계정) | 소유자 전용 권한(7.1). 같은 사용자 권한 프로세스는 막지 않는다(한 PC 한 사용자 전제 — 1a) |
-| CLI ↔ 로컬 서버 | 토큰 없는 호출 | `instance.json` 토큰(Bearer). 같은 OS 사용자의 로컬 프로세스는 부를 수 있다 — 웹UI 와 같은 신뢰 경계(위험 수용, #16) |
+| CLI ↔ 로컬 서버 | 토큰 없는 호출 | `instance.json` 토큰(Bearer). 같은 OS 사용자의 로컬 프로세스는 부를 수 있다(`/api/quit` · `stop` 의 강제 종료 포함) — 웹UI 와 같은 신뢰 경계(위험 수용, #16) |
 | PC ↔ PC | 미페어링 · 사칭 · 도청 · 초대 코드 추측 | TLS 1.3 상호 인증(ed25519 공개키 고정), 페어링된 키만 대화 요청(id 는 UUID 꼴만 — 아니면 `invalid`), 수신 3초 · 동시 32 · IP 당 4 · 미승인 32 · 한 창에서 IP 당 틀린 초대 코드 10회(넘으면 그 창 동안 거절) · 원격 이름의 제어 · 서식 문자(Cf) 제거. 상대 주소가 사내망인지는 검사하지 않는다(`0.0.0.0` 수신 · 아무 주소로 발신) — 사내망 전제 |
+| 공유 대화(#1o) | 사본 위조 · 남의 대화 끼어들기 · 다시 퍼뜨리기 · 관람자 노출 | 페어링된 상대만 관람자 · 받는 쪽은 그 상대가 만든 `shared` 사본에만 적용(같은 uuid 가 다른 소유면 `exists`) · 사본은 다시 공유 · 쓰기 불가 · 원 상대에게는 관람자 **수**만 · 관람자 5명 상한. 관람자에게 간 글은 빼도 회수되지 않는다(원 상대 승인 없음 — 알림만) |
 | 원격 글 → 화면 | 스크립트 주입 | `textContent` 로만 그림 · markdown sanitize · HTML 은 sandbox iframe |
 | 원격 글 → `claude` | 수신 PC 작업 개입 · 비밀 읽기 · 틀 위장 | 표준 입력만 · 늘 구분자 틀(6.5) · 가드 프롬프트(D31) · 읽기 전용 도구 · `--restricted`(작업 폴더 밖 Read · Grep · Glob · junction 거부, 프로젝트 · 사용자 설정의 훅 · 스킬 미적용 — 2.1.296 실측) · 데이터 폴더를 품는 에이전트 폴더 거부(등록 · 수정 · 실행 직전) · 30분 상한 |
 | 실패 → 상대 | 경로 · 계정 · 버전 노출 | 상대에게는 정해진 실패 문구만(6.6), 원인은 내 쪽 글 · 로그 |

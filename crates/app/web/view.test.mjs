@@ -45,6 +45,12 @@ import {
   newMenu,
   profileMenu,
   convSections,
+  splitByDir,
+  splitKey,
+  sharedAuthor,
+  shareHead,
+  shareCandidates,
+  MAX_OBSERVERS,
   convMeta,
   unreadByPeer,
   activityRows,
@@ -856,9 +862,9 @@ test("conv_sections — ★ 대화도 제자리(#1j), 행 표시 · 레일 배�
     [["대화방", [1, 2, 3]]],
   );
   assert.deepEqual(convSections(convRows(convs, names, 3)).map((s) => s.title), ["대화방"]);
-  assert.deepEqual(convMeta(convs[0]), { agent: "guide", state: "완료", running: false, relay: null, unread: false });
-  assert.deepEqual(convMeta(convs[1]), { agent: "내 review", state: "실행 중", running: true, relay: null, unread: true });
-  assert.deepEqual(convMeta(convs[2]), { agent: "guide", state: "", running: false, relay: "왕복 3/10", unread: true });
+  assert.deepEqual(convMeta(convs[0]), { agent: "guide", state: "완료", running: false, relay: null, unread: false, tag: null });
+  assert.deepEqual(convMeta(convs[1]), { agent: "내 review", state: "실행 중", running: true, relay: null, unread: true, tag: null });
+  assert.deepEqual(convMeta(convs[2]), { agent: "guide", state: "", running: false, relay: "왕복 3/10", unread: true, tag: null });
   assert.deepEqual([...unreadByPeer(convs)], [
     [2, 2],
     [3, 1],
@@ -1609,4 +1615,148 @@ test("context_note — 종류 · 상태 · 실패 사유(#1m)", () => {
     "컨텍스트 압축 — 이후 새 세션이 요약을 이어 받습니다 · 상대 PC 쪽은 실패(상대가 0.5.0 이상이어야 합니다) — 다시 누르면 다시 요청",
     "자동 왕복 부분 처리(라운드 1)",
   );
+});
+
+// ---- 대화방 목록 나눔(#1o) ----
+
+const splitConvs = [
+  { id: 1, peer_id: 1, dir: "out", title: "빌드 질문", last_at: 50 },
+  { id: 2, peer_id: 1, dir: "in", title: "로그 위치", last_at: 40 },
+  { id: 3, peer_id: 2, dir: "out", title: "자동 왕복", relay_agent: "review", relay_cap: 5, last_at: 30 },
+  { id: 4, peer_id: 2, dir: "in", title: "배포 순서", last_at: 20 },
+  { id: 5, peer_id: 1, dir: "out", title: "빌드 옵션", last_at: 10 },
+];
+const splitNames = new Map([
+  [1, "user-b"],
+  [2, "user-c"],
+]);
+
+test("conv_split_rows — 내 대화 · agent 대화, 순서 · 제목 · 내가 연 자동 왕복 = 내 대화 · 한쪽만 · 검색 뒤 개수", () => {
+  const rows = convRows(splitConvs, splitNames, null);
+  const parts = splitByDir(rows);
+  assert.deepEqual(
+    parts.map((g) => [g.dir, g.title, g.rows.map((r) => r.c.id)]),
+    [
+      ["out", "내 대화", [1, 3, 5]],
+      ["in", "agent 대화", [2, 4]],
+    ],
+  );
+  assert.equal(splitByDir(rows.filter((r) => r.c.dir === "out")).length, 1, "한쪽만 = 묶음 하나(머리 없음)");
+  assert.deepEqual(splitByDir([]), []);
+  const found = splitByDir(convRows(splitConvs, splitNames, null, "빌드"));
+  assert.deepEqual(found.map((g) => [g.title, g.rows.length]), [["내 대화", 2]], "검색으로 agent 대화가 0 이면 그 묶음이 빠진다");
+});
+
+test("conv_split_scopes — 상대 타일 · 그룹 · '나'(상대별 절 안) 같은 규칙 · 열쇠 {절}:{dir}", () => {
+  const rows = convRows(splitConvs, splitNames, null);
+  const me = convSections(rows, [1, 2], splitNames).map((s) => [s.key, splitByDir(s.rows).map((g) => [splitKey(s.key, g.dir), g.rows.map((r) => r.c.id)])]);
+  assert.deepEqual(me, [
+    [
+      "peer:1",
+      [
+        ["peer:1:out", [1, 5]],
+        ["peer:1:in", [2]],
+      ],
+    ],
+    [
+      "peer:2",
+      [
+        ["peer:2:out", [3]],
+        ["peer:2:in", [4]],
+      ],
+    ],
+  ]);
+  const tile = convSections(convRows(splitConvs, splitNames, 1));
+  assert.deepEqual(
+    tile.map((s) => splitByDir(s.rows).map((g) => [splitKey(s.key, g.dir), g.rows.length])),
+    [
+      [
+        ["convs:out", 2],
+        ["convs:in", 1],
+      ],
+    ],
+    "상대 타일 · 그룹 = 대화방 절 하나 안에서",
+  );
+});
+
+test("conv_split_drop — 다른 묶음으로는 놓지 못함 · 같은 묶음은 옮기기 · 그룹 타일 넣기는 두 묶음 모두", () => {
+  const conv = (section) => ({ kind: "conv", section });
+  assert.equal(dropKind(conv("peer:1:out"), conv("peer:1:in")), null);
+  assert.equal(dropKind(conv("peer:1:out"), conv("peer:1:out")), "move");
+  assert.equal(dropKind(conv("convs:in"), conv("convs:in")), "move");
+  for (const s of ["peer:1:out", "peer:1:in"]) assert.equal(dropKind(conv(s), { kind: "group", section: null }), "join");
+});
+
+test("conv_split_starred — 즐겨찾기 화면은 나누지 않는다(절 열쇠 · 제목 그대로)", () => {
+  const convs = splitConvs.map((c) => ({ ...c, starred: c.id !== 5 }));
+  assert.deepEqual(
+    starredSections(convs, splitNames, [1, 2]).map((s) => [s.key, s.rows.map((r) => r.c.id)]),
+    [
+      ["peer:1", [1, 2]],
+      ["peer:2", [3, 4]],
+    ],
+  );
+  assert.deepEqual(starredSections(convs, splitNames).map((s) => [s.key, s.title]), [["convs", "대화방"]]);
+});
+
+// ---- 공유 대화(#1o 관람자) ----
+
+const shared = (over = {}) => ({
+  id: 9,
+  peer_id: 1,
+  dir: "shared",
+  agent: "review",
+  title: "빌드 질문",
+  share: { other: "user-c", owner_dir: "out", ended: null },
+  ...over,
+});
+
+test("share_groups — 공유 대화 = 셋째 묶음(내 대화 · agent 대화 뒤) · 해제되면 '공유 해제됨' 태그", () => {
+  const rows = convRows([...splitConvs, shared()], splitNames, null);
+  assert.deepEqual(
+    splitByDir(rows).map((g) => [g.title, g.rows.map((r) => r.c.id)]),
+    [
+      ["내 대화", [1, 3, 5]],
+      ["agent 대화", [2, 4]],
+      ["공유 대화", [9]],
+    ],
+  );
+  assert.equal(convMeta(shared()).tag, null);
+  assert.equal(convMeta(shared({ share: { other: "user-c", owner_dir: "out", ended: 100 } })).tag, "공유 해제됨");
+  assert.equal(convMeta(splitConvs[0]).tag, null);
+  assert.equal(convMeta(shared()).agent, "review", "공유 대화의 에이전트에 '내' 를 붙이지 않는다");
+});
+
+test("share_labels — 제목 · 줄 설명 · 발화자(초대한 사람 · 원 상대 · 각자의 에이전트)", () => {
+  const c = shared();
+  assert.deepEqual(convLabel(c, splitNames), { title: "빌드 질문", sub: "공유 · user-b ↔ user-c" });
+  assert.equal(authorLabel(c, { author: "human", owner: true }, "user-b"), "user-b");
+  assert.equal(authorLabel(c, { author: "human", owner: false }, "user-b"), "user-c");
+  // 초대한 사람이 연 대화 — 대화 에이전트는 원 상대 것.
+  assert.equal(authorLabel(c, { author: "agent", owner: false }, "user-b"), "user-c/review");
+  // 받은 대화 — 대화 에이전트는 초대한 사람 것.
+  const inbound = shared({ share: { other: "user-c", owner_dir: "in", ended: null } });
+  assert.equal(authorLabel(inbound, { author: "agent", owner: true }, "user-b"), "user-b/review");
+  assert.equal(authorLabel(c, { author: "human", owner: true, via: "cli" }, "user-b"), "user-b/AI 에이전트(CLI)");
+  assert.equal(sharedAuthor(c, { author: "agent", owner: true, agent: "relay-x" }, "user-b"), "user-b/relay-x");
+});
+
+test("share_read_only — 자동 왕복 표시 · 동작 없음(사본은 mine 이 없다) · 공유한 사람 글은 오른쪽", () => {
+  assert.equal(relayText(shared({ relay_agent: "review", relay_cap: 5, relay_on: true }), [{ author: "agent", mine: false }]), null);
+  assert.equal(bubbleSide({ mine: false, owner: true }), "mine", "공유한 사람 쪽 글은 오른쪽");
+  assert.equal(bubbleSide({ mine: false, owner: false }), "theirs", "원 상대 쪽 글은 왼쪽");
+});
+
+test("share_head_candidates — 머리 표시 · 관람자 후보(원 상대 · 이미 관람자 · 페어링 안 됨 제외, 5명 상한, 사본은 없음)", () => {
+  assert.equal(shareHead(shared()), "읽기 전용");
+  assert.equal(shareHead(shared({ share: { other: "user-c", owner_dir: "in", ended: 7 } })), "공유 해제됨");
+  assert.equal(shareHead({ dir: "out", observers: [2, 3] }), "관람자 2");
+  assert.equal(shareHead({ dir: "in", watchers: 1 }), "관람자 1");
+  assert.equal(shareHead({ dir: "out" }), "");
+  const peers = [1, 2, 3, 4, 5, 6, 7, 8].map((id) => ({ id, paired: id !== 8 }));
+  const conv = { dir: "out", peer_id: 1, observers: [2] };
+  assert.deepEqual(shareCandidates(conv, peers).map((p) => p.id), [3, 4, 5, 6, 7]);
+  assert.equal(MAX_OBSERVERS, 5);
+  assert.deepEqual(shareCandidates({ ...conv, observers: [2, 3, 4, 5, 6] }, peers), [], "5명이면 더 넣지 못한다");
+  assert.deepEqual(shareCandidates(shared(), peers), [], "공유 대화는 다시 공유하지 않는다");
 });

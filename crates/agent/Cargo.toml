@@ -1,6 +1,6 @@
 [package]
 name = "an-agent"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 
 [lib]
@@ -21,3 +21,4 @@ windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Secur
 [dev-dependencies]
 ring = "0.17.14"
 tokio = { version = "1.53.2", features = ["rt-multi-thread", "net", "io-util"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "logging"] }

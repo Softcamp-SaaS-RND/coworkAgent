@@ -31,6 +31,10 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
   오류 답) · `send(peer_id, agent, Option<conv>, text) -> (Conversation, Message)` · `send_via(…, via, title)`(글의 출처 — `Some("cli")` 면 내 이력 · `message` 요청에 싣는다, `title` 은 새 대화에 이 PC 에서만 붙이는 제목) · `remote_agents(peer_id)` · `db()`(await 를 넘겨
   쥐지 않는다) · `new_uuid()`. `context(conv, op)`(#1m — `compact` · `clear`, 진행 중이면 `AlreadyExists`) — 구분선 글(`Author::Context`) +
   이 PC 세션이면 대화 줄(`run_context` → 비우기 · `compact` 요약 실행), 상대 쪽이면 outbox `context`(보내기 전 `knows_context` — 모르면 `unsupported`).
+  공유(#1o): `share_add(conv, peer)`(async — 사본 · 원 상대 · 5명 `InvalidInput` · 이미 관람자 `AlreadyExists` · 모르는 상대 `Unsupported` · 없음 `NotFound`;
+  관람자 행 · Share 머리 · 이력 한 트랜잭션) · `share_remove(conv, peer)` · `share_leave(conv)` · `fan_share`(커서 `sent_upto` — `dispatch` · `enqueue` · `handle` 끝) ·
+  보내기 직전 `watching`(빠진 관람자 몫은 지움 — `ShareEnd` 제외) · 24시간 포기 = 그 관람 끝(`unshare`) ·
+  받는 처리기 `inbound_share*`(그 상대의 Shared 사본만) · 원 상대 `ShareNotice`(바뀔 때만 알림). 사본 쓰기 = `InvalidInput` "공유 대화는 읽기 전용".
   받은 요청은 다시 넘기지 않는다. 자동 압축 = `process` 뒤 창 사용량 ≥ `settings::AUTO_COMPACT_AT`(800k) · `settings::auto_compact`. 새 세션 첫 실행에
   `ctx_seeds` 요약을 `<대화 요약>` 으로 붙이고(`execute`) 세션을 남기면 지운다(`record`).
 - 실행 문(#1b, D24 개정) — `gate::Gate`(FIFO): `enter(id) -> (Ticket, Option<앞 사람 수>)` · `Ticket::ready()` · 티켓 drop = 자리 놓기(실패 ·

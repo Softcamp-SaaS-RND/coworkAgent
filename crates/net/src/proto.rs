@@ -207,6 +207,57 @@ pub enum Request {
         #[serde(default)]
         text: String,
     },
+    /// 공유 대화(#1o) 시작 · 다시 초대 — 대화를 가진 PC(A)가 관람자(C)에게. C 는 같은 uuid 의 읽기 전용 사본을 만들고(있으면 글을 비우고) 이어
+    /// `SharePost` 로 이력을 받는다. `owner_dir` = A 쪽 대화 방향(`out` · `in`), `other` = A 대화의 원 상대 이름. 이 종류를 모르는 상대(0.5.0)는
+    /// 연결을 끊으므로 보내기 전에 `Pong.share` 를 본다. 페어링된 상대만.
+    Share {
+        conv: String,
+        title: String,
+        agent: String,
+        owner_dir: String,
+        other: String,
+    },
+    /// 공유 대화 글 하나(#1o — 글 하나 = 프레임 하나) — 같은 uuid 면 고친 글로 덮어쓴다.
+    SharePost {
+        conv: String,
+        msg: ShareMsg,
+    },
+    /// 공유 대화 글 지움(#1o).
+    ShareDelete {
+        conv: String,
+        msg: String,
+    },
+    /// 공유 끝(#1o) — A → C 빼기 · C → A 나가기. C 의 사본은 읽기 전용으로 남는다.
+    ShareEnd {
+        conv: String,
+    },
+    /// 원 상대(B)에게 그 대화의 관람자 수(#1o) — 이름은 싣지 않는다.
+    ShareNotice {
+        conv: String,
+        n: u32,
+    },
+}
+
+/// 공유 대화 글(#1o) — `Post` 필드 관례. `owner` = 대화를 가진 PC(A) 쪽 글, `ok` 거짓 = 실패 글(없음 = 끝난 글), `at` = A 에 남은 시각(유닉스 초).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShareMsg {
+    pub uuid: String,
+    pub author: String,
+    pub text: String,
+    #[serde(default)]
+    pub lc: Option<i64>,
+    #[serde(default)]
+    pub at: i64,
+    #[serde(default)]
+    pub owner: bool,
+    #[serde(default)]
+    pub via: Option<String>,
+    #[serde(default)]
+    pub agent: Option<String>,
+    #[serde(default)]
+    pub ok: Option<bool>,
+    #[serde(default)]
+    pub edited: bool,
 }
 
 /// `Request::Context` 의 `op` 값(#1m).
@@ -230,6 +281,9 @@ pub enum Response {
         /// `Request::Context` 를 아는가(#1m) — 이전 버전은 싣지 않는다(거짓).
         #[serde(default)]
         ctx: bool,
+        /// 공유 대화(`Request::Share*`, #1o)를 아는가 — 이전 버전은 싣지 않는다(거짓).
+        #[serde(default)]
+        share: bool,
     },
     Agents {
         names: Vec<String>,
@@ -344,7 +398,12 @@ impl Request {
                 reply_to,
                 ..
             } => is_uuid(conv) && is_uuid(msg) && reply_to.as_deref().is_none_or(is_uuid),
-            Request::Relay { conv, .. } => is_uuid(conv),
+            Request::Relay { conv, .. }
+            | Request::Share { conv, .. }
+            | Request::ShareEnd { conv }
+            | Request::ShareNotice { conv, .. } => is_uuid(conv),
+            Request::ShareDelete { conv, msg } => is_uuid(conv) && is_uuid(msg),
+            Request::SharePost { conv, msg } => is_uuid(conv) && is_uuid(&msg.uuid),
             _ => true,
         }
     }

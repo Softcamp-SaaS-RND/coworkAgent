@@ -4,9 +4,9 @@ use crate::runner::{RunInput, RunOutput, SUMMARY_PROMPT, Session, StepSink};
 use an_core::chat::{self, Author, Conversation, Dir, Message, ReqState, State};
 use an_core::db::Connection;
 use an_core::peers::Peer;
-use an_core::{agents, cli_tx, outbox};
+use an_core::{agents, cli_tx, outbox, share};
 use an_net::node::{MessageKind, Node, PeerEvent};
-use an_net::proto::{MAX_TEXT, Request, Response, StepDetail};
+use an_net::proto::{MAX_FRAME, MAX_TEXT, Request, Response, ShareMsg, StepDetail};
 use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
@@ -76,6 +76,12 @@ const PROGRESS: &str = "progress";
 /// 컨텍스트(#1m) — 압축 · 비우기 요청(내 구분선 글) · 처리 결과(상대가 요청한 구분선 글). 보내기 전에 상대가 이 종류를 아는지 본다.
 const CTX: &str = "context";
 const CTX_DONE: &str = "context_done";
+/// 공유 대화(#1o) — 관람자 앞 `Share*` · 원 상대 앞 관람자 수. 보내기 전에 상대가 이 종류를 아는지 본다 · 포기하지 않는다.
+const SHARE: &str = outbox::SHARE;
+const SHARE_NOTICE: &str = outbox::SHARE_NOTICE;
+
+/// 공유 사본(#1o)에 쓰려 했다.
+const READ_ONLY: &str = "공유 대화는 읽기 전용";
 
 /// 컨텍스트 요청 거절 코드(#1m) — 상대가 이 기능을 모른다(0.4.0 이하) · 요약 실행 실패.
 pub const CTX_UNSUPPORTED: &str = "unsupported";
@@ -710,12 +716,16 @@ impl Chat {
 
     /// [`stage`](Self::stage) 로 이미 적은 행을 보낸다 — 글과 행을 한 DB 트랜잭션으로 적은 곳(사람 요청 · 답)이 커밋 뒤 부른다.
     async fn dispatch(&self, conv: &Conversation, id: i64, req: &Request) -> io::Result<Shipped> {
+        // 방금 남긴 글을 관람자에게(#1o — 글을 남기는 길목).
+        self.fan_share(conv.id);
         let peer_id = conv.peer_id;
         let behind = {
             let db = self.db();
             // 같은 대화 순서만 지킨다. 진행 · 멈춤 알림은 앞질러도 된다 — 답보다 늦게 닿은 진행은 받는 쪽이 버린다(`unknown`).
+            // 공유 프레임(#1o)은 다른 상대(관람자)의 줄이다 — 꺼진 관람자의 행이 원 상대로 가는 보내기를 밀어내지 않게.
             // 닿지 않고 있는 상대면 바로 보내지 않는다 — 화면이 연결 시간 초과(최대 10초)를 기다리지 않게, 상대가 돌아오면(Ping · 요청) 줄이 보낸다.
-            outbox::has_before(&db, conv.id, id, &[PROGRESS, RELAY]).map_err(db_err)?
+            outbox::has_before(&db, conv.id, id, &[PROGRESS, RELAY, SHARE, SHARE_NOTICE])
+                .map_err(db_err)?
                 || outbox::failing(&db, peer_id).map_err(db_err)?
         };
         let me = self.me.upgrade().filter(|_| !behind);
@@ -774,6 +784,7 @@ impl Chat {
             Ok(_) => self.kick(conv.peer_id),
             Err(e) => log::warn!("보낼 글 보관 실패({kind}): {e}"),
         }
+        self.fan_share(conv.id);
     }
 
     /// 페어링된 상대에 요청 하나(키 고정) — 응답 내용은 부르는 쪽이 본다.
@@ -821,9 +832,31 @@ impl Chat {
             item.peer_id,
             queued.len()
         );
+        let mut unshared = Vec::new();
         for it in queued {
             // 컨텍스트 처리 결과(#1m)는 포기하지 않는다 — 요청자 구분선이 `sent` 에 영영 묶이지 않게, 돌아오면 줄이 보낸다(라운드 2).
             if it.kind == CTX_DONE {
+                continue;
+            }
+            // 공유 프레임(#1o) — 관람자에 한도만큼 닿지 않으면 그 관람을 끝낸다(행을 지우고 관람자에서 뺀다 — 꺼진 관람자 몫이 끝없이 쌓이지 않게,
+            // 적대적 평가 라운드 1). 원 상대 알림은 버린다. 사본은 관람자 PC 에 남고, 빼기 표시 한 행이 돌아오면 간다(다시 넣으면 처음부터).
+            if matches!(it.kind.as_str(), SHARE | SHARE_NOTICE) {
+                // 빼기 표시(`ShareEnd`)는 남긴다 — 돌아온 관람자 사본이 "공유 해제됨" 이 되게(대화마다 한 행, 라운드 2).
+                if matches!(
+                    serde_json::from_str::<Request>(&it.frame),
+                    Ok(Request::ShareEnd { .. })
+                ) {
+                    continue;
+                }
+                if let Err(err) = outbox::remove(&self.db(), it.id) {
+                    log::warn!("보낼 공유 글 {} 지우기 실패: {err}", it.id);
+                }
+                if it.kind == SHARE
+                    && let Some(conv) = it.conv_id
+                    && !unshared.contains(&conv)
+                {
+                    unshared.push(conv);
+                }
                 continue;
             }
             // 편집 · 삭제 반영(#1f)은 실패 보관과 '상대 반영 실패' 기록을 한 트랜잭션으로 — 하나만 남지 않게(실패하면 행은 줄에 남아 다시 포기한다).
@@ -844,6 +877,18 @@ impl Chat {
                 log::warn!("보낼 글 {} 실패 보관 기록 실패: {err}", it.id);
             }
             self.give_up(&it);
+        }
+        for conv in unshared {
+            let found = chat::by_id(&self.db(), conv);
+            match found {
+                Ok(Some(c)) => {
+                    if let Err(err) = self.unshare(&c, item.peer_id, true) {
+                        log::warn!("대화 {conv} 관람자 {} 빼기 실패: {err}", item.peer_id);
+                    }
+                }
+                Ok(None) => {}
+                Err(err) => log::warn!("대화 {conv} 읽기 실패: {err}"),
+            }
         }
     }
 
@@ -922,6 +967,36 @@ impl Chat {
                 Err(e) => return self.backoff(item.id, &e),
             }
         }
+        // 공유 프레임(#1o)도 같다 — 모르는 상대면 관람자를 빼거나(`settle`) 원 상대 알림을 버린다.
+        // ponytail: 공유 글마다 Ping 한 번 더 — 이력이 길어 느리면 상대별로 아는지 기억한다.
+        if matches!(item.kind.as_str(), SHARE | SHARE_NOTICE) {
+            let known = match self.node.knows_share(item.peer_id).await {
+                Ok(k) => k,
+                // Ping 을 거절했다 = 상대가 이 PC 를 페어링된 상대로 보지 않는다(`not_paired`).
+                Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                    let resp = Response::error("not_paired");
+                    if self.acked(item.id, &resp) {
+                        self.settle(&item, &resp);
+                    }
+                    return;
+                }
+                Err(e) => return self.backoff(item.id, &e),
+            };
+            if !known {
+                let resp = Response::error("unsupported");
+                if self.acked(item.id, &resp) {
+                    self.settle(&item, &resp);
+                }
+                return;
+            }
+        }
+        // 빠진 관람자(#1o) — 빼기 · 나가기 · 포기 뒤 남은(보내던 중 · 다시 보낼) 공유 글은 보내지 않고 지운다. 빼기 표시(`ShareEnd`)는 보낸다
+        // (적대적 평가 라운드 1) — 능력 확인(Ping) 뒤, 보내기 바로 앞에서(라운드 2). ponytail: 확인 ~ 보내기 사이(ms)에 빠지면 그 한 글은 간다 — 막으려면
+        // 관람자별 잠금으로 빼기와 줄 세우거나 프레임에 공유 세대를 싣는다.
+        if item.kind == SHARE && !matches!(req, Request::ShareEnd { .. }) && !self.watching(&item) {
+            let _ = self.acked(item.id, &Response::Ok);
+            return;
+        }
         match self.send_to(item.peer_id, &req).await {
             Ok(resp) => {
                 if self.acked(item.id, &resp) {
@@ -972,6 +1047,13 @@ impl Chat {
         let ok = matches!(resp, Response::Ok);
         // 편집 · 삭제 반영(#1f) — 거절 기록은 응답 정산(`acked`)이 행 지우기와 함께 했다.
         if matches!(item.kind.as_str(), outbox::EDIT | outbox::DELETE) {
+            return;
+        }
+        // 공유 프레임(#1o) — 실어 나르는 글이 없다.
+        if matches!(item.kind.as_str(), SHARE | SHARE_NOTICE) {
+            if !ok {
+                self.share_refused(item, resp);
+            }
             return;
         }
         let Some(msg_id) = item.msg_id else {
@@ -1126,7 +1208,7 @@ impl Chat {
     fn inbound_status(&self, peer: &Peer, conv: String, msg: String) -> io::Result<Response> {
         let found = {
             let db = self.db();
-            match chat::find(&db, &conv, peer.id).map_err(db_err)? {
+            match chat::find_own(&db, &conv, peer.id).map_err(db_err)? {
                 Some(c) => chat::message_by_uuid(&db, &msg)
                     .map_err(db_err)?
                     .filter(|m| m.conversation_id == c.id && !m.mine && m.exec),
@@ -1276,12 +1358,16 @@ impl Chat {
         let conv = {
             let db = self.db();
             match conversation {
-                Some(id) => chat::by_id(&db, id)
-                    .map_err(db_err)?
-                    .filter(|c| c.dir == Dir::Out && c.peer_id == peer_id)
-                    .ok_or_else(|| {
-                        io::Error::new(io::ErrorKind::NotFound, format!("대화 {id} 없음"))
-                    })?,
+                Some(id) => {
+                    let c = chat::by_id(&db, id).map_err(db_err)?;
+                    if let Some(c) = &c {
+                        Self::writable(c)?;
+                    }
+                    c.filter(|c| c.dir == Dir::Out && c.peer_id == peer_id)
+                        .ok_or_else(|| {
+                            io::Error::new(io::ErrorKind::NotFound, format!("대화 {id} 없음"))
+                        })?
+                }
                 None => {
                     // 대화와 제목은 한 트랜잭션, 보내기 전에 — 전송이 실패해도 대화는 남으므로 제목도 남는다.
                     let tx = an_core::db::write_tx(&db).map_err(db_err)?;
@@ -1525,6 +1611,7 @@ impl Chat {
                     format!("대화 {conversation_id} 없음"),
                 )
             })?;
+        Self::writable(&conv)?;
         request_ok(&opts, &conv.agent)?;
         // 멘션은 보낸 대화의 실행 요청에만 — 받은 대화의 에이전트는 내 것이다(해석 1).
         if opts.mention.is_some_and(|m| m != conv.agent) && !(conv.dir == Dir::Out && to_agent) {
@@ -1643,6 +1730,13 @@ impl Chat {
     /// 페어링된 상대의 요청 — 막히지 않는다(실행은 대기열로).
     fn handle(self: &Arc<Self>, peer: &Peer, req: Request) -> Response {
         self.peer_back(peer.id);
+        // 글을 남기는 요청 — 끝나면 그 대화의 관람자에게(#1o).
+        let fan = match &req {
+            Request::Message { conv, .. }
+            | Request::Reply { conv, .. }
+            | Request::Post { conv, .. } => Some(conv.clone()),
+            _ => None,
+        };
         let result = match req {
             Request::Agents => self.agents(),
             Request::Message {
@@ -1687,10 +1781,27 @@ impl Chat {
                 op,
                 text,
             } => self.inbound_context(peer, conv, msg, op, text),
+            Request::Share {
+                conv,
+                title,
+                agent,
+                owner_dir,
+                other,
+            } => self.inbound_share(peer, conv, title, agent, (owner_dir, other)),
+            Request::SharePost { conv, msg } => self.inbound_share_post(peer, conv, msg),
+            Request::ShareDelete { conv, msg } => self.inbound_share_delete(peer, conv, msg),
+            Request::ShareEnd { conv } => self.inbound_share_end(peer, conv),
+            Request::ShareNotice { conv, n } => self.inbound_share_notice(peer, conv, n),
             reply @ Request::Reply { .. } => self.inbound_reply(peer, reply),
             post @ Request::Post { .. } => self.inbound_post(peer, post),
             _ => Ok(Response::error("bad_request")),
         };
+        if let Some(conv) = fan {
+            let found = chat::find_own(&self.db(), &conv, peer.id);
+            if let Ok(Some(c)) = found {
+                self.fan_share(c.id);
+            }
+        }
         // 처리 중 오류(DB 잠금 등)는 거절이 아니다 — 보낸 쪽이 다시 보내게 `retry`(#1c).
         result.unwrap_or_else(|e| {
             log::warn!("대화 요청 처리 실패: {e}");
@@ -1846,7 +1957,7 @@ impl Chat {
         let mut kind = MessageKind::Request;
         let (cid, agent) = {
             let db = self.db();
-            let Some(c) = chat::find(&db, &conv, peer.id).map_err(db_err)? else {
+            let Some(c) = chat::find_own(&db, &conv, peer.id).map_err(db_err)? else {
                 return Ok(Response::error("unknown"));
             };
             if chat::message_by_uuid(&db, &msg).map_err(db_err)?.is_some() {
@@ -1974,7 +2085,8 @@ impl Chat {
             | MessageKind::Reply
             | MessageKind::RelayStep
             | MessageKind::Ask
-            | MessageKind::AskState => None,
+            | MessageKind::AskState
+            | MessageKind::Share => None,
         };
         if let Some(mark) = mark
             && let Err(e) = chat::add_relay_event(&self.db(), conversation_id, mark, &preview)
@@ -2037,6 +2149,7 @@ impl Chat {
                 .map_err(db_err)?
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "없는 대화"))?
         };
+        Self::writable(&conv)?;
         // 확인 · 쓰기는 대화 차례 안에서 — 두 창이 함께 바꿔도 옮김 규칙이 지켜지고 상대에 같은 순서로 간다.
         let lock = self.turn(conv.id);
         let _turn = lock.lock().await;
@@ -2114,7 +2227,7 @@ impl Chat {
         };
         let (cid, agent, text) = {
             let db = self.db();
-            let Some(c) = chat::find(&db, &conv, peer.id).map_err(db_err)? else {
+            let Some(c) = chat::find_own(&db, &conv, peer.id).map_err(db_err)? else {
                 return Ok(Response::error("unknown"));
             };
             let mine = chat::message_by_uuid(&db, &msg)
@@ -2210,12 +2323,17 @@ impl Chat {
         // 확인 · 쓰기 · 반영은 대화 차례 안에서 — 상대에 쓴 순서대로 간다.
         let lock = self.turn(conv_id);
         let _turn = lock.lock().await;
-        let (conv, m, staged) = {
+        let (conv, m, staged, viewers) = {
             let db = self.db();
             let tx = an_core::db::write_tx(&db).map_err(db_err)?;
             let (conv, mut ms) = Self::tidy_targets(&tx, &[id])?;
             let m = ms.remove(0);
             chat::edit_text(&tx, id, text).map_err(db_err)?;
+            // 이미 관람자에게 간 글이면 고친 글을 함께(#1o).
+            let edited = chat::message_by_id(&tx, id)
+                .map_err(db_err)?
+                .unwrap_or_else(|| m.clone());
+            let viewers = Self::share_change(&tx, &conv, &edited, false)?;
             let staged = if mirror {
                 let req = Request::Edit {
                     conv: conv.uuid.clone(),
@@ -2228,8 +2346,11 @@ impl Chat {
             };
             tx.commit().map_err(db_err)?;
             let m = chat::message_by_id(&db, id).map_err(db_err)?.unwrap_or(m);
-            (conv, m, staged)
+            (conv, m, staged, viewers)
         };
+        for p in viewers {
+            self.kick(p);
+        }
         let warning = self.mirror_tidy(&conv, staged).await;
         Ok((m, warning))
     }
@@ -2253,12 +2374,14 @@ impl Chat {
             .conversation_id;
         let lock = self.turn(conv_id);
         let _turn = lock.lock().await;
-        let (conv, staged) = {
+        let (conv, staged, viewers) = {
             let db = self.db();
             let tx = an_core::db::write_tx(&db).map_err(db_err)?;
             let (conv, ms) = Self::tidy_targets(&tx, &ids)?;
             let mut staged = Vec::new();
+            let mut viewers = Vec::new();
             for m in &ms {
+                viewers.extend(Self::share_change(&tx, &conv, m, true)?);
                 if mirror {
                     let req = Request::Delete {
                         conv: conv.uuid.clone(),
@@ -2272,8 +2395,11 @@ impl Chat {
                 chat::delete_message(&tx, m.id).map_err(db_err)?;
             }
             tx.commit().map_err(db_err)?;
-            (conv, staged)
+            (conv, staged, viewers)
         };
+        for p in viewers {
+            self.kick(p);
+        }
         let warning = self.mirror_tidy(&conv, staged).await;
         Ok((ids.len(), warning))
     }
@@ -2320,7 +2446,7 @@ impl Chat {
         conv: &str,
         msg: &str,
     ) -> io::Result<Option<Message>> {
-        let Some(c) = chat::find(conn, conv, peer.id).map_err(db_err)? else {
+        let Some(c) = chat::find_own(conn, conv, peer.id).map_err(db_err)? else {
             return Ok(None);
         };
         Ok(chat::message_by_uuid(conn, msg)
@@ -2339,37 +2465,59 @@ impl Chat {
         if text.trim().is_empty() || text.len() > MAX_TEXT {
             return Ok(Response::error("bad_request"));
         }
-        let db = self.db();
-        let Some(m) = Self::theirs(&db, peer, &conv, &msg)? else {
-            return Ok(Response::error("unknown"));
+        let viewers = {
+            let db = self.db();
+            let Some(m) = Self::theirs(&db, peer, &conv, &msg)? else {
+                return Ok(Response::error("unknown"));
+            };
+            if matches!(m.state, State::Queued | State::Running) {
+                return Ok(Response::error("busy"));
+            }
+            if m.text == text && m.edited_at.is_some() {
+                return Ok(Response::Ok);
+            }
+            // 고친 글과 관람자 행(#1o)은 한 트랜잭션.
+            let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+            chat::edit_text(&tx, m.id, &text).map_err(db_err)?;
+            let edited = chat::message_by_id(&tx, m.id).map_err(db_err)?.unwrap_or(m);
+            let viewers = match chat::by_id(&tx, edited.conversation_id).map_err(db_err)? {
+                Some(c) => Self::share_change(&tx, &c, &edited, false)?,
+                None => Vec::new(),
+            };
+            tx.commit().map_err(db_err)?;
+            viewers
         };
-        if matches!(m.state, State::Queued | State::Running) {
-            return Ok(Response::error("busy"));
-        }
-        if m.text != text || m.edited_at.is_none() {
-            chat::edit_text(&db, m.id, &text).map_err(db_err)?;
+        for p in viewers {
+            self.kick(p);
         }
         Ok(Response::Ok)
     }
 
     /// 상대가 자기 사람 글을 지웠다(#1f) — 그 글만 흔적 없이, 실행 · 알림 없이. 이미 없으면 `Ok`(재전송), 실행 대기 · 실행 중이면 `busy`.
     fn inbound_delete(&self, peer: &Peer, conv: String, msg: String) -> io::Result<Response> {
-        let db = self.db();
-        if chat::find(&db, &conv, peer.id).map_err(db_err)?.is_none() {
-            return Ok(Response::error("unknown"));
-        }
-        if chat::message_by_uuid(&db, &msg).map_err(db_err)?.is_none() {
-            return Ok(Response::Ok);
-        }
-        let Some(m) = Self::theirs(&db, peer, &conv, &msg)? else {
-            return Ok(Response::error("unknown"));
+        let viewers = {
+            let db = self.db();
+            let Some(c) = chat::find_own(&db, &conv, peer.id).map_err(db_err)? else {
+                return Ok(Response::error("unknown"));
+            };
+            if chat::message_by_uuid(&db, &msg).map_err(db_err)?.is_none() {
+                return Ok(Response::Ok);
+            }
+            let Some(m) = Self::theirs(&db, peer, &conv, &msg)? else {
+                return Ok(Response::error("unknown"));
+            };
+            if matches!(m.state, State::Queued | State::Running) {
+                return Ok(Response::error("busy"));
+            }
+            let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+            let viewers = Self::share_change(&tx, &c, &m, true)?;
+            chat::delete_message(&tx, m.id).map_err(db_err)?;
+            tx.commit().map_err(db_err)?;
+            viewers
         };
-        if matches!(m.state, State::Queued | State::Running) {
-            return Ok(Response::error("busy"));
+        for p in viewers {
+            self.kick(p);
         }
-        let tx = an_core::db::write_tx(&db).map_err(db_err)?;
-        chat::delete_message(&tx, m.id).map_err(db_err)?;
-        tx.commit().map_err(db_err)?;
         Ok(Response::Ok)
     }
 
@@ -2423,7 +2571,7 @@ impl Chat {
             return Ok(Response::error("bad_request"));
         }
         let db = self.db();
-        let Some(c) = chat::find(&db, &conv, peer.id).map_err(db_err)? else {
+        let Some(c) = chat::find_own(&db, &conv, peer.id).map_err(db_err)? else {
             return Ok(Response::error("unknown"));
         };
         let mine = chat::message_by_uuid(&db, &msg)
@@ -2445,10 +2593,11 @@ impl Chat {
     /// 자동 왕복 알림 — 그 상대 소유 대화만. 연 쪽은 `on = false` 만(받은 쪽 멈춤), 받은 쪽은 거절 켜기 · 끄기.
     fn inbound_relay(&self, peer: &Peer, conv: String, on: bool) -> io::Result<Response> {
         let db = self.db();
-        let Some(c) = chat::find(&db, &conv, peer.id).map_err(db_err)? else {
+        let Some(c) = chat::find_own(&db, &conv, peer.id).map_err(db_err)? else {
             return Ok(Response::error("unknown"));
         };
         let event = match (c.dir, on) {
+            (Dir::Shared, _) => return Ok(Response::error("unknown")),
             (Dir::Out, false) => {
                 chat::relay_on(&db, c.id, false, false).map_err(db_err)?;
                 // 켜져 있던 자동 왕복을 상대가 멈췄다.
@@ -2493,6 +2642,9 @@ impl Chat {
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "없는 대화"))?;
         let peer = self.paired_peer(conv.peer_id)?;
         match (conv.dir, on) {
+            (Dir::Shared, _) => {
+                return Err(io::Error::new(io::ErrorKind::InvalidInput, READ_ONLY));
+            }
             (Dir::In, false) => self.block_relay(&conv, &peer).await,
             (Dir::In, true) => {
                 return Err(io::Error::new(
@@ -2591,7 +2743,7 @@ impl Chat {
         }
         let (cid, agent) = {
             let db = self.db();
-            let Some(c) = chat::find(&db, &conv, peer.id)
+            let Some(c) = chat::find_own(&db, &conv, peer.id)
                 .map_err(db_err)?
                 .filter(|c| c.dir == Dir::Out)
             else {
@@ -3061,7 +3213,7 @@ impl Chat {
         let Some(old) = chat::message_by_uuid(&db, msg).map_err(db_err)? else {
             return Ok(false);
         };
-        let same = chat::find(&db, conv, peer_id)
+        let same = chat::find_own(&db, conv, peer_id)
             .map_err(db_err)?
             .is_some_and(|c| c.id == old.conversation_id);
         Ok(!(by_agent && same && old.author == Author::Agent && !old.mine && !old.exec))
@@ -3277,6 +3429,7 @@ impl Chat {
 
     /// 구분선 글 + (이 PC 처리면) 대화 줄 깨우기 + (상대 쪽이면) 요청 줄 — 한 트랜잭션. 자동 압축도 여기로.
     fn request_context(self: &Arc<Self>, conv: &Conversation, op: &str) -> io::Result<Message> {
+        Self::writable(conv)?;
         let local = conv.dir == Dir::In || conv.relay.is_some();
         let remote = conv.dir == Dir::Out || conv.relay.is_some();
         let marker = {
@@ -3348,7 +3501,7 @@ impl Chat {
             return Ok(Response::error("bad_request"));
         }
         let db = self.db();
-        let Some(c) = chat::find(&db, &conv, peer.id).map_err(db_err)? else {
+        let Some(c) = chat::find_own(&db, &conv, peer.id).map_err(db_err)? else {
             return Ok(Response::error("unknown"));
         };
         let found = chat::message_by_uuid(&db, &msg).map_err(db_err)?;
@@ -3630,5 +3783,474 @@ impl Chat {
         };
         tx.commit()?;
         Ok((reply.id, staged))
+    }
+
+    /// 공유 사본(#1o)은 읽기 전용 — 글쓰기 · 컨텍스트 · 자동 왕복 · 요청 상태 · CLI 보내기를 막는다.
+    fn writable(conv: &Conversation) -> io::Result<()> {
+        if conv.dir == Dir::Shared {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, READ_ONLY));
+        }
+        Ok(())
+    }
+
+    fn conversation(&self, id: i64) -> io::Result<Conversation> {
+        chat::by_id(&self.db(), id)
+            .map_err(db_err)?
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("대화 {id} 없음")))
+    }
+
+    /// 대화에 관람자를 넣는다(#1o, A — 대화를 가진 PC). 거절: 공유 사본(`InvalidInput`) · 원 상대(`InvalidInput`) · 페어링 안 됨 · 이미 관람자
+    /// (`AlreadyExists`) · 상한 [`share::MAX_WATCHERS`](`InvalidInput`) · 이 기능을 모르는 상대(`Unsupported`, Ping 으로 묻는다 — 닿지 않으면 그 오류).
+    /// 관람자 행 · 머리(`Share`) · 이력(`SharePost` — 글 하나 = 프레임 하나)을 한 트랜잭션으로 그 관람자 줄에 넣고, 원 상대에게 관람자 수를 알린다.
+    pub async fn share_add(&self, conversation_id: i64, peer_id: i64) -> io::Result<()> {
+        let conv = self.conversation(conversation_id)?;
+        if conv.dir == Dir::Shared {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "공유 대화는 다시 공유하지 않는다",
+            ));
+        }
+        if peer_id == conv.peer_id {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "대화 상대는 관람자로 넣지 않는다",
+            ));
+        }
+        self.paired_peer(peer_id)?;
+        Self::share_room(&self.db(), conv.id, peer_id)?;
+        if !self.node.knows_share(peer_id).await? {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "상대 앱 업데이트 필요 — 공유 대화를 모르는 버전",
+            ));
+        }
+        {
+            let db = self.db();
+            let title = chat::summaries(&db)
+                .map_err(db_err)?
+                .into_iter()
+                .find(|s| s.conversation.id == conv.id)
+                .map(|s| s.title)
+                .unwrap_or_default();
+            let other = an_core::peers::by_id(&db, conv.peer_id)
+                .map_err(db_err)?
+                .map(|p| p.name)
+                .unwrap_or_default();
+            let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+            // Ping 하는 사이 다른 창이 넣었을 수 있다 — 트랜잭션 안에서 다시.
+            Self::share_room(&tx, conv.id, peer_id)?;
+            share::add(&tx, conv.id, peer_id).map_err(db_err)?;
+            let head = Request::Share {
+                conv: conv.uuid.clone(),
+                title,
+                agent: conv.agent.clone(),
+                owner_dir: conv.dir.as_str().into(),
+                other,
+            };
+            Self::stage_share(&tx, &conv, peer_id, &head)?;
+            // 이력도 같은 트랜잭션 — 머리만 가고 글이 빠진 채로 꺼지지 않게.
+            Self::fan_share_in(&tx, conv.id)?;
+            tx.commit().map_err(db_err)?;
+        }
+        self.kick(peer_id);
+        self.notice_watchers(&conv);
+        Ok(())
+    }
+
+    /// 관람자 자리 — 이미 관람자 · 상한이면 거절.
+    fn share_room(conn: &Connection, conversation_id: i64, peer_id: i64) -> io::Result<()> {
+        let ws = share::watchers(conn, conversation_id).map_err(db_err)?;
+        if ws.iter().any(|w| w.peer_id == peer_id) {
+            return Err(io::Error::new(io::ErrorKind::AlreadyExists, "이미 관람자"));
+        }
+        if ws.len() >= share::MAX_WATCHERS {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("관람자는 {}명까지", share::MAX_WATCHERS),
+            ));
+        }
+        Ok(())
+    }
+
+    /// 관람자를 뺀다(#1o, A) — 이후 글은 가지 않고 관람자 사본은 읽기 전용으로 남는다(`ShareEnd`). 원 상대에게 관람자 수. 관람자가 아니면
+    /// `NotFound`.
+    pub fn share_remove(&self, conversation_id: i64, peer_id: i64) -> io::Result<()> {
+        let conv = self.conversation(conversation_id)?;
+        if !self.unshare(&conv, peer_id, true)? {
+            return Err(io::Error::new(io::ErrorKind::NotFound, "관람자가 아니다"));
+        }
+        Ok(())
+    }
+
+    /// 공유 대화에서 나간다(#1o, C — 관람자 PC) — 사본은 읽기 전용으로 남고(빠짐 표시) 대화를 가진 PC 에 `ShareEnd`. 이미 빠졌으면 그대로.
+    pub fn share_leave(&self, conversation_id: i64) -> io::Result<()> {
+        let conv = self.conversation(conversation_id)?;
+        if conv.dir != Dir::Shared {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "나가기는 공유 대화만",
+            ));
+        }
+        let ended = {
+            let db = self.db();
+            let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+            let ended = share::end(&tx, conv.id).map_err(db_err)?;
+            if ended {
+                let end = Request::ShareEnd {
+                    conv: conv.uuid.clone(),
+                };
+                Self::stage_share(&tx, &conv, conv.peer_id, &end)?;
+            }
+            tx.commit().map_err(db_err)?;
+            ended
+        };
+        if ended {
+            self.kick(conv.peer_id);
+        }
+        Ok(())
+    }
+
+    /// 관람자 행 · 그 관람자 앞 기다리는 공유 프레임을 지우고, `end` 면 관람자에게 `ShareEnd`, 원 상대에게 바뀐 관람자 수. 없던 관람자면 거짓.
+    /// 공유 줄 행의 관람자가 아직 그 대화의 관람자인가(#1o). 읽지 못하면 참(보내던 대로 — 다음 시도에 다시 본다).
+    fn watching(&self, item: &outbox::Item) -> bool {
+        let Some(conv) = item.conv_id else {
+            return true;
+        };
+        share::watchers(&self.db(), conv)
+            .map_or(true, |ws| ws.iter().any(|w| w.peer_id == item.peer_id))
+    }
+
+    fn unshare(&self, conv: &Conversation, peer_id: i64, end: bool) -> io::Result<bool> {
+        let gone = {
+            let db = self.db();
+            let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+            let gone = share::remove(&tx, conv.id, peer_id).map_err(db_err)?;
+            if gone && end {
+                let req = Request::ShareEnd {
+                    conv: conv.uuid.clone(),
+                };
+                Self::stage_share(&tx, conv, peer_id, &req)?;
+            }
+            tx.commit().map_err(db_err)?;
+            gone
+        };
+        if gone {
+            if end {
+                self.kick(peer_id);
+            }
+            self.notice_watchers(conv);
+        }
+        Ok(gone)
+    }
+
+    /// 원 상대(B)에게 그 대화의 관람자 수(#1o — 이름 없음). 기다리는 알림은 마지막 값으로 바꾼다.
+    fn notice_watchers(&self, conv: &Conversation) {
+        let found = share::watchers(&self.db(), conv.id);
+        let n = match found {
+            Ok(ws) => ws.len(),
+            Err(e) => return log::warn!("대화 {} 관람자 읽기 실패: {e}", conv.uuid),
+        };
+        let req = Request::ShareNotice {
+            conv: conv.uuid.clone(),
+            n: u32::try_from(n).unwrap_or(u32::MAX),
+        };
+        let key = format!("share_notice:{}", conv.uuid);
+        self.enqueue(conv, None, SHARE_NOTICE, &req, Some(&key));
+    }
+
+    /// 공유 대화(#1o) — 관람자마다 보낸 커서 뒤 글(구분선 제외)을 `SharePost` 행으로 넣고 커서를 올린다(한 트랜잭션 — 몇 번 불러도 같은 글을
+    /// 두 번 넣지 않는다). 글을 남기는 길목(`dispatch` · `enqueue` · `handle` 끝)이 부른다. 실패는 로그만 — 다음 부름이 이어 보낸다.
+    // ponytail: 글 하나 = 프레임 하나 = 연결 하나 — 이력이 길면 느리다, 느리면 크기를 재서 묶는다.
+    fn fan_share(&self, conversation_id: i64) {
+        let any = share::watchers(&self.db(), conversation_id);
+        if any.as_ref().is_ok_and(Vec::is_empty) {
+            return;
+        }
+        let fanned = (|| -> io::Result<Vec<i64>> {
+            let db = self.db();
+            let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+            let peers = Self::fan_share_in(&tx, conversation_id)?;
+            tx.commit().map_err(db_err)?;
+            Ok(peers)
+        })();
+        match fanned {
+            Ok(peers) => {
+                for p in peers {
+                    self.kick(p);
+                }
+            }
+            Err(e) => log::warn!("대화 {conversation_id} 관람자에게 보낼 글 보관 실패: {e}"),
+        }
+    }
+
+    /// [`fan_share`](Self::fan_share) 의 몸 — `conn` 은 부르는 쪽 트랜잭션. 돌려주는 값: 깨울 관람자.
+    fn fan_share_in(conn: &Connection, conversation_id: i64) -> io::Result<Vec<i64>> {
+        let Some(conv) = chat::by_id(conn, conversation_id).map_err(db_err)? else {
+            return Ok(Vec::new());
+        };
+        let mut ms = chat::messages(conn, conversation_id).map_err(db_err)?;
+        ms.sort_by_key(|m| m.id);
+        let top = ms.last().map_or(0, |m| m.id);
+        let mut peers = Vec::new();
+        for w in share::watchers(conn, conversation_id).map_err(db_err)? {
+            if w.sent_upto >= top {
+                continue;
+            }
+            for m in ms
+                .iter()
+                .filter(|m| m.id > w.sent_upto && m.author != Author::Context)
+            {
+                Self::stage_share(conn, &conv, w.peer_id, &Self::share_post(&conv, m))?;
+            }
+            share::set_sent(conn, conversation_id, w.peer_id, top).map_err(db_err)?;
+            peers.push(w.peer_id);
+        }
+        Ok(peers)
+    }
+
+    /// 이미 관람자에게 간 글(커서 안)을 고쳤거나(`SharePost` 덮어쓰기) 지웠다(`ShareDelete`) — 그 관람자 줄에. 돌려주는 값: 깨울 관람자.
+    /// 커서 뒤 글은 [`fan_share`](Self::fan_share) 가 지금 모습으로 보낸다.
+    fn share_change(
+        conn: &Connection,
+        conv: &Conversation,
+        m: &Message,
+        deleted: bool,
+    ) -> io::Result<Vec<i64>> {
+        let mut peers = Vec::new();
+        for w in share::watchers(conn, conv.id).map_err(db_err)? {
+            if w.sent_upto < m.id || m.author == Author::Context {
+                continue;
+            }
+            let req = if deleted {
+                Request::ShareDelete {
+                    conv: conv.uuid.clone(),
+                    msg: m.uuid.clone(),
+                }
+            } else {
+                Self::share_post(conv, m)
+            };
+            Self::stage_share(conn, conv, w.peer_id, &req)?;
+            peers.push(w.peer_id);
+        }
+        Ok(peers)
+    }
+
+    /// 공유 프레임을 그 상대 줄에(`msg_id` 없음 — 글을 나르는 행이 아니라 편집 판정 · 보관 표시에 끼지 않는다).
+    fn stage_share(
+        conn: &Connection,
+        conv: &Conversation,
+        peer_id: i64,
+        req: &Request,
+    ) -> io::Result<()> {
+        let frame = serde_json::to_string(req).map_err(io::Error::other)?;
+        outbox::add(
+            conn,
+            peer_id,
+            Some(conv.id),
+            None,
+            SHARE,
+            &frame,
+            None,
+            "pending",
+        )
+        .map(drop)
+        .map_err(db_err)
+    }
+
+    /// 글 하나의 `SharePost` — `owner` = 이 PC(대화를 가진 쪽) 글.
+    fn share_post(conv: &Conversation, m: &Message) -> Request {
+        let mut msg = ShareMsg {
+            uuid: m.uuid.clone(),
+            author: m.author.as_str().into(),
+            text: m.text.clone(),
+            lc: Some(m.lc),
+            at: m.created_at,
+            owner: m.mine,
+            via: m.via.clone(),
+            agent: m.agent.clone(),
+            ok: (m.state == State::Error).then_some(false),
+            edited: m.edited_at.is_some(),
+        };
+        // 제어 문자는 JSON 에서 6배가 된다 — 프레임 상한을 넘으면 본문을 줄인다(공유 프레임은 포기하지 않아 넘는 프레임이 관람자 줄을 영영 막는다).
+        let size = serde_json::to_vec(&msg).map_or(usize::MAX, |b| b.len());
+        if size > MAX_FRAME - 256 {
+            msg.text = fit_to(msg.text, MAX_TEXT / 4);
+        }
+        Request::SharePost {
+            conv: conv.uuid.clone(),
+            msg,
+        }
+    }
+
+    /// 공유 프레임이 거절됐다(#1o) — 관람자가 이 기능을 모르거나(`unsupported`) 이 PC 를 페어링된 상대로 보지 않으면(`not_paired`) 그 관람자를
+    /// 뺀다(관람자 목록에서 빠진다). 원 상대 알림 · 관람자의 나가기 거절은 로그만.
+    fn share_refused(&self, item: &outbox::Item, resp: &Response) {
+        let code = match resp {
+            Response::Error { code } => an_net::proto::clean_code(code),
+            _ => "unknown",
+        };
+        log::info!(
+            "상대 {} 가 공유 프레임({})을 받지 않았다: {code}",
+            item.peer_id,
+            item.kind
+        );
+        if item.kind != SHARE || !matches!(code, "not_paired" | "unsupported") {
+            return;
+        }
+        let conv = item
+            .conv_id
+            .and_then(|id| chat::by_id(&self.db(), id).ok().flatten());
+        let Some(conv) = conv.filter(|c| c.dir != Dir::Shared) else {
+            return;
+        };
+        match self.unshare(&conv, item.peer_id, false) {
+            Ok(true) => log::warn!(
+                "대화 {} 관람자 {} 를 뺐다 — 상대가 받지 않음({code})",
+                conv.uuid,
+                item.peer_id
+            ),
+            Ok(false) => {}
+            Err(e) => log::warn!("대화 {} 관람자 빼기 실패: {e}", conv.uuid),
+        }
+    }
+
+    /// 공유 머리(#1o, C) — 대화를 가진 상대의 사본을 만들거나 다시 받는다(글을 비운다). 같은 uuid 가 내 대화 · 다른 상대의 것이면 `exists`.
+    fn inbound_share(
+        &self,
+        peer: &Peer,
+        conv: String,
+        title: String,
+        agent: String,
+        (owner_dir, other): (String, String),
+    ) -> io::Result<Response> {
+        if !matches!(owner_dir.as_str(), "out" | "in") {
+            return Ok(Response::error("bad_request"));
+        }
+        // 제목은 이 PC 제목 규칙에 맞을 때만(아니면 첫 글 앞부분).
+        let title = an_core::run_opts::clean_title(&title).ok().flatten();
+        let (agent, other) = (
+            an_net::proto::clean_name(&agent),
+            an_net::proto::clean_name(&other),
+        );
+        let db = self.db();
+        let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+        let copy = share::open_copy(
+            &tx,
+            &conv,
+            peer.id,
+            &agent,
+            title.as_deref(),
+            (&other, &owner_dir),
+        )
+        .map_err(db_err)?;
+        if copy.is_none() {
+            return Ok(Response::error("exists"));
+        }
+        tx.commit().map_err(db_err)?;
+        Ok(Response::Ok)
+    }
+
+    /// 그 상대가 보낸 살아 있는 사본(#1o, C — 빠지지 않은 것).
+    fn live_copy(conn: &Connection, peer: &Peer, conv: &str) -> io::Result<Option<Conversation>> {
+        let Some(c) = chat::find(conn, conv, peer.id)
+            .map_err(db_err)?
+            .filter(|c| c.dir == Dir::Shared)
+        else {
+            return Ok(None);
+        };
+        let ended = share::copy(conn, c.id)
+            .map_err(db_err)?
+            .is_some_and(|x| x.ended);
+        Ok((!ended).then_some(c))
+    }
+
+    /// 공유 글(#1o, C) — 그 상대 사본에만, 실행 · 알림 없이. 같은 uuid 가 다른 대화의 글이면 `exists`.
+    fn inbound_share_post(&self, peer: &Peer, conv: String, msg: ShareMsg) -> io::Result<Response> {
+        let author = match msg.author.as_str() {
+            "human" => Author::Human,
+            "agent" => Author::Agent,
+            _ => return Ok(Response::error("bad_request")),
+        };
+        if msg.text.trim().is_empty() || msg.text.len() > MAX_TEXT {
+            return Ok(Response::error("bad_request"));
+        }
+        let agent = msg.agent.as_deref().map(an_net::proto::clean_name);
+        let db = self.db();
+        let Some(c) = Self::live_copy(&db, peer, &conv)? else {
+            return Ok(Response::error("unknown"));
+        };
+        let post = share::Post {
+            uuid: &msg.uuid,
+            author,
+            text: &msg.text,
+            lc: msg.lc,
+            at: msg.at,
+            owner: msg.owner,
+            via: msg.via.as_deref(),
+            agent: agent.as_deref(),
+            ok: msg.ok.unwrap_or(true),
+            edited: msg.edited,
+        };
+        Ok(if share::upsert(&db, c.id, &post).map_err(db_err)? {
+            Response::Ok
+        } else {
+            Response::error("exists")
+        })
+    }
+
+    /// 공유 글 지움(#1o, C) — 그 상대 사본의 글만.
+    fn inbound_share_delete(&self, peer: &Peer, conv: String, msg: String) -> io::Result<Response> {
+        let db = self.db();
+        let Some(c) = Self::live_copy(&db, peer, &conv)? else {
+            return Ok(Response::error("unknown"));
+        };
+        let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+        share::delete(&tx, c.id, &msg).map_err(db_err)?;
+        tx.commit().map_err(db_err)?;
+        Ok(Response::Ok)
+    }
+
+    /// 공유 끝(#1o) — C: 대화를 가진 PC 가 뺐다(사본은 읽기 전용으로 남는다). A: 관람자가 나갔다(관람자 행을 지우고 원 상대에게 관람자 수).
+    fn inbound_share_end(&self, peer: &Peer, conv: String) -> io::Result<Response> {
+        let own = {
+            let db = self.db();
+            if let Some(c) = chat::find(&db, &conv, peer.id)
+                .map_err(db_err)?
+                .filter(|c| c.dir == Dir::Shared)
+            {
+                share::end(&db, c.id).map_err(db_err)?;
+                return Ok(Response::Ok);
+            }
+            share::own_by_uuid(&db, &conv).map_err(db_err)?
+        };
+        if let Some(c) = own {
+            self.unshare(&c, peer.id, false)?;
+        }
+        Ok(Response::Ok)
+    }
+
+    /// 원 상대(B)가 받은 관람자 수(#1o) — 그 상대 소유 대화(사본 아님)에만. 바뀌었을 때만 알린다(재전송은 알림 없음).
+    fn inbound_share_notice(&self, peer: &Peer, conv: String, n: u32) -> io::Result<Response> {
+        if usize::try_from(n).map_or(true, |n| n > share::MAX_WATCHERS) {
+            return Ok(Response::error("bad_request"));
+        }
+        let (c, changed) = {
+            let db = self.db();
+            let Some(c) = chat::find_own(&db, &conv, peer.id).map_err(db_err)? else {
+                return Ok(Response::error("unknown"));
+            };
+            let changed = share::set_watched(&db, c.id, i64::from(n)).map_err(db_err)?;
+            (c, changed)
+        };
+        if changed {
+            self.notify(
+                c.id,
+                peer,
+                c.agent.clone(),
+                MessageKind::Share,
+                format!("관람자 {n}"),
+            );
+        }
+        Ok(Response::Ok)
     }
 }

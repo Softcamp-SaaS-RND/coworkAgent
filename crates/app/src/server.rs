@@ -30,7 +30,14 @@ struct AppState {
     origin: String,
     status: Status,
     open_browser: Box<dyn Fn() -> std::io::Result<()> + Send + Sync>,
+    /// `/api/status` 의 `mode` — `"tray"` · `"headless"`(#1n).
+    mode: &'static str,
+    /// `POST /api/quit` 이 부른다 — 트레이 "종료" 와 같은 정상 종료.
+    quit: Option<Quit>,
 }
+
+/// 종료 요청 — 트레이 이벤트 루프 · 트레이 없는 모드의 대기를 깨운다.
+pub type Quit = Box<dyn Fn() + Send + Sync>;
 
 /// 루프백 전용 · 동적 포트.
 pub async fn bind() -> std::io::Result<TcpListener> {
@@ -54,7 +61,7 @@ pub fn router(
     router_with(port, token, status, open_browser, Router::new())
 }
 
-/// `router` + 더 붙일 경로(`extra`) — 같은 guard 뒤에 놓인다.
+/// `router` + 더 붙일 경로(`extra`) — 같은 guard 뒤에 놓인다. 트레이 모드 · 종료 API 없음.
 pub fn router_with(
     port: u16,
     token: String,
@@ -62,15 +69,34 @@ pub fn router_with(
     open_browser: impl Fn() -> std::io::Result<()> + Send + Sync + 'static,
     extra: Router,
 ) -> Router {
+    router_control(port, token, status, open_browser, "tray", None, extra)
+}
+
+/// `router_with` + 실행 모드 · 종료 API(#1n). `quit` 이 있을 때만 `POST /api/quit` 을 둔다.
+pub fn router_control(
+    port: u16,
+    token: String,
+    status: Status,
+    open_browser: impl Fn() -> std::io::Result<()> + Send + Sync + 'static,
+    mode: &'static str,
+    quit: Option<Quit>,
+    extra: Router,
+) -> Router {
+    let has_quit = quit.is_some();
     let state = Arc::new(AppState {
         token,
         host: format!("127.0.0.1:{port}"),
         origin: format!("http://127.0.0.1:{port}"),
         status,
         open_browser: Box::new(open_browser),
+        mode,
+        quit,
     });
-    Router::new()
-        .route("/", get(index))
+    let mut base = Router::new();
+    if has_quit {
+        base = base.route("/api/quit", post(api_quit));
+    }
+    base.route("/", get(index))
         .route("/app.js", get(app_js))
         .route("/view.js", get(view_js))
         .route("/app.css", get(app_css))
@@ -204,10 +230,11 @@ async fn favicon() -> impl IntoResponse {
 async fn api_status(State(s): State<Arc<AppState>>) -> impl IntoResponse {
     let st = &s.status;
     let body = format!(
-        r#"{{"version":"{}","data_dir":"{}","db":"{}","cli_api":{CLI_API}}}"#,
+        r#"{{"version":"{}","data_dir":"{}","db":"{}","cli_api":{CLI_API},"mode":"{}"}}"#,
         json_escape(&st.version),
         json_escape(&st.data_dir),
-        json_escape(&st.db)
+        json_escape(&st.db),
+        s.mode
     );
     ([(header::CONTENT_TYPE, "application/json")], body)
 }
@@ -220,6 +247,18 @@ async fn api_open(State(s): State<Arc<AppState>>) -> StatusCode {
             StatusCode::INTERNAL_SERVER_ERROR
         }
     }
+}
+
+/// 204 를 먼저 돌려주고 잠깐 뒤 종료를 부른다 — 응답이 나가기 전에 런타임이 멈추지 않게.
+async fn api_quit(State(s): State<Arc<AppState>>) -> StatusCode {
+    log::info!("종료 요청(로컬 API)");
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        if let Some(quit) = &s.quit {
+            quit();
+        }
+    });
+    StatusCode::NO_CONTENT
 }
 
 fn json_escape(s: &str) -> String {

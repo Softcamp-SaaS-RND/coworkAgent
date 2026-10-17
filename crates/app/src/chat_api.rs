@@ -3,8 +3,9 @@ use crate::peers_api::PeerView;
 use an_agent::chat::{Chat, Compose, TxView, default_relay_cap};
 use an_core::agents::{self, Agent};
 use an_core::chat::{
-    self, ActivityFilter, AskFilter, Author, Conversation, Message, ReqState, Summary,
+    self, ActivityFilter, AskFilter, Author, Conversation, Dir, Message, ReqState, Summary,
 };
+use an_core::share;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -281,6 +282,18 @@ pub fn routes(chat: Arc<Chat>) -> Router {
             "/api/conversations/{id}/context",
             axum::routing::post(context_op),
         )
+        .route(
+            "/api/conversations/{id}/observers",
+            axum::routing::post(add_observer),
+        )
+        .route(
+            "/api/conversations/{id}/observers/{peer}",
+            delete(remove_observer),
+        )
+        .route(
+            "/api/conversations/{id}/leave",
+            axum::routing::post(leave_share),
+        )
         .with_state(chat.clone())
         .merge(crate::groups_api::routes(chat))
 }
@@ -289,7 +302,7 @@ fn fail(e: io::Error) -> Response {
     let code = match e.kind() {
         io::ErrorKind::NotFound => StatusCode::NOT_FOUND,
         io::ErrorKind::InvalidInput => StatusCode::BAD_REQUEST,
-        io::ErrorKind::AlreadyExists => StatusCode::CONFLICT,
+        io::ErrorKind::AlreadyExists | io::ErrorKind::Unsupported => StatusCode::CONFLICT,
         io::ErrorKind::PermissionDenied => StatusCode::FORBIDDEN,
         _ => StatusCode::BAD_GATEWAY,
     };
@@ -357,6 +370,28 @@ fn conversation_json(c: &Conversation) -> Value {
     })
 }
 
+/// 공유 필드(#1o) — 공유 대화(사본) = `share{other, owner_dir, ended}`, 그 밖 = `observers`(내가 넣은 관람자 id) · `watchers`(원 상대가 알려 준 관람자 수).
+fn share_json(
+    db: &an_core::db::Connection,
+    c: &Conversation,
+    v: &mut Value,
+) -> Result<(), an_core::db::Error> {
+    if c.dir == Dir::Shared {
+        v["share"] = json!(share::copy(db, c.id)?.map(|s| json!({
+            "other": s.other, "owner_dir": s.owner_dir, "ended": s.ended.then_some(true),
+        })));
+    } else {
+        v["observers"] = json!(
+            share::watchers(db, c.id)?
+                .iter()
+                .map(|w| w.peer_id)
+                .collect::<Vec<_>>()
+        );
+        v["watchers"] = json!(share::watched(db, c.id)?);
+    }
+    Ok(())
+}
+
 fn message_json(m: &Message) -> Value {
     json!({
         "id": m.id, "author": m.author.as_str(), "text": m.text, "state": m.state.as_str(), "created_at": m.created_at,
@@ -364,7 +399,7 @@ fn message_json(m: &Message) -> Value {
         "via": m.via, "model": m.model, "effort": m.effort, "saved": m.saved_at.is_some(),
         "request": m.request, "req_state": m.req_state.map(ReqState::as_str), "req_note": m.req_note, "req_at": m.req_at,
         "agent": m.agent, "refused": m.refused, "edited_at": m.edited_at,
-        "ctx_tokens": m.ctx_tokens, "ctx_op": m.ctx_op,
+        "ctx_tokens": m.ctx_tokens, "ctx_op": m.ctx_op, "owner": m.owner,
     })
 }
 
@@ -490,8 +525,17 @@ async fn remote_agents(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) -> Re
 }
 
 async fn list_conversations(State(chat): State<Arc<Chat>>) -> Response {
-    match chat::summaries(&chat.db()) {
-        Ok(list) => Json(list.iter().map(summary_json).collect::<Vec<_>>()).into_response(),
+    let db = chat.db();
+    let read = chat::summaries(&db).and_then(|list| {
+        list.iter()
+            .map(|s| {
+                let mut v = summary_json(s);
+                share_json(&db, &s.conversation, &mut v).map(|()| v)
+            })
+            .collect::<Result<Vec<_>, _>>()
+    });
+    match read {
+        Ok(list) => Json(list).into_response(),
         Err(e) => db_fail(e),
     }
 }
@@ -990,6 +1034,42 @@ async fn context_op(
 ) -> Response {
     match chat.context(id, &req.op) {
         Ok(m) => Json(message_json(&m)).into_response(),
+        Err(e) => fail(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct NewObserver {
+    peer_id: i64,
+}
+
+/// 관람자 넣기(#1o) — 204. 사본 · 원 상대 · 5명 넘음 400, 없는 대화 · 상대 404, 이미 관람자 · 상대 앱이 이 기능을 모름 409.
+async fn add_observer(
+    State(chat): State<Arc<Chat>>,
+    Path(id): Path<i64>,
+    Json(req): Json<NewObserver>,
+) -> Response {
+    match chat.share_add(id, req.peer_id).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => fail(e),
+    }
+}
+
+/// 관람자 빼기(#1o) — 204, 관람자가 아니면 404.
+async fn remove_observer(
+    State(chat): State<Arc<Chat>>,
+    Path((id, peer)): Path<(i64, i64)>,
+) -> Response {
+    match chat.share_remove(id, peer) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => fail(e),
+    }
+}
+
+/// 공유 대화에서 나가기(#1o, 관람자) — 204. 사본이 아니면 400.
+async fn leave_share(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) -> Response {
+    match chat.share_leave(id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => fail(e),
     }
 }

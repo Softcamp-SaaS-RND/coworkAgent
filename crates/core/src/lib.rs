@@ -12,4 +12,5 @@ pub mod paths;
 pub mod peers;
 pub mod run_opts;
 pub mod settings;
+pub mod share;
 pub mod sync;

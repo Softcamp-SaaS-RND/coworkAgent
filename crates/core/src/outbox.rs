@@ -220,6 +220,10 @@ pub fn pending_peers(conn: &Connection) -> rusqlite::Result<Vec<i64>> {
 pub const EDIT: &str = "msg_edit";
 pub const DELETE: &str = "msg_delete";
 
+/// 공유 대화 프레임(#1o) — 관람자 앞 `Share*` · 원 상대 앞 관람자 수(`ShareNotice`). 실어 나르는 글이 없고(`msg_id` NULL) 포기하지 않는다.
+pub const SHARE: &str = "share";
+pub const SHARE_NOTICE: &str = "share_notice";
+
 /// 그 글을 실어 나르는 가장 최근 행(보관 상태 표시 · 편집 가능 판정) — 편집 · 삭제 반영 행([`EDIT`] · [`DELETE`])은 뺀다.
 pub fn for_message(conn: &Connection, msg_id: i64) -> rusqlite::Result<Option<Item>> {
     conn.query_row(

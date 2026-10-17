@@ -4,17 +4,17 @@
 use an_agent::chat::Chat;
 use an_agent::runner::{find_claude, run_claude};
 use an_app::notify::{self, Notifier};
-use an_app::server::{self, Status};
-use an_app::tray::{Attention, Tray, write_start_error};
-use an_app::{autostart, browser, chat_api, cli, handoff, peers_api, watchdog};
+use an_app::server::{self, Quit, Status};
+use an_app::tray::{Attention, Tray, read_start_error, write_start_error};
+use an_app::{autostart, browser, chat_api, cli, handoff, peers_api, proc, watchdog};
 use an_core::db;
-use an_core::instance::{Acquired, InstanceInfo, InstanceLock};
+use an_core::instance::{Acquired, InstanceInfo, InstanceLock, write_pid};
 use an_core::log_file::FileLogger;
 use an_core::paths::Paths;
 use an_net::identity::Identity;
 use an_net::node::{self, Me, Node};
 use std::error::Error;
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
 fn main() {
@@ -44,28 +44,115 @@ fn main() {
     if !args.is_empty() {
         std::process::exit(cli::main(&args));
     }
-    // 인자 없는 첫 실행 = 감시 프로세스 — 앱을 자식으로 띄우고 비정상 종료면 다시 띄운다(#1e). 감시는 로거 · DB · 잠금을 쓰지 않는다.
+    // 트레이 없는 모드(#1n) — `start` · `open` 이 지켜볼 부모 PID 를 붙여 띄운다. 감시 · 앱 모두 같은 값을 본다.
+    let parent = watchdog::parent();
+    // 인자 없는 첫 실행 = 감시 프로세스 — 앱을 자식으로 띄우고 비정상 종료면 다시 띄운다(#1e). 감시는 로거 · DB 를 쓰지 않는다.
     let Some(restarts) = watchdog::restarts() else {
-        if let watchdog::Outcome::GaveUp(why) =
-            watchdog::supervise(watchdog::spawn_app, watchdog::RESTART_DELAY)
-        {
-            let file = write_start_error(&why).unwrap_or_default();
-            let (tray, _) = Tray::new();
-            tray.run_error(&why, &file)
-        }
-        return;
+        std::process::exit(supervise(parent));
     };
-    let (tray, attention) = Tray::new();
-    match start(attention, restarts) {
-        Ok(Some(app)) => tray.run(app.url, app.note, app.on_seen, app.on_quit),
+    // 앱이 다시 뜰 때(비정상 종료 뒤) 부모가 이미 없으면 띄우지 않고 끝(감시도 끝).
+    if parent.is_some_and(|pid| !proc::alive(pid)) {
+        return;
+    }
+    let mut tray = None;
+    // 트레이 없는 모드의 종료 신호 — `/api/quit` · 부모 끝이 같은 채널로 메인 스레드를 깨운다.
+    let mut wake = None;
+    let (attention, quit, quit_rx): (Attention, Quit, _) = if parent.is_some() {
+        let (tx, rx) = mpsc::channel::<()>();
+        wake = Some(tx.clone());
+        (
+            Attention::none(),
+            Box::new(move || {
+                let _ = tx.send(());
+            }),
+            Some(rx),
+        )
+    } else {
+        let (t, attention) = Tray::new();
+        let quit = t.quitter();
+        tray = Some(t);
+        (attention, quit, None)
+    };
+    let mode = if parent.is_some() { "headless" } else { "tray" };
+    match start(attention, restarts, mode, quit) {
+        Ok(Some(app)) => match (tray, quit_rx) {
+            (Some(tray), _) => tray.run(app.url, app.note, app.on_seen, app.on_quit),
+            (None, Some(rx)) => {
+                // 트레이 없는 모드 — 종료 요청(`/api/quit`) · 부모 끝을 기다린다.
+                if let (Some(pid), Some(wake)) = (parent, wake) {
+                    proc::watch_parent(pid, move || {
+                        log::info!("부모 프로세스 {pid} 끝 — 함께 종료");
+                        let _ = wake.send(());
+                    });
+                }
+                let _ = rx.recv();
+                (app.on_quit)();
+            }
+            (None, None) => unreachable!("트레이 없는 모드는 종료 채널이 있다"),
+        },
         Ok(None) => {}
         Err(e) => {
             log::error!("시작 실패: {e}");
             eprintln!("coworkAgent: {e}");
-            // 두 OS 같은 모습 — 트레이 오류 모드(D30). 사유 파일도 못 쓰면 표시만.
-            let file = write_start_error(&e.to_string()).unwrap_or_default();
-            tray.run_error(&e.to_string(), &file)
+            // 오류 표시는 감시가(#1n — 오류 트레이는 감시 잠금 안에서 하나). 앱은 사유 파일만 남기고 시작 실패 코드로 끝난다.
+            if let Err(we) = write_start_error(&e.to_string()) {
+                eprintln!("coworkAgent: 오류 파일 쓰기 실패: {we}");
+            }
+            std::process::exit(watchdog::START_FAILED);
         }
+    }
+}
+
+/// 감시 프로세스 — 감시 잠금을 잡고 앱을 지켜본다. 돌려주는 값 = 종료 코드.
+/// 이미 다른 감시가 돌면: 트레이 없는 모드 요청은 조용히 0(부른 `start` · `open` 이 준비를 확인한다), 인자 없는 실행은 화면 넘기기.
+/// 시작 실패 · 멈춤이면: 트레이 모드는 오류 트레이(잠금을 쥔 채 — 하나), 트레이 없는 모드는 사유 파일만 남기고 [`watchdog::START_FAILED`].
+fn supervise(parent: Option<u32>) -> i32 {
+    let headless = parent.is_some();
+    // 감시 잠금을 쥔 뒤의 실패 — 트레이 모드는 오류 트레이(잠금 안 — 하나).
+    let fail = |why: &str| -> i32 {
+        let file = write_start_error(why).unwrap_or_default();
+        if headless {
+            eprintln!("coworkAgent: {why}");
+            return watchdog::START_FAILED;
+        }
+        let (tray, _) = Tray::new();
+        tray.run_error(why, &file)
+    };
+    // 잠금 없이의 실패 — 오류 트레이를 띄우지 않는다(거듭 실행으로 늘지 않게). 트레이 모드는 사유 파일을 열어 조용히 사라지지 않는다.
+    let fail_unlocked = |why: &str| -> i32 {
+        eprintln!("coworkAgent: {why}");
+        match write_start_error(why) {
+            Ok(file) if !headless => {
+                if let Err(oe) = browser::open(&file.display().to_string()) {
+                    eprintln!("coworkAgent: 오류 파일 열기 실패: {oe}");
+                }
+            }
+            Ok(_) => {}
+            Err(we) => eprintln!("coworkAgent: 오류 파일 쓰기 실패: {we}"),
+        }
+        if headless { watchdog::START_FAILED } else { 1 }
+    };
+    let Some(root) = Paths::default_root() else {
+        return fail_unlocked("사용자 데이터 경로를 찾지 못했다");
+    };
+    let paths = Paths::under(root);
+    let _lock = match watchdog::acquire(&paths) {
+        Ok(Some(lock)) => lock,
+        Ok(None) if headless => return 0,
+        Ok(None) => {
+            return match hand_off(&paths) {
+                Ok(()) => 0,
+                Err(e) => fail_unlocked(&e.to_string()),
+            };
+        }
+        Err(e) => return fail_unlocked(&format!("감시 잠금을 잡지 못했다: {e}")),
+    };
+    match watchdog::supervise(watchdog::spawn_app, watchdog::RESTART_DELAY) {
+        watchdog::Outcome::Done => 0,
+        watchdog::Outcome::StartFailed => {
+            fail(&read_start_error().unwrap_or_else(|| "앱 시작 실패".into()))
+        }
+        watchdog::Outcome::GaveUp(why) => fail(&why),
     }
 }
 
@@ -79,7 +166,12 @@ struct App {
 }
 
 /// `Ok(None)` = 이미 실행 중이라 핸드오프하고 끝.
-fn start(attention: Attention, restarts: u32) -> Result<Option<App>, Box<dyn Error>> {
+fn start(
+    attention: Attention,
+    restarts: u32,
+    mode: &'static str,
+    quit: Quit,
+) -> Result<Option<App>, Box<dyn Error>> {
     let root = Paths::default_root().ok_or("사용자 데이터 경로를 찾지 못했다")?;
     let paths = Paths::under(root);
     // 개명 전 설치의 신원 · 피어 · 대화 · 설정을 이어받는다.
@@ -101,6 +193,8 @@ fn start(attention: Attention, restarts: u32) -> Result<Option<App>, Box<dyn Err
         Acquired::Primary(lock) => lock,
         Acquired::Secondary => return hand_off(&paths).map(|()| None),
     };
+    // `stop` 의 강제 종료용(잠금이 잡혀 있을 때만 쓴다).
+    write_pid(&paths.instance_pid_file())?;
     // 주 인스턴스만 — 핸드오프로 뜨는 두 번째 실행이 매번 트리 전체에 권한을 다시 퍼뜨리지 않게.
     if let Err(e) = paths.restrict() {
         log::warn!("데이터 폴더 권한을 사용자 전용으로 맞추지 못했다: {e}");
@@ -174,11 +268,13 @@ fn start(attention: Attention, restarts: u32) -> Result<Option<App>, Box<dyn Err
     runtime.spawn(node.clone().announce());
 
     let open_url = url.clone();
-    let app = server::router_with(
+    let app = server::router_control(
         port,
         token.clone(),
         status,
         move || browser::open(&open_url),
+        mode,
+        Some(quit),
         peers_api::routes(node)
             .merge(notify::routes(notifier.clone()))
             .merge(chat_api::routes(chat)),
@@ -192,6 +288,7 @@ fn start(attention: Attention, restarts: u32) -> Result<Option<App>, Box<dyn Err
     log::info!("시작 — 127.0.0.1:{port}");
 
     let info_file = paths.instance_file();
+    let pid_file = paths.instance_pid_file();
     Ok(Some(App {
         url,
         note,
@@ -201,6 +298,7 @@ fn start(attention: Attention, restarts: u32) -> Result<Option<App>, Box<dyn Err
             // 서버를 먼저 멈추고 잠금은 마지막에 푼다 — 그 전에 뜬 새 프로세스는 계속 보조 인스턴스다.
             runtime.shutdown_timeout(Duration::from_secs(1));
             let _ = std::fs::remove_file(info_file);
+            let _ = std::fs::remove_file(pid_file);
             drop(lock);
         }),
     }))

@@ -24,6 +24,8 @@ export function peerState(p) {
 /// 사이드바 · 머리글의 대화(대화방) 이름. 제목이 없으면(메시지 없음) 에이전트로. 보냄 · 받음 표시는 없다(#1j — 대화방 하나에 주고받은 글이 이어진다).
 export function convLabel(conv, peerNames) {
   const who = peerNames.get(conv.peer_id) ?? "알 수 없는 상대";
+  // 공유 대화(#1o) — 초대한 사람(`peer_id`)과 원 상대(`share.other`)의 대화를 보기만 한다.
+  if (conv.dir === "shared") return { title: conv.title || `${conv.agent} 대화`, sub: `공유 · ${shortName(who)} ↔ ${conv.share?.other ?? "상대"}` };
   const out = conv.dir === "out";
   const title = conv.title || (out ? `${conv.agent} 에게` : `내 ${conv.agent} 가 받은 요청`);
   const sub = out ? `${who} 의 ${conv.agent}` : `${who} 의 요청 · 내 ${conv.agent}`;
@@ -38,8 +40,9 @@ export function roomPreview(conv, peerName) {
 }
 
 /// 말풍선 쪽(#1j) — 이 PC 쪽 글(`mine` — 보낸 대화의 내 글 · 받은 대화의 내 에이전트 답)은 오른쪽, 그 밖은 왼쪽.
+/// 공유 대화(#1o)는 공유한 사람 쪽 글(`owner`)이 오른쪽 — 대화가 오가는 순서를 알기 쉽게.
 export function bubbleSide(m) {
-  return m.mine === true ? "mine" : "theirs";
+  return m.mine === true || m.owner === true ? "mine" : "theirs";
 }
 
 /// 날짜 구분선 열쇠 — 지역 날짜(`YYYY-M-D`).
@@ -96,6 +99,7 @@ export function filterByPeer(convs, peerId) {
 /// 받은 대화의 상대 글 = 상대 에이전트.
 export function authorLabel(conv, m, peerName) {
   const peer = shortName(peerName);
+  if (conv.dir === "shared") return sharedAuthor(conv, m, peer);
   if (m.author === "agent") {
     const agent = m.agent ?? conv.agent;
     if (conv.dir === "out") return m.mine === true ? `내 ${conv.relay_agent ?? "에이전트"}` : `${peer}/${agent}`;
@@ -103,6 +107,19 @@ export function authorLabel(conv, m, peerName) {
   }
   if (m.via === "cli") return m.mine ? `내 ${CLI_LABEL}` : `${peer}/${CLI_LABEL}`;
   return m.mine ? "나" : peer;
+}
+
+/// 공유 대화(#1o)의 발화자 — `owner` = 초대한 사람(`peer`) 쪽 글, 아니면 원 상대(`share.other`). 에이전트는 그 쪽 사람의 것 — 대화 에이전트는
+/// 초대한 사람이 연 대화(`owner_dir = "out"`)면 원 상대 것, 받은 대화면 초대한 사람 것.
+export function sharedAuthor(conv, m, peer) {
+  const other = conv.share?.other ?? "상대";
+  const who = m.owner === true ? peer : other;
+  if (m.author === "agent") {
+    const ownsAgent = (conv.share?.owner_dir === "out") !== (m.owner === true);
+    return `${who}/${m.agent ?? (ownsAgent ? conv.agent : "에이전트")}`;
+  }
+  if (m.via === "cli") return `${who}/${CLI_LABEL}`;
+  return who;
 }
 
 /// "이름 · PC" 의 이름 — 마지막 구분 앞까지(표시 이름에 " · " 가 있어도 자르지 않는다). 모르는 상대 = "상대".
@@ -117,6 +134,7 @@ const CLI_LABEL = "AI 에이전트(CLI)";
 
 /// 대화 머리글의 자동 왕복 표시(D24)와 누를 수 있는 동작 — 보낸 쪽: 멈춤 · 재개, 받은 쪽: 멈춤만(재개는 연 쪽). 아니면 `null`.
 export function relayText(conv, messages) {
+  if (conv.dir === "shared") return null;
   if (conv.dir === "out") {
     if (!conv.relay_agent) return null;
     const n = `자동 왕복 ${conv.relay_count ?? 0} / ${conv.relay_cap}`;
@@ -379,7 +397,7 @@ export function inboxRows(messages, peerNames, { kind = "" } = {}) {
         id: m.id,
         who: authorLabel(conv, m, peerNames.get(conv.peer_id)),
         // 어느 에이전트와의 대화인지(#1k — 주고받은 글 칩): 보낸 대화 = 상대 에이전트, 받은 대화 = 내 에이전트.
-        agent: conv.dir === "out" ? conv.agent : `내 ${conv.agent}`,
+        agent: conv.dir === "in" ? `내 ${conv.agent}` : conv.agent,
         kind: askTag(m),
         room: conv.title || "",
         preview: preview(m.text),
@@ -649,6 +667,41 @@ export function convSections(rows, paired = null, peerNames = new Map()) {
   return groups.length ? groups : [{ key: "convs", title: "대화방", rows: [] }];
 }
 
+/// 대화 한 개의 관람자 상한(#1o — 서버 `share::MAX_OBSERVERS` 와 같다).
+export const MAX_OBSERVERS = 5;
+
+/// 대화 머리의 공유 표시(#1o) — 공유 대화(사본) = "읽기 전용" · 빠졌으면 "공유 해제됨", 내 대화 · agent 대화 = 관람자가 있으면 "관람자 n"(초대한 쪽은
+/// `observers`, 원 상대는 알림 받은 `watchers`).
+export function shareHead(conv) {
+  if (conv.dir === "shared") return conv.share?.ended != null ? "공유 해제됨" : "읽기 전용";
+  const n = conv.observers?.length || conv.watchers || 0;
+  return n ? `관람자 ${n}` : "";
+}
+
+/// 관람자로 넣을 수 있는 상대(#1o) — 페어링된 상대 중 원 상대 · 이미 관람자인 상대를 뺀다. 공유 대화(사본) · 상한이면 빈 목록.
+export function shareCandidates(conv, peers) {
+  const now = conv.observers ?? [];
+  if (conv.dir === "shared" || now.length >= MAX_OBSERVERS) return [];
+  return peers.filter((p) => p.paired && p.id !== conv.peer_id && !now.includes(p.id));
+}
+
+/// 대화방 목록 묶음(#1o) — 대화의 `dir` 로: 내가 연 대화(자동 왕복 포함) · 상대가 연 대화(내 에이전트가 답). 순서 = 이 배열 순서.
+export const CONV_GROUPS = [
+  { dir: "out", title: "내 대화" },
+  { dir: "in", title: "agent 대화" },
+  { dir: "shared", title: "공유 대화" },
+];
+
+/// 한 절의 행을 묶음으로 나눈다(#1o) — 행 있는 묶음만, 묶음 안 순서는 들어온 그대로. 묶음이 둘 이상일 때만 머리를 보인다(하나면 지금처럼 한 목록).
+export function splitByDir(rows) {
+  return CONV_GROUPS.map((g) => ({ ...g, rows: rows.filter((r) => r.c.dir === g.dir) })).filter((g) => g.rows.length);
+}
+
+/// 대화 줄의 끌기 묶음 열쇠(#1o) — 끌어 옮기기 · Alt + ↑ / ↓ 는 같은 열쇠 안에서만(`dropKind`).
+export function splitKey(section, dir) {
+  return `${section}:${dir}`;
+}
+
 /// 상대별 절(#1g, '나') — 행(`peer` = 상대 id)을 레일 순서(`paired`)로 묶고, 그 뒤 페어링이 풀린 상대를 id 순으로. 행 없는 상대는 뺀다.
 /// 절 안 순서는 들어온 순서(목록이 이미 최신순).
 export function peerGroups(rows, paired, peerNames) {
@@ -687,11 +740,13 @@ export function peerSummary(convs, paired, peerNames, waiting = new Map()) {
 /// 대화 행 표시 — 둘째 줄 `{에이전트} · {상태}`(받은 대화의 에이전트는 내 것), 실행 중 표시, 자동 왕복 칩 "왕복 {n}/{상한}", 안 읽음.
 export function convMeta(c) {
   return {
-    agent: c.dir === "out" ? c.agent : `내 ${c.agent}`,
+    agent: c.dir === "in" ? `내 ${c.agent}` : c.agent,
     state: stateText(c.last_state),
     running: c.last_state === "running",
     relay: c.relay_agent && c.relay_cap != null ? `왕복 ${c.relay_count ?? 0}/${c.relay_cap}` : null,
     unread: c.unread > 0,
+    // 공유 대화를 초대한 사람이 빼거나 내가 나갔다(#1o) — 읽기 전용 사본으로 남는다.
+    tag: c.dir === "shared" && c.share?.ended != null ? "공유 해제됨" : null,
   };
 }
 

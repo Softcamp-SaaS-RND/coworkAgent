@@ -88,6 +88,8 @@ pub enum MessageKind {
     Ask,
     /// 내 요청의 상태가 바뀌었다(#1d — 상대가 수용 · 반려 · 완료).
     AskState,
+    /// 내 대화의 관람자 수가 바뀌었다(#1o — 상대가 그 대화를 공유했다).
+    Share,
 }
 
 type EventSink = Box<dyn Fn(PeerEvent) + Send + Sync>;
@@ -502,6 +504,11 @@ impl Node {
                 | Request::Edit { .. }
                 | Request::Delete { .. }
                 | Request::Context { .. }
+                | Request::Share { .. }
+                | Request::SharePost { .. }
+                | Request::ShareDelete { .. }
+                | Request::ShareEnd { .. }
+                | Request::ShareNotice { .. }
         ) {
             let peer = peers::by_spki(&self.db(), spki).map_err(db_err)?;
             let resp = match (peer, self.requests.get()) {
@@ -619,7 +626,11 @@ impl Node {
                         log::warn!("집중 설정 읽기 실패 — 꺼짐으로 답한다: {e}");
                         false
                     });
-                    Response::Pong { focus, ctx: true }
+                    Response::Pong {
+                        focus,
+                        ctx: true,
+                        share: true,
+                    }
                 } else {
                     Response::error("not_paired")
                 }
@@ -635,7 +646,12 @@ impl Node {
             | Request::Status { .. }
             | Request::Edit { .. }
             | Request::Delete { .. }
-            | Request::Context { .. } => Response::error("bad_request"),
+            | Request::Context { .. }
+            | Request::Share { .. }
+            | Request::SharePost { .. }
+            | Request::ShareDelete { .. }
+            | Request::ShareEnd { .. }
+            | Request::ShareNotice { .. } => Response::error("bad_request"),
         };
         Ok((resp, event))
     }
@@ -848,15 +864,21 @@ impl Node {
 
     /// 연결 확인 — 상대가 집중 중인가를 돌려주고, 받은 `Pong` 을 접속 상태로 남긴다(거절 · 전송 오류는 남기지 않는다).
     pub async fn ping(&self, id: i64) -> io::Result<bool> {
-        self.pong(id).await.map(|(focus, _)| focus)
+        self.pong(id).await.map(|(focus, _, _)| focus)
     }
 
     /// 상대가 `Request::Context` 를 아는가(#1m) — [`ping`](Self::ping) 처럼 접속 상태를 남긴다. 닿지 않으면 오류(보내는 줄은 다시 보낸다).
     pub async fn knows_context(&self, id: i64) -> io::Result<bool> {
-        self.pong(id).await.map(|(_, ctx)| ctx)
+        self.pong(id).await.map(|(_, ctx, _)| ctx)
     }
 
-    async fn pong(&self, id: i64) -> io::Result<(bool, bool)> {
+    /// 상대가 `Request::Share*` 를 아는가(#1o) — [`knows_context`](Self::knows_context) 와 같다.
+    pub async fn knows_share(&self, id: i64) -> io::Result<bool> {
+        self.pong(id).await.map(|(_, _, share)| share)
+    }
+
+    /// (집중, 컨텍스트를 앎, 공유 대화를 앎).
+    async fn pong(&self, id: i64) -> io::Result<(bool, bool, bool)> {
         let peer = self.peer(id)?;
         match self
             .send(
@@ -866,9 +888,9 @@ impl Node {
             )
             .await?
         {
-            (Response::Pong { focus, ctx }, _) => {
+            (Response::Pong { focus, ctx, share }, _) => {
                 peers::set_presence(&self.db(), id, focus).map_err(db_err)?;
-                Ok((focus, ctx))
+                Ok((focus, ctx, share))
             }
             (other, _) => Err(refused(other)),
         }

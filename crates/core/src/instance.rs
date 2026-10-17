@@ -1,6 +1,11 @@
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io;
 use std::path::Path;
+use std::time::Duration;
+
+/// 남이 잠깐 들여다보는 중([`InstanceLock::is_held`])일 수 있어 보조로 단정하기 전에 다시 잡아 본다.
+const ACQUIRE_TRIES: u32 = 4;
+const ACQUIRE_GAP: Duration = Duration::from_millis(50);
 
 pub enum Acquired {
     Primary(InstanceLock),
@@ -13,18 +18,48 @@ pub struct InstanceLock {
 }
 
 impl InstanceLock {
+    /// 누가 이 잠금을 쥐고 있나 — 잠깐 잡아 보고 바로 놓는다(핸들 닫기에 맡기지 않고 직접 푼다). 파일이 없거나 열 수 없으면 false.
+    pub fn is_held(path: &Path) -> bool {
+        let Ok(file) = OpenOptions::new().write(true).open(path) else {
+            return false;
+        };
+        match file.try_lock() {
+            Ok(()) => {
+                let _ = file.unlock();
+                false
+            }
+            Err(TryLockError::WouldBlock) => true,
+            Err(TryLockError::Error(_)) => false,
+        }
+    }
+
     pub fn acquire(path: &Path) -> io::Result<Acquired> {
         let file = OpenOptions::new()
             .create(true)
             .truncate(false)
             .write(true)
             .open(path)?;
-        match file.try_lock() {
-            Ok(()) => Ok(Acquired::Primary(InstanceLock { _file: file })),
-            Err(TryLockError::WouldBlock) => Ok(Acquired::Secondary),
-            Err(TryLockError::Error(e)) => Err(e),
+        for n in 1..=ACQUIRE_TRIES {
+            match file.try_lock() {
+                Ok(()) => return Ok(Acquired::Primary(InstanceLock { _file: file })),
+                Err(TryLockError::WouldBlock) if n < ACQUIRE_TRIES => {
+                    std::thread::sleep(ACQUIRE_GAP)
+                }
+                Err(TryLockError::WouldBlock) => break,
+                Err(TryLockError::Error(e)) => return Err(e),
+            }
         }
+        Ok(Acquired::Secondary)
     }
+}
+
+/// 이 프로세스의 PID 를 적는다(잠금을 잡은 뒤).
+pub fn write_pid(path: &Path) -> io::Result<()> {
+    std::fs::write(path, std::process::id().to_string())
+}
+
+pub fn read_pid(path: &Path) -> Option<u32> {
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
 }
 
 /// 주 인스턴스가 남기는 핸드오프 정보 — 두 번째 실행이 읽어 `POST /api/open` 을 보낸다.
@@ -91,6 +126,29 @@ mod tests {
             token: "ab12".repeat(16),
         };
         assert_eq!(InstanceInfo::from_json(&info.to_json()), Some(info));
+    }
+
+    /// 잡고 있는 동안만 held — 들여다본 뒤에도 잠금은 그대로다.
+    #[test]
+    fn is_held_tracks_holder_and_pid_round_trip() {
+        use super::{Acquired, InstanceLock, read_pid, write_pid};
+        let dir = std::env::temp_dir().join(format!("an-core-held-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let lock = dir.join("x.lock");
+        let _ = std::fs::remove_file(&lock);
+        assert!(!InstanceLock::is_held(&lock), "파일 없음");
+        let Acquired::Primary(held) = InstanceLock::acquire(&lock).unwrap() else {
+            panic!("처음은 주")
+        };
+        assert!(InstanceLock::is_held(&lock));
+        assert!(InstanceLock::is_held(&lock), "들여다봐도 그대로");
+        drop(held);
+        assert!(!InstanceLock::is_held(&lock));
+        let pid = dir.join("x.pid");
+        write_pid(&pid).unwrap();
+        assert_eq!(read_pid(&pid), Some(std::process::id()));
+        assert_eq!(read_pid(&dir.join("없음.pid")), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

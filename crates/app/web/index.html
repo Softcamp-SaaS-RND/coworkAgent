@@ -70,7 +70,7 @@
             <button type="button" id="tile_icon_clear" class="small">아이콘 지우기</button>
           </div>
           <input id="tile_icon_file" type="file" accept="image/*" aria-label="아이콘 그림 고르기">
-          <p class="hint">이 PC 에서만 보입니다. 그림은 가운데를 정사각형으로 잘라 작게 줄여 저장합니다.</p>
+          <p class="hint">이 PC 에서만 표시</p>
           <div class="actions">
             <button type="button" id="tile_cancel">취소</button>
             <button type="submit" class="primary">저장</button>
@@ -94,7 +94,6 @@
         <header class="view-head">
           <div class="head-title">
             <strong><span class="ico ico-home" aria-hidden="true"></span><span id="home_title">개요</span></strong>
-            <span class="hint">상대별 대화 요약 — 대화 수 · 안 읽음 · 대기 요청 · 최근 활동, 누르면 그 대화로</span>
           </div>
         </header>
         <ol id="home_summary" class="rows"></ol>
@@ -132,7 +131,6 @@
         <header class="view-head">
           <div class="head-title">
             <strong><span class="ico ico-inbox" aria-hidden="true"></span>요청</strong>
-            <span class="hint">실행 없이 모인 요청 — 받은 요청은 수용 · 반려 · 완료로 답하고, 보낸 요청은 상대가 바꾼 상태를 봅니다</span>
           </div>
           <nav class="tabs" aria-label="요청 목록">
             <a id="req_tab_theirs" href="#requests" data-box="theirs" aria-current="page">받은 요청</a>
@@ -156,7 +154,6 @@
         <header class="view-head">
           <div class="head-title">
             <strong><span class="ico ico-star" aria-hidden="true"></span>즐겨찾기</strong>
-            <span class="hint">☆ 로 넣은 대화방 — 이 PC 에만, 대화방 줄의 ☆ 로 넣고 뺍니다</span>
           </div>
         </header>
         <div id="starred_list" class="starred-list"></div>
@@ -165,7 +162,6 @@
         <header class="view-head">
           <div class="head-title">
             <strong><span class="ico ico-bookmark" aria-hidden="true"></span>북마크 항목</strong>
-            <span class="hint">메시지 작업 '북마크' 로 모은 글 — 이 PC 에만, 북마크한 순서 최신부터</span>
           </div>
         </header>
         <ol id="saved_list" class="rows"></ol>
@@ -473,6 +469,16 @@
             <div class="bar" aria-hidden="true"><span id="detail_relay_bar"></span></div>
             <button type="button" id="detail_relay_btn" class="small">멈춤</button>
           </div>
+        </section>
+        <section id="detail_share_sec" class="detail-sec" hidden>
+          <h3>관람자 <span id="detail_share_n" class="count"></span></h3>
+          <p id="detail_share_note" class="hint" hidden></p>
+          <ol id="detail_share" class="saved-list"></ol>
+          <div id="share_tools" class="share-tools">
+            <select id="share_peer" aria-label="관람자로 넣을 상대"></select>
+            <button type="button" id="share_add_btn" class="small">관람자 추가</button>
+          </div>
+          <button type="button" id="share_leave_btn" class="small" hidden>나가기</button>
         </section>
         <section id="detail_req_sec" class="detail-sec">
           <h3>요청 <span id="detail_req_n" class="count"></span></h3>

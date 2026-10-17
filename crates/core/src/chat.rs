@@ -1,11 +1,13 @@
 //! 대화 · 메시지 이력(D19 · S3) — 양쪽 PC 가 같은 대화 UUID 로 각자 남긴다.
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
-/// `Out` = 내가 원격 에이전트에게 · `In` = 내 에이전트가 원격에게서 받음.
+/// `Out` = 내가 원격 에이전트에게 · `In` = 내 에이전트가 원격에게서 받음 · `Shared` = 상대(대화를 가진 PC)가 공유한 읽기 전용 사본(#1o —
+/// 상대 id = 그 PC).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dir {
     Out,
     In,
+    Shared,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,6 +152,8 @@ pub struct Message {
     pub ctx_tokens: Option<i64>,
     /// 컨텍스트 구분선의 종류(#1m) — `compact` · `auto_compact` · `clear`.
     pub ctx_op: Option<String>,
+    /// 공유 사본(#1o)의 글 — 대화를 가진 PC 쪽 글이면 참(그 밖 대화는 거짓).
+    pub owner: bool,
 }
 
 /// 대화 목록 한 줄.
@@ -193,6 +197,7 @@ impl Dir {
         match self {
             Dir::Out => "out",
             Dir::In => "in",
+            Dir::Shared => "shared",
         }
     }
 }
@@ -254,6 +259,7 @@ fn conv_row(r: &Row) -> rusqlite::Result<Conversation> {
         dir: match dir.as_str() {
             "out" => Dir::Out,
             "in" => Dir::In,
+            "shared" => Dir::Shared,
             v => return Err(bad(4, v)),
         },
         session: r.get(5)?,
@@ -272,9 +278,9 @@ fn conv_row(r: &Row) -> rusqlite::Result<Conversation> {
     })
 }
 
-const MSG_COLS: &str = "id, uuid, conversation_id, author, text, state, created_at, reply_to, turns, duration_ms, mine, exec, lc, via, saved_at, model, effort, request, req_state, req_note, req_at, agent, refused, edited_at, ctx_tokens, ctx_op";
+const MSG_COLS: &str = "id, uuid, conversation_id, author, text, state, created_at, reply_to, turns, duration_ms, mine, exec, lc, via, saved_at, model, effort, request, req_state, req_note, req_at, agent, refused, edited_at, ctx_tokens, ctx_op, owner";
 /// `MSG_COLS` 열 수 — 그 뒤에 붙는 열의 위치.
-const MSG_N: usize = 26;
+const MSG_N: usize = 27;
 
 /// 열 목록에 표 별칭을 붙인다(`id, uuid` → `m.id, m.uuid`).
 fn prefixed(cols: &str, alias: &str) -> String {
@@ -330,6 +336,7 @@ fn msg_row(r: &Row) -> rusqlite::Result<Message> {
         edited_at: r.get(23)?,
         ctx_tokens: r.get(24)?,
         ctx_op: r.get(25)?,
+        owner: r.get::<_, Option<bool>>(26)?.unwrap_or(false),
         state: state_of(&state).ok_or_else(|| bad(5, &state))?,
     })
 }
@@ -352,6 +359,15 @@ pub fn open_conversation(
         params![uuid, peer_id, agent, dir.as_str()],
     )?;
     by_id(conn, conn.last_insert_rowid()).map(|c| c.expect("방금 쓴 대화"))
+}
+
+/// [`find`] 중 공유 사본(#1o)이 아닌 것 — 상대의 대화 프레임은 이 PC 의 사본을 건드리지 못한다(사본은 `share` 만 쓴다).
+pub fn find_own(
+    conn: &Connection,
+    uuid: &str,
+    peer_id: i64,
+) -> rusqlite::Result<Option<Conversation>> {
+    Ok(find(conn, uuid, peer_id)?.filter(|c| c.dir != Dir::Shared))
 }
 
 pub fn find(conn: &Connection, uuid: &str, peer_id: i64) -> rusqlite::Result<Option<Conversation>> {
@@ -435,8 +451,8 @@ pub fn edit_text(conn: &Connection, id: i64, text: &str) -> rusqlite::Result<boo
 }
 
 /// 글을 흔적 없이 지운다(#1f) — 그 글의 CLI 트랜잭션 · 실패 기록 · 실패 보관 행도. 답(`reply_to`)은 남는다. 지운 행이 없으면 거짓.
-/// 읽음 · 내 활동 본 표시는 남은 마지막 id 로 낮춘다 — 맨 끝 글을 지우면 SQLite 가 그 id 를 다음 글에 다시 주므로, 표시가 그대로면 새 글이 이미
-/// 읽은 · 본 것으로 보인다.
+/// 읽음 · 내 활동 본 표시 · 공유 대화의 보낸 커서(#1o)는 남은 마지막 id 로 낮춘다 — 맨 끝 글을 지우면 SQLite 가 그 id 를 다음 글에 다시 주므로,
+/// 표시가 그대로면 새 글이 이미 읽은 · 본 · 관람자에게 보낸 것으로 보인다.
 pub fn delete_message(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
     conn.execute("DELETE FROM cli_tx WHERE message_id = ?1", [id])?;
     conn.execute("DELETE FROM relay_events WHERE message_id = ?1", [id])?;
@@ -451,7 +467,9 @@ pub fn delete_message(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
          UPDATE peers SET activity_seen_msg = (SELECT coalesce(max(id), 0) FROM messages)
            WHERE activity_seen_msg > (SELECT coalesce(max(id), 0) FROM messages);
          UPDATE peers SET activity_seen_event = (SELECT coalesce(max(id), 0) FROM relay_events)
-           WHERE activity_seen_event > (SELECT coalesce(max(id), 0) FROM relay_events);",
+           WHERE activity_seen_event > (SELECT coalesce(max(id), 0) FROM relay_events);
+         UPDATE shares SET sent_upto = (SELECT coalesce(max(id), 0) FROM messages)
+           WHERE sent_upto > (SELECT coalesce(max(id), 0) FROM messages);",
     )?;
     Ok(gone)
 }
@@ -580,8 +598,9 @@ pub struct Activity {
     pub unseen: bool,
 }
 
-/// 내 활동에 드는 글 — 상대 쪽 글 전부 · 실패한 내 쪽 글. `messages m` 문맥의 SQL 식.
-const ACTIVITY_MESSAGES: &str = "(m.author <> 'context' AND (m.mine = 0 OR m.state = 'error'))";
+/// 내 활동에 드는 글 — 상대 쪽 글 전부 · 실패한 내 쪽 글(공유 사본 글은 빼고 — #1o). `messages m` · `conversations c` 문맥의 SQL 식.
+const ACTIVITY_MESSAGES: &str =
+    "(m.author <> 'context' AND (m.mine = 0 OR m.state = 'error') AND c.dir <> 'shared')";
 
 /// 내 활동 — 최신 것부터 `limit` 건. `peer` 로 그 상대 대화만, `q` 는 글 본문 · 자동 왕복 기록 사유의 부분 일치.
 pub fn activity(
@@ -595,8 +614,8 @@ pub fn activity(
     let mut out = Vec::new();
     let msg_where = match filter {
         ActivityFilter::All => Some(ACTIVITY_MESSAGES),
-        ActivityFilter::Human => Some("m.mine = 0 AND m.author = 'human'"),
-        ActivityFilter::Agent => Some("m.mine = 0 AND m.author = 'agent'"),
+        ActivityFilter::Human => Some("m.mine = 0 AND m.author = 'human' AND c.dir <> 'shared'"),
+        ActivityFilter::Agent => Some("m.mine = 0 AND m.author = 'agent' AND c.dir <> 'shared'"),
         ActivityFilter::Failed => {
             Some("m.mine = 1 AND m.state = 'error' AND m.author <> 'context'")
         }
@@ -1151,7 +1170,7 @@ pub fn messages(conn: &Connection, conversation_id: i64) -> rusqlite::Result<Vec
 }
 
 /// 대화를 가로지른 글 — `mine` 이 참이면 내가 쓴 글, 거짓이면 상대 쪽이 쓴 글, `None` 이면 둘 다. `scope` 로 그 상대 · 그룹 대화만,
-/// `author` 로 그 종류만, `q` 는 본문 부분 일치. 거른 뒤 최신 것부터 `limit` 건.
+/// `author` 로 그 종류만, `q` 는 본문 부분 일치. 거른 뒤 최신 것부터 `limit` 건. 질의 · 요청 거르기(`ask`)에는 공유 사본 글이 들지 않는다(#1o).
 pub fn messages_across(
     conn: &Connection,
     mine: Option<bool>,
@@ -1172,7 +1191,7 @@ pub fn messages_across(
     conn.prepare(&format!(
         "SELECT {cols} FROM messages m JOIN conversations c ON c.id = m.conversation_id
          WHERE (?1 IS NULL OR m.mine = ?1) AND {} AND (?3 IS NULL OR m.author = ?3) AND m.author <> 'context'
-           AND (?4 IS NULL OR (m.author = 'human' AND coalesce(m.request, 0) = ?4))
+           AND (?4 IS NULL OR (m.author = 'human' AND coalesce(m.request, 0) = ?4 AND c.dir <> 'shared'))
            AND (?5 IS NULL OR m.text LIKE ?5 ESCAPE '\\') AND (?7 IS NULL OR m.req_state = ?7)
          ORDER BY m.created_at DESC, m.id DESC LIMIT ?6",
         Scope::sql(2, 8)

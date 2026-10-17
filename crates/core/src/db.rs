@@ -2,7 +2,7 @@ use rusqlite::OptionalExtension;
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 19;
+pub const SCHEMA_VERSION: i64 = 20;
 
 /// 쓰기 트랜잭션 — `BEGIN IMMEDIATE`. 읽고 나서 쓰는 지연(deferred) 트랜잭션은 다른 연결(피어 노드 · 알림)이 쓰는 중이면 잠금을 올리지 못해
 /// `busy_timeout` 을 기다리지 않고 바로 `database is locked` 로 실패한다(SQLite 교착 회피) — 처음부터 쓰기 잠금을 잡아 기다린다.
@@ -445,13 +445,41 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         )?;
         tx.commit()?;
     }
+    if v < 20 {
+        // 공유 대화(#1o): 대화를 가진 PC — 관람자 · 보낸 마지막 글 id(`shares`), 관람자 PC — 사본(`dir = 'shared'`)의 원 상대 이름 · 원 방향 ·
+        // 빠짐(`share_ended`) · A 쪽 글(`messages.owner`), 원 상대 PC — 그 대화의 관람자 수(`watchers`).
+        let tx = conn.unchecked_transaction()?;
+        for (table, col, ty) in [
+            ("conversations", "share_other", "TEXT"),
+            ("conversations", "share_dir", "TEXT"),
+            ("conversations", "share_ended", "INTEGER"),
+            ("conversations", "watchers", "INTEGER"),
+            ("messages", "owner", "INTEGER"),
+        ] {
+            if !has_column(&tx, table, col)? {
+                tx.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {ty};"))?;
+            }
+        }
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS shares (
+               conversation_id INTEGER NOT NULL,
+               peer_id INTEGER NOT NULL,
+               sent_upto INTEGER NOT NULL DEFAULT 0,
+               created_at INTEGER NOT NULL,
+               PRIMARY KEY (conversation_id, peer_id)
+             );
+             PRAGMA user_version = 20;",
+        )?;
+        tx.commit()?;
+    }
     Ok(conn)
 }
 
-/// 방향으로 정한 "이 PC 의 글" — 보낸 대화(`out`)의 사람 글 · 받은 대화(`in`)의 에이전트 답. `messages` 행 문맥의 SQL 식.
+/// 방향으로 정한 "이 PC 의 글" — 보낸 대화(`out`)의 사람 글 · 받은 대화(`in`)의 에이전트 답 · 공유 사본(`shared`, #1o)은 없음. `messages` 행
+/// 문맥의 SQL 식.
 pub const MINE_BY_DIR: &str =
     "(CASE (SELECT dir FROM conversations c WHERE c.id = messages.conversation_id)
-    WHEN 'out' THEN author = 'human' ELSE author = 'agent' END)";
+    WHEN 'out' THEN author = 'human' WHEN 'shared' THEN 0 ELSE author = 'agent' END)";
 
 /// `{db}.v{버전}.bak` — 스키마를 올리기 전 사본.
 pub fn backup_path(path: &Path, version: i64) -> std::path::PathBuf {

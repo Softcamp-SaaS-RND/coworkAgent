@@ -8,7 +8,9 @@
 ## 공개 계약
 
 - `server::bind()` — `127.0.0.1:0`. `server::new_token()` — 32바이트 hex. `server::router(port, token, status, open_browser)` ·
-  `router_with(…, extra)` — `extra` 경로도 같은 guard 뒤.
+  `router_with(…, extra)` — `extra` 경로도 같은 guard 뒤. `router_control(port, token, status, open_browser, mode, quit: Option<Quit>, extra)`(#1n —
+  `router_with` 는 `"tray"` · 종료 없음으로 부른다): `/api/status` 에 `mode`(`"tray"` · `"headless"`), `quit` 이 있으면 `POST /api/quit`(204 를 보내고
+  100 ms 뒤 `quit()` — `Quit = Box<dyn Fn() + Send + Sync>`).
 - `peers_api::routes(node)` — `GET /api/me`(#1b: `ui_port` — 요청 Host 의 포트 · `peer_port_fixed`(47100 인가) · `peer_port_holder{name, pid}|null` ·
   `peer_port_note` · `open_connections`) · `GET/POST /api/peers`(본문 `{addr, code}` 또는 `{invite}` — 초대는 지문 대조 ·
   추가 · 내 승인, 주소+코드 직접 추가도 코드가 맞아 상대가 승인했으면 내 승인까지 — 양쪽 페어링(D8 개정), 아는 키 다시 추가는 승인 대기) ·
@@ -30,7 +32,11 @@
   이어 쓰기 모두, D23 개정); 이어 쓰기는 양쪽 대화 `{text, to?}`, 실행은 받았지만 미러 실패면 201 + `warning`;
   새 대화 `relay_agent?` · `relay_cap?` → 자동 왕복, 대화 JSON 에 `relay_agent` · `relay_cap` · `relay_count` · `relay_on` · `relay_blocked`) ·
   `POST /api/conversations/{id}/relay {on}`(멈춤 · 재개, 받은 쪽 재개 · 보통 대화는 400) · `POST /api/conversations/{id}/context {op}`(#1m — `compact` ·
-  `clear` → 구분선 글, 틀린 값 400 · 없는 대화 404 · 진행 중 409; 글 JSON 에 `ctx_tokens` · `ctx_op`). 오류 404 · 400 · 409 ·
+  `clear` → 구분선 글, 틀린 값 400 · 없는 대화 404 · 진행 중 409; 글 JSON 에 `ctx_tokens` · `ctx_op`). #1o 공유: `POST /api/conversations/{id}/observers {peer_id}` ·
+  `DELETE /api/conversations/{id}/observers/{peer}` · `POST /api/conversations/{id}/leave`(204 · 400 · 404 · 409 — `fail` 이 `Unsupported` 도 409), 대화 목록 JSON
+  `observers` · `watchers` · `share{other, owner_dir, ended}`, 글 JSON `owner`. 웹 — `view.js` `CONV_GROUPS`(내 대화 · agent 대화 · 공유 대화) · `splitByDir` ·
+  `splitKey` · `sharedAuthor` · `shareHead` · `shareCandidates` · `MAX_OBSERVERS`, `app.js` `renderShare`(세부정보 "관람자") · 사본 읽기 전용 · `#rail` 우클릭 막기.
+  CLI `author_label` 공유 갈래. 오류 404 · 400 · 409 ·
   403(페어링 아님 · 상대 거절, 본문에 코드) · 502. 상대에 닿지 않은 새 글은 오류가 아니다 — 보관하고 201(글 `outbox`).
   CLI 트랜잭션(#1c): 새 대화 · 이어 쓰기 본문 `tx_key?`(`via: cli` 일 때만 — 아니면 400, 규칙 `an_core::cli_tx::key_ok` 밖 400) — 같은 키가 있으면
   보내지 않고 그 트랜잭션 JSON 을 200, 없으면 보내고 201 `{conversation, message, tx}`(`via: cli` 면 트랜잭션을 만든다 — 키 없어도, 기록 실패면
@@ -93,15 +99,32 @@
   종료 코드 `EXIT_USAGE` 2 · `EXIT_NOT_RUNNING` 3(`instance.json` 없음 · 연결 거부 · HTTP 아님) · `EXIT_API` 4(401 · 4xx · 5xx · `cli_api`
   불일치 · 보낸 뒤 응답 유실 — 다시 보내지 말고 `history` 확인) · `EXIT_REPLY_FAILED` 5 · `EXIT_TIMEOUT` 6 · `EXIT_STALLED` 7(상대에 10분 닿지
   않아 멈춤 — 트랜잭션은 남는다, `wait <tx>`).
-  `cli::run(args, instance_file, out, err, wait_limit)` — 테스트 진입(임시 경로 · 짧은 대기).
+  `cli::run(args, instance_file, out, err, wait_limit)` — 테스트 진입(임시 경로 · 짧은 대기). `EXIT_START_FAILED` 8(#1n).
+- `control`(#1n · D14 보강) — 부모 도구 메뉴 `start [--parent <PID>]` · `open [--parent <PID>]` · `stop`. `cli::main` 이 handshake 없이
+  `control::run(args, paths, exe, out, err)` 로 넘긴다(`is_command`). 부모 = `--parent`(0 보다 큰 수) 또는 `proc::parent_pid()`, 살아 있지 않으면 2.
+  `start` = 한 `START_LIMIT`(30초) 되풀이(응답 · 모드 확인 → 트레이면 `quit` → 띄운 감시 코드 확인 → 두 잠금이 풀려 있으면 `proc::spawn_detached(exe,
+  [(PARENT_ENV, pid)])`), `open` = 응답 없으면 `start` 뒤 `POST /api/open`(204 → 0 · 아니면 4), `stop` = `POST /api/quit` → 두 잠금 풀림(`STOP_LIMIT`
+  — 명령 전체 상한 하나 → 6, 404 = 이전 버전 → 4), 응답 없음 + 잠금 잡힘이면 `UNRESPONSIVE_WAIT`(5초) 뒤 잡힌 잠금의 PID 를 `proc::kill_tree`(감시
+  먼저) · 300 ms 풀린 채 머무는지 확인. `probe(paths) -> Option<모드>`.
+  출력 "시작함" · "이미 실행 중" · "열었음" · "종료함" · "실행 중이 아님", 실패 = 표준 오류 + 코드(2 · 4 · 6 · 8 — "시작 실패 — {사유}").
+- `proc`(#1n) — `parent_pid()`(Windows Toolhelp · Unix `getppid`) · `alive(pid)`(권한 거부 = 살아 있음, Unix pid ≤ 0 = 아님) · `watch_parent(pid,
+  on_gone)`(별도 스레드 — Windows `OpenProcess(SYNCHRONIZE)` 대기, 못 열면 · Unix `POLL` 1초) · `kill(pid)`(`TerminateProcess` · `SIGKILL`) ·
+  `kill_tree(pid)`(감시 + 자식 — Windows 는 이 실행 파일과 이름이 같을 때만 · 끊은 뒤 부모 PID 로 자식을 찾음, Unix 는 그룹 우두머리면 그룹째) ·
+  `spawn_detached(exe, envs)`(표준 입출력 비움 · `watchdog::ENV` 지움 · Windows `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP` + 자기 표준 핸들
+  상속 끔 · Unix `process_group(0)`).
 - `browser::open(url 또는 파일 경로)` — Windows `ShellExecuteW`(반환 ≤ 32 = 실패) · macOS `open` 종료 상태(두 OS 같은 동작 — D30).
 - `tray::Tray::new() -> (Tray, Attention)` — 메인 스레드 이벤트 루프. `Attention::set(n)` 은 프록시로 "새 요청" 표시(주황 점 · 툴팁).
   `Tray::run(url, note, on_seen, on_quit)`(`note` = 툴팁 둘째 줄 — 피어 포트를 남이 잡았을 때 `peer_port_note`, `tray::tip(n, note)`) — "열기" · "종료"(S4 개정 — 내 정보는 웹UI 프로필 "사용자 정보" 팝업 `#me_dialog`, #1l), 열기 성공 시 `on_seen`. 트레이를 못 만들면
-  `tray::retry_after(n)`(1 · 2 · 4 · 8 · 15 · 30초 — #1h, `ControlFlow::WaitUntil`) 뒤 다시, 끝내 못 만들면 사유 파일을 열고 끝냄(종료 코드 0). `Tray::run_error(message, file)` — 붉은 아이콘 · "오류 보기" · "종료". `write_start_error(message)` — 임시 폴더
-  `coworkAgent-start-error.txt`. 종료 순서: 런타임 정지 → `instance.json` 삭제 → 잠금 해제.
+  `tray::retry_after(n)`(1 · 2 · 4 · 8 · 15 · 30초 — #1h, `ControlFlow::WaitUntil`) 뒤 다시, 끝내 못 만들면 사유 파일을 열고 끝냄(종료 코드 0). `Tray::run_error(message, file)` — 붉은 아이콘 · "오류 보기"(열기 전에 사유 파일을 다시 쓴다) · "종료"(감시만 부른다 — #1n). `write_start_error(message)` —
+  `start_error_file()`(임시 폴더 `coworkAgent-start-error.txt`, 디버그 빌드 + `COWORKAGENT_DATA_DIR` 면 그 폴더) · `read_start_error()`("사유:" 줄) ·
+  `start_error_by(pid)`(그 PID 가 썼나 — 사유 파일 끝 줄 `PID: n`).
+  `Tray::quitter()` — `/api/quit` 용 종료 핸들(`TrayEvent::Quit` 프록시). `Attention::none()` — 트레이 없는 모드. 종료 순서: 런타임 정지 →
+  `instance.json` · `instance.pid` 삭제 → 잠금 해제.
 - `watchdog`(#1e) — `ENV`(`COWORKAGENT_SUPERVISED`, 값 = 다시 띄운 횟수 · 없으면 감시 프로세스) · `MAX_CRASHES`(3) · `CRASH_WINDOW`(60초) ·
-  `RESTART_DELAY`(1초) · `supervise(spawn: FnMut(u32) -> io::Result<bool>, delay) -> Outcome`(`Done` = 자식 정상 종료 · `GaveUp(사유)` = 창 안 3번 ·
-  띄우기 실패) · `Crashes::record(at) -> bool` · `spawn_app(n)`(이 실행 파일 · 인자 없음 · `ENV = n`) · `restarts()`.
+  `RESTART_DELAY`(1초) · `supervise(spawn: FnMut(u32) -> io::Result<i32>, delay) -> Outcome`(`Done` = 자식 0 · `StartFailed` = 자식 `START_FAILED`(3) —
+  다시 띄우지 않음 · `GaveUp(사유)` = 창 안 3번 · 띄우기 실패) · `Crashes::record(at) -> bool` · `spawn_app(n)`(이 실행 파일 · 인자 없음 · `ENV = n` →
+  종료 코드, 코드 3 인데 사유 파일을 그 자식(PID)이 쓰지 않았으면 -1 — MSVC `abort()` 는 다시 띄운다) · `restarts()`. #1n: `PARENT_ENV`(`COWORKAGENT_PARENT` — 트레이 없는 모드 · 부모 PID, 감시가 자식에 물려준다) · `parent()` ·
+  `acquire(paths) -> Option<InstanceLock>`(`supervisor.lock` + `supervisor.pid`, 못 잡으면 `None`).
 - `autostart`(#1e, S7 · D13) — `sync(on)`(이 OS 의 실제 자리: Windows `RUN_KEY` 값 `VALUE_NAME` = `"exe"`, macOS `~/Library/LaunchAgents/{LABEL}.plist` —
   같으면 쓰지 않음 · 끄면 지움 · 없어도 성공) · `launch_agent_plist(exe)`(`RunAtLoad` · `KeepAlive` 없음 · 경로 XML 이스케이프) · Windows
   `registered(key)` · `register(key, exe) -> 바뀜` · `unregister(key)`(키 경로 인자 — 시험은 시험 키). 설정 `autostart`(`GET/PUT /api/settings`, 없으면

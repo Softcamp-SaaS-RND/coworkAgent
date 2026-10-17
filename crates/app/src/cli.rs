@@ -24,6 +24,8 @@ pub const EXIT_REPLY_FAILED: i32 = 5;
 pub const EXIT_TIMEOUT: i32 = 6;
 /// 상대에 정해진 시간 닿지 않아 멈춤(#1c) — 트랜잭션은 남는다, `wait <tx>` 로 이어 받는다.
 pub const EXIT_STALLED: i32 = 7;
+/// `start` · `open` 이 앱을 띄우지 못했다(#1n) — 사유는 표준 오류.
+pub const EXIT_START_FAILED: i32 = 8;
 
 /// CLI 자체 대기 안전판(#1c) — 끝은 앱의 트랜잭션 판정(답 · 실패 · 멈춤)이 정한다. 상대가 대기 · 실행 중으로 확인되는 동안은 기다린다.
 pub const WAIT_LIMIT: Duration = Duration::from_secs(24 * 3600);
@@ -35,6 +37,9 @@ const REQUEST_DEADLINE: Duration = Duration::from_secs(60);
 const CLI_LABEL: &str = "AI 에이전트(CLI)";
 
 pub const USAGE: &str = "사용법:
+  coworkAgent start [--parent <PID>]
+  coworkAgent open [--parent <PID>]
+  coworkAgent stop
   coworkAgent peers [--json]
   coworkAgent ask <상대> \"<질문>\" [--agent <이름>] [--conv <대화ID>] [--id <키>] [--no-wait] [--json]
   coworkAgent wait <트랜잭션> [--json]
@@ -42,7 +47,8 @@ pub const USAGE: &str = "사용법:
   coworkAgent history [<상대>] [--conv <대화ID>] [--json]
 --id <키> 로 같은 질문을 다시 실행하면 새로 보내지 않고 그 트랜잭션의 결과를 받는다(1 ~ 64자 영문 · 숫자 · . _ -). 종료 코드 7 = 상대에 닿지 않아 멈춤(wait 로 이어 받기).
 --conv 와 함께 준 --agent 가 그 대화 에이전트가 아니면 그 상대 PC 의 다른 에이전트를 부른다(멘션 — 내가 연 대화 · 자동 왕복 아님).
-<상대> = 피어 표시 이름 또는 지문 앞자리(4자 이상). 본문이 -- 로 시작하면 앞에 -- 를 둔다(그 뒤는 전부 인자)";
+<상대> = 피어 표시 이름 또는 지문 앞자리(4자 이상). 본문이 -- 로 시작하면 앞에 -- 를 둔다(그 뒤는 전부 인자)
+start · open 은 트레이 아이콘 없이 띄우고 부모 프로세스(기본 = 부른 프로세스)가 끝나면 함께 끝난다. stop 은 끝날 때까지(최대 10초) 기다린다. 종료 코드 8 = 시작 실패.";
 
 /// 첫 인자가 CLI 하위 명령인가 — `main` 이 트레이 시작 전에 가른다.
 pub fn is_command(arg: &str) -> bool {
@@ -56,13 +62,19 @@ pub fn main(args: &[String]) -> i32 {
         return EXIT_NOT_RUNNING;
     };
     let (mut out, mut err) = (io::stdout().lock(), io::stderr().lock());
-    let code = run(
-        args,
-        &Paths::under(root).instance_file(),
-        &mut out,
-        &mut err,
-        WAIT_LIMIT,
-    );
+    let paths = Paths::under(root);
+    // 부모 툴 메뉴용(#1n) — 꺼져 있어도 동작한다(handshake 없음).
+    let code = if args.first().is_some_and(|a| crate::control::is_command(a)) {
+        match std::env::current_exe() {
+            Ok(exe) => crate::control::run(args, &paths, &exe, &mut out, &mut err),
+            Err(e) => {
+                let _ = writeln!(err, "실행 파일 경로를 찾지 못했다: {e}");
+                EXIT_START_FAILED
+            }
+        }
+    } else {
+        run(args, &paths.instance_file(), &mut out, &mut err, WAIT_LIMIT)
+    };
     let _ = out.flush();
     let _ = err.flush();
     code
@@ -147,9 +159,7 @@ impl Cli {
                             .clone(),
                     )
                 }
-                "--id" => {
-                    cli.id = Some(it.next().ok_or_else(|| bad("--id 에 키가 없다"))?.clone())
-                }
+                "--id" => cli.id = Some(it.next().ok_or_else(|| bad("--id 에 키가 없다"))?.clone()),
                 "--conv" => {
                     let v = it.next().ok_or_else(|| bad("--conv 에 대화 ID 가 없다"))?;
                     cli.conv = Some(v.parse().map_err(|_| bad("--conv 는 숫자 대화 ID"))?);
@@ -283,12 +293,20 @@ impl Cli {
         let tx = sent["tx"].as_i64();
         if self.no_wait {
             return if self.json {
-                line(out, json!({ "conversation": conv, "asked": asked, "tx": tx }))
+                line(
+                    out,
+                    json!({ "conversation": conv, "asked": asked, "tx": tx }),
+                )
             } else {
                 line(out, cid)
             };
         }
-        let tx = tx.ok_or_else(|| Fail(EXIT_API, "앱이 트랜잭션을 만들지 못했다 — 다시 보내지 말고 history 로 확인".into()))?;
+        let tx = tx.ok_or_else(|| {
+            Fail(
+                EXIT_API,
+                "앱이 트랜잭션을 만들지 못했다 — 다시 보내지 말고 history 로 확인".into(),
+            )
+        })?;
         let done = wait_tx(api, tx, wait_limit, self.json, err)?;
         self.answer(out, &done)
     }
@@ -551,13 +569,24 @@ fn sole_agent(api: &Api, pid: i64, name: &str) -> Result<String, Fail> {
 
 /// 트랜잭션이 끝날 때까지(#1c) — 진행(보내는 중 · 대기 · 처리 중 + 단계)이 바뀔 때마다 `err` 에 한 줄. 끝: 답(돌려줌) · 실패(5) · 멈춤(7) ·
 /// 안전판(`limit` — 6). CLI 가 죽어도 트랜잭션은 앱에 남는다(`wait <tx>`).
-fn wait_tx(api: &Api, tx: i64, limit: Duration, json: bool, err: &mut dyn Write) -> Result<Value, Fail> {
+fn wait_tx(
+    api: &Api,
+    tx: i64,
+    limit: Duration,
+    json: bool,
+    err: &mut dyn Write,
+) -> Result<Value, Fail> {
     let until = Instant::now() + limit;
     let mut shown: Option<String> = None;
     loop {
         let v = api
             .call("GET", &format!("/api/tx/{tx}"), None)
-            .map_err(|Fail(code, msg)| Fail(code, format!("{msg}\n나중에 이어 받기: coworkAgent wait {tx}")))?;
+            .map_err(|Fail(code, msg)| {
+                Fail(
+                    code,
+                    format!("{msg}\n나중에 이어 받기: coworkAgent wait {tx}"),
+                )
+            })?;
         let cid = v["conversation"]["id"].as_i64().unwrap_or(0);
         match text(&v["state"]) {
             "answered" => return Ok(v),
@@ -567,7 +596,9 @@ fn wait_tx(api: &Api, tx: i64, limit: Duration, json: bool, err: &mut dyn Write)
                 } else {
                     format!(
                         "질문을 상대에 보내지 못했다({})",
-                        v["message"]["refused"].as_str().unwrap_or(text(&v["message"]["state"]))
+                        v["message"]["refused"]
+                            .as_str()
+                            .unwrap_or(text(&v["message"]["state"]))
                     )
                 };
                 return Err(Fail(EXIT_REPLY_FAILED, why));
@@ -575,12 +606,18 @@ fn wait_tx(api: &Api, tx: i64, limit: Duration, json: bool, err: &mut dyn Write)
             "stalled" => {
                 return Err(Fail(
                     EXIT_STALLED,
-                    format!("상대에 닿지 않아 멈췄다 — 트랜잭션 {tx} 는 남는다. 나중에 이어 받기: coworkAgent wait {tx}"),
+                    format!(
+                        "상대에 닿지 않아 멈췄다 — 트랜잭션 {tx} 는 남는다. 나중에 이어 받기: coworkAgent wait {tx}"
+                    ),
                 ));
             }
             _ => {}
         }
-        let now = if json { progress_json(&v).map(|j| j.to_string()) } else { progress_line(&v) };
+        let now = if json {
+            progress_json(&v).map(|j| j.to_string())
+        } else {
+            progress_line(&v)
+        };
         if let Some(l) = now.filter(|l| shown.as_ref() != Some(l)) {
             let _ = line(err, &l);
             shown = Some(l);
@@ -637,8 +674,12 @@ fn progress_json(v: &Value) -> Option<Value> {
     let p = &v["progress"];
     match text(&v["state"]) {
         "sending" => Some(json!({ "progress": "sending", "tries": v["outbox"]["tries"] })),
-        "queued" => Some(json!({ "progress": "queued", "ahead": p["ahead"].as_u64().unwrap_or(0) })),
-        "running" if p["detail"].is_object() => Some(json!({ "progress": "running", "detail": p["detail"] })),
+        "queued" => {
+            Some(json!({ "progress": "queued", "ahead": p["ahead"].as_u64().unwrap_or(0) }))
+        }
+        "running" if p["detail"].is_object() => {
+            Some(json!({ "progress": "running", "detail": p["detail"] }))
+        }
         "running" => Some(json!({ "progress": "running" })),
         _ => None,
     }
@@ -650,6 +691,29 @@ fn author_label(c: &Value, m: &Value, peer: &str) -> String {
     // 답 발화자 = 실행한 에이전트(멘션이면 부른 이름).
     let agent = m["agent"].as_str().unwrap_or(text(&c["agent"]));
     let relay = c["relay_agent"].as_str().unwrap_or("에이전트");
+    // 공유 대화(#1o) — 초대한 사람(`peer`) 쪽 글(`owner`) · 원 상대(`share.other`) 글, 에이전트는 그 쪽 사람의 것(웹UI `sharedAuthor` 와 같다).
+    if c["dir"] == "shared" {
+        let owner = m["owner"] == true;
+        let who = if owner {
+            peer
+        } else {
+            c["share"]["other"].as_str().unwrap_or("상대")
+        };
+        if m["author"] == "agent" {
+            let owns = (c["share"]["owner_dir"] == "out") != owner;
+            let name = m["agent"].as_str().unwrap_or(if owns {
+                text(&c["agent"])
+            } else {
+                "에이전트"
+            });
+            return format!("{who}/{name}");
+        }
+        return if m["via"] == "cli" {
+            format!("{who}/{CLI_LABEL}")
+        } else {
+            who.into()
+        };
+    }
     if m["author"] == "agent" {
         return match (c["dir"] == "out", mine) {
             (true, true) => format!("내 {relay}"),
@@ -717,6 +781,17 @@ pub fn printable(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 공유 대화(#1o) 발화자 — 초대한 사람 · 원 상대 · 각자의 에이전트.
+    #[test]
+    fn share_author_label() {
+        let c = serde_json::json!({ "dir": "shared", "agent": "review", "share": { "other": "user-c", "owner_dir": "out" } });
+        let label = |m: Value| author_label(&c, &m, "user-b");
+        assert_eq!(label(serde_json::json!({ "author": "human", "owner": true })), "user-b");
+        assert_eq!(label(serde_json::json!({ "author": "human", "owner": false })), "user-c");
+        assert_eq!(label(serde_json::json!({ "author": "agent", "owner": false })), "user-c/review");
+        assert_eq!(label(serde_json::json!({ "author": "agent", "owner": true })), "user-b/에이전트");
+    }
 
     #[test]
     fn utc_time_known_dates() {

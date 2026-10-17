@@ -233,6 +233,7 @@ kbd, .kbd { font-family: var(--mono); font-size: var(--fs-xs); }
 .side-title { margin: 0 12px 4px 16px; font-size: var(--fs-sm); font-weight: 500; color: var(--muted); display: flex; align-items: center; justify-content: space-between; }
 .side-add { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); color: var(--muted); text-decoration: none; font-size: var(--fs-lg); }
 .side-add:hover { color: var(--text); background: var(--surface-2); }
+.dir-head { margin: 8px 12px 2px 18px; display: flex; align-items: center; justify-content: space-between; font-size: var(--fs-xs); font-weight: 500; color: var(--muted); }
 .side-list { list-style: none; margin: 0; padding: 0 8px; display: flex; flex-direction: column; gap: 2px; }
 .side-list li { border-radius: var(--radius-sm); }
 .side-list li.current { background: var(--accent-soft); }
@@ -634,6 +635,9 @@ details { margin: 8px 0; }
 .row-with-tile > .row-tile img { width: 100%; height: 100%; object-fit: cover; }
 .agent-chip { font-family: var(--mono); }
 #agents_list li.has-edit { display: flex; align-items: center; gap: 4px; }
+.share-tools { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.share-tools select { flex: 1 1 auto; min-width: 0; }
+.share-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
 #agents_list li.has-edit > a { flex: 1 1 auto; min-width: 0; }
 #agents_list .agent-edit svg { display: block; }
 
@@ -672,21 +676,18 @@ details { margin: 8px 0; }
 .menu-head { display: flex; align-items: center; gap: 6px; }
 .tool-btn .ico, .pair-btns .ico { margin-right: 6px; }
 .me-dialog h2 .ico { margin-right: 8px; vertical-align: -2px; }
-/* 말풍선 — 내 글 = 강조색, 상대 글 = 그 상대 타일 색을 연하게 + 띠(사람 · 에이전트 같음). */
+/* 말풍선(#1o 시안 Ⓐ) — 내 글 = 강조색을 연하게 + 오른쪽 띠, 상대 글 = 그 상대 타일 색을 더 연하게 + 왼쪽 띠(사람 · 에이전트 같음). */
 .msg[data-tone="peer-1"] { --tone: var(--peer-1); }
 .msg[data-tone="peer-2"] { --tone: var(--peer-2); }
 .msg[data-tone="peer-3"] { --tone: var(--peer-3); }
 .msg[data-tone="peer-4"] { --tone: var(--peer-4); }
 .msg[data-tone="peer-5"] { --tone: var(--peer-5); }
-/* 연한 바탕 = 타일 색 층(불투명도 12%)을 글 뒤에 깐다 — 색 섞기 함수(color-mix)는 macOS 12 Safari 15 에 없어 쓰지 않는다(#1l 라운드 2). */
+/* 연한 바탕 = 색 층(내 글 강조색 14% · 상대 글 타일 색 7%)을 글 뒤에 깐다 — 색 섞기 함수(color-mix)는 macOS 12 Safari 15 에 없어 쓰지 않는다(#1l 라운드 2). */
 .msg.side-theirs .bubble { isolation: isolate; background: var(--surface); border-left: 3px solid var(--tone, var(--wait)); }
-.msg.side-theirs .bubble::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--tone, var(--wait)); opacity: 0.12; pointer-events: none; }
-.msg.side-mine .bubble { background: var(--accent); color: var(--on-accent); border-color: transparent; }
-.msg.side-mine .bubble a, .msg.side-mine .bubble .md blockquote { color: inherit; border-color: currentColor; }
-.msg.side-mine .bubble .md code, .msg.side-mine .bubble .md pre, .msg.side-mine .bubble .md table { color: var(--text); }
-.msg.side-mine .bubble .md pre code { background: none; }
-.msg.side-mine .bubble .msg-icon { color: inherit; }
-.msg.side-mine .bubble .msg-icon:hover { background: rgb(255 255 255 / 0.18); }
+.msg.side-theirs .bubble::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--tone, var(--wait)); opacity: 0.07; pointer-events: none; }
+.msg.side-mine .bubble { isolation: isolate; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-right: 3px solid var(--accent); }
+.msg.side-mine .bubble::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--accent); opacity: 0.14; pointer-events: none; }
+.msg.side-mine .bubble a { color: var(--sent); }
 /* 설정 '?' 도움말 — 올리거나(마우스) 초점(키보드)일 때 뜬다. */
 .help-wrap { position: relative; display: inline-flex; vertical-align: middle; margin-left: 6px; }
 .help { width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); font-size: var(--fs-xs); font-weight: 600; line-height: 1; cursor: help; }

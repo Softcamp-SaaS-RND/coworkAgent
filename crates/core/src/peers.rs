@@ -125,7 +125,9 @@ pub fn set_their_ok(conn: &Connection, spki: &[u8], round: &str) -> rusqlite::Re
     )? == 1)
 }
 
+/// 상대를 지운다 — 그 상대가 관람자인 공유(#1o)와 그 상대 앞 공유 프레임도(그 상대가 보낸 사본은 남는다).
 pub fn remove(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
+    crate::share::forget_peer(conn, id)?;
     Ok(conn.execute("DELETE FROM peers WHERE id = ?1", [id])? == 1)
 }
 
@@ -143,7 +145,11 @@ pub fn set_meta(
     )? == 1)
 }
 
+/// [`remove`] 를 키로(상대의 삭제 통지).
 pub fn remove_spki(conn: &Connection, spki: &[u8]) -> rusqlite::Result<bool> {
+    if let Some(p) = by_spki(conn, spki)? {
+        crate::share::forget_peer(conn, p.id)?;
+    }
     Ok(conn.execute("DELETE FROM peers WHERE spki = ?1", [spki])? == 1)
 }
 

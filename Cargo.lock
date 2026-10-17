@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "an-agent"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "an-core",
  "an-net",
@@ -20,12 +20,13 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-rustls",
  "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "an-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "dirs",
  "log",
@@ -35,7 +36,7 @@ dependencies = [
 
 [[package]]
 name = "an-net"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "an-core",
  "log",
@@ -270,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "coworkagent-app"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "an-agent",
  "an-core",

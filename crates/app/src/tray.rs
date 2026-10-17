@@ -14,6 +14,8 @@ pub enum TrayEvent {
     Menu(MenuEvent),
     /// 아직 보지 않은 알림 수(0 = 지움).
     Attention(usize),
+    /// 로컬 API 종료 요청(`POST /api/quit`, #1n) — 메뉴 "종료" 와 같은 길.
+    Quit,
 }
 
 /// 트레이 만들기를 다시 시도할 간격 — `n` 번째 실패 뒤(0부터). 합 60초, 그 뒤는 `None`(#1h — 로그인 직후 알림 영역이 아직 준비되지 않은 경우).
@@ -28,19 +30,52 @@ pub struct Tray {
     event_loop: EventLoop<TrayEvent>,
 }
 
-/// 다른 스레드에서 트레이 "새 요청" 표시를 바꾼다 — 프록시로 보내기만 해서 막히지 않는다.
+/// 다른 스레드에서 트레이 "새 요청" 표시를 바꾼다 — 프록시로 보내기만 해서 막히지 않는다. 트레이 없는 모드는 아무것도 안 한다.
 #[derive(Clone)]
-pub struct Attention(EventLoopProxy<TrayEvent>);
+pub struct Attention(Option<EventLoopProxy<TrayEvent>>);
 
 impl Attention {
+    /// 트레이 없는 모드(#1n) — 표시할 곳이 없다(브라우저 알림은 그대로).
+    pub fn none() -> Self {
+        Self(None)
+    }
+
     pub fn set(&self, count: usize) {
-        let _ = self.0.send_event(TrayEvent::Attention(count));
+        if let Some(proxy) = &self.0 {
+            let _ = proxy.send_event(TrayEvent::Attention(count));
+        }
     }
 }
 
-/// 시작 실패 사유 파일 — 사용자 임시 폴더(데이터 경로 자체가 원인일 수 있다). 매번 덮어쓴다.
+/// 시작 실패 사유 파일 — 사용자 임시 폴더(데이터 경로 자체가 원인일 수 있다). 디버그 빌드의 시험용 데이터 루트(`COWORKAGENT_DATA_DIR`)가 있으면
+/// 그 안 — 시험이 실제 인스턴스의 사유 파일을 덮어쓰지 않게(#1n).
+pub fn start_error_file() -> PathBuf {
+    const NAME: &str = "coworkAgent-start-error.txt";
+    if cfg!(debug_assertions)
+        && let Some(dir) = std::env::var_os(an_core::paths::DATA_DIR_ENV).filter(|v| !v.is_empty())
+    {
+        return PathBuf::from(dir).join(NAME);
+    }
+    std::env::temp_dir().join(NAME)
+}
+
+/// 사유 파일을 프로세스 `pid` 가 썼나 — 감시가 자식의 코드 3 이 그 자식의 시작 실패인지(사유를 남김) 가린다.
+pub fn start_error_by(pid: u32) -> bool {
+    let line = format!("PID: {pid}");
+    std::fs::read_to_string(start_error_file()).is_ok_and(|text| text.lines().any(|l| l == line))
+}
+
+/// 사유 파일의 "사유:" 줄 — `start` · 감시가 앱이 남긴 사유를 읽는다(#1n).
+pub fn read_start_error() -> Option<String> {
+    let text = std::fs::read_to_string(start_error_file()).ok()?;
+    text.lines()
+        .find_map(|l| l.strip_prefix("사유: "))
+        .map(str::to_string)
+}
+
+/// 사유 파일을 쓴다. 매번 덮어쓴다.
 pub fn write_start_error(message: &str) -> io::Result<PathBuf> {
-    let path = std::env::temp_dir().join("coworkAgent-start-error.txt");
+    let path = start_error_file();
     let log_hint = an_core::paths::Paths::default_root()
         .map(|r| {
             an_core::paths::Paths::under(r)
@@ -56,7 +91,8 @@ pub fn write_start_error(message: &str) -> io::Result<PathBuf> {
     std::fs::write(
         &path,
         format!(
-            "coworkAgent 시작 실패\n\n사유: {message}\n\n시각(유닉스 초): {at}\n로그: {log_hint}\n"
+            "coworkAgent 시작 실패\n\n사유: {message}\n\n시각(유닉스 초): {at}\n로그: {log_hint}\nPID: {}\n",
+            std::process::id()
         ),
     )?;
     Ok(path)
@@ -77,7 +113,17 @@ impl Tray {
         MenuEvent::set_event_handler(Some(move |event| {
             let _ = menu_proxy.send_event(TrayEvent::Menu(event));
         }));
-        (Self { event_loop }, Attention(proxy))
+        (Self { event_loop }, Attention(Some(proxy)))
+    }
+
+    /// 로컬 API 종료 요청을 이벤트 루프로 보내는 함수(#1n).
+    pub fn quitter(&self) -> crate::server::Quit {
+        let proxy = std::sync::Mutex::new(self.event_loop.create_proxy());
+        Box::new(move || {
+            if let Ok(p) = proxy.lock() {
+                let _ = p.send_event(TrayEvent::Quit);
+            }
+        })
     }
 
     /// 정상 모드 — "열기" 는 웹UI 를 열고 `on_seen` 을 부른다(새 요청 표시 지움). "종료" 는 `on_quit` 후 끝. `note` 는 툴팁 둘째 줄(피어 포트 등).
@@ -153,6 +199,13 @@ impl Tray {
                         Err(e) => log::error!("브라우저 열기 실패: {e}"),
                     }
                 }
+                Event::UserEvent(TrayEvent::Quit) => {
+                    tray.take();
+                    if let Some(f) = on_quit.take() {
+                        f();
+                    }
+                    *control_flow = ControlFlow::Exit;
+                }
                 Event::UserEvent(TrayEvent::Menu(e)) if e.id == quit_id => {
                     tray.take();
                     if let Some(f) = on_quit.take() {
@@ -165,7 +218,8 @@ impl Tray {
         })
     }
 
-    /// 오류 모드 — 붉은 아이콘 · 툴팁에 사유, 메뉴 "오류 보기"(사유 파일을 OS 기본 앱으로) · "종료".
+    /// 오류 모드 — 붉은 아이콘 · 툴팁에 사유, 메뉴 "오류 보기"(사유 파일을 OS 기본 앱으로) · "종료". 감시 잠금 안에서만 띄운다(#1n — 하나).
+    /// "오류 보기" 는 열기 전에 사유 파일을 다시 쓴다 — 다른 실행이 덮어쓴 사유를 보여 주지 않게.
     pub fn run_error(self, message: &str, file: &Path) -> ! {
         let show = MenuItem::new("오류 보기", true, None);
         let quit = MenuItem::new("종료", true, None);
@@ -178,6 +232,7 @@ impl Tray {
             .take(120)
             .collect();
         let file = file.display().to_string();
+        let message = message.to_string();
 
         self.event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Wait;
@@ -198,6 +253,9 @@ impl Tray {
                     }
                 }
                 Event::UserEvent(TrayEvent::Menu(e)) if e.id == show_id => {
+                    let file = write_start_error(&message)
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|_| file.clone());
                     if let Err(e) = browser::open(&file) {
                         log::error!("오류 파일 열기 실패: {e}");
                     }

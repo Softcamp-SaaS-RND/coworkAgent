@@ -93,9 +93,10 @@ impl Prefs {
             | PeerEvent::Approved { .. }
             | PeerEvent::AutoPaired { .. } => self.notify_pair,
             PeerEvent::Message { kind, .. } => match kind {
-                MessageKind::Request | MessageKind::Ask | MessageKind::AskState => {
-                    self.notify_request
-                }
+                MessageKind::Request
+                | MessageKind::Ask
+                | MessageKind::AskState
+                | MessageKind::Share => self.notify_request,
                 MessageKind::Reply => self.notify_reply,
                 MessageKind::RelayStart | MessageKind::RelayEnd => self.notify_relay != "off",
                 MessageKind::RelayStep => self.notify_relay == "every",
@@ -483,6 +484,8 @@ pub fn notice_with(e: &PeerEvent, preview_on: bool) -> Notice {
                 }
                 MessageKind::Ask => ("message", format!("요청 받음 — {agent}")),
                 MessageKind::AskState => ("message", format!("요청 상태 — {agent}")),
+                // 상대가 내 대화를 공유했다(#1o) — 본문 = "관람자 n"(이름 없음).
+                MessageKind::Share => ("message", format!("관람자 — {agent}")),
             };
             // 끝 알림의 본문은 이 PC 가 만든 멈춘 사유라 미리보기 설정과 무관하게 보인다.
             let body = if preview_on || *kind == MessageKind::RelayEnd {

@@ -10,11 +10,12 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
 
 - `paths::Paths` — `legacy_root()` · `adopt_legacy(legacy)`(개명 전 이름 `LEGACY_APP_DIR` 의 데이터를 첫 실행 때 이어받음 — 옛 `instance.lock` 을 잡고 항목별로 옮김 · 옛 DB · 로그는 새 이름, 옛 앱 실행 중 · 두 루트 모두 데이터면 오류로 시작 멈춤, 다시 불러도 안전) · `default_root()`(Windows `%LOCALAPPDATA%\coworkAgent` · macOS `~/Library/Application Support/coworkAgent`) ·
   `under(root)` · `db_file` · `log_dir` · `log_file` · `lock_file` · `instance_file` · `identity_file` · `ensure()` · `restrict()`(#1a — 루트를 소유자
-  전용으로, 주 인스턴스가 잠금 뒤 매 시작). 경로 API 는 루트를 인자로 받는다 — 환경변수 스위치 없음. `paths::protected_roots()` ·
+  전용으로, 주 인스턴스가 잠금 뒤 매 시작) · `instance_pid_file` · `supervisor_lock_file` · `supervisor_pid_file`(#1n). 경로 API 는 루트를 인자로 받는다 —
+  환경 변수 스위치는 디버그 빌드의 `DATA_DIR_ENV`(`COWORKAGENT_DATA_DIR` — `default_root` 를 바꾸고 `legacy_root` 는 없음, 시험 전용) 하나뿐. `paths::protected_roots()` ·
   `agent_folder_problem(folder) -> Option<이유>`(데이터 루트를 품음 · 그 안 · 네트워크 경로 — 등록 · 수정 · 실행 직전) · `folder_blocked(folder, roots)`.
 - `owner_only::restrict(dir)`(#1a) — Windows 보호 DACL(토큰 사용자 SID · SYSTEM, `FILE_ALL_ACCESS`, 하위 상속) · Unix 0700.
 - `sync::lock(&Mutex<T>)`(#1a) — 오염된 잠금도 안의 값을 꺼내 계속 쓴다(warn). 원시 `.lock().expect(` 는 쓰지 않는다.
-- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(18)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
+- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(20)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
   `messages` 에 `reply_to` · `turns` · `duration_ms` — 한 트랜잭션, 있는 열은 건너뜀). 더 새 스키마면 오류. 올리기 전 `{db}.v{버전}.bak`
   사본(`db::backup_path`, `VACUUM INTO`) — 이전 실행 파일로 롤백할 때 DB 를 이 사본으로 바꿔 쓴다. → 6 `messages` 에 `mine` ·
   `exec` · `lc`(이전 이력은 방향 · id 로 채움). → 7 `conversations` 에 `relay_agent` · `relay_cap` · `relay_count` · `relay_on` ·
@@ -45,7 +46,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   열은 `NOT NULL` 이라 5개를 적어 두고 읽지 않는다) · `by_name` ·
   `by_id` · `list` · `remove` · `update(id, folder, prompt, group)`(`group` 은 #1j 화면이 쓰지 않는다 · 이름은 바꾸지 않는다 — 대화 · 상대 PC 가 이름으로 부른다. 폴더가 바뀌면
   그 에이전트가 이어 가던 세션(받은 대화 · 내가 연 자동 왕복 · 멘션 `agent_sessions`)을 비운다 — `forget_sessions(name)`, `remove` 도 같다 — Claude 세션은 폴더에 묶여 있다).
-- `chat` — `Dir{Out,In}` · `Author{Human,Agent}` · `State{Sent,Queued,Running,Done,Error,Undelivered}` · `Conversation` · `Message`.
+- `chat` — `Dir{Out,In,Shared}`(#1o `shared` = 남이 나를 관람자로 넣은 사본) · `Message.owner` · `find_own` · `Author{Human,Agent}` · `State{Sent,Queued,Running,Done,Error,Undelivered}` · `Conversation` · `Message`.
   `open_conversation(uuid, peer_id, agent, dir)`(다른 상대의 같은 uuid 는 오류) · `find(uuid, peer_id)` · `by_id` · `list` · `set_session` ·
   `add_message` · `add_reply(…, reply_to, turns, duration_ms)`(에이전트 답) · `set_state` · `messages` · `message_by_uuid` ·
   `pending(conv)`(DB 대기열 — 커서 없이 매번 처음부터) · `pending_conversations` · `summaries`(`Summary{conversation, title(이 PC 에서 붙인 제목,
@@ -110,9 +111,14 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   같은 이름 그룹(없으면 `add`)에 넣는다 — 빈 이름은 건너뜀. `agents.grp` 는 읽지 않는다(열은 그대로).
   스키마 19(#1m, 한 트랜잭션): `messages.ctx_tokens` · `ctx_op` · `ctx_seeds(conversation_id, agent, text)`. `chat::Author::Context` · `set_ctx_tokens` ·
   `add_context` · `finish_context` · `sessions(conv)` · `clear_sessions(conv, keep_seeds)` · `set_ctx_seed` · `ctx_seed` · `drop_ctx_seed`, `pending` 은 구분선
-  글 먼저 · 구분선은 내 활동 · 미리보기 · 안 읽음 · 가로지른 글 · 메모 범위에서 뺌. `settings::AUTO_COMPACT_KEY` · `auto_compact()` · `CONTEXT_LIMIT`(1M) ·
+  글 먼저 · 구분선은 내 활동 · 미리보기 · 안 읽음 · 가로지른 글 · 메모 범위에서 뺌.
+  스키마 20(#1o, 한 트랜잭션): `shares(conversation_id, peer_id, sent_upto, created_at)` · `conversations.share_other` · `share_dir` · `share_ended` ·
+  `watchers` · `messages.owner`, `MINE_BY_DIR` `'shared' → 0`. `share` 모듈 — `MAX_WATCHERS`(5) · `watchers` · `add` · `remove` · `set_sent` · `forget_peer`(페어링
+  해제 — `peers::remove` · `remove_spki` 가 부름) · `own_by_uuid` · `copy` · `open_copy` · `upsert`(사본 글 — mine 0 · exec 0 · request 0, 이 사본 것만 덮어씀) ·
+  `delete` · `end` · `set_watched` · `watched`. `outbox::SHARE` · `SHARE_NOTICE`. 끝 글 지우기는 `shares.sent_upto` 를 낮춘다(id 재사용). `settings::AUTO_COMPACT_KEY` · `auto_compact()` · `CONTEXT_LIMIT`(1M) ·
   `AUTO_COMPACT_AT`(800k).
-- `instance::InstanceLock::acquire(path)` → `Acquired::Primary(lock)` | `Secondary`. `InstanceInfo { port, token }` 의
+- `instance::InstanceLock::acquire(path)` → `Acquired::Primary(lock)` | `Secondary`(`WouldBlock` 은 50 ms 간격 4번까지 다시 — `is_held` 와의 경쟁).
+  `InstanceLock::is_held(path)`(#1n — 잠깐 잡아 보고 바로 놓기) · `write_pid(path)`(이 프로세스) · `read_pid(path)`. `InstanceInfo { port, token }` 의
   `write` · `read`(hex 토큰만 받음).
 
 ## 사용 예

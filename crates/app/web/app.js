@@ -7,6 +7,13 @@ import {
   stateText,
   peerState,
   convLabel,
+  splitByDir,
+  splitKey,
+  shareHead,
+  shareCandidates,
+  MAX_OBSERVERS,
+  shortName,
+  josa,
   authorLabel,
   roomPreview,
   bubbleSide,
@@ -716,6 +723,8 @@ async function iconFromFile(file) {
 $("tile_edit_btn").addEventListener("click", () => ($("tile_form").hidden ? openTileEdit() : closeTileEdit()));
 $("tile_more_btn").addEventListener("click", (ev) => openTileMenu(currentTile(), ev.currentTarget));
 $("rail_me").addEventListener("contextmenu", (ev) => tileMenuEvent(ev, { kind: "me", id: null }));
+// 레일 어디서든(타일 사이 빈칸 · 바탕 포함) 브라우저 메뉴는 띄우지 않는다(#1o) — 타일 위면 위 타일 메뉴만.
+$("rail").addEventListener("contextmenu", (ev) => ev.preventDefault());
 
 /// 레일 타일 우클릭 · 메뉴 키(Shift + F10 포함 — 브라우저가 같은 `contextmenu` 를 낸다) → 타일 메뉴(#1i).
 function tileMenuEvent(ev, t) {
@@ -1389,6 +1398,7 @@ function convItem({ c, label }, section) {
           meta.running ? el("span", { class: "spin", "aria-hidden": "true" }) : "",
           meta.running ? el("span", { class: "st-running", text: meta.state }) : el("span", { class: "room-preview", text: sub }),
           meta.relay ? el("span", { class: "chip", text: meta.relay }) : "",
+          meta.tag ? el("span", { class: "chip", text: meta.tag }) : "",
           meta.unread ? el("span", { class: "count unread-n", "aria-label": `안 읽음 ${c.unread}`, text: String(c.unread) }) : "",
         ),
       ),
@@ -1445,10 +1455,17 @@ function renderConvList() {
     $("conv_sections").replaceChildren(
       ...head,
       ...sections.map((s) => {
-        const list = el("ul", { class: "side-list" }, ...(s.rows.length ? s.rows.map((r) => convItem(r, s.key)) : rows.length ? [] : [group ? groupEmpty : empty]));
+        // 내 대화 · agent 대화(#1o) — 묶음이 둘 이상이면 묶음마다 머리(제목 · 개수) + 목록, 하나면 머리 없이 한 목록.
+        const parts = splitByDir(s.rows);
+        const list = (g) => el("ul", { class: "side-list" }, ...g.rows.map((r) => convItem(r, splitKey(s.key, g.dir))));
+        const lists = parts.length
+          ? parts.flatMap((g) =>
+              parts.length > 1 ? [el("div", { class: "dir-head" }, el("span", { text: g.title }), el("b", { text: String(g.rows.length) })), list(g)] : [list(g)],
+            )
+          : [el("ul", { class: "side-list" }, ...(rows.length ? [] : [group ? groupEmpty : empty]))];
         // '나' 의 상대별 절(#1g) — 접을 수 있고 접힘은 이 PC 에 남는다.
-        if (s.peer != null) return foldEl(`convs:${s.peer}`, [el("span", { text: s.title }), add(s.peer)], [list], "side-section", "side-title");
-        return el("section", { class: "side-section" }, el("h2", { class: "side-title" }, el("span", { text: s.title }), s.key === "convs" ? add(null) : ""), list);
+        if (s.peer != null) return foldEl(`convs:${s.peer}`, [el("span", { text: s.title }), add(s.peer)], lists, "side-section", "side-title");
+        return el("section", { class: "side-section" }, el("h2", { class: "side-title" }, el("span", { text: s.title }), s.key === "convs" ? add(null) : ""), ...lists);
       }),
     ),
   );
@@ -1535,11 +1552,9 @@ function renderHome() {
       const p = peerOf(g.peer);
       const head = [
         el("strong", { text: g.name }),
-        el("span", { class: "hint", text: p ? presence(p).text : "페어링 해제" }),
-        el("span", { text: `대화 ${g.convs}` }),
+        p ? "" : el("span", { class: "hint", text: "페어링 해제" }),
         g.unread ? el("span", { class: "count", text: `안 읽음 ${g.unread}` }) : "",
         g.waiting ? el("span", { class: "count", text: `대기 요청 ${g.waiting}` }) : "",
-        g.last != null ? el("span", { class: "hint", text: `최근 ${formatTime(g.last)}` }) : "",
       ];
       const rows = g.rows.length
         ? g.rows.map((c) => {
@@ -1720,7 +1735,7 @@ function renderConvHead(conv) {
   const label = convLabel(conv, state.peerNames);
   $("conv_title").textContent = label.title;
   const run = state.msgsOf === conv.id ? lastRun(state.msgs, conv.dir !== "out") : "";
-  $("conv_sub").textContent = [label.sub, run].filter(Boolean).join(" · ");
+  $("conv_sub").textContent = [label.sub, shareHead(conv), run].filter(Boolean).join(" · ");
   $("star_btn").replaceWith(Object.assign(starButton(conv, label.title), { id: "star_btn" }));
   // 머리 "북마크 n"(#1j) — 이 대화에서 북마크한 글 수, 누르면 세부정보 패널의 북마크 절.
   const saved = state.msgsOf === conv.id ? state.msgs.filter((m) => m.saved).length : 0;
@@ -1819,6 +1834,11 @@ function showConversation(conv) {
   renderMentionHint();
   closeMention();
   if (state.msgsOf !== conv.id) $("conv_relay").hidden = $("conv_relay_btn").hidden = true;
+  // 공유 대화(#1o) — 보기만: 입력창 · 편집 모드 · 컨텍스트 단추 없음.
+  const shared = conv.dir === "shared";
+  if (shared && state.editMode) setEditMode(false);
+  $("reply_form").hidden = shared || state.editMode;
+  $("edit_btn").hidden = $("ctx_btn").hidden = shared;
 }
 
 // ---- 대화 ----
@@ -2015,6 +2035,7 @@ function contextEl(m) {
 
 /// 편집 모드 켜고 끄기 — 켜면 입력창 대신 "n개 선택 · 삭제 · 완료" 막대(보내기 없음), 끝난 내 글에 체크박스 · 연필.
 function setEditMode(on) {
+  if (on && state.current?.dir === "shared") return;
   state.editMode = on;
   state.picked.clear();
   state.editing = null;
@@ -2283,6 +2304,97 @@ function switchRelay(on) {
   );
 }
 
+/// 세부정보 "관람자"(#1o) — 내 대화 · agent 대화: 관람자 목록(빼기) · 추가(페어링된 상대, 5명까지). 공유 대화(사본): 누가 공유했는지 · 나가기.
+/// 원 상대 쪽(관람자 수만 안다)은 머리 "관람자 n" 만.
+function renderShare(conv) {
+  const shared = conv.dir === "shared";
+  const mine = conv.observers ?? [];
+  $("detail_share_sec").hidden = false;
+  $("detail_share_n").textContent = shared ? "" : mine.length ? `${mine.length} / ${MAX_OBSERVERS}` : conv.watchers ? String(conv.watchers) : "";
+  const note = shared
+    ? `${josaName(shortName(state.peerNames.get(conv.peer_id)))} 공유한 대화 — ${conv.share?.ended != null ? "공유 해제됨" : "보기만 할 수 있습니다"}`
+    : conv.watchers && !mine.length
+      ? `상대가 관람자 ${conv.watchers}명에게 공유했습니다`
+      : "";
+  Object.assign($("detail_share_note"), { textContent: note, hidden: !note });
+  if (!unchanged($("detail_share"), JSON.stringify([conv.id, mine, state.peers.map((p) => [p.id, displayName(p)])])))
+    $("detail_share").replaceChildren(
+      ...mine.map((id) => {
+        const p = state.peers.find((x) => x.id === id);
+        const name = p ? displayName(p) : "알 수 없는 상대";
+        return el(
+          "li",
+          { class: "share-row" },
+          el("span", { text: name }),
+          el("button", { type: "button", class: "small", "aria-label": `${name} 관람자에서 빼기`, text: "빼기", onclick: () => removeObserver(conv, id, name) }),
+        );
+      }),
+    );
+  const cands = shareCandidates(conv, state.peers);
+  $("share_tools").hidden = shared || cands.length === 0;
+  if (!shared)
+    $("share_peer").replaceChildren(...cands.map((p) => el("option", { value: String(p.id), text: displayName(p) })));
+  $("share_leave_btn").hidden = !shared || conv.share?.ended != null;
+}
+
+/// 이름 + 주격 조사(이 · 가).
+function josaName(name) {
+  return `${name}${josa(name, "이", "가")}`;
+}
+
+function addObserver() {
+  const conv = state.current;
+  const id = Number($("share_peer").value);
+  if (!conv || !id) return;
+  act("관람자 추가", async () => {
+    await api("POST", `/api/conversations/${conv.id}/observers`, { peer_id: id });
+    return "관람자를 넣었습니다 — 이전 이력부터 보냅니다";
+  }, "status_msg", loadConvs);
+}
+
+function removeObserver(conv, id, name) {
+  act("관람자 빼기", async () => {
+    await api("DELETE", `/api/conversations/${conv.id}/observers/${id}`);
+    return `${name} 을 관람자에서 뺐습니다`;
+  }, "status_msg", loadConvs);
+}
+
+$("share_add_btn").addEventListener("click", addObserver);
+// 나가기 확인(한 번) — 받은 내용은 읽기 전용으로 남는다.
+$("share_leave_btn").addEventListener("click", (ev) => {
+  const conv = state.current;
+  if (!conv) return;
+  openFloat(ev.currentTarget, "dialog", "공유 대화 나가기", [
+    el(
+      "div",
+      { class: "float-form" },
+      el("strong", { text: "공유 대화 나가기" }),
+      el("p", { class: "hint", text: "더 받지 않습니다 — 받은 내용은 읽기 전용으로 남습니다." }),
+      el(
+        "div",
+        { class: "actions" },
+        button("취소", () => closeFloat(true)),
+        button(
+          "나가기",
+          () => {
+            closeFloat(false);
+            act(
+              "나가기",
+              async () => {
+                await api("POST", `/api/conversations/${conv.id}/leave`);
+                return "공유 대화에서 나갔습니다";
+              },
+              "status_msg",
+              loadConvs,
+            );
+          },
+          "danger",
+        ),
+      ),
+    ),
+  ]);
+});
+
 for (const id of ["conv_relay_btn", "detail_relay_btn"]) $(id).addEventListener("click", () => switchRelay($(id).dataset.on === "true"));
 
 // ---- 실행 상세 — 진행 · 대화 정보 · 자동 왕복 · 북마크 항목(이 대화) ----
@@ -2316,10 +2428,14 @@ function renderDetail() {
   const p = state.peers.find((x) => x.id === conv.peer_id);
   const out = conv.dir === "out";
   $("info_peer").textContent = p ? `${displayName(p)} (${p.host})` : "알 수 없는 상대";
-  $("info_agent_label").textContent = out ? "상대 에이전트" : "내 에이전트";
+  const shared = conv.dir === "shared";
+  $("info_agent_label").textContent = shared ? "대화 에이전트" : out ? "상대 에이전트" : "내 에이전트";
   $("info_agent").textContent = conv.agent;
   const run = lastRun(ms, !out);
-  $("info_defaults").textContent = out
+  // 공유 대화(#1o) — 이 PC 가 실행하지 않는다: 마지막 실행 값만.
+  $("info_defaults").textContent = shared
+    ? run || "—"
+    : out
     ? run
       ? `${run} — 마지막 실행`
       : ready
@@ -2340,6 +2456,7 @@ function renderDetail() {
     btn.textContent = relay.action === "resume" ? "재개" : "멈춤";
     btn.dataset.on = String(relay.action === "resume");
   }
+  renderShare(conv);
   // 요청 — 이 대화의 요청 글(최근 글부터, 상태 · 메모).
   const peerName = state.peerNames.get(conv.peer_id);
   const reqs = ms.filter((m) => m.author === "human" && m.request).reverse();
@@ -2348,7 +2465,7 @@ function renderDetail() {
     $("detail_req").replaceChildren(
       ...(reqs.length
         ? reqs.map((m) => detailItem(conv, m, [askTag(m), m.req_note, authorLabel(conv, m, peerName), formatTime(m.created_at)].filter(Boolean).join(" · ")))
-        : [el("li", { class: "hint", text: ready ? "요청 없음 — 입력창에서 '요청' 을 골라 보낸 글이 모입니다" : "불러오는 중 …" })]),
+        : [el("li", { class: "hint", text: !ready ? "불러오는 중 …" : conv.dir === "shared" ? "요청 없음" : "요청 없음 — 입력창에서 '요청' 을 골라 보낸 글이 모입니다" })]),
     );
   // 북마크 항목 — 이 대화에서 북마크한 글(최근 글부터).
   const saved = ms.filter((m) => m.saved).reverse();
@@ -2357,7 +2474,7 @@ function renderDetail() {
   $("detail_saved").replaceChildren(
     ...(saved.length
       ? saved.map((m) => detailItem(conv, m, `${authorLabel(conv, m, peerName)} · ${formatTime(m.created_at)}`))
-      : [el("li", { class: "hint", text: ready ? "북마크한 글 없음 — 메시지 작업 '북마크' 로 모읍니다" : "불러오는 중 …" })]),
+      : [el("li", { class: "hint", text: ready ? "북마크한 글 없음" : "불러오는 중 …" })]),
   );
 }
 
@@ -2785,7 +2902,7 @@ async function loadSaved() {
   if (!latest.is(ticket)) return;
   const rows = inboxRows(ms, state.peerNames).map((r) => ({ ...r, href: `${r.href}/m/${r.id}` }));
   if (needsRender($("saved_list"), JSON.stringify([state.railPeer, state.railGroup, rows]), false))
-    $("saved_list").replaceChildren(...grouped("saved", rows, (rs) => rowEls(rs, "북마크 항목 없음 — 메시지 작업 '북마크' 로 모읍니다")));
+    $("saved_list").replaceChildren(...grouped("saved", rows, (rs) => rowEls(rs, "북마크 항목 없음")));
 }
 
 /// 에이전트 화면 — 고른 타일 범위('나' = 내 에이전트 + 페어링된 상대 전부의 에이전트). 상대 목록은 원격 왕복이라 이 화면을 열 때 없는 것만 받는다.
@@ -2808,22 +2925,26 @@ function renderAgentsView() {
         "a",
         props,
         el("span", { class: "meta" }, el("span", { class: "agent-dot", "aria-hidden": "true" }), el("strong", { class: "agent-name", text: name })),
-        el("span", { class: "hint", text: sub }),
+        sub ? el("span", { class: "hint", text: sub }) : "",
       ),
     );
   const peerRows = (x) => {
     const names = state.peerAgents.get(x.id);
     if (names === undefined) return [el("li", { class: "hint", text: `${displayName(x)} — 불러오는 중 …` })];
     if (names === null) return [el("li", { class: "hint", text: `${displayName(x)} — 목록을 받지 못했습니다` })];
-    return names.map((n) =>
-      row(n, `${displayName(x)} 의 에이전트 — 누르면 새 대화`, {
+    // 줄 오른쪽 "새 대화" 단추(#1o) — 줄을 눌러도 같다.
+    return names.map((n) => {
+      const li = row(n, null, {
         href: "#new",
         onclick: (ev) => {
           ev.preventDefault();
           newChat(x.id, n);
         },
-      }),
-    );
+      });
+      li.classList.add("has-edit");
+      li.append(el("button", { type: "button", class: "small agent-new", "aria-label": `${n} — 새 대화`, text: "새 대화", onclick: () => newChat(x.id, n) }));
+      return li;
+    });
   };
   const none = [el("li", { class: "hint", text: "에이전트 없음" })];
   if (p) {

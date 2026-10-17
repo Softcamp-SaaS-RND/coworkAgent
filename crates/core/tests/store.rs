@@ -853,3 +853,148 @@ fn summary_last_follows_canonical_order() {
     );
     assert_eq!(s[0].last.as_ref().unwrap().via.as_deref(), Some("cli"));
 }
+
+#[test]
+fn schema20_share_tables_from_19() {
+    use an_core::{peers, share};
+    let p = std::env::temp_dir().join(format!("an-core-store-s20-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&p);
+    let _ = std::fs::remove_file(db::backup_path(&p, 19));
+    let (owner, out, inn) = {
+        // 스키마 19 가 남긴 파일 — 공유 표 · 열이 없다.
+        let c = db::open(&p).unwrap();
+        let pr = peers::upsert(&c, b"k1", "p1", "h", "1.2.3.4:1", "r").unwrap();
+        let out = chat::open_conversation(&c, "u-out", pr.id, "dev", chat::Dir::Out).unwrap();
+        let inn = chat::open_conversation(&c, "u-in", pr.id, "dev", chat::Dir::In).unwrap();
+        chat::add_message(
+            &c,
+            out.id,
+            "m-out",
+            chat::Author::Human,
+            "안녕",
+            chat::State::Done,
+        )
+        .unwrap();
+        c.execute_batch(
+            "DROP TABLE shares;
+             ALTER TABLE conversations DROP COLUMN share_other; ALTER TABLE conversations DROP COLUMN share_dir;
+             ALTER TABLE conversations DROP COLUMN share_ended; ALTER TABLE conversations DROP COLUMN watchers;
+             ALTER TABLE messages DROP COLUMN owner; PRAGMA user_version = 19;",
+        )
+        .unwrap();
+        (pr.id, out.id, inn.id)
+    };
+    let c = db::open(&p).unwrap();
+    assert_eq!(db::SCHEMA_VERSION, 20);
+    assert_eq!(db::user_version(&c).unwrap(), 20);
+    assert!(db::backup_path(&p, 19).exists(), "올리기 전 사본");
+    // 기존 대화 dir · 글 그대로.
+    assert_eq!(chat::by_id(&c, out).unwrap().unwrap().dir, chat::Dir::Out);
+    assert_eq!(chat::by_id(&c, inn).unwrap().unwrap().dir, chat::Dir::In);
+    let m = chat::messages(&c, out).unwrap().remove(0);
+    assert_eq!((m.text.as_str(), m.mine, m.owner), ("안녕", true, false));
+    // 새 표 · 열.
+    let has = |t: &str, col: &str| {
+        c.prepare(&format!(
+            "SELECT 1 FROM pragma_table_info('{t}') WHERE name = ?1"
+        ))
+        .unwrap()
+        .exists([col])
+        .unwrap()
+    };
+    for (t, col) in [
+        ("shares", "conversation_id"),
+        ("shares", "peer_id"),
+        ("shares", "sent_upto"),
+        ("shares", "created_at"),
+        ("conversations", "share_other"),
+        ("conversations", "share_dir"),
+        ("conversations", "share_ended"),
+        ("conversations", "watchers"),
+        ("messages", "owner"),
+    ] {
+        assert!(has(t, col), "{t}.{col}");
+    }
+
+    // 관람자(A) — 한 번만, 커서 0, 페어링 해제로 지워진다.
+    let viewer = peers::upsert(&c, b"k2", "p2", "h", "1.2.3.4:2", "r").unwrap();
+    assert!(share::add(&c, out, viewer.id).unwrap());
+    assert!(!share::add(&c, out, viewer.id).unwrap());
+    assert_eq!(share::watchers(&c, out).unwrap()[0].sent_upto, 0);
+    share::set_sent(&c, out, viewer.id, 5).unwrap();
+    share::set_sent(&c, out, viewer.id, 3).unwrap();
+    assert_eq!(
+        share::watchers(&c, out).unwrap()[0].sent_upto,
+        5,
+        "뒤로 가지 않음"
+    );
+    peers::remove(&c, viewer.id).unwrap();
+    assert!(share::watchers(&c, out).unwrap().is_empty());
+
+    // 사본(C) — 상대 id = 대화를 가진 PC, 내 대화 · 다른 상대의 uuid 는 사본으로 덮지 못한다.
+    let copy = share::open_copy(&c, "u-copy", owner, "rev", Some("제목"), ("원 상대", "in"))
+        .unwrap()
+        .unwrap();
+    assert_eq!((copy.dir, copy.peer_id), (chat::Dir::Shared, owner));
+    assert!(
+        share::open_copy(&c, "u-out", owner, "x", None, ("x", "out"))
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        share::open_copy(&c, "u-copy", 99, "x", None, ("x", "out"))
+            .unwrap()
+            .is_none()
+    );
+    let post = |uuid: &'static str, text: &'static str, edited| share::Post {
+        uuid,
+        author: chat::Author::Agent,
+        text,
+        lc: Some(3),
+        at: 1_700_000_000,
+        owner: true,
+        via: None,
+        agent: None,
+        ok: true,
+        edited,
+    };
+    assert!(share::upsert(&c, copy.id, &post("m-copy", "원문", false)).unwrap());
+    assert!(share::upsert(&c, copy.id, &post("m-copy", "고침", true)).unwrap());
+    assert!(
+        !share::upsert(&c, copy.id, &post("m-out", "덮기", false)).unwrap(),
+        "남의 글"
+    );
+    let ms = chat::messages(&c, copy.id).unwrap();
+    assert_eq!(ms.len(), 1);
+    let m = &ms[0];
+    assert_eq!(
+        (m.text.as_str(), m.mine, m.exec, m.owner, m.lc, m.created_at),
+        ("고침", false, false, true, 3, 1_700_000_000)
+    );
+    assert!(m.edited_at.is_some());
+    assert_eq!(
+        chat::message_by_uuid(&c, "m-out").unwrap().unwrap().text,
+        "안녕"
+    );
+    // 사본 글은 내 활동 · 질의 목록에 들지 않는다.
+    assert!(
+        chat::activity(&c, None, chat::ActivityFilter::All, None, 50)
+            .unwrap()
+            .iter()
+            .all(|a| a.conversation_id != copy.id)
+    );
+    // 빠짐 — 한 번만, 다시 초대하면 풀리고 글은 비운다.
+    assert!(share::end(&c, copy.id).unwrap());
+    assert!(!share::end(&c, copy.id).unwrap());
+    assert!(share::copy(&c, copy.id).unwrap().unwrap().ended);
+    share::open_copy(&c, "u-copy", owner, "rev", None, ("원 상대", "in"))
+        .unwrap()
+        .unwrap();
+    assert!(!share::copy(&c, copy.id).unwrap().unwrap().ended);
+    assert!(chat::messages(&c, copy.id).unwrap().is_empty());
+    assert!(share::copy(&c, out).unwrap().is_none(), "사본이 아니다");
+    // 원 상대(B) 쪽 관람자 수.
+    assert!(share::set_watched(&c, inn, 2).unwrap());
+    assert!(!share::set_watched(&c, inn, 2).unwrap());
+    assert_eq!(share::watched(&c, inn).unwrap(), 2);
+}

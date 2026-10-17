@@ -2,6 +2,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 pub const APP_DIR: &str = "coworkAgent";
+/// 시험용 데이터 루트 환경 변수 — 디버그 빌드만 읽는다(릴리스는 무시).
+pub const DATA_DIR_ENV: &str = "COWORKAGENT_DATA_DIR";
 /// 개명 전 이름(agentNetwork, 2026-10-11)의 데이터 폴더 · 파일 이름 — 첫 실행 때 새 이름으로 옮긴다.
 pub const LEGACY_APP_DIR: &str = "agentNetwork";
 const LEGACY_DB: &str = "agentNetwork.db";
@@ -15,11 +17,18 @@ pub struct Paths {
 
 impl Paths {
     /// Windows `%LOCALAPPDATA%\coworkAgent` · macOS `~/Library/Application Support/coworkAgent`.
+    /// 디버그 빌드만 [`DATA_DIR_ENV`] 가 있으면 그 경로 — 시험이 이 PC 의 실제 인스턴스 · 데이터를 건드리지 않게(#1n).
     pub fn default_root() -> Option<PathBuf> {
+        if let Some(dir) = test_root() {
+            return Some(dir);
+        }
         dirs::data_local_dir().map(|d| d.join(APP_DIR))
     }
-    /// 개명 전 데이터 루트(`default_root` 와 같은 자리의 `agentNetwork`).
+    /// 개명 전 데이터 루트(`default_root` 와 같은 자리의 `agentNetwork`). 시험용 루트를 쓰면 없음 — 실제 옛 데이터를 옮겨 오지 않게.
     pub fn legacy_root() -> Option<PathBuf> {
+        if test_root().is_some() {
+            return None;
+        }
         dirs::data_local_dir().map(|d| d.join(LEGACY_APP_DIR))
     }
     pub fn under(root: impl Into<PathBuf>) -> Self {
@@ -42,6 +51,17 @@ impl Paths {
     }
     pub fn instance_file(&self) -> PathBuf {
         self.root.join("instance.json")
+    }
+    /// 앱(`instance.lock` 보유자)의 PID — `stop` 의 강제 종료용.
+    pub fn instance_pid_file(&self) -> PathBuf {
+        self.root.join("instance.pid")
+    }
+    /// 감시 프로세스 단일 잠금(#1n) — 동시에 여러 번 실행해도 감시는 하나.
+    pub fn supervisor_lock_file(&self) -> PathBuf {
+        self.root.join("supervisor.lock")
+    }
+    pub fn supervisor_pid_file(&self) -> PathBuf {
+        self.root.join("supervisor.pid")
     }
     /// 설치별 신원 키(ed25519 PKCS#8).
     pub fn identity_file(&self) -> PathBuf {
@@ -121,6 +141,16 @@ impl Paths {
     pub fn restrict(&self) -> io::Result<()> {
         crate::owner_only::restrict(&self.root)
     }
+}
+
+/// 디버그 빌드의 [`DATA_DIR_ENV`] 값.
+fn test_root() -> Option<PathBuf> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    std::env::var_os(DATA_DIR_ENV)
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
 }
 
 /// 데이터 루트(지금 · 옛 이름) — 에이전트 폴더가 품으면 안 되는 곳.

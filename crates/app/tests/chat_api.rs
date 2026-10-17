@@ -275,7 +275,11 @@ async fn conversation_summaries_and_message_meta() {
         ),
         "{last}"
     );
-    assert_eq!(last["via"], serde_json::Value::Null, "웹UI 글 — CLI 출처 아님(라운드 2 `via`)");
+    assert_eq!(
+        last["via"],
+        serde_json::Value::Null,
+        "웹UI 글 — CLI 출처 아님(라운드 2 `via`)"
+    );
     // 화면 로직 모듈도 같은 guard 뒤에서 나간다.
     let (code, raw) = common::send(port, "GET", "/view.js", &h[..3]).await;
     assert_eq!(code, 200);
@@ -495,5 +499,185 @@ async fn via_api() {
             .await
             .0,
         400
+    );
+}
+
+/// 두 쪽을 페어링 — `(a 가 본 b, b 가 본 a)`.
+async fn pair_sides(a: &Side, b: &Side) -> (an_core::peers::Peer, an_core::peers::Peer) {
+    let code = b.node.open_window(PAIRING_WINDOW);
+    let pb = a.node.add(b.addr, Some(code)).await.unwrap();
+    let pa = b
+        .node
+        .peers()
+        .unwrap()
+        .into_iter()
+        .find(|p| p.name == a.node.me().name)
+        .unwrap();
+    a.node.approve(pb.id).await.unwrap();
+    b.node.approve(pa.id).await.unwrap();
+    (pb, pa)
+}
+
+/// 관람자 API(#1o) — A 가 B 와의 대화에 C 를 넣으면 대화 JSON `observers`, C 목록에 `dir: shared` 사본(`share.other` · 글 `owner`), B 에 `watchers`.
+/// 사본 · 원 상대 · 없는 상대 거절, 빼기 · 나가기 204 · 다시 빼기 404.
+#[tokio::test(flavor = "multi_thread")]
+async fn share_observer_api() {
+    let (a, b, c) = (
+        side("share-a").await,
+        side("share-b").await,
+        side("share-c").await,
+    );
+    let (pb, _) = pair_sides(&a, &b).await;
+    let (pc, _) = pair_sides(&a, &c).await;
+    agents::add(&db::open(&b.paths.db_file()).unwrap(), "review", ".", "").unwrap();
+    let (port, h) = web(a.chat.clone()).await;
+    let body = serde_json::json!({ "peer_id": pb.id, "agent": "review", "text": "빌드 명령은?" });
+    let (code, r) = call(port, &h, "POST", "/api/conversations", &body.to_string()).await;
+    assert_eq!(code, 201, "{r}");
+    let conv = r["conversation"]["id"].as_i64().unwrap();
+    messages(port, &h, conv, 2).await;
+
+    let path = format!("/api/conversations/{conv}/observers");
+    // 원 상대 · 없는 상대는 거절.
+    let (code, r) = call(
+        port,
+        &h,
+        "POST",
+        &path,
+        &serde_json::json!({ "peer_id": pb.id }).to_string(),
+    )
+    .await;
+    assert_eq!(code, 400, "{r}");
+    let (code, _) = call(port, &h, "POST", &path, r#"{"peer_id":999}"#).await;
+    assert!(matches!(code, 400 | 404), "{code}");
+    let add = serde_json::json!({ "peer_id": pc.id }).to_string();
+    let (code, r) = call(port, &h, "POST", &path, &add).await;
+    assert_eq!(code, 204, "{r}");
+    assert_eq!(
+        call(port, &h, "POST", &path, &add).await.0,
+        409,
+        "이미 관람자"
+    );
+    let (_, list) = call(port, &h, "GET", "/api/conversations", "").await;
+    assert_eq!(list[0]["observers"], serde_json::json!([pc.id]));
+
+    // C — 사본이 이력과 함께 온다.
+    let (cport, ch) = web(c.chat.clone()).await;
+    let until = Instant::now() + Duration::from_secs(10);
+    let copy = loop {
+        let (_, list) = call(cport, &ch, "GET", "/api/conversations", "").await;
+        if let Some(x) = list
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["dir"] == "shared")
+        {
+            let id = x["id"].as_i64().unwrap();
+            let (_, ms) = call(
+                cport,
+                &ch,
+                "GET",
+                &format!("/api/conversations/{id}/messages"),
+                "",
+            )
+            .await;
+            if ms.as_array().unwrap().len() >= 2 {
+                break (x.clone(), ms);
+            }
+        }
+        assert!(Instant::now() < until, "사본을 기다렸다");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    let (cx, ms) = copy;
+    assert_eq!(cx["share"]["other"], "user-share-b");
+    assert_eq!(cx["share"]["owner_dir"], "out");
+    assert!(cx["share"]["ended"].is_null());
+    assert!(cx.get("observers").is_none(), "사본에는 관람자 칸 없음");
+    assert_eq!(
+        (ms[0]["owner"].as_bool(), ms[1]["owner"].as_bool()),
+        (Some(true), Some(false))
+    );
+    let cid = cx["id"].as_i64().unwrap();
+    // 사본은 다시 공유 · 글쓰기 불가.
+    let (code, _) = call(
+        cport,
+        &ch,
+        "POST",
+        &format!("/api/conversations/{cid}/observers"),
+        r#"{"peer_id":1}"#,
+    )
+    .await;
+    assert_eq!(code, 400);
+    let (code, _) = call(
+        cport,
+        &ch,
+        "POST",
+        &format!("/api/conversations/{cid}/messages"),
+        r#"{"text":"x"}"#,
+    )
+    .await;
+    assert_eq!(code, 400);
+
+    // B — 관람자 수.
+    let (bport, bh) = web(b.chat.clone()).await;
+    let until = Instant::now() + Duration::from_secs(10);
+    loop {
+        let (_, list) = call(bport, &bh, "GET", "/api/conversations", "").await;
+        if list[0]["watchers"] == 1 {
+            break;
+        }
+        assert!(Instant::now() < until, "관람자 수를 기다렸다: {list}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // 나가기(C) → A 관람자 비고 사본은 '공유 해제됨'. 나간 뒤 A 의 빼기는 404, 사본 아닌 대화의 나가기 400.
+    assert_eq!(
+        call(
+            cport,
+            &ch,
+            "POST",
+            &format!("/api/conversations/{cid}/leave"),
+            ""
+        )
+        .await
+        .0,
+        204
+    );
+    let until = Instant::now() + Duration::from_secs(10);
+    loop {
+        let (_, list) = call(port, &h, "GET", "/api/conversations", "").await;
+        if list[0]["observers"] == serde_json::json!([]) {
+            break;
+        }
+        assert!(Instant::now() < until, "나가기를 기다렸다: {list}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let (_, list) = call(cport, &ch, "GET", "/api/conversations", "").await;
+    assert_eq!(list[0]["share"]["ended"], true);
+    assert_eq!(
+        call(port, &h, "DELETE", &format!("{path}/{}", pc.id), "")
+            .await
+            .0,
+        404
+    );
+    assert_eq!(
+        call(
+            port,
+            &h,
+            "POST",
+            &format!("/api/conversations/{conv}/leave"),
+            ""
+        )
+        .await
+        .0,
+        400
+    );
+    // 다시 넣고 빼기 204.
+    assert_eq!(call(port, &h, "POST", &path, &add).await.0, 204);
+    assert_eq!(
+        call(port, &h, "DELETE", &format!("{path}/{}", pc.id), "")
+            .await
+            .0,
+        204
     );
 }

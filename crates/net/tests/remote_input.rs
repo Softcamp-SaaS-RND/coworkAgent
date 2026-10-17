@@ -175,3 +175,104 @@ async fn refused_reason_is_cleaned() {
         "{text}"
     );
 }
+
+#[tokio::test]
+async fn share_frames_ids_checked() {
+    use proto::ShareMsg;
+    let good = "0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0";
+    let msg = |uuid: &str| ShareMsg {
+        uuid: uuid.into(),
+        author: "human".into(),
+        text: "t".into(),
+        lc: None,
+        at: 0,
+        owner: true,
+        via: None,
+        agent: None,
+        ok: None,
+        edited: false,
+    };
+    let head = |conv: &str| Request::Share {
+        conv: conv.into(),
+        title: String::new(),
+        agent: "a".into(),
+        owner_dir: "out".into(),
+        other: "b".into(),
+    };
+    for ok in [
+        head(good),
+        Request::SharePost {
+            conv: good.into(),
+            msg: msg(good),
+        },
+        Request::ShareDelete {
+            conv: good.into(),
+            msg: good.into(),
+        },
+        Request::ShareEnd { conv: good.into() },
+        Request::ShareNotice {
+            conv: good.into(),
+            n: 1,
+        },
+    ] {
+        assert!(ok.ids_ok(), "{ok:?}");
+    }
+    let bad_frames = [
+        head("x"),
+        Request::SharePost {
+            conv: good.into(),
+            msg: msg("Z"),
+        },
+        Request::SharePost {
+            conv: "x".into(),
+            msg: msg(good),
+        },
+        Request::ShareDelete {
+            conv: good.into(),
+            msg: "x".into(),
+        },
+        Request::ShareEnd {
+            conv: "0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0".into(),
+        },
+        Request::ShareNotice {
+            conv: "x".into(),
+            n: 1,
+        },
+    ];
+    for bad in &bad_frames {
+        assert!(!bad.ids_ok(), "{bad:?}");
+    }
+    // 페어링된 상대가 보낸 꼴 틀린 공유 프레임은 처리기 전에 `invalid`, 꼴이 맞으면 처리기로(처리기 없는 노드 = `unsupported`).
+    let (a, b) = (
+        common::start("ri-share-a").await,
+        common::start("ri-share-b").await,
+    );
+    let code = b.open();
+    let pb = a.node.add(b.addr, code).await.unwrap();
+    let pa = b.only_peer();
+    a.node.approve(pb.id).await.unwrap();
+    b.node.approve(pa.id).await.unwrap();
+    let pin = Some(b.node.identity().spki().to_vec());
+    for bad in bad_frames {
+        let (resp, _) = a.node.send(b.addr, pin.clone(), &bad).await.unwrap();
+        assert_eq!(resp, Response::error("invalid"), "{bad:?}");
+    }
+    let (resp, _) = a
+        .node
+        .send(b.addr, pin, &Request::ShareEnd { conv: good.into() })
+        .await
+        .unwrap();
+    assert_eq!(resp, Response::error("unsupported"));
+    // 이 버전은 공유를 안다고 답하고, 옛 답(share 없음)은 모르는 것으로 읽힌다.
+    assert!(a.node.knows_share(pb.id).await.unwrap());
+    let old: Response =
+        serde_json::from_str(r#"{"type":"pong","focus":false,"ctx":true}"#).unwrap();
+    assert_eq!(
+        old,
+        Response::Pong {
+            focus: false,
+            ctx: true,
+            share: false
+        }
+    );
+}

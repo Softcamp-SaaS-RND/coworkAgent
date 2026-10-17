@@ -1,10 +1,10 @@
 //! 감시 프로세스(#1e) — 비정상 종료면 다시 띄우고, 거듭 죽으면 멈춘다. 정상 종료면 함께 끝난다.
-use an_app::watchdog::{CRASH_WINDOW, Crashes, MAX_CRASHES, Outcome, supervise};
+use an_app::watchdog::{CRASH_WINDOW, Crashes, MAX_CRASHES, Outcome, START_FAILED, supervise};
 use std::io;
 use std::time::{Duration, Instant};
 
 /// 결과를 차례로 돌려주는 가짜 자식 — 받은 횟수(자식에 넘긴 값)를 모은다.
-fn run(results: Vec<io::Result<bool>>) -> (Outcome, Vec<u32>) {
+fn run(results: Vec<io::Result<i32>>) -> (Outcome, Vec<u32>) {
     let mut results = results.into_iter();
     let mut seen = Vec::new();
     let out = supervise(
@@ -19,24 +19,33 @@ fn run(results: Vec<io::Result<bool>>) -> (Outcome, Vec<u32>) {
 
 #[test]
 fn normal_exit_runs_once() {
-    assert_eq!(run(vec![Ok(true)]), (Outcome::Done, vec![0]));
+    assert_eq!(run(vec![Ok(0)]), (Outcome::Done, vec![0]));
 }
 
 #[test]
 fn crash_respawns_with_count() {
     assert_eq!(
-        run(vec![Ok(false), Ok(false), Ok(true)]),
+        run(vec![Ok(1), Ok(-1), Ok(0)]),
         (Outcome::Done, vec![0, 1, 2])
     );
 }
 
 #[test]
 fn three_crashes_in_window_give_up() {
-    let (out, seen) = run((0..MAX_CRASHES).map(|_| Ok(false)).collect());
+    let (out, seen) = run((0..MAX_CRASHES).map(|_| Ok(1)).collect());
     assert_eq!(seen.len(), MAX_CRASHES);
     assert!(
         matches!(&out, Outcome::GaveUp(why) if why.contains("3번")),
         "{out:?}"
+    );
+}
+
+/// 시작 실패(#1n) — 다시 띄우지 않고 바로 멈춘다(비정상 종료 뒤라도).
+#[test]
+fn start_failed_stops_without_respawn() {
+    assert_eq!(
+        run(vec![Ok(1), Ok(START_FAILED)]),
+        (Outcome::StartFailed, vec![0, 1])
     );
 }
 
@@ -84,7 +93,7 @@ fn real_exe_cli_bypasses_and_crashes_stop() {
             std::process::Command::new(exe)
                 .arg("bogus")
                 .output()
-                .map(|o| o.status.success())
+                .map(|o| o.status.code().unwrap_or(-1))
         },
         Duration::ZERO,
     );

@@ -291,7 +291,6 @@ fn stabilization_literals() {
     }
     for label in [
         r#"<strong><span class="ico ico-bookmark" aria-hidden="true"></span>북마크 항목</strong>"#,
-        "메시지 작업 '북마크' 로 모은 글",
         "<h3>북마크 항목 ",
         r#"<strong><span class="ico ico-home" aria-hidden="true"></span><span id="home_title">개요</span></strong>"#,
     ] {
@@ -470,16 +469,12 @@ fn peer_group_settings_literals() {
         assert!(!INDEX.contains(gone), "index.html 에 {gone}");
     }
     for (file, text) in [("app.js", APP), ("view.js", VIEW)] {
-        for gone in [
-            "그룹 없음",
-            "add_form",
-            "groupFilter",
-            "fillGroupSelect",
-            r#""읽기 전용""#,
-        ] {
+        for gone in ["그룹 없음", "add_form", "groupFilter", "fillGroupSelect"] {
             assert!(!text.contains(gone), "{file} 에 {gone}");
         }
     }
+    // 연결 목록의 "읽기 전용" 표시는 없다 — #1o 공유 대화 머리(`view.js` `shareHead`)는 별개.
+    assert!(!APP.contains(r#""읽기 전용""#), "app.js 에 \"읽기 전용\"");
 }
 
 /// 다듬기(#1k) — 에이전트 화면 · 주고받은 글 안내문 없음 · 내 에이전트 연필 · 주고받은 글 상대 타일 · 에이전트 칩 · "다시 보내기" 없음 · 레일 + → 페어링 ·
@@ -524,7 +519,8 @@ fn polish_literals() {
     ] {
         assert!(APP.contains(code), "{code}");
     }
-    assert!(VIEW.contains("agent: conv.dir === \"out\" ? conv.agent : `내 ${conv.agent}`"));
+    // 받은 대화만 '내 ' — 보낸 대화 · 공유 대화(#1o)는 에이전트 이름 그대로.
+    assert!(VIEW.contains("agent: conv.dir === \"in\" ? `내 ${conv.agent}` : conv.agent"));
     for rule in [".pair-btns {", ".manage-head {", ".rows a.row-with-tile {"] {
         assert!(CSS.contains(rule), "{rule}");
     }
@@ -590,8 +586,8 @@ fn icons_settings_literals() {
     for rule in [
         ".ico { display: inline-block; flex: none; width: 16px; height: 16px;",
         r#".msg[data-tone="peer-1"] { --tone: var(--peer-1); }"#,
-        ".msg.side-theirs .bubble::before { content: \"\"; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--tone, var(--wait)); opacity: 0.12;",
-        ".msg.side-mine .bubble { background: var(--accent); color: var(--on-accent);",
+        ".msg.side-theirs .bubble::before { content: \"\"; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--tone, var(--wait)); opacity: 0.07;",
+        ".msg.side-mine .bubble { isolation: isolate; background: var(--surface); color: var(--text);",
         ".help-wrap:hover .tip, .help:focus + .tip { display: block; }",
     ] {
         assert!(CSS.contains(rule), "{rule}");
@@ -644,5 +640,167 @@ fn context_literals() {
         ".ctx-btn[data-level=\"high\"]",
     ] {
         assert!(CSS.contains(rule), "{rule}");
+    }
+}
+
+/// 대화방 목록 나눔 · 말풍선 음영(#1o) — 머리 문구 · 나눔 함수 · 접힘 열쇠 · 즐겨찾기 그대로 · 층 0.14 / 0.07 · 오른쪽 띠, 옛 규칙 없음.
+#[test]
+fn chat_list_split_literals() {
+    for (file, text, lits) in [
+        (
+            "view.js",
+            VIEW,
+            &[
+                r#"{ dir: "out", title: "내 대화" }"#,
+                r#"{ dir: "in", title: "agent 대화" }"#,
+                "export function splitByDir(",
+                "export function splitKey(",
+            ][..],
+        ),
+        (
+            "app.js",
+            APP,
+            &[
+                "splitByDir(s.rows)",
+                "foldEl(`convs:${s.peer}`",
+                "starredSections(",
+                r#"$("rail").addEventListener("contextmenu", (ev) => ev.preventDefault());"#,
+            ][..],
+        ),
+        (
+            "app.css",
+            CSS,
+            &[
+                ".msg.side-mine .bubble { isolation: isolate; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-right: 3px solid var(--accent); }",
+                ".msg.side-mine .bubble::before { content: \"\"; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--accent); opacity: 0.14;",
+                "background: var(--tone, var(--wait)); opacity: 0.07;",
+                ".msg.side-mine .bubble a { color: var(--sent); }",
+                ".dir-head {",
+            ][..],
+        ),
+    ] {
+        for lit in lits {
+            assert!(text.contains(lit), "{file} 에 {lit}");
+        }
+    }
+    for gone in [
+        ".msg.side-mine .bubble { background: var(--accent); color: var(--on-accent);",
+        "opacity: 0.12;",
+        "color-mix(",
+    ] {
+        assert!(!CSS.contains(gone), "app.css 에 {gone}");
+    }
+}
+
+/// CSS 토큰 `--{name}: #RRGGBB;` → (r, g, b).
+fn token(name: &str) -> [f64; 3] {
+    let key = format!("--{name}: #");
+    let at = CSS.find(&key).unwrap_or_else(|| panic!("토큰 {name}")) + key.len();
+    let hex = &CSS[at..at + 6];
+    [0, 2, 4].map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap() as f64)
+}
+
+/// 규칙(선택자로 시작하는 줄)의 `opacity` 값.
+fn rule_opacity(selector: &str) -> f64 {
+    let line = CSS
+        .lines()
+        .find(|l| l.starts_with(selector))
+        .unwrap_or_else(|| panic!("규칙 {selector}"));
+    let v = line.split("opacity: ").nth(1).unwrap();
+    v[..v.find(';').unwrap()].parse().unwrap()
+}
+
+fn luminance(c: [f64; 3]) -> f64 {
+    let lin = |v: f64| {
+        let s = v / 255.0;
+        if s <= 0.03928 {
+            s / 12.92
+        } else {
+            ((s + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2])
+}
+
+fn contrast(a: [f64; 3], b: [f64; 3]) -> f64 {
+    let (x, y) = (luminance(a), luminance(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
+
+/// 말풍선 글자 대비(#1o A3) — 2 테마 × (내 글 1 + 상대 글 타일 5색) × 글자 3(본문 · muted · 링크) = 36 경우 모두 4.5:1 이상. 바탕 = 색 층 × 불투명도 + surface.
+#[test]
+fn bubble_contrast() {
+    let mine = rule_opacity(".msg.side-mine .bubble::before");
+    let theirs = rule_opacity(".msg.side-theirs .bubble::before");
+    assert_eq!((mine, theirs), (0.14, 0.07), "시안 Ⓐ 층 불투명도");
+    let mut cases = 0;
+    for dark in [false, true] {
+        let t = |name: &str| {
+            token(&if dark {
+                format!("dark-{name}")
+            } else {
+                name.to_string()
+            })
+        };
+        let surface = t("surface");
+        // (층 색, 불투명도, 링크 색) — 내 글 링크 = --sent(plan 해석 6), 상대 글 링크 = 전역 a(--accent).
+        let mut layers = vec![(t("accent"), mine, t("sent"), "내 글".to_string())];
+        layers.extend((1..=5).map(|i| {
+            (
+                token(&format!("peer-{i}")),
+                theirs,
+                t("accent"),
+                format!("상대 글 peer-{i}"),
+            )
+        }));
+        for (tone, alpha, link, who) in layers {
+            let bg = [0, 1, 2].map(|i| tone[i] * alpha + surface[i] * (1.0 - alpha));
+            for (what, fg) in [("본문", t("text")), ("muted", t("muted")), ("링크", link)] {
+                let r = contrast(fg, bg);
+                assert!(
+                    r >= 4.5,
+                    "{} {who} {what} {r:.2}",
+                    if dark { "다크" } else { "라이트" }
+                );
+                cases += 1;
+            }
+        }
+    }
+    assert_eq!(cases, 36);
+}
+
+/// 내용이 곧 설명인 메뉴의 설명 지우기(#1o 사용자 지시) — 개요 · 요청 · 즐겨찾기 · 북마크 머리 설명 · 개요 카드의 접속 · 대화 수 · 최근, 에이전트 "새 대화" 단추,
+/// 타일 편집 안내 = "이 PC 에서만 표시".
+#[test]
+fn hint_cleanup_literals() {
+    for gone in [
+        "상대별 대화 요약 — 대화 수 · 안 읽음 · 대기 요청 · 최근 활동, 누르면 그 대화로",
+        "실행 없이 모인 요청 — 받은 요청은 수용 · 반려 · 완료로 답하고, 보낸 요청은 상대가 바꾼 상태를 봅니다",
+        "☆ 로 넣은 대화방 — 이 PC 에만, 대화방 줄의 ☆ 로 넣고 뺍니다",
+        "메시지 작업 '북마크' 로 모은 글 — 이 PC 에만, 북마크한 순서 최신부터",
+        "— 메시지 작업 '북마크' 로 모읍니다",
+        "이 PC 에서만 보입니다. 그림은 가운데를 정사각형으로 잘라 작게 줄여 저장합니다.",
+        "의 에이전트 — 누르면 새 대화",
+        "text: `최근 ${formatTime(g.last)}`",
+        "text: `대화 ${g.convs}`",
+    ] {
+        for (file, text) in [("index.html", INDEX), ("app.js", APP)] {
+            assert!(!text.contains(gone), "{file} 에 {gone}");
+        }
+    }
+    assert!(INDEX.contains(r#"<p class="hint">이 PC 에서만 표시</p>"#));
+    assert!(APP.contains(r#"class: "small agent-new""#) && APP.contains(r#"text: "새 대화""#));
+}
+/// 부모 툴 메뉴용 명령(#1n) — 사용법 세 줄 · 종료 코드 8.
+#[test]
+fn control_usage_literals() {
+    for line in [
+        "coworkAgent start [--parent <PID>]",
+        "coworkAgent open [--parent <PID>]",
+        "coworkAgent stop
+",
+        "종료 코드 8 = 시작 실패",
+    ] {
+        assert!(an_app::cli::USAGE.contains(line), "{line}");
     }
 }
