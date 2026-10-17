@@ -1,7 +1,7 @@
 //! 인바운드 알림(S9) — 기본 OFF(D29). 두 OS 같은 UI/UX(D30): 웹UI 탭이 열려 있으면 브라우저 알림(이벤트 스트림 →
 //! `Notification`, OS 알림 정책은 브라우저 · OS 가 따른다 — D27), 탭과 무관하게 트레이 "새 요청" 표시.
 use an_agent::chat::{MAX_RELAY_CAP, RELAY_CAP_KEY, default_relay_cap};
-use an_core::db::Connection;
+use an_core::db::{Connection, db_err};
 use an_core::run_opts;
 use an_core::settings;
 use an_net::node::{MessageKind, PeerEvent};
@@ -120,10 +120,6 @@ pub struct Notifier {
     /// 트레이 표시 갱신(건수, 0 = 지움). 막히면 안 된다 — 운영은 이벤트 루프 프록시로 보낸다.
     attention: Attention,
     autostart: Mutex<Option<AutostartHook>>,
-}
-
-fn db_err(e: an_core::db::Error) -> io::Error {
-    io::Error::other(e)
 }
 
 impl Notifier {
@@ -434,10 +430,6 @@ impl Notifier {
     pub fn pending(&self) -> usize {
         self.status().pending
     }
-}
-
-pub fn notice_for(e: &PeerEvent) -> Notice {
-    notice_with(e, true)
 }
 
 /// `preview` 가 거짓이면 원격 글 앞부분을 넣지 않는다(이름 · PC 만).

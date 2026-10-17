@@ -31,7 +31,8 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   `busy_timeout` 5초(여러 연결이 같은 파일).
   `db::user_version(conn)` · `db::write_tx(conn)`(쓰기 트랜잭션 `BEGIN IMMEDIATE` — 읽고 쓰는 지연 트랜잭션이 다른 연결의 쓰기와 겹쳐 기다리지 않고
   `database is locked` 로 실패하지 않게, 앱의 쓰기 트랜잭션은 모두 이것).
-  `db::Connection` · `db::Error` 재노출.
+  `db::Connection` · `db::Error` 재노출. `db::db_err(e: db::Error) -> io::Error`(#1p — `io::Error::other`, agent · app · net 이 `map_err(db_err)` 로
+  함께 쓴다. `Error` 는 `rusqlite::Error` 라 `From` 을 구현할 수 없다).
 - `peers` — `Peer { id, spki, name, host, addr, my_ok, their_ok, round, group, model, effort, alias, icon, seen_at, focus }` · `paired()` ·
   `online(now)`(마지막 통신 `seen_at` 이 `ONLINE_WITHIN` 75초 안 — 받은 시각이 지금보다 뒤면 오프라인) · `set_presence(id, focus)`(시각 = 지금 +
   집중 — `Pong` · 집중 거절 둘 다) · `touch(conn, spki)`(#1c — 통신 성공: 그 키의 `seen_at` = 지금, 집중은 그대로, 없는 키면 아무 일도 없음. 10초
@@ -50,7 +51,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   `open_conversation(uuid, peer_id, agent, dir)`(다른 상대의 같은 uuid 는 오류) · `find(uuid, peer_id)` · `by_id` · `list` · `set_session` ·
   `add_message` · `add_reply(…, reply_to, turns, duration_ms)`(에이전트 답) · `set_state` · `messages` · `message_by_uuid` ·
   `pending(conv)`(DB 대기열 — 커서 없이 매번 처음부터) · `pending_conversations` · `summaries`(`Summary{conversation, title(이 PC 에서 붙인 제목,
-  없으면 첫 사람 메시지 앞 40자), last_state, last_at}`, 최근 것 먼저) · `Summary.last: Option<LastMessage{text, author, mine, agent, via}>`(#1j — 대화방
+  없으면 첫 사람 메시지 앞 40자), last_state, last_at}`, 최근 것 먼저) · `Summary.last: Option<LastMessage{text, author, mine, agent, via}>`(#1j — 대화
   목록 미리보기: 마지막 글 본문 앞 `PREVIEW_CHARS`(120)자 · 쓴 쪽 · 이 PC 쪽 글인가 · 멘션 에이전트 · 출처(`cli`), 글이 없으면 `None` — 마지막 = 화면과 같은 `(lc, uuid)` 순서, `last_state` · `last_at` 도 그 글) · `set_title(id, title)`(`None` = 지움) ·
   `messages_across(mine, scope, author, request, q, limit)`(대화를 가로지른 글 — 범위 `Scope::All` · `Peer(id)` · `Group(id)`(#1i — 하나씩 넣은 대화
   `group_convs` ∪ 넣은 상대의 대화 `group_peers`, #1j) · 종류 · 사람 글

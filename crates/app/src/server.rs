@@ -2,7 +2,7 @@
 //! 토큰은 `Authorization: Bearer` 로만(탭 메모리 — 쿠키는 포트를 가리지 않아 같은 PC 의 다른 포트로도 실린다, 1a A2).
 //! 정적 자산은 공개(헤더를 못 싣는 `<script src>` · `import`), 모든 응답에 보안 헤더(A3).
 use axum::Router;
-use axum::extract::{Request, State};
+use axum::extract::{Path, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -101,6 +101,7 @@ pub fn router_control(
         .route("/view.js", get(view_js))
         .route("/app.css", get(app_css))
         .route("/favicon.ico", get(favicon))
+        .route("/fonts/{file}", get(font))
         .route("/api/status", get(api_status))
         .route("/api/open", post(api_open))
         .with_state(state.clone())
@@ -108,8 +109,39 @@ pub fn router_control(
         .layer(middleware::from_fn_with_state(state, guard))
 }
 
-/// 토큰 없이 주는 정적 자산(실행 파일에 박힌 상수 — 비밀 없음).
+/// 토큰 없이 주는 정적 자산(실행 파일에 박힌 상수 — 비밀 없음). `/fonts/` 는 `FONTS` 의 이름만.
 const PUBLIC: [&str; 5] = ["/", "/app.js", "/view.js", "/app.css", "/favicon.ico"];
+
+/// 화면 글꼴(#1p) — IBM Plex Sans KR(SIL OFL 1.1, IBM 배포 woff2 그대로 · 완성형 한글)과 그 라이선스. 파일을 바꾸면 이름도 바꾼다(1년 캐시).
+const FONTS: [(&str, &str, &[u8]); 4] = [
+    (
+        "IBMPlexSansKR-Regular.woff2",
+        "font/woff2",
+        include_bytes!("../web/fonts/IBMPlexSansKR-Regular.woff2"),
+    ),
+    (
+        "IBMPlexSansKR-Medium.woff2",
+        "font/woff2",
+        include_bytes!("../web/fonts/IBMPlexSansKR-Medium.woff2"),
+    ),
+    (
+        "IBMPlexSansKR-SemiBold.woff2",
+        "font/woff2",
+        include_bytes!("../web/fonts/IBMPlexSansKR-SemiBold.woff2"),
+    ),
+    (
+        "LICENSE.txt",
+        "text/plain; charset=utf-8",
+        include_bytes!("../web/fonts/LICENSE.txt"),
+    ),
+];
+
+fn is_public(path: &str) -> bool {
+    PUBLIC.contains(&path)
+        || path
+            .strip_prefix("/fonts/")
+            .is_some_and(|f| FONTS.iter().any(|(name, ..)| *name == f))
+}
 
 /// 차례로: Host(DNS rebinding) → Origin(교차 출처) → 토큰. 응답에는 늘 보안 헤더.
 async fn guard(State(s): State<Arc<AppState>>, req: Request, next: Next) -> Response {
@@ -132,7 +164,7 @@ fn check(s: &AppState, req: &Request) -> Result<(), StatusCode> {
     }
     let path = req.uri().path();
     let query = query_token(req.uri().query());
-    if req.method() == Method::GET && PUBLIC.contains(&path) {
+    if req.method() == Method::GET && is_public(path) {
         // 진입 `/?t=` 는 페이지가 토큰을 탭 메모리로 가져간다 — 틀린 토큰은 여기서 끊는다.
         return match query {
             Some(t) if path == "/" && !ct_eq(t, &s.token) => Err(StatusCode::UNAUTHORIZED),
@@ -217,6 +249,20 @@ async fn app_css() -> impl IntoResponse {
         [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
         include_str!("../web/app.css"),
     )
+}
+
+async fn font(Path(file): Path<String>) -> Response {
+    match FONTS.iter().find(|(name, ..)| *name == file) {
+        Some((_, mime, body)) => (
+            [
+                (header::CONTENT_TYPE, *mime),
+                (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            ],
+            *body,
+        )
+            .into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 /// 브라우저 탭 아이콘 — 실행 파일 · 트레이와 같은 에이전트 아이콘.

@@ -56,6 +56,29 @@ async fn static_assets_public() {
     }
 }
 
+/// 화면 글꼴(#1p) — 토큰 없이 · woff2 · 1년 캐시, 목록 밖 이름은 공개가 아니다.
+#[tokio::test]
+async fn fonts_public_and_cached() {
+    let r = start().await;
+    for (path, mime) in [
+        ("/fonts/IBMPlexSansKR-Regular.woff2", "font/woff2"),
+        ("/fonts/IBMPlexSansKR-Medium.woff2", "font/woff2"),
+        ("/fonts/IBMPlexSansKR-SemiBold.woff2", "font/woff2"),
+        ("/fonts/LICENSE.txt", "text/plain"),
+    ] {
+        let (code, raw) = send(r.port, "GET", path, &[host(r.port)]).await;
+        let head = raw.to_ascii_lowercase();
+        assert_eq!(code, 200, "{path}");
+        assert!(head.contains(&format!("content-type: {mime}")), "{path}");
+        assert!(
+            head.contains("cache-control: public, max-age=31536000, immutable"),
+            "{path}"
+        );
+    }
+    let (code, _) = send(r.port, "GET", "/fonts/other.woff2", &[host(r.port)]).await;
+    assert_eq!(code, 401, "목록 밖 글꼴 이름은 토큰이 있어야 닿는다");
+}
+
 #[tokio::test]
 async fn api_needs_bearer() {
     let r = start().await;

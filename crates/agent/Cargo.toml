@@ -1,6 +1,6 @@
 [package]
 name = "an-agent"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 
 [lib]
@@ -11,7 +11,6 @@ an-core = { path = "../core" }
 an-net = { path = "../net" }
 getrandom = "0.4.3"
 log = "0.4.34"
-serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.152"
 tokio = { version = "1.53.2", features = ["rt", "sync", "time", "macros"] }
 

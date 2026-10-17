@@ -141,7 +141,7 @@ async function api(method, path, body) {
     data = text ? JSON.parse(text) : null;
   } catch {
     // JSON 이 아닌 오류 본문(요청 형식 거부 등)은 그대로 사유로.
-    if (res.ok) throw new Error("응답이 JSON 이 아니다");
+    if (res.ok) throw new Error("응답이 JSON 이 아닙니다");
     throw new Error(`HTTP ${res.status} ${text.slice(0, 200)}`);
   }
   if (!res.ok) throw new Error(data?.error ?? "HTTP " + res.status);
@@ -406,7 +406,7 @@ function renderRail() {
   if (unchanged($("rail"), JSON.stringify(sig))) return;
   const me = $("rail_me");
   me.setAttribute("aria-pressed", String(state.railPeer == null && state.railGroup == null));
-  me.setAttribute("aria-label", `${state.settings.me_alias || "나"} — 전체 대화`);
+  me.setAttribute("aria-label", state.settings.me_alias || "나");
   me.title = state.settings.me_alias || "나";
   me.replaceChildren(tileFace(state.settings.me_icon), tileName(state.settings.me_alias || "나"));
   keepFocus($("rail"), () => drawRailTiles(paired, unread));
@@ -423,13 +423,13 @@ function drawRailTiles(paired, unread) {
         {
           type: "button",
           class: `rail-btn ${tileColor(p)}`,
-          "aria-label": `${displayName(p)} · ${p.host} 의 대화만${n ? ` · 안 읽음 ${n}` : ""} — ${pr.text}`,
+          "aria-label": `${displayName(p)} · ${p.host}${n ? ` · 안 읽음 ${n}` : ""} · ${pr.text}`,
           "aria-pressed": String(state.railPeer === p.id),
           "data-peer": String(p.id),
           "data-drag": "peer",
           "data-id": String(p.id),
           draggable: "true",
-          title: `${displayName(p)} — 끌어 옮기거나 Alt + ↑ / ↓ 로 자리를 바꿉니다`,
+          title: displayName(p),
           onclick: () => pickTile(p.id),
           oncontextmenu: (ev) => tileMenuEvent(ev, { kind: "peer", id: p.id }),
         },
@@ -454,8 +454,8 @@ function drawRailTiles(paired, unread) {
           "data-drag": "group",
           "data-id": String(g.id),
           draggable: "true",
-          title: `그룹 ${g.name} — 끌어 옮기거나 Alt + ↑ / ↓ 로 자리를 바꿉니다 · 대화를 끌어 놓으면 이 그룹에 넣습니다`,
-          "aria-label": `그룹 ${g.name} — 대화 ${inGroup(state.convs, g).length}${n ? ` · 안 읽음 ${n}` : ""}`,
+          title: `그룹 ${g.name}`,
+          "aria-label": `그룹 ${g.name} · 대화 ${inGroup(state.convs, g).length}${n ? ` · 안 읽음 ${n}` : ""}`,
           "aria-pressed": String(state.railGroup === g.id),
           onclick: () => pickGroup(g.id),
           oncontextmenu: (ev) => tileMenuEvent(ev, { kind: "group", id: g.id }),
@@ -569,7 +569,7 @@ function renderSideHead() {
   } else if (state.me) {
     const alias = state.settings.me_alias;
     const fp = "지문 " + state.me.fingerprint.split(" ").slice(0, 2).join("·");
-    $("side_name").textContent = alias || "나 — " + state.me.host;
+    $("side_name").textContent = alias || "나 · " + state.me.host;
     $("side_sub").textContent = [state.me.name, alias ? state.me.host : "", fp].filter(Boolean).join(" · ");
   }
 }
@@ -586,8 +586,8 @@ function renderAvatar() {
   if (icon) face.append(el("img", { src: icon, alt: "" }));
   else face.innerHTML = PERSON_SVG;
   face.append(el("span", { class: "avatar-dot" }));
-  $("avatar_btn").title = `${name} — ${st.text} · 프로필`;
-  $("avatar_btn").setAttribute("aria-label", `${name} — 상태 ${st.text}, 프로필 메뉴`);
+  $("avatar_btn").title = `${name} · ${st.text}`;
+  $("avatar_btn").setAttribute("aria-label", `프로필 · ${st.text}`);
   $("avatar_btn").replaceChildren(face, el("span", { class: "avatar-name", text: name }));
 }
 
@@ -630,7 +630,7 @@ async function loadPeerAgents(id) {
 /// 새 대화 화면에 상대 · 에이전트를 채워서 연다(사이드바 · 검색 결과의 상대 에이전트).
 async function newChat(peer, agent) {
   if (!state.peers.some((p) => p.id === peer && p.paired)) {
-    $("status_msg").textContent = "페어링되지 않은 상대 — 연결 목록에서 승인 · 다시 연결하세요";
+    $("status_msg").textContent = "페어링되지 않은 상대 · 연결 목록에서 승인하세요";
     go("#settings/peers");
     return;
   }
@@ -707,7 +707,7 @@ async function iconFromFile(file) {
   const url = await new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(r.result);
-    r.onerror = () => reject(r.error ?? new Error("그림을 읽지 못했다"));
+    r.onerror = () => reject(r.error ?? new Error("그림을 읽지 못했습니다"));
     r.readAsDataURL(file);
   });
   const img = new Image();
@@ -765,7 +765,7 @@ function openTileMenu(t, anchor) {
             await api("PATCH", `/api/peers/${t.id}`, { icon: "" });
             await loadPeers(true);
           }
-          return "이미지를 지웠습니다 — 사람 모양으로 보입니다";
+          return "이미지를 지웠습니다";
         });
       }),
     );
@@ -810,7 +810,7 @@ function groupDeleteForm(id) {
     "div",
     { class: "float-form" },
     el("strong", { text: `그룹 ${g?.name ?? ""} 삭제` }),
-    el("p", { class: "hint", text: "그룹만 지웁니다 — 대화는 지우지 않습니다." }),
+    el("p", { class: "hint", text: "그룹만 지웁니다. 대화는 남습니다." }),
     el(
       "div",
       { class: "actions" },
@@ -825,7 +825,7 @@ function groupDeleteForm(id) {
             await loadGroups();
             if (was) pickTile(null);
             focusAfterFloat("#rail_group_add");
-            return `그룹 ${g?.name ?? ""} 을 지웠습니다 — 대화는 그대로입니다`;
+            return `그룹 ${g?.name ?? ""} 을 지웠습니다`;
           });
         },
         "danger",
@@ -836,7 +836,7 @@ function groupDeleteForm(id) {
 
 /// 상대의 그룹 체크(#1j — 타일 메뉴 · 연결 목록 "그룹 ▾") — 머리 · 그룹마다 체크(누를 때마다 넣고 뺌, 메뉴는 열린 채) · "+ 새 그룹에 넣기…".
 function peerGroupMenu(peer, anchor) {
-  const out = [el("p", { class: "menu-head" }, ico("users"), el("span", { text: "그룹 — 체크하면 넣고, 풀면 뺀다" }))];
+  const out = [el("p", { class: "menu-head" }, ico("users"), el("span", { text: "그룹" }))];
   for (const g of peerGroupItems(state.groups, state.convs, peer)) {
     out.push(
       el(
@@ -885,7 +885,7 @@ async function changePeerGroup(id, peer, on) {
   }
   await loadGroups();
   const g = state.groups.find((x) => x.id === id);
-  $("status_msg").textContent = peerGroupText(name, g?.name ?? "", on, g ? inGroup(state.convs, g).length : 0);
+  $("status_msg").textContent = peerGroupText(name, g?.name ?? "", on);
   return true;
 }
 $("tile_cancel").addEventListener("click", closeTileEdit);
@@ -905,9 +905,9 @@ $("tile_icon_file").addEventListener("change", async () => {
     if (tileEdit !== edit) return; // 그 사이 닫았거나 다른 타일로 옮겼다
     edit.icon = icon;
     renderTilePreview();
-    $("tile_msg").textContent = "아이콘 준비 — 저장하면 바뀝니다";
+    $("tile_msg").textContent = "저장하면 아이콘이 바뀝니다";
   } catch (e) {
-    $("tile_msg").textContent = "아이콘을 만들지 못했다: " + e.message;
+    $("tile_msg").textContent = "아이콘을 만들지 못했습니다: " + e.message;
   }
 });
 $("tile_form").addEventListener("submit", (ev) => {
@@ -1062,7 +1062,7 @@ function renderPeerList(force = false) {
                 svgButton(TRASH_SVG, `그룹 ${s.title} 삭제`, (ev) => openFloat(ev.currentTarget, "dialog", "그룹 삭제", [groupDeleteForm(s.group)]), "danger-text"),
               ),
         ),
-        ...(s.peers.length ? [] : [el("p", { class: "hint", text: s.group == null ? "모든 연결이 그룹에 있습니다" : q ? "맞는 연결 없음" : "연결을 끌어 놓거나 '그룹 ▾' 로 넣습니다" })]),
+        ...(s.peers.length ? [] : [el("p", { class: "hint", text: s.group == null ? "모든 연결이 그룹에 있습니다" : q ? "맞는 연결 없음" : "연결 없음" })]),
         ...s.peers.map((p) => {
           const model = el(
             "select",
@@ -1092,7 +1092,7 @@ function renderPeerList(force = false) {
               () =>
                 peerAct("삭제", async () => {
                   const r = await api("DELETE", `/api/peers/${p.id}`);
-                  if (!r.notified) throw new Error("내 쪽은 삭제했지만 상대에 알리지 못했다 — 상대 목록에는 남아 있다");
+                  if (!r.notified) throw new Error("삭제했지만 상대에게 알리지 못했습니다. 상대 목록에는 남아 있습니다.");
                 }),
               "danger",
             ),
@@ -1117,7 +1117,7 @@ function renderPeerList(force = false) {
                 class: "small peer-group-btn",
                 text: "그룹 ▾",
                 "aria-haspopup": "menu",
-                "aria-label": `${displayName(p)} — 그룹 바꾸기`,
+                "aria-label": `그룹 바꾸기 · ${displayName(p)}`,
                 onclick: (ev) => openFloat(ev.currentTarget, "menu", "그룹 바꾸기", peerGroupMenu(p.id, ev.currentTarget)),
               }),
             ],
@@ -1137,13 +1137,13 @@ function renderPeerList(force = false) {
       ),
     ),
   );
-  if (!state.peers.length) $("peer_groups").append(el("p", { class: "hint", text: "연결 없음 — 초대 생성 · 초대 수락으로 잇습니다" }));
+  if (!state.peers.length) $("peer_groups").append(el("p", { class: "hint", text: "연결 없음" }));
 }
 
 $("peer_q").addEventListener("input", () => renderPeerList(true));
 $("peer_group_add").addEventListener("click", (ev) =>
   openGroupNew(ev.currentTarget, (g) => {
-    $("peer_msg").textContent = `그룹 ${g.name} 을 만들었습니다 — 연결을 끌어 넣거나 '그룹 ▾' 로 넣습니다`;
+    $("peer_msg").textContent = `그룹 ${g.name} 을 만들었습니다`;
   }),
 );
 
@@ -1191,7 +1191,7 @@ $("peer_groups").addEventListener("drop", async (ev) => {
   }
   await loadGroups();
   const g = state.groups.find((x) => x.id === (add[0] ?? remove[0]));
-  $("status_msg").textContent = peerGroupText(p ? displayName(p) : `상대 ${d.peer}`, g?.name ?? "", add.length > 0, g ? inGroup(state.convs, g).length : 0);
+  $("status_msg").textContent = peerGroupText(p ? displayName(p) : `상대 ${d.peer}`, g?.name ?? "", add.length > 0);
 });
 
 $("window_btn").addEventListener("click", () =>
@@ -1201,7 +1201,7 @@ $("window_btn").addEventListener("click", () =>
       const r = await api("POST", "/api/pairing-window");
       $("invite").textContent = r.invite;
       $("invite_box").hidden = false;
-      return `초대 생성 — ${r.seconds / 60}분 동안 이 초대로 들어온 요청 1건을 바로 등록합니다`;
+      return `초대를 만들었습니다. ${r.seconds / 60}분 안에 들어온 첫 요청 1건은 승인 없이 등록됩니다.`;
     },
     "invite_msg",
     loadPeers,
@@ -1213,7 +1213,7 @@ $("copy_btn").addEventListener("click", () =>
     "초대 복사",
     async () => {
       await navigator.clipboard.writeText($("invite").textContent);
-      return "초대를 복사했다 — 상대에게 보내세요";
+      return "초대를 복사했습니다. 상대에게 보내세요.";
     },
     "invite_msg",
   ),
@@ -1227,7 +1227,7 @@ $("invite_form").addEventListener("submit", (ev) => {
     async () => {
       await api("POST", "/api/peers", { invite });
       $("invite_text").value = "";
-      return "추가 · 승인 완료";
+      return "연결했습니다";
     },
     "invite_msg",
     loadPeers,
@@ -1247,7 +1247,7 @@ async function loadAgents() {
   const relaySel = $("chat_relay_agent");
   const keep = relaySel.value;
   relaySel.replaceChildren(
-    el("option", { value: "", text: "안 함 — 상대 에이전트에게만" }),
+    el("option", { value: "", text: "안 함" }),
     ...state.agents.map((a) => el("option", { value: a.name, text: a.name })),
   );
   if (state.agents.some((a) => a.name === keep)) relaySel.value = keep;
@@ -1288,7 +1288,7 @@ function renderAgentList(force = false) {
       );
     }),
   );
-  if (!shown.length) $("agent_groups").append(el("p", { class: "hint", text: "등록된 에이전트 없음 — '에이전트 등록' 으로" }));
+  if (!shown.length) $("agent_groups").append(el("p", { class: "hint", text: "등록된 에이전트 없음" }));
 }
 
 /// "에이전트 등록"(#1l) — 등록 칸을 보이고 숨긴다(보이면 이름 칸에 초점).
@@ -1351,7 +1351,7 @@ function starButton(c, label) {
     class: on ? "star-btn on" : "star-btn",
     "aria-pressed": String(on),
     title: on ? "즐겨찾기 빼기" : "즐겨찾기",
-    "aria-label": `${on ? "즐겨찾기 빼기" : "즐겨찾기"} — ${label}`,
+    "aria-label": `${on ? "즐겨찾기 빼기" : "즐겨찾기"} · ${label}`,
     onclick: () => toggleStar(c),
   });
   b.innerHTML = STAR_SVG;
@@ -1366,7 +1366,7 @@ async function toggleStar(c) {
     if (state.current?.id === c.id) state.current.starred = on;
     await loadConvs();
     if (state.current?.id === c.id) renderConvHead(state.current);
-    return on ? "즐겨찾기에 넣었다" : "즐겨찾기에서 뺐다";
+    return on ? "즐겨찾기에 넣었습니다" : "즐겨찾기에서 뺐습니다";
   });
 }
 
@@ -1407,12 +1407,11 @@ function convItem({ c, label }, section) {
     el("button", {
       type: "button",
       class: "icon-btn row-more",
-      title: "대화 메뉴 — 그룹",
-      "aria-label": `${label.title} — 대화 메뉴`,
+      title: "대화 메뉴",
+      "aria-label": `대화 메뉴 · ${label.title}`,
       "aria-haspopup": "menu",
-      text: "⋯",
       onclick: (ev) => openConvMenu(c.id, ev.currentTarget),
-    }),
+    }, ico("more")),
   );
 }
 
@@ -1450,7 +1449,7 @@ function renderConvList() {
         ),
       ]
     : [];
-  const groupEmpty = el("li", { class: "hint", text: q ? "맞는 대화 없음" : "그룹에 대화가 없습니다 — '대화 추가' 로 넣습니다" });
+  const groupEmpty = el("li", { class: "hint", text: q ? "맞는 대화 없음" : "대화 없음" });
   keepFocus($("conv_sections"), () =>
     $("conv_sections").replaceChildren(
       ...head,
@@ -1486,7 +1485,7 @@ function renderStarred() {
             el("ul", { class: "side-list" }, ...s.rows.map((r) => convItem(r, `starred:${s.key}`))),
           ),
         )
-      : [el("p", { class: "empty hint", text: "즐겨찾기 없음 — 대화방 줄의 ☆ 로 넣습니다" })]),
+      : [el("p", { class: "empty hint", text: "즐겨찾기 없음" })]),
   );
 }
 
@@ -1553,8 +1552,8 @@ function renderHome() {
       const head = [
         el("strong", { text: g.name }),
         p ? "" : el("span", { class: "hint", text: "페어링 해제" }),
-        g.unread ? el("span", { class: "count", text: `안 읽음 ${g.unread}` }) : "",
-        g.waiting ? el("span", { class: "count", text: `대기 요청 ${g.waiting}` }) : "",
+        g.unread ? el("span", { class: "stat", text: `안 읽음 ${g.unread}` }) : "",
+        g.waiting ? el("span", { class: "stat", text: `대기 요청 ${g.waiting}` }) : "",
       ];
       const rows = g.rows.length
         ? g.rows.map((c) => {
@@ -1571,13 +1570,13 @@ function renderHome() {
                   { class: "meta" },
                   el("strong", { text: label.title }),
                   el("span", { text: meta.state ? `${meta.agent} · ${meta.state}` : meta.agent }),
-                  meta.unread ? el("span", { class: "count", text: `안 읽음 ${c.unread}` }) : "",
+                  meta.unread ? el("span", { class: "stat", text: `안 읽음 ${c.unread}` }) : "",
                   c.last_at != null ? el("span", { text: formatTime(c.last_at) }) : "",
                 ),
               ),
             );
           })
-        : [el("li", { class: "hint" }, "대화 없음 — ", p?.paired ? button("새 대화", () => newChat(g.peer), "small") : "")];
+        : [el("li", { class: "hint" }, "대화 없음 ", p?.paired ? button("새 대화", () => newChat(g.peer), "small") : "")];
       return el("li", { class: "fold" }, foldEl(`home:${g.peer}`, head, [el("ol", { class: "rows" }, ...rows)]));
     }),
   );
@@ -1632,7 +1631,7 @@ async function loadRuns() {
 
 function renderRuns() {
   const r = state.runs ? runsSummary(state.runs) : null;
-  $("detail_runs_title").textContent = r ? r.title : "이 PC 실행";
+  $("detail_runs_n").textContent = r ? r.title : "";
   if (unchanged($("detail_runs"), JSON.stringify(r))) return;
   $("detail_runs").replaceChildren(
     ...(!r
@@ -1691,7 +1690,7 @@ async function render() {
   if (r.view === "conversation") {
     const conv = await findConv(r.id);
     if (!conv) {
-      $("status_msg").textContent = `대화 ${r.id} 를 찾지 못했다`;
+      $("status_msg").textContent = `대화 ${r.id} 를 찾지 못했습니다`;
       show("home");
       return;
     }
@@ -1752,7 +1751,7 @@ function renderCtx(conv) {
   const b = $("ctx_btn");
   b.dataset.level = lab.level;
   $("ctx_text").textContent = lab.text;
-  b.title = `${lab.text} — 압축 · 비우기`;
+  b.title = `컨텍스트 ${lab.text}`;
 }
 
 /// 압축 · 비우기 메뉴(#1m) — 고르면 확인 한 번.
@@ -1777,7 +1776,7 @@ function openCtxMenu(conv, anchor) {
     ),
   );
   const why = contextBusy(ms) ? "실행 · 압축이 끝난 뒤에 할 수 있습니다" : answered ? "" : "에이전트 답이 있어야 세션이 생깁니다";
-  openFloat(anchor, "menu", "컨텍스트", [el("p", { class: "menu-head" }, ico("gauge"), el("span", { text: "컨텍스트 — 상한 1M" })), ...items, why ? el("p", { class: "hint", text: why }) : ""].filter(Boolean));
+  openFloat(anchor, "menu", "컨텍스트", [el("p", { class: "menu-head" }, ico("gauge"), el("span", { text: "컨텍스트 · 상한 1M" })), ...items, why ? el("p", { class: "hint", text: why }) : ""].filter(Boolean));
 }
 
 /// 압축 · 비우기 확인(#1m).
@@ -1790,8 +1789,8 @@ function ctxConfirm(conv, op) {
     el("p", {
       class: "hint",
       text: compact
-        ? "답하는 PC 의 에이전트가 지금까지 대화를 요약하고, 다음 글부터 그 요약으로 새 세션을 시작합니다 — 답하는 PC 의 Claude 사용량을 씁니다."
-        : "다음 글부터 새 세션으로 시작합니다 — 에이전트는 앞 대화를 기억하지 않습니다. 대화 이력은 그대로입니다.",
+        ? "대화를 요약해 새 세션으로 이어 갑니다. 답하는 PC 의 Claude 사용량을 씁니다."
+        : "새 세션으로 시작합니다. 에이전트는 앞 대화를 기억하지 않습니다.",
     }),
     el(
       "div",
@@ -1805,7 +1804,7 @@ function ctxConfirm(conv, op) {
             compact ? "압축" : "비우기",
             async () => {
               await api("POST", `/api/conversations/${conv.id}/context`, { op });
-              return compact ? "압축을 시작했습니다 — 끝나면 대화에 요약이 보입니다" : "컨텍스트를 비웁니다 — 다음 글부터 새 세션";
+              return compact ? "압축을 시작했습니다" : "컨텍스트를 비웠습니다";
             },
             "status_msg",
             () => (state.current?.id === conv.id ? openConversation(state.current) : null),
@@ -1827,7 +1826,7 @@ function showConversation(conv) {
   show("conversation");
   editTitle(false);
   renderConvHead(conv);
-  $("reply_text").placeholder = `${conv.agent} 에게 보내기 — markdown 가능`;
+  $("reply_text").placeholder = `${conv.agent} 에게 보내기`;
   // 멘션 — 내가 연 대화(자동 왕복 아님)만. 후보 = 상대 PC 에이전트(타일을 고를 때와 같은 목록 — 없거나 못 받았으면 이때 다시 묻는다).
   const names = state.peerAgents.get(conv.peer_id);
   if (conv.dir === "out" && !conv.relay_agent && (!state.peerAgents.has(conv.peer_id) || names === null)) loadPeerAgents(conv.peer_id);
@@ -1871,7 +1870,7 @@ function messageEl(conv, m) {
       ? el("input", {
           type: "checkbox",
           class: "msg-pick",
-          "aria-label": "이 글 고르기",
+          "aria-label": "이 메시지 고르기",
           checked: state.picked.has(m.id),
           onchange: (ev) => {
             if (ev.target.checked) state.picked.add(m.id);
@@ -1962,7 +1961,7 @@ function toggleBookmark(m) {
     $("messages").querySelector(`[data-msg="${m.id}"] [data-act="save"]`)?.replaceWith(bookmarkButton(cur));
     if (state.current) renderConvHead(state.current);
     renderDetail();
-    return on ? "북마크 — 북마크 항목에 모았다(이 PC 에만)" : "북마크 해제";
+    return on ? "북마크했습니다" : "북마크 해제";
   });
 }
 
@@ -1991,13 +1990,13 @@ function iconButton(svg, label, onClick) {
   return b;
 }
 
-/// 복사 아이콘 — 본문 markdown 원문을 클립보드로, 아이콘 옆에 잠깐 "복사했다".
+/// 복사 아이콘 — 본문 markdown 원문을 클립보드로, 아이콘 옆에 잠깐 "복사했습니다".
 async function copyText(m, btn) {
   try {
     await navigator.clipboard.writeText(m.text);
-    $("status_msg").textContent = "복사했다";
+    $("status_msg").textContent = "복사했습니다";
     btn.classList.add("copied");
-    btn.title = "복사했다";
+    btn.title = "복사했습니다";
     setTimeout(() => {
       btn.classList.remove("copied");
       btn.title = "복사";
@@ -2067,7 +2066,7 @@ function askScope(title) {
 async function deletePicked() {
   const ids = [...state.picked];
   if (!ids.length) return;
-  const scope = await askScope(`고른 ${ids.length}개 글 삭제`);
+  const scope = await askScope(`고른 메시지 ${ids.length}개 삭제`);
   if (!scope) return;
   await act(
     "삭제",
@@ -2075,7 +2074,7 @@ async function deletePicked() {
       const res = await api("POST", "/api/messages/delete", { ids, mirror: scope === "both" });
       state.picked.clear();
       renderEditBar();
-      return res.warning ?? (scope === "both" ? `${res.deleted}개 삭제 — 상대 창에도` : `${res.deleted}개 삭제 — 이 PC 에서만`);
+      return res.warning ?? (scope === "both" ? `${res.deleted}개 삭제 · 상대 창에도` : `${res.deleted}개 삭제 · 이 PC 에서만`);
     },
     "status_msg",
     refresh,
@@ -2097,7 +2096,7 @@ function editBody(m) {
   const save = async (ev) => {
     ev.preventDefault();
     if (!text.value.trim()) {
-      $("status_msg").textContent = "저장하지 않음 — 내용이 비었습니다";
+      $("status_msg").textContent = "내용이 비어 저장하지 않았습니다";
       return;
     }
     if (text.value === m.text) return done();
@@ -2107,7 +2106,7 @@ function editBody(m) {
       "편집",
       async () => {
         const res = await api("PATCH", `/api/messages/${m.id}`, { text: text.value, mirror: scope === "both" });
-        return res.warning ?? (scope === "both" ? "편집 — 상대 창에도" : "편집 — 이 PC 에서만");
+        return res.warning ?? (scope === "both" ? "편집 · 상대 창에도" : "편집 · 이 PC 에서만");
       },
       "status_msg",
       done,
@@ -2131,7 +2130,7 @@ $("edit_delete").addEventListener("click", deletePicked);
 /// 요청 상태 바꾸기 — `box` 끝에 메모 한 줄 칸 + 확인 · 취소를 연다(이미 열려 있으면 바꾼다). 확인하면 `PATCH` 뒤 새로 고침(대화 · 요청 목록 · 배지).
 function noteForm(box, id, to, label) {
   box.querySelector(".req-note")?.remove();
-  const note = el("input", { maxlength: "200", placeholder: "메모 한 줄(선택) — 요청자에게 보입니다", "aria-label": `${label} 메모` });
+  const note = el("input", { maxlength: "200", placeholder: "메모(선택) · 요청자에게 보입니다", "aria-label": `${label} 메모` });
   const form = el(
     "form",
     { class: "req-note" },
@@ -2146,7 +2145,7 @@ function noteForm(box, id, to, label) {
       async () => {
         const r = await api("PATCH", `/api/messages/${id}`, { req_state: to, note: note.value });
         form.remove();
-        return r.warning ?? `요청 ${label} — 요청자에게 알렸다`;
+        return r.warning ?? `요청 ${label} · 요청자에게 알렸습니다`;
       },
       "status_msg",
       refresh,
@@ -2162,7 +2161,7 @@ function resendState(id, state, note) {
     "다시 알리기",
     async () => {
       const r = await api("PATCH", `/api/messages/${id}`, { req_state: state, note: note ?? "" });
-      return r.warning ?? "다시 알림 — 요청자에게 보냈다(닿지 않으면 보관했다가 보낸다)";
+      return r.warning ?? "요청자에게 다시 알렸습니다";
     },
     "status_msg",
     refresh,
@@ -2177,7 +2176,7 @@ function messagesSig(conv, ms) {
 function focusMessage(id) {
   const box = $("messages").querySelector(`[data-msg="${id}"]`);
   if (!box) {
-    $("status_msg").textContent = `글 ${id} 를 이 대화에서 찾지 못했다`;
+    $("status_msg").textContent = `메시지 ${id} 를 이 대화에서 찾지 못했습니다`;
     return;
   }
   state.pickMsg = id;
@@ -2312,7 +2311,7 @@ function renderShare(conv) {
   $("detail_share_sec").hidden = false;
   $("detail_share_n").textContent = shared ? "" : mine.length ? `${mine.length} / ${MAX_OBSERVERS}` : conv.watchers ? String(conv.watchers) : "";
   const note = shared
-    ? `${josaName(shortName(state.peerNames.get(conv.peer_id)))} 공유한 대화 — ${conv.share?.ended != null ? "공유 해제됨" : "보기만 할 수 있습니다"}`
+    ? `${josaName(shortName(state.peerNames.get(conv.peer_id)))} 공유한 대화 · ${conv.share?.ended != null ? "공유 해제됨" : "읽기 전용"}`
     : conv.watchers && !mine.length
       ? `상대가 관람자 ${conv.watchers}명에게 공유했습니다`
       : "";
@@ -2348,7 +2347,7 @@ function addObserver() {
   if (!conv || !id) return;
   act("관람자 추가", async () => {
     await api("POST", `/api/conversations/${conv.id}/observers`, { peer_id: id });
-    return "관람자를 넣었습니다 — 이전 이력부터 보냅니다";
+    return "관람자를 넣었습니다";
   }, "status_msg", loadConvs);
 }
 
@@ -2369,7 +2368,7 @@ $("share_leave_btn").addEventListener("click", (ev) => {
       "div",
       { class: "float-form" },
       el("strong", { text: "공유 대화 나가기" }),
-      el("p", { class: "hint", text: "더 받지 않습니다 — 받은 내용은 읽기 전용으로 남습니다." }),
+      el("p", { class: "hint", text: "더 받지 않습니다. 받은 내용은 읽기 전용으로 남습니다." }),
       el(
         "div",
         { class: "actions" },
@@ -2437,7 +2436,7 @@ function renderDetail() {
     ? run || "—"
     : out
     ? run
-      ? `${run} — 마지막 실행`
+      ? `${run} · 마지막 실행`
       : ready
         ? "상대 PC 가 정함"
         : "불러오는 중 …"
@@ -2465,7 +2464,7 @@ function renderDetail() {
     $("detail_req").replaceChildren(
       ...(reqs.length
         ? reqs.map((m) => detailItem(conv, m, [askTag(m), m.req_note, authorLabel(conv, m, peerName), formatTime(m.created_at)].filter(Boolean).join(" · ")))
-        : [el("li", { class: "hint", text: !ready ? "불러오는 중 …" : conv.dir === "shared" ? "요청 없음" : "요청 없음 — 입력창에서 '요청' 을 골라 보낸 글이 모입니다" })]),
+        : [el("li", { class: "hint", text: !ready ? "불러오는 중 …" : "요청 없음" })]),
     );
   // 북마크 항목 — 이 대화에서 북마크한 글(최근 글부터).
   const saved = ms.filter((m) => m.saved).reverse();
@@ -2474,7 +2473,7 @@ function renderDetail() {
   $("detail_saved").replaceChildren(
     ...(saved.length
       ? saved.map((m) => detailItem(conv, m, `${authorLabel(conv, m, peerName)} · ${formatTime(m.created_at)}`))
-      : [el("li", { class: "hint", text: ready ? "북마크한 글 없음" : "불러오는 중 …" })]),
+      : [el("li", { class: "hint", text: ready ? "북마크 없음" : "불러오는 중 …" })]),
   );
 }
 
@@ -2499,7 +2498,7 @@ function detailItem(conv, m, sub) {
   );
 }
 
-// 머리글 "북마크 항목" — 실행 상세를 열고 그 절로.
+// 머리글 "북마크 n" — 실행 상세를 열고 그 절로.
 $("saved_btn").addEventListener("click", () => {
   state.detailOpen = true;
   showDetail();
@@ -2512,15 +2511,15 @@ function sendText(text, opts, sent) {
   const r = route(location.hash);
   const conv = state.current;
   if (r.view !== "conversation" || conv?.id !== r.id || !keepsConversation(conv, state.railPeer)) {
-    $("status_msg").textContent = "보내지 않음 — 열린 대화와 고른 PC 가 맞지 않습니다. 대화를 다시 여세요.";
+    $("status_msg").textContent = "보내지 않았습니다. 대화를 다시 여세요.";
     return;
   }
   if (!text.trim()) {
-    $("status_msg").textContent = "보내지 않음 — 내용이 비었습니다";
+    $("status_msg").textContent = "내용이 비어 보내지 않았습니다";
     return;
   }
   if (state.sending) {
-    $("status_msg").textContent = "보내는 중 — 앞 글을 보낸 뒤 다시 하세요";
+    $("status_msg").textContent = "앞 메시지를 보내는 중입니다";
     return;
   }
   state.sending = true;
@@ -2531,7 +2530,7 @@ function sendText(text, opts, sent) {
       const res = await api("POST", `/api/conversations/${id}/messages`, { text, request: opts.request === true, ...(opts.agent ? { agent: opts.agent } : {}) });
       sent?.();
       state.pickMsg = null; // 실행 상세 '진행' = 방금 보낸 요청
-      return res.warning ?? "보냄 — 답은 도착하면 보입니다";
+      return res.warning ?? "보냈습니다";
     },
     "status_msg",
     async () => {
@@ -2561,7 +2560,7 @@ $("reply_form").addEventListener("submit", (ev) => {
   const canMention = conv?.dir === "out" && !conv.relay_agent;
   // 멘션을 쓰는 대화인데 후보 목록이 없으면(받는 중 · 못 받음) 멘션처럼 보이는 글은 보내지 않는다 — 대화 에이전트로 조용히 가지 않게. 목록을 다시 묻는다.
   if (names == null && canMention && hasMention(text)) {
-    $("status_msg").textContent = "보내지 않음 — 상대 에이전트 목록을 받지 못해 @멘션을 가릴 수 없습니다. 잠시 뒤 다시 보내세요";
+    $("status_msg").textContent = "에이전트 목록을 받지 못해 보내지 않았습니다. 잠시 뒤 다시 보내세요.";
     if (state.peerAgents.get(conv.peer_id) !== undefined || !state.peerAgents.has(conv.peer_id)) loadPeerAgents(conv.peer_id);
     return;
   }
@@ -2570,7 +2569,7 @@ $("reply_form").addEventListener("submit", (ev) => {
   // (코드의 `@Override` 같은 글도 보낼 수 있게).
   if (canMention && names && !agent && hasMention(text) && state.mentionWarned !== text) {
     state.mentionWarned = text;
-    $("status_msg").textContent = `보내지 않음 — ${mentionToken(text)}: 상대 에이전트 목록에 없는 이름입니다(목록을 다시 받습니다). 멘션이 아니면 한 번 더 보내세요`;
+    $("status_msg").textContent = `${mentionToken(text)}: 없는 에이전트입니다. 멘션이 아니면 한 번 더 보내세요.`;
     loadPeerAgents(conv.peer_id);
     return;
   }
@@ -2849,7 +2848,7 @@ async function loadRequests(open = false) {
 }
 
 function requestEls(rows, box) {
-  if (!rows.length) return [el("li", { class: "hint", text: box === "theirs" ? "받은 요청 없음" : "보낸 요청 없음 — 입력창에서 '요청' 을 골라 보냅니다" })];
+  if (!rows.length) return [el("li", { class: "hint", text: box === "theirs" ? "받은 요청 없음" : "보낸 요청 없음" })];
   return rows.map((r) => {
     const li = el(
       "li",
@@ -2896,13 +2895,13 @@ async function loadSaved() {
     const scope = scopeQuery(state.railPeer, state.railGroup);
     ms = await api("GET", "/api/saved" + (scope ? `?${scope}` : ""));
   } catch (e) {
-    $("status_msg").textContent = "북마크 항목 오류: " + e.message;
+    $("status_msg").textContent = "북마크 오류: " + e.message;
     return;
   }
   if (!latest.is(ticket)) return;
   const rows = inboxRows(ms, state.peerNames).map((r) => ({ ...r, href: `${r.href}/m/${r.id}` }));
   if (needsRender($("saved_list"), JSON.stringify([state.railPeer, state.railGroup, rows]), false))
-    $("saved_list").replaceChildren(...grouped("saved", rows, (rs) => rowEls(rs, "북마크 항목 없음")));
+    $("saved_list").replaceChildren(...grouped("saved", rows, (rs) => rowEls(rs, "북마크 없음")));
 }
 
 /// 에이전트 화면 — 고른 타일 범위('나' = 내 에이전트 + 페어링된 상대 전부의 에이전트). 상대 목록은 원격 왕복이라 이 화면을 열 때 없는 것만 받는다.
@@ -2930,8 +2929,8 @@ function renderAgentsView() {
     );
   const peerRows = (x) => {
     const names = state.peerAgents.get(x.id);
-    if (names === undefined) return [el("li", { class: "hint", text: `${displayName(x)} — 불러오는 중 …` })];
-    if (names === null) return [el("li", { class: "hint", text: `${displayName(x)} — 목록을 받지 못했습니다` })];
+    if (names === undefined) return [el("li", { class: "hint", text: `${displayName(x)} · 불러오는 중 …` })];
+    if (names === null) return [el("li", { class: "hint", text: `${displayName(x)} · 목록을 받지 못했습니다` })];
     // 줄 오른쪽 "새 대화" 단추(#1o) — 줄을 눌러도 같다.
     return names.map((n) => {
       const li = row(n, null, {
@@ -2942,7 +2941,7 @@ function renderAgentsView() {
         },
       });
       li.classList.add("has-edit");
-      li.append(el("button", { type: "button", class: "small agent-new", "aria-label": `${n} — 새 대화`, text: "새 대화", onclick: () => newChat(x.id, n) }));
+      li.append(el("button", { type: "button", class: "small agent-new", "aria-label": `새 대화 · ${n}`, text: "새 대화", onclick: () => newChat(x.id, n) }));
       return li;
     });
   };
@@ -2991,19 +2990,19 @@ function editAgent(id) {
 async function loadPeerMessages(id) {
   const p = state.peers.find((x) => x.id === id);
   const g = id == null ? railGroupOf() : null;
-  $("peer_title").textContent = g ? `주고받은 글 — 그룹 ${g.name}` : id == null ? "주고받은 글 — 모든 상대" : p ? `${displayName(p)} · ${p.host}` : `상대 ${id}`;
+  $("peer_title").textContent = g ? `주고받은 메시지 · 그룹 ${g.name}` : id == null ? "주고받은 메시지" : p ? `${displayName(p)} · ${p.host}` : `상대 ${id}`;
   const scope = scopeQuery(id, g?.id ?? null);
   const ticket = latest.next();
   let lists;
   try {
     lists = await Promise.all(["theirs", "mine"].map((side) => api("GET", `/api/messages?side=${side}${scope ? `&${scope}` : ""}`)));
   } catch (e) {
-    $("status_msg").textContent = "주고받은 글 오류: " + e.message;
+    $("status_msg").textContent = "주고받은 메시지 오류: " + e.message;
     return;
   }
   if (!latest.is(ticket)) return;
   const rows = inboxRows(peerMessages(...lists), state.peerNames);
-  if (needsRender($("peer_list"), JSON.stringify([id, g?.id, rows]), false)) $("peer_list").replaceChildren(...grouped("peer", rows, (rs) => rowEls(rs, "주고받은 글 없음", { tile: true })));
+  if (needsRender($("peer_list"), JSON.stringify([id, g?.id, rows]), false)) $("peer_list").replaceChildren(...grouped("peer", rows, (rs) => rowEls(rs, "주고받은 메시지 없음", { tile: true })));
 }
 
 // ---- 새 대화 ----
@@ -3035,7 +3034,7 @@ async function loadChatAgents(want) {
     if (!agentsAsk.is(ticket)) return; // 그 사이 다른 상대를 골랐다
     sel.replaceChildren(...r.names.map((n) => el("option", { value: n, text: n })));
     if (want && r.names.includes(want)) sel.value = want;
-    $("chat_msg").textContent = r.names.length ? "" : "상대 PC 에 등록된 에이전트가 없다";
+    $("chat_msg").textContent = r.names.length ? "" : "상대 PC 에 등록된 에이전트가 없습니다";
   } catch (e) {
     $("chat_msg").textContent = "상대 에이전트 목록 실패: " + e.message;
   }
@@ -3053,11 +3052,11 @@ $("chat_form").addEventListener("submit", (ev) => {
     request: ask.value === "request",
   };
   if (!body.text.trim()) {
-    $("chat_msg").textContent = "보내지 않음 — 내용이 비었습니다";
+    $("chat_msg").textContent = "내용이 비어 보내지 않았습니다";
     return;
   }
   if (body.request && $("chat_relay_agent").value) {
-    $("chat_msg").textContent = "보내지 않음 — 요청은 실행이 없어 자동 왕복을 열지 않습니다";
+    $("chat_msg").textContent = "요청으로는 자동 왕복을 열 수 없습니다";
     return;
   }
   if ($("chat_relay_agent").value) {
@@ -3076,7 +3075,7 @@ $("chat_form").addEventListener("submit", (ev) => {
       if (body.group != null) await loadGroups();
       await loadConvs();
       location.hash = `#c/${r.conversation.id}`;
-      return r.warning ?? "보냄 — 답은 도착하면 보입니다";
+      return r.warning ?? "보냈습니다";
     },
     "chat_msg",
   );
@@ -3122,14 +3121,14 @@ function focusAfterFloat(sel, fallback = "rail_me") {
 /// 부른다. 거절 문구(빈 이름 · 40자 넘음 · 같은 이름)는 상자 안에.
 function openGroupNew(anchor, after = null) {
   // 길이는 `groupNameError`(글자 = 코드 포인트, 서버와 같음)로 — HTML `maxlength` 는 UTF-16 단위라 그림 문자 이름을 20자 안팎에서 막는다(라운드 1).
-  const input = el("input", { id: "group_new_name", autocomplete: "off", placeholder: "그룹 이름 — 예: 결제 모듈", "aria-label": "그룹 이름" });
+  const input = el("input", { id: "group_new_name", autocomplete: "off", placeholder: "예: 결제 모듈", "aria-label": "그룹 이름" });
   const msg = el("p", { class: "hint", role: "status" });
   const form = el(
     "form",
     { class: "float-form" },
     el("strong", { text: "새 그룹" }),
     input,
-    el("p", { class: "hint", text: "이 PC 에만 있는 대화 묶음입니다 — 상대에게 보이지 않습니다." }),
+    el("p", { class: "hint", text: "상대에게 보이지 않는 이 PC 의 대화 묶음입니다." }),
     el("div", { class: "actions" }, button("취소", () => closeFloat(true)), el("button", { type: "submit", class: "primary", text: "만들기" })),
     msg,
   );
@@ -3151,7 +3150,7 @@ function openGroupNew(anchor, after = null) {
       }
       pickGroup(g.id);
       focusAfterFloat(`#rail_groups [data-id="${g.id}"]`);
-      $("status_msg").textContent = `그룹 ${g.name} 을 만들었습니다 — '대화 추가' 나 대화 ⋯ 메뉴로 넣습니다`;
+      $("status_msg").textContent = `그룹 ${g.name} 을 만들었습니다`;
     } catch (e) {
       msg.textContent = e.message;
     }
@@ -3186,7 +3185,7 @@ function openGroupRename(id, anchor) {
       await api("PATCH", `/api/groups/${id}`, { name: input.value });
       closeFloat(false);
       await loadGroups();
-      $("peer_msg").textContent = `그룹 이름을 바꿨습니다 — ${input.value.trim()}`;
+      $("peer_msg").textContent = `그룹 이름을 바꿨습니다`;
       focusAfterFloat(`[data-peer-section="${id}"] .peer-section-tools button`, "peer_q");
     } catch (e) {
       msg.textContent = e.message;
@@ -3212,7 +3211,7 @@ async function changeGroup(id, add, remove) {
 function openConvMenu(convId, anchor) {
   const items = () => {
     const out = [el("p", { class: "menu-head" }, ico("users"), el("span", { text: "그룹" }))];
-    if (!state.groups.length) out.push(el("p", { class: "hint", text: "그룹이 없습니다 — 레일의 '그룹 +' 로 만듭니다" }));
+    if (!state.groups.length) out.push(el("p", { class: "hint", text: "그룹 없음" }));
     for (const g of state.groups) {
       const on = g.convs.includes(convId);
       out.push(
@@ -3241,7 +3240,7 @@ function openConvMenu(convId, anchor) {
           class: "danger-text",
           onclick: async () => {
             closeFloat(false);
-            if (await changeGroup(g.id, [], [convId])) $("status_msg").textContent = `그룹 ${g.name} 에서 뺐습니다 — 대화는 그대로입니다`;
+            if (await changeGroup(g.id, [], [convId])) $("status_msg").textContent = `그룹 ${g.name} 에서 뺐습니다`;
             focusAfterFloat("#conv_sections li[data-conv] a", "group_pick_btn");
           },
         }, ico("minus"), el("span", { text: "그룹에서 빼기" })),
@@ -3283,11 +3282,11 @@ function openGroupPicker(anchor) {
     const d = membershipDiff(g.convs, [...picked]);
     closeFloat(true);
     if (!d.add.length && !d.remove.length) return;
-    if (await changeGroup(g.id, d.add, d.remove)) $("status_msg").textContent = `그룹 ${g.name} — 넣음 ${d.add.length} · 뺌 ${d.remove.length}`;
+    if (await changeGroup(g.id, d.add, d.remove)) $("status_msg").textContent = `그룹 ${g.name} · 넣음 ${d.add.length} · 뺌 ${d.remove.length}`;
     focusAfterFloat("#group_pick_btn");
   };
   openFloat(anchor, "dialog", `그룹 ${g.name} 에 대화 추가`, [
-    el("div", { class: "float-form picker" }, el("strong", { text: `${g.name} — 대화 추가` }), q, list, el("div", { class: "actions" }, button("취소", () => closeFloat(true)), button("적용", apply, "primary"))),
+    el("div", { class: "float-form picker" }, el("strong", { text: `대화 추가 · ${g.name}` }), q, list, el("div", { class: "actions" }, button("취소", () => closeFloat(true)), button("적용", apply, "primary"))),
   ]);
 }
 
@@ -3576,11 +3575,11 @@ async function showSettings() {
       try {
         const r = await api("PUT", "/api/settings", { notify_inbound: wanted });
         box.checked = r.notify_inbound === true;
-        if (!box.checked) return "인바운드 알림 끔";
+        if (!box.checked) return "알림을 껐습니다";
         const p = await permission;
         return p === "granted"
-          ? "인바운드 알림 켬 — 브라우저 알림 · 트레이 표시"
-          : "인바운드 알림 켬 — 브라우저 알림 불가(권한 거부 또는 미지원), 트레이 표시만 씁니다";
+          ? "알림을 켰습니다"
+          : "알림을 켰습니다. 브라우저 알림을 쓸 수 없어 트레이에만 표시합니다.";
       } catch (e) {
         // 저장이 실패하면 서버 값으로 되돌린다 — 화면과 실제 알림 상태가 어긋나지 않게.
         box.checked = await api("GET", "/api/settings")
@@ -3738,14 +3737,14 @@ $("new_btn").addEventListener("click", () => toggleMenu("new_btn", "new_menu"));
 function setFocus(on) {
   act("집중", async () => {
     fillPrefs(await api("PUT", "/api/settings", { focus: on }));
-    return on ? "집중 — 상대 PC 의 새 요청을 받지 않고 알림을 멈춥니다" : "받기 가능 — 상대 PC 의 요청을 다시 받습니다";
+    return on ? "집중으로 바꿨습니다" : "받기 가능으로 바꿨습니다";
   });
 }
 
-/// 프로필 메뉴(#1j) — 머리 "상태 — 아이콘 테두리 색" · 받기 가능 / 집중(하나만) · 앱과 연결 끊김(자동 표시 — 단추 아님) | 그 밖. 켜짐은 설정 값으로(열 때마다).
+/// 프로필 메뉴(#1j) — 머리 "상태" · 받기 가능 / 집중(하나만) · 앱과 연결 끊김(자동 표시 — 단추 아님) | 그 밖. 켜짐은 설정 값으로(열 때마다).
 function renderProfileMenu() {
   $("profile_menu").replaceChildren(
-    el("div", { class: "menu-head", text: "상태 — 아이콘 테두리 색" }),
+    el("div", { class: "menu-head", text: "상태" }),
     ...profileMenu(state.settings.notify_paused, state.settings.focus, appOffline()).map((i) => {
       if (i.sep) return el("hr", { class: "menu-sep" });
       const parts = [i.state ? el("span", { class: `st-dot st-${i.state}`, "aria-hidden": "true" }) : "", el("span", { text: i.label }), i.hint ? el("span", { class: "menu-hint", text: i.hint }) : ""];
@@ -3782,7 +3781,7 @@ function profileAct(i) {
     const on = !i.checked;
     act("알림 일시 중지", async () => {
       fillPrefs(await api("PUT", "/api/settings", { notify_paused: on }));
-      return on ? "알림 일시 중지 — 다시 켜기 전까지 브라우저 알림 · 트레이 표시를 내지 않습니다" : "알림 일시 중지 풀림";
+      return on ? "알림을 일시 중지했습니다" : "알림을 다시 켰습니다";
     });
   }
 }

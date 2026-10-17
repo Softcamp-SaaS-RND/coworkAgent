@@ -115,7 +115,7 @@ test("상태 문구", () => {
   assert.equal(stateText("weird"), "weird");
   assert.equal(stateText(undefined), "");
   assert.equal(peerState({ paired: true }), "페어링됨");
-  assert.equal(peerState({ paired: false, my_ok: false, their_ok: true }), "상대 승인함 — 내 승인 대기");
+  assert.equal(peerState({ paired: false, my_ok: false, their_ok: true }), "내 승인 대기");
   assert.equal(peerState({ paired: false, my_ok: true, their_ok: false }), "상대 승인 대기");
 });
 
@@ -193,7 +193,7 @@ test("타임라인 — reply_to 로 묶고, 실행 정보 · 대기 · 미전달
     { id: 2, author: "agent", text: "실패", state: "undelivered", created_at: 2, reply_to: 1 },
   ]);
   assert.equal(tl2[0].steps[1].meta, "실행 정보 없음");
-  assert.equal(tl2[0].steps[2].title, "응답 — 답 미전달");
+  assert.equal(tl2[0].steps[2].title, "응답 · 답 미전달");
 });
 
 test("타임라인 — 스키마 5 이전 이력(reply_to 없음)은 기다리는 요청이 하나일 때만 연결", () => {
@@ -270,8 +270,8 @@ test("자동 왕복 — 누구의 에이전트인지 · 머리글 문구", () =>
   assert.equal(authorLabel(inn, { author: "agent", mine: false }, "김 · KIM"), "김/에이전트");
   assert.equal(authorLabel({ ...inn, relay_agent: "dev" }, { author: "agent", mine: false }, "김 · KIM"), "김/dev");
   assert.equal(authorLabel(inn, { author: "agent", mine: true }, "김 · KIM"), "내 review");
-  assert.deepEqual(relayText(out, []), { text: "자동 왕복 3 / 10 — 진행 중", action: "stop" });
-  assert.deepEqual(relayText({ ...out, relay_on: false }, []), { text: "자동 왕복 3 / 10 — 멈춤", action: "resume" });
+  assert.deepEqual(relayText(out, []), { text: "자동 왕복 3 / 10 · 진행 중", action: "stop" });
+  assert.deepEqual(relayText({ ...out, relay_on: false }, []), { text: "자동 왕복 3 / 10 · 멈춤", action: "resume" });
   assert.equal(relayText({ dir: "out", agent: "review", relay_agent: null }, []), null);
   assert.equal(relayText(inn, [{ author: "agent", mine: true }]), null, "보통 받은 대화");
   assert.deepEqual(relayText(inn, [{ author: "agent", mine: false }]), { text: "자동 왕복 받는 중", action: "stop" });
@@ -300,7 +300,7 @@ test("CLI 출처 — 보는 쪽 기준 라벨 · 글 종류 · 타임라인", ()
     { id: 2, author: "agent", reply_to: 1, text: "a", state: "done" },
     { id: 3, author: "human", exec: true, text: "w" },
   ]);
-  assert.equal(items[0].steps[0].title, "요청 — AI 에이전트(CLI)");
+  assert.equal(items[0].steps[0].title, "요청 · AI 에이전트(CLI)");
   assert.equal(items[1].steps[0].title, "요청");
 });
 
@@ -309,7 +309,7 @@ test("settings_tree — 설정 항목 전부(한 열 순서 — 내 정보 없�
   const flat = tree.flatMap((n) => [n, ...(n.children ?? [])]);
   assert.deepEqual(
     flat.map((n) => n.label),
-    ["연결", "초대 생성", "초대 수락", "연결 목록", "내 에이전트", "실행 — 모델 · effort", "화면 — 테마 · 타일 순서", "시작 — 자동 실행", "알림"],
+    ["연결", "초대 생성", "초대 수락", "연결 목록", "내 에이전트", "실행", "화면", "시작", "알림"],
   );
   assert.equal(new Set(flat.map((n) => n.id)).size, flat.length, "id 는 절 요소 id — 겹치지 않는다");
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
@@ -525,13 +525,13 @@ test("josa — 받침에 맞춘 조사, 한글이 아니면 둘 다", () => {
   assert.equal(josa("", "을", "를"), "을(를)");
 });
 
-test("peer_group_text — 상대를 그룹에 넣고 뺀 안내(시안 문구), 빼도 하나씩 넣은 대화는 남는다", () => {
-  assert.equal(peerGroupText("이준호", "결제 모듈", true, 5), '이준호를 그룹 "결제 모듈" 에 넣었습니다 — 이준호와의 대화 5개가 함께 보입니다');
-  assert.equal(peerGroupText("박지훈", "QA", false), '박지훈을 그룹 "QA" 에서 뺐습니다 — 대화를 하나씩 넣은 것은 그대로입니다');
-  assert.ok(peerGroupText("build", "QA", true, 0).startsWith("build을(를) "));
+test("peer_group_text — 상대를 그룹에 넣고 뺀 안내", () => {
+  assert.equal(peerGroupText("이준호", "결제 모듈", true), '이준호를 그룹 "결제 모듈" 에 넣었습니다');
+  assert.equal(peerGroupText("박지훈", "QA", false), '박지훈을 그룹 "QA" 에서 뺐습니다');
+  assert.ok(peerGroupText("build", "QA", true).startsWith("build을(를) "));
 });
 
-test("inbox_rows_agent — 주고받은 글 칩(#1k): 보낸 대화 = 상대 에이전트, 받은 대화 = 내 에이전트 · 행마다 상대 id", () => {
+test("inbox_rows_agent — 주고받은 메시지 칩(#1k): 보낸 대화 = 상대 에이전트, 받은 대화 = 내 에이전트 · 행마다 상대 id", () => {
   const names = new Map([[2, "이준호 · QA"]]);
   const rows = inboxRows(
     [
@@ -576,7 +576,7 @@ test("inbox_rows — 메시지 행 · 종류 거르기 · 누르면 그 대화",
   assert.deepEqual(inboxRows(ms, names, { kind: "human" }).map((r) => r.id), [9]);
 });
 
-test("peer_messages — 레일 상대 = 주고받은 글, 최신순 합침 · 상한", () => {
+test("peer_messages — 레일 상대 = 주고받은 메시지, 최신순 합침 · 상한", () => {
   const theirs = [
     { id: 9, created_at: 300 },
     { id: 4, created_at: 100 },
@@ -606,42 +606,42 @@ test("display_name — 이 PC 에서 부르는 이름 = 표시 이름(없거나 
   assert.equal(displayName({ name: "user-b", alias: "" }), "user-b", "빈 표시 이름 = 원래 이름");
 });
 
-test("side_nav — '나' 메뉴 7개 세 절(개요 | 내 활동 · 요청 · 주고받은 글 | 즐겨찾기 · 북마크 항목 · 에이전트), 상대 타일 4개 두 절(요청 | 즐겨찾기 · 북마크 항목 · 에이전트 — #1j)", () => {
+test("side_nav — '나' 메뉴 7개 세 절(개요 | 내 활동 · 요청 · 주고받은 메시지 | 즐겨찾기 · 북마크 · 에이전트), 상대 타일 4개 두 절(요청 | 즐겨찾기 · 북마크 · 에이전트 — #1j)", () => {
   const show = (xs) => xs.map((n) => (n.sep ? "|" : [n.label, n.href, n.count ?? 0]));
   assert.deepEqual(show(sideNav(null, 3, 2, 4)), [
     ["개요", "#", 0],
     "|",
     ["내 활동", "#activity", 3],
     ["요청", "#requests", 2],
-    ["주고받은 글", "#p", 0],
+    ["주고받은 메시지", "#p", 0],
     "|",
     ["즐겨찾기", "#starred", 4],
-    ["북마크 항목", "#saved", 0],
+    ["북마크", "#saved", 0],
     ["에이전트", "#agents", 0],
   ]);
   const peer = sideNav(2, 5, 1);
-  assert.deepEqual(show(peer), [["요청", "#requests", 1], "|", ["즐겨찾기", "#starred", 0], ["북마크 항목", "#saved", 0], ["에이전트", "#agents", 0]]);
+  assert.deepEqual(show(peer), [["요청", "#requests", 1], "|", ["즐겨찾기", "#starred", 0], ["북마크", "#saved", 0], ["에이전트", "#agents", 0]]);
   assert.deepEqual(sideNav(2)[0].count, 0, "대기 수 기본 0");
   assert.deepEqual(peer.filter((n) => !n.sep).map((n) => route(n.href).view), ["requests", "starred", "saved", "agents"]);
   assert.ok(!sideNav(2)[0].sep && !sideNav(2).at(-1).sep, "구분선은 절 사이에만 — 머리 · 끝에 없다");
   assert.deepEqual(route("#p/2"), { view: "peer", id: 2 }, "옛 주소 — 화면은 그 상대 개요로 넘긴다");
-  assert.deepEqual(route("#p"), { view: "peer", id: null }, "'나' 주고받은 글 = 전부");
+  assert.deepEqual(route("#p"), { view: "peer", id: null }, "'나' 주고받은 메시지 = 전부");
 });
 
-test("side_nav_exchanged_me_only — '주고받은 글' 은 '나' 에만, 상대에는 '개요' 메뉴도 없다(첫 화면이 그 상대 개요 — #1j)", () => {
+test("side_nav_exchanged_me_only — '주고받은 메시지' 은 '나' 에만, 상대에는 '개요' 메뉴도 없다(첫 화면이 그 상대 개요 — #1j)", () => {
   const labels = (tile) => sideNav(tile).filter((n) => !n.sep).map((n) => n.label);
-  assert.ok(labels(null).includes("주고받은 글"));
-  for (const tile of [7, "group"]) assert.ok(!labels(tile).includes("주고받은 글"), String(tile));
+  assert.ok(labels(null).includes("주고받은 메시지"));
+  for (const tile of [7, "group"]) assert.ok(!labels(tile).includes("주고받은 메시지"), String(tile));
   assert.ok(!labels(7).includes("개요"));
   assert.deepEqual(labels("group").slice(0, 1), ["개요"]);
 });
 
-test("side_nav_starred — 즐겨찾기는 모든 타일의 하단 첫 칸, 수 = 그 범위 ★ 대화방", () => {
+test("side_nav_starred — 즐겨찾기는 모든 타일의 하단 첫 칸, 수 = 그 범위 ★ 대화", () => {
   for (const tile of [null, 3, "group"]) {
     const xs = sideNav(tile, 0, 0, 2);
     const i = xs.findIndex((n) => n.label === "즐겨찾기");
     assert.ok(xs[i - 1].sep, `${tile} — 하단 절의 처음`);
-    assert.deepEqual([xs[i].href, xs[i].count, xs[i + 1].label], ["#starred", 2, "북마크 항목"], String(tile));
+    assert.deepEqual([xs[i].href, xs[i].count, xs[i + 1].label], ["#starred", 2, "북마크"], String(tile));
   }
   assert.equal(sideNav(null).find((n) => n.label === "즐겨찾기").count, 0, "기본 0");
 });
@@ -675,7 +675,7 @@ test("peer_groups — 상대별 절: 레일(페어링) 순서, 그 뒤 풀린 �
   assert.deepEqual(peerGroups([], [1, 2], names), []);
 });
 
-test("row_peer — 주고받은 글 · 요청 · 내 활동 행에 상대 id(상대별 절 열쇠)", () => {
+test("row_peer — 주고받은 메시지 · 요청 · 내 활동 행에 상대 id(상대별 절 열쇠)", () => {
   const conv = { id: 5, peer_id: 4, dir: "out", agent: "guide", title: "" };
   const names = new Map([[4, "라온 · D-PC"]]);
   const m = { id: 1, author: "human", mine: true, text: "x", created_at: 1, conversation: conv, request: true };
@@ -722,7 +722,7 @@ test("peer_summary — '나' 대화 요약: 페어링된 상대는 대화 없어
   assert.deepEqual(peerSummary([], [], names), []);
 });
 
-test("conv_sections_by_peer — '나' 사이드바: 상대별 절(★ 대화도 제자리 — #1j), 대화가 없으면 빈 '대화방' 절", () => {
+test("conv_sections_by_peer — '나' 사이드바: 상대별 절(★ 대화도 제자리 — #1j), 대화가 없으면 빈 '대화' 절", () => {
   const names = new Map([
     [1, "가람 · A-PC"],
     [2, "나래 · B-PC"],
@@ -741,7 +741,7 @@ test("conv_sections_by_peer — '나' 사이드바: 상대별 절(★ 대화도 
     ],
   );
   assert.deepEqual(convSections([], [1], names).map((x) => [x.key, x.rows.length]), [["convs", 0]]);
-  assert.deepEqual(convSections(rows).map((x) => [x.key, x.title, x.rows.length]), [["convs", "대화방", 4]], "상대 타일 = 대화방 절 하나");
+  assert.deepEqual(convSections(rows).map((x) => [x.key, x.title, x.rows.length]), [["convs", "대화", 4]], "상대 타일 = 대화 절 하나");
 });
 
 test("icons_defined — app.js ico(이름) · index.html ico-이름 으로 쓴 아이콘이 모두 app.css 에 있다(#1l — 빠진 아이콘은 빈 칸으로 보임)", () => {
@@ -773,7 +773,7 @@ test("new_menu — 네 항목이 각 화면으로, 초점 칸까지(자동 왕�
   for (const i of items) assert.ok(html.includes(`id="${i.focus}"`), `index.html 에 ${i.focus}`);
 });
 
-test("profile_menu — 상태(받기 가능 · 집중 고르기 · 앱과 연결 끊김 표시) | 사용자 정보(#1l) · 표시 이름 · 아이콘 · 알림 일시 중지(켜짐 표시) · 환경설정(#1j)", () => {
+test("profile_menu — 상태(받기 가능 · 집중 고르기 · 앱과 연결 끊김 표시) | 사용자 정보(#1l) · 프로필 편집 · 알림 일시 중지(켜짐 표시) · 설정(#1j)", () => {
   assert.deepEqual(
     profileMenu(false, false).map((i) => (i.sep ? "|" : [i.key, i.label, i.checked])),
     [
@@ -782,9 +782,9 @@ test("profile_menu — 상태(받기 가능 · 집중 고르기 · 앱과 연결
       ["offline", "앱과 연결 끊김", undefined],
       "|",
       ["me", "사용자 정보", undefined],
-      ["tile", "표시 이름 · 아이콘", undefined],
+      ["tile", "프로필 편집", undefined],
       ["pause", "알림 일시 중지", false],
-      ["settings", "환경설정", undefined],
+      ["settings", "설정", undefined],
     ],
   );
   const pause = (m) => m.find((i) => i.key === "pause").checked;
@@ -815,7 +815,7 @@ test("presence_of — 내 상태 색: 앱과 연결 끊김(붉음)이 먼저, �
   assert.deepEqual(presenceOf(undefined, undefined).key, "online", "설정을 못 읽었으면 받기 가능");
 });
 
-test("starred_sections — ★ 대화방만 · '나' 는 상대별 절(레일 순서) · 빈 절 없음 · 없으면 빈 배열", () => {
+test("starred_sections — ★ 대화만 · '나' 는 상대별 절(레일 순서) · 빈 절 없음 · 없으면 빈 배열", () => {
   const names = new Map([
     [1, "가람 · A"],
     [2, "나래 · B"],
@@ -833,7 +833,7 @@ test("starred_sections — ★ 대화방만 · '나' 는 상대별 절(레일 �
       ["peer:1", [1]],
     ],
   );
-  assert.deepEqual(starredSections(convs, names).map((s) => [s.title, s.rows.map((r) => r.c.id)]), [["대화방", [1, 3]]], "상대 타일 = 절 하나");
+  assert.deepEqual(starredSections(convs, names).map((s) => [s.title, s.rows.map((r) => r.c.id)]), [["대화", [1, 3]]], "상대 타일 = 절 하나");
   assert.deepEqual(starredSections(convs.slice(1, 2), names, [1, 2]), []);
   assert.deepEqual(starredSections([], names), []);
 });
@@ -859,9 +859,9 @@ test("conv_sections — ★ 대화도 제자리(#1j), 행 표시 · 레일 배�
   ];
   assert.deepEqual(
     convSections(convRows(convs, names, null)).map((s) => [s.title, s.rows.map((r) => r.c.id)]),
-    [["대화방", [1, 2, 3]]],
+    [["대화", [1, 2, 3]]],
   );
-  assert.deepEqual(convSections(convRows(convs, names, 3)).map((s) => s.title), ["대화방"]);
+  assert.deepEqual(convSections(convRows(convs, names, 3)).map((s) => s.title), ["대화"]);
   assert.deepEqual(convMeta(convs[0]), { agent: "guide", state: "완료", running: false, relay: null, unread: false, tag: null });
   assert.deepEqual(convMeta(convs[1]), { agent: "내 review", state: "실행 중", running: true, relay: null, unread: true, tag: null });
   assert.deepEqual(convMeta(convs[2]), { agent: "guide", state: "", running: false, relay: "왕복 3/10", unread: true, tag: null });
@@ -888,7 +888,7 @@ test("activity_rows — 상대 글 · 실패 · 자동 왕복 시작 · 끝, 안
     [
       ["", "이도윤/guide", "답 둘째 줄", "#c/5/m/9", true],
       ["실패", "나", "요청", "#c/5/m/8", false],
-      ["자동 왕복 끝 — 상한 도달", "이도윤", "", "#c/5", false],
+      ["자동 왕복 끝 · 상한 도달", "이도윤", "", "#c/5", false],
       ["자동 왕복 시작", "이도윤", "첫 답 앞부분", "#c/5", false],
       ["실패", "이도윤/guide", "실행 실패", "#c/5/m/7", false],
     ],
@@ -934,7 +934,7 @@ test("activity_rows — 상대 반영 실패는 그 대화로", () => {
   const rows = activityRows([{ kind: "sync_failed", at: 1, unseen: true, conversation: conv, detail: "편집 — 고친 질의" }], new Map([[2, "이도윤 · DYOON"]]));
   assert.deepEqual(
     rows.map((r) => [r.label, r.who, r.preview, r.href, r.unseen]),
-    [["상대 반영 실패 — 편집 — 고친 질의", "이도윤", "", "#c/5", true]],
+    [["상대 반영 실패 · 편집 — 고친 질의", "이도윤", "", "#c/5", true]],
   );
 });
 
@@ -1078,9 +1078,9 @@ test("req_moves — 대기 → 수용 · 반려, 수용 → 완료, 그 밖 없�
   // 요청자에 알리지 못한 상태(포기) — 표시 · "다시 알리기"(R1).
   const lost = { author: "human", mine: false, request: true, req_state: "done", state: "done", refused: "unreachable" };
   assert.ok(messageActions(lost).some((a) => a.key === "req-again" && a.label === "다시 알리기"));
-  assert.match(refusedText(lost), /요청자에게 상태를 알리지 못함/);
+  assert.match(refusedText(lost), /요청자에게 알리지 못함/);
   assert.ok(!messageActions({ ...lost, mine: true }).some((a) => a.key === "req-again"), "내 요청은 아님");
-  assert.match(refusedText({ ...lost, refused: "unknown" }), /상대가 받지 않았다\(unknown/, "요청자가 거절(R2)");
+  assert.match(refusedText({ ...lost, refused: "unknown" }), /거절\(unknown/, "요청자가 거절(R2)");
   assert.ok(messageActions({ ...lost, refused: "unknown" }).some((a) => a.key === "req-again"));
 });
 
@@ -1168,7 +1168,7 @@ test("entry_token", () => {
 
 test("progressText — 보낸 글의 상대 차례 · 실행 상세 진행에도", () => {
   const q = { state: "sent", progress: { state: "queued", ahead: 2 } };
-  assert.equal(progressText(q), "상대 PC 에 처리 중인 작업이 많아 응답을 기다립니다(앞에 2건)");
+  assert.equal(progressText(q), "차례 기다리는 중 · 앞에 2건");
   assert.equal(progressText({ state: "sent", progress: { state: "running", ahead: 0 } }), "처리 중");
   assert.equal(progressText({ state: "sent", progress: null }), "");
   assert.equal(progressText({ state: "done", progress: { state: "running", ahead: 0 } }), "", "답이 오면 지운다");
@@ -1184,13 +1184,13 @@ test("runsSummary — 이 PC 실행 머리 · 실행 중 먼저 · 대기 순번
     running: [{ conversation_id: 3, peer: "민수", agent: "review", text: "로그 봐줘" }],
     waiting: [{ conversation_id: 5, peer: "지은", agent: "review", text: "a" }, { message_id: 9 }],
   });
-  assert.equal(r.title, "이 PC 실행 — 실행 중 1 · 대기 2");
+  assert.equal(r.title, "실행 중 1 · 대기 2");
   assert.deepEqual(r.rows, [
     { label: "실행 중 · 민수/review", text: "로그 봐줘", href: "#c/3" },
     { label: "대기 1 · 지은/review", text: "a", href: "#c/5" },
     { label: "대기 2 · 알 수 없는 상대/에이전트", text: "", href: "" },
   ]);
-  assert.equal(runsSummary({ cap: 2, running: [], waiting: [] }).title, "이 PC 실행 — 실행 중 0 · 대기 0");
+  assert.equal(runsSummary({ cap: 2, running: [], waiting: [] }).title, "실행 중 0 · 대기 0");
 });
 
 test("portText — 웹UI 포트 · 피어 포트(고정 | 임의 — 잡은 프로세스) · 열린 연결", () => {
@@ -1216,7 +1216,7 @@ test("messagesSigOf — 진행만 바뀌어도(sent 그대로) 다시 그린다"
 
 test("outboxText · refusedText — 보관 중 · 보내지 못함(#1c)", () => {
   assert.equal(outboxText({ outbox: { state: "inflight", tries: 0 } }), "보내는 중");
-  assert.equal(outboxText({ outbox: { state: "pending", tries: 3 } }), "보내는 중 — 상대에 닿지 않아 다시 보냄(3회)");
+  assert.equal(outboxText({ outbox: { state: "pending", tries: 3 } }), "보내는 중 · 다시 보냄 3회");
   assert.equal(outboxText({ outbox: { state: "failed", tries: 9 } }), "", "포기는 거절 사유가 말한다");
   assert.equal(outboxText({ outbox: null }), "");
   assert.match(refusedText({ state: "error", refused: "unreachable" }), /^보내지 못함/);
@@ -1229,7 +1229,7 @@ test("stepText · progressText — 처리 중 단계 요약(#1c)", () => {
   const d = { turns: 2, tools: { Read: 3, Grep: 1 }, secs: 41 };
   assert.equal(stepText(d), "2턴 · Read 3 · Grep 1 · 41초");
   assert.equal(stepText({ turns: 0, tools: {}, secs: 0 }), "");
-  assert.equal(progressText({ state: "sent", progress: { state: "running", ahead: 0, detail: d } }), "처리 중 — 2턴 · Read 3 · Grep 1 · 41초");
+  assert.equal(progressText({ state: "sent", progress: { state: "running", ahead: 0, detail: d } }), "처리 중 · 2턴 · Read 3 · Grep 1 · 41초");
   assert.equal(progressText({ state: "sent", progress: { state: "running", ahead: 0, detail: null } }), "처리 중");
 });
 
@@ -1287,7 +1287,7 @@ test("side_nav_sections — 어느 타일이든 구분선은 절 사이에만(�
     assert.ok(!xs[0].sep && !xs.at(-1).sep, String(tile));
     assert.ok(xs.every((n, i) => !(n.sep && xs[i + 1]?.sep)), String(tile));
     assert.ok(!xs.some((n) => n.label === "대화" || n.label === "저장된 항목"), String(tile));
-    assert.equal(xs.at(-1).label === "에이전트" || xs.at(-1).label === "북마크 항목", true, "하단 = 사용자가 모은 · 등록한 것");
+    assert.equal(xs.at(-1).label === "에이전트" || xs.at(-1).label === "북마크", true, "하단 = 사용자가 모은 · 등록한 것");
   }
 });
 
@@ -1329,7 +1329,7 @@ test("day_label · day_breaks — 오늘 · 어제 · M.D · 다른 해, 날짜�
   assert.deepEqual(dayBreaks([], now), []);
 });
 
-test("room_preview — 대화방 줄 미리보기 = 마지막 글 '{말한 이}: {한 줄}', 글 없으면 빈 글자", () => {
+test("room_preview — 대화 줄 미리보기 = 마지막 글 '{말한 이}: {한 줄}', 글 없으면 빈 글자", () => {
   const conv = { dir: "out", agent: "guide", peer_id: 2 };
   assert.equal(roomPreview({ ...conv, last: { author: "agent", mine: false, text: "승인자는\n팀 리드", agent: null } }, "이준호 · QA"), "이준호/guide: 승인자는 팀 리드");
   assert.equal(roomPreview({ ...conv, last: { author: "human", mine: true, text: "고마워" } }, "이준호 · QA"), "나: 고마워");
@@ -1337,10 +1337,10 @@ test("room_preview — 대화방 줄 미리보기 = 마지막 글 '{말한 이}:
   assert.equal(roomPreview({ ...conv, last: { author: "human", mine: false, text: "x".repeat(200) } }, "이준호 · QA").length, "이준호: ".length + 121);
 });
 
-test("side_nav_group — 그룹 타일 메뉴 4개 세 절(개요 | 요청 | 즐겨찾기 · 북마크 항목), 내 활동 · 주고받은 글 · 에이전트 없음(#1j)", () => {
+test("side_nav_group — 그룹 타일 메뉴 4개 세 절(개요 | 요청 | 즐겨찾기 · 북마크), 내 활동 · 주고받은 메시지 · 에이전트 없음(#1j)", () => {
   assert.deepEqual(
     sideNav("group", 7, 2, 1).map((n) => (n.sep ? "|" : [n.label, n.href, n.count ?? 0])),
-    [["개요", "#", 0], "|", ["요청", "#requests", 2], "|", ["즐겨찾기", "#starred", 1], ["북마크 항목", "#saved", 0]],
+    [["개요", "#", 0], "|", ["요청", "#requests", 2], "|", ["즐겨찾기", "#starred", 1], ["북마크", "#saved", 0]],
   );
 });
 
@@ -1449,11 +1449,11 @@ test("with_order — 보낸 순서를 자리로, 빠진 항목은 그대로(서�
 });
 
 test("moved_text — 화면 읽기 알림(1 부터)", () => {
-  assert.equal(movedText("결제 모듈", 0), "결제 모듈 — 1번째로 옮김");
-  assert.equal(movedText("이준호", 2), "이준호 — 3번째로 옮김");
+  assert.equal(movedText("결제 모듈", 0), "결제 모듈 · 1번째로 옮김");
+  assert.equal(movedText("이준호", 2), "이준호 · 3번째로 옮김");
 });
 
-test("group_leaves — 그룹을 고른 채 내 활동 · 에이전트 · 주고받은 글(#1j)은 '나' 로, 그 밖(즐겨찾기 포함)은 그대로", () => {
+test("group_leaves — 그룹을 고른 채 내 활동 · 에이전트 · 주고받은 메시지(#1j)은 '나' 로, 그 밖(즐겨찾기 포함)은 그대로", () => {
   assert.deepEqual(
     ["home", "activity", "requests", "starred", "saved", "agents", "peer", "conversation", "new"].filter(groupLeaves),
     ["activity", "agents", "peer"],
@@ -1603,21 +1603,21 @@ test("ctx_menu — 실행 중 · 답 없음이면 꺼짐, 아이콘은 app.css �
 
 test("context_note — 종류 · 상태 · 실패 사유(#1m)", () => {
   const m = (ctx_op, state, refused = null) => ({ author: "context", ctx_op, state, refused });
-  assert.equal(contextNote(m("compact", "done")), "컨텍스트 압축 — 이후 새 세션이 요약을 이어 받습니다");
-  assert.equal(contextNote(m("auto_compact", "running")), "자동 압축(80%) — 요약 중…");
-  assert.equal(contextNote(m("clear", "done")), "컨텍스트 비움 — 이후 새 세션(앞 대화 기억 없음)");
-  assert.equal(contextNote(m("clear", "sent")), "컨텍스트 비움 — 상대 PC 처리 대기");
-  assert.equal(contextNote(m("compact", "error", "unsupported")), "컨텍스트 압축 — 상대가 0.5.0 이상이어야 합니다");
-  assert.equal(contextNote(m("compact", "error", "unreachable")), "컨텍스트 압축 — 상대에 닿지 않음");
-  assert.equal(contextNote(m("compact", "error", "compact_failed")), "컨텍스트 압축 — 요약 실행 실패 — 세션은 그대로");
+  assert.equal(contextNote(m("compact", "done")), "컨텍스트 압축 · 이후 새 세션이 요약을 이어 받습니다");
+  assert.equal(contextNote(m("auto_compact", "running")), "자동 압축(80%) · 요약 중…");
+  assert.equal(contextNote(m("clear", "done")), "컨텍스트 비움 · 이후 새 세션(앞 대화 기억 없음)");
+  assert.equal(contextNote(m("clear", "sent")), "컨텍스트 비움 · 상대 PC 처리 대기");
+  assert.equal(contextNote(m("compact", "error", "unsupported")), "컨텍스트 압축 · 상대가 0.5.0 이상이어야 합니다");
+  assert.equal(contextNote(m("compact", "error", "unreachable")), "컨텍스트 압축 · 상대에 닿지 않음");
+  assert.equal(contextNote(m("compact", "error", "compact_failed")), "컨텍스트 압축 · 요약 실행 실패 · 세션은 그대로");
   assert.equal(
     contextNote(m("compact", "done", "peer_unsupported")),
-    "컨텍스트 압축 — 이후 새 세션이 요약을 이어 받습니다 · 상대 PC 쪽은 실패(상대가 0.5.0 이상이어야 합니다) — 다시 누르면 다시 요청",
+    "컨텍스트 압축 · 이후 새 세션이 요약을 이어 받습니다 · 상대 PC 쪽은 실패(상대가 0.5.0 이상이어야 합니다) · 다시 누르면 다시 요청",
     "자동 왕복 부분 처리(라운드 1)",
   );
 });
 
-// ---- 대화방 목록 나눔(#1o) ----
+// ---- 대화 목록 나눔(#1o) ----
 
 const splitConvs = [
   { id: 1, peer_id: 1, dir: "out", title: "빌드 질문", last_at: 50 },
@@ -1631,20 +1631,20 @@ const splitNames = new Map([
   [2, "user-c"],
 ]);
 
-test("conv_split_rows — 내 대화 · agent 대화, 순서 · 제목 · 내가 연 자동 왕복 = 내 대화 · 한쪽만 · 검색 뒤 개수", () => {
+test("conv_split_rows — 내 대화 · 에이전트 대화, 순서 · 제목 · 내가 연 자동 왕복 = 내 대화 · 한쪽만 · 검색 뒤 개수", () => {
   const rows = convRows(splitConvs, splitNames, null);
   const parts = splitByDir(rows);
   assert.deepEqual(
     parts.map((g) => [g.dir, g.title, g.rows.map((r) => r.c.id)]),
     [
       ["out", "내 대화", [1, 3, 5]],
-      ["in", "agent 대화", [2, 4]],
+      ["in", "에이전트 대화", [2, 4]],
     ],
   );
   assert.equal(splitByDir(rows.filter((r) => r.c.dir === "out")).length, 1, "한쪽만 = 묶음 하나(머리 없음)");
   assert.deepEqual(splitByDir([]), []);
   const found = splitByDir(convRows(splitConvs, splitNames, null, "빌드"));
-  assert.deepEqual(found.map((g) => [g.title, g.rows.length]), [["내 대화", 2]], "검색으로 agent 대화가 0 이면 그 묶음이 빠진다");
+  assert.deepEqual(found.map((g) => [g.title, g.rows.length]), [["내 대화", 2]], "검색으로 에이전트 대화가 0 이면 그 묶음이 빠진다");
 });
 
 test("conv_split_scopes — 상대 타일 · 그룹 · '나'(상대별 절 안) 같은 규칙 · 열쇠 {절}:{dir}", () => {
@@ -1675,7 +1675,7 @@ test("conv_split_scopes — 상대 타일 · 그룹 · '나'(상대별 절 안) 
         ["convs:in", 1],
       ],
     ],
-    "상대 타일 · 그룹 = 대화방 절 하나 안에서",
+    "상대 타일 · 그룹 = 대화 절 하나 안에서",
   );
 });
 
@@ -1696,7 +1696,7 @@ test("conv_split_starred — 즐겨찾기 화면은 나누지 않는다(절 열�
       ["peer:2", [3, 4]],
     ],
   );
-  assert.deepEqual(starredSections(convs, splitNames).map((s) => [s.key, s.title]), [["convs", "대화방"]]);
+  assert.deepEqual(starredSections(convs, splitNames).map((s) => [s.key, s.title]), [["convs", "대화"]]);
 });
 
 // ---- 공유 대화(#1o 관람자) ----
@@ -1711,13 +1711,13 @@ const shared = (over = {}) => ({
   ...over,
 });
 
-test("share_groups — 공유 대화 = 셋째 묶음(내 대화 · agent 대화 뒤) · 해제되면 '공유 해제됨' 태그", () => {
+test("share_groups — 공유 대화 = 셋째 묶음(내 대화 · 에이전트 대화 뒤) · 해제되면 '공유 해제됨' 태그", () => {
   const rows = convRows([...splitConvs, shared()], splitNames, null);
   assert.deepEqual(
     splitByDir(rows).map((g) => [g.title, g.rows.map((r) => r.c.id)]),
     [
       ["내 대화", [1, 3, 5]],
-      ["agent 대화", [2, 4]],
+      ["에이전트 대화", [2, 4]],
       ["공유 대화", [9]],
     ],
   );

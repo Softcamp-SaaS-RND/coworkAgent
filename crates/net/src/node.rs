@@ -3,7 +3,7 @@ use crate::identity::Identity;
 use crate::invite::{Invite, normalize_fingerprint};
 use crate::proto::{Request, Response, clean_name, read_frame, write_frame};
 use crate::tls::{self, Pin};
-use an_core::db::Connection;
+use an_core::db::{Connection, db_err};
 use an_core::peers::{self, Peer};
 use ring::rand::{SecureRandom, SystemRandom};
 use rustls::ServerConfig;
@@ -281,10 +281,6 @@ fn normalize_code(s: &str) -> String {
 /// 길이가 같으면 내용과 무관하게 같은 시간에 비교한다.
 fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
-
-fn db_err(e: an_core::db::Error) -> io::Error {
-    io::Error::other(e)
 }
 
 fn not_found(id: i64) -> io::Error {

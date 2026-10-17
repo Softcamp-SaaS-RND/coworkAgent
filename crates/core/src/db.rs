@@ -4,6 +4,11 @@ use std::path::Path;
 
 pub const SCHEMA_VERSION: i64 = 20;
 
+/// DB 오류를 `io::Error` 로 — 상위 크레이트가 `map_err(db_err)` 로 쓴다(`Error` 는 rusqlite 것이라 `From` 을 구현할 수 없다).
+pub fn db_err(e: Error) -> std::io::Error {
+    std::io::Error::other(e)
+}
+
 /// 쓰기 트랜잭션 — `BEGIN IMMEDIATE`. 읽고 나서 쓰는 지연(deferred) 트랜잭션은 다른 연결(피어 노드 · 알림)이 쓰는 중이면 잠금을 올리지 못해
 /// `busy_timeout` 을 기다리지 않고 바로 `database is locked` 로 실패한다(SQLite 교착 회피) — 처음부터 쓰기 잠금을 잡아 기다린다.
 pub fn write_tx(conn: &Connection) -> rusqlite::Result<rusqlite::Transaction<'_>> {

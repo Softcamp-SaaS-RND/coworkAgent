@@ -16,7 +16,7 @@
           <circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path>
         </svg>
         <label for="search_q" class="sr-only">통합 검색</label>
-        <input id="search_q" type="search" placeholder="검색 — 메시지 · 대화 · 사람 · 에이전트" maxlength="100" autocomplete="off" aria-controls="search_box">
+        <input id="search_q" type="search" placeholder="검색" maxlength="100" autocomplete="off" aria-controls="search_box">
         <kbd class="kbd" aria-hidden="true">Ctrl K</kbd>
         <div id="search_box" class="popover search-box" hidden></div>
       </div>
@@ -25,26 +25,26 @@
           <button type="button" id="new_btn" class="primary" aria-haspopup="menu" aria-expanded="false" aria-controls="new_menu">+ 새로 만들기</button>
           <div id="new_menu" class="popover menu" role="menu" hidden></div>
         </div>
-        <a id="bell" class="icon-btn bell" href="#activity" title="알림" aria-label="알림 — 내 활동">
+        <a id="bell" class="icon-btn bell" href="#activity" title="알림" aria-label="내 활동">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path>
           </svg>
           <span id="bell_dot" class="badge-dot" hidden></span>
         </a>
         <div class="menu-wrap">
-          <button type="button" id="avatar_btn" class="avatar-btn me" title="프로필 — 표시 이름 · 집중 · 알림 일시 중지 · 환경설정" aria-haspopup="menu" aria-expanded="false" aria-controls="profile_menu">나</button>
+          <button type="button" id="avatar_btn" class="avatar-btn me" title="프로필" aria-haspopup="menu" aria-expanded="false" aria-controls="profile_menu">나</button>
           <div id="profile_menu" class="popover menu right" role="menu" hidden></div>
         </div>
       </div>
     </header>
 
     <nav id="rail" aria-label="PC 전환">
-      <button type="button" id="rail_me" class="rail-btn me" aria-label="나 — 전체 대화">나</button>
+      <button type="button" id="rail_me" class="rail-btn me" aria-label="나">나</button>
       <div id="rail_pcs"></div>
-      <button type="button" id="rail_add" class="rail-btn add" aria-label="초대 수락으로 PC 추가">+</button>
+      <button type="button" id="rail_add" class="rail-btn add" aria-label="초대 수락">+</button>
       <hr id="rail_sep" class="rail-sep" hidden>
       <div id="rail_groups" class="rail-groups" aria-label="그룹"></div>
-      <button type="button" id="rail_group_add" class="rail-btn add group-add" aria-label="그룹 + — 새 그룹 만들기" title="새 그룹 — 이 PC 에만 있는 대화 묶음">그룹 +</button>
+      <button type="button" id="rail_group_add" class="rail-btn add group-add" aria-label="새 그룹" title="새 그룹">+ 그룹</button>
       <button type="button" id="rail_settings" class="rail-btn settings" aria-label="설정">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
           <circle cx="12" cy="12" r="3"></circle>
@@ -57,8 +57,8 @@
       <div class="side-head">
         <div class="side-name-row">
           <strong id="side_name">…</strong>
-          <button type="button" id="tile_edit_btn" class="icon-btn" aria-label="타일 편집 — 표시 이름 · 아이콘" title="타일 편집">✎</button>
-          <button type="button" id="tile_more_btn" class="icon-btn" aria-label="타일 메뉴 — 타일 편집 · 이미지 지우기" title="타일 메뉴" aria-haspopup="menu">⋯</button>
+          <button type="button" id="tile_edit_btn" class="icon-btn" aria-label="타일 편집" title="타일 편집"><span class="ico ico-pencil" aria-hidden="true"></span></button>
+          <button type="button" id="tile_more_btn" class="icon-btn" aria-label="타일 메뉴" title="타일 메뉴" aria-haspopup="menu"><span class="ico ico-more" aria-hidden="true"></span></button>
         </div>
         <span id="side_sub">…</span>
         <form id="tile_form" class="tile-form" hidden>
@@ -81,13 +81,12 @@
       <div class="side-scroll">
         <ul id="side_nav" class="side-nav"></ul>
         <div class="side-search">
-          <label for="conv_search">제목 검색</label>
-          <input id="conv_search" type="search" placeholder="제목">
+          <input id="conv_search" type="search" placeholder="제목 검색" aria-label="제목 검색">
         </div>
         <div id="conv_sections"></div>
       </div>
     </aside>
-    <div id="side_resize" role="separator" aria-orientation="vertical" aria-label="대화 목록 폭 — 끌거나 ← → 키" tabindex="0" aria-valuemin="200" aria-valuemax="560" aria-valuenow="272"></div>
+    <div id="side_resize" role="separator" aria-orientation="vertical" aria-label="대화 목록 폭" tabindex="0" aria-valuemin="200" aria-valuemax="560" aria-valuenow="272"></div>
 
     <main id="main">
       <section id="home" class="view">
@@ -97,11 +96,10 @@
           </div>
         </header>
         <ol id="home_summary" class="rows"></ol>
-        <p id="group_empty" class="empty hint" hidden>그룹에 대화가 없습니다 — 사이드바 '대화 추가' 나 대화 ⋯ 메뉴의 '그룹' 으로 넣습니다.</p>
+        <p id="group_empty" class="empty hint" hidden>대화 없음</p>
         <div id="home_intro" class="empty">
           <h1>coworkAgent</h1>
-          <p>레일의 '나' 는 모든 상대의 대화 · 내 활동 · 요청 · 북마크 항목 · 주고받은 글 · 에이전트를 상대별로 묶어 보고, 상대 타일은 그 상대 것만 봅니다.</p>
-          <p class="hint">PC 를 처음 잇는다면 상대가 '초대 생성' 에서 만든 초대 메시지를 레일의 + (초대 수락)에 붙여 넣으세요.</p>
+          <p class="hint">처음 연결하려면 상대에게 받은 초대를 레일의 + 에 붙여 넣으세요.</p>
         </div>
       </section>
 
@@ -109,14 +107,13 @@
         <header class="view-head">
           <div class="head-title">
             <strong><span class="ico ico-bell" aria-hidden="true"></span>내 활동</strong>
-            <span class="hint">상대 쪽 글 · 자동 왕복 시작 · 끝 · 실패 — 최신순, 누르면 그 대화로</span>
           </div>
         </header>
         <div class="filters">
           <label for="act_kind">종류</label>
           <select id="act_kind">
             <option value="all">전체</option>
-            <option value="human">사람 글</option>
+            <option value="human">사람 메시지</option>
             <option value="agent">에이전트 답</option>
             <option value="relay">자동 왕복</option>
             <option value="failed">실패</option>
@@ -161,7 +158,7 @@
       <section id="saved" class="view" hidden>
         <header class="view-head">
           <div class="head-title">
-            <strong><span class="ico ico-bookmark" aria-hidden="true"></span>북마크 항목</strong>
+            <strong><span class="ico ico-bookmark" aria-hidden="true"></span>북마크</strong>
           </div>
         </header>
         <ol id="saved_list" class="rows"></ol>
@@ -189,8 +186,8 @@
         <header class="view-head conv-head">
           <div class="head-title">
             <span id="conv_title_line" class="title-line"><button type="button" id="star_btn" class="star-btn" aria-label="즐겨찾기" aria-pressed="false"></button><strong id="conv_title"></strong>
-              <button type="button" id="title_edit_btn" class="icon-btn" aria-label="제목 편집" title="제목 편집">✎</button>
-              <button type="button" id="conv_more_btn" class="icon-btn" aria-label="대화 메뉴 — 그룹" title="대화 메뉴 — 그룹" aria-haspopup="menu">⋯</button></span>
+              <button type="button" id="title_edit_btn" class="icon-btn" aria-label="제목 편집" title="제목 편집"><span class="ico ico-pencil" aria-hidden="true"></span></button>
+              <button type="button" id="conv_more_btn" class="icon-btn" aria-label="대화 메뉴" title="대화 메뉴" aria-haspopup="menu"><span class="ico ico-more" aria-hidden="true"></span></button></span>
             <form id="title_form" class="title-form" hidden>
               <label for="title_input" class="sr-only">대화 제목</label>
               <input id="title_input" maxlength="100" placeholder="비우면 첫 메시지 앞부분" autocomplete="off">
@@ -207,10 +204,10 @@
               <button id="view_btn" type="button" aria-pressed="true">대화 보기</button>
               <button id="raw_btn" type="button" aria-pressed="false">원문 보기</button>
             </div>
-            <button id="ctx_btn" type="button" class="tool-btn ctx-btn" aria-haspopup="menu" data-level="unknown" aria-label="컨텍스트 — 압축 · 비우기">
+            <button id="ctx_btn" type="button" class="tool-btn ctx-btn" aria-haspopup="menu" data-level="unknown" aria-label="컨텍스트">
               <span class="ico ico-gauge" aria-hidden="true"></span><span id="ctx_text">컨텍스트 알 수 없음</span>
             </button>
-            <button id="saved_btn" type="button" class="tool-btn" title="이 대화의 북마크 — 세부정보에서" aria-label="이 대화의 북마크">
+            <button id="saved_btn" type="button" class="tool-btn" title="이 대화의 북마크" aria-label="이 대화의 북마크">
               <span class="ico ico-bookmark" aria-hidden="true"></span>북마크 <span id="saved_n" class="count"></span>
             </button>
             <button id="detail_btn" type="button" class="tool-btn" title="세부정보" aria-pressed="false">
@@ -222,17 +219,17 @@
         <div id="panel_conv" class="panel">
           <div id="messages" aria-live="polite"></div>
           <div class="edit-row">
-            <button id="edit_btn" type="button" class="edit-toggle" aria-pressed="false" title="편집 모드 — 끝난 내 글을 골라 삭제 · 편집">편집</button>
+            <button id="edit_btn" type="button" class="edit-toggle" aria-pressed="false" title="편집 모드">편집</button>
           </div>
           <div id="edit_bar" class="edit-bar" role="toolbar" aria-label="편집 모드" hidden>
             <span id="edit_count">0개 선택</span>
-            <span class="hint">끝난 내 글만 고를 수 있습니다 · 에이전트는 다시 실행하지 않습니다</span>
+            <span class="hint">끝난 내 메시지만 고를 수 있습니다</span>
             <button id="edit_delete" type="button" class="danger" disabled>삭제</button>
             <button id="edit_done" type="button" class="primary">완료</button>
           </div>
           <form id="reply_form" class="composer">
-            <label for="reply_text" class="sr-only">메시지 — 대화 에이전트에게 실행 요청</label>
-            <textarea id="reply_text" rows="3" placeholder="메시지 입력 — markdown 가능" aria-autocomplete="list" aria-controls="mention_box"></textarea>
+            <label for="reply_text" class="sr-only">메시지</label>
+            <textarea id="reply_text" rows="3" placeholder="메시지 입력" aria-autocomplete="list" aria-controls="mention_box"></textarea>
             <ul id="mention_box" class="popover mention-box" role="listbox" aria-label="에이전트 멘션" hidden></ul>
             <div class="composer-bar">
               <div class="fmt">
@@ -240,13 +237,13 @@
                 <button type="button" class="icon-btn" data-md="list" title="목록" aria-label="목록">•≡</button>
                 <button type="button" class="icon-btn mono" data-md="code" title="코드" aria-label="코드">&lt;/&gt;</button>
               </div>
-              <div class="ask-kind" role="radiogroup" aria-label="글 종류">
+              <div class="ask-kind" role="radiogroup" aria-label="메시지 종류">
                 <label><input type="radio" name="ask" value="query" checked> 질의</label>
                 <label><input type="radio" name="ask" value="request"> 요청</label>
               </div>
               <span id="mention_hint" class="hint kbd-hint" hidden>@ 로 상대 에이전트 부르기</span>
-              <span id="ask_hint" class="hint" hidden>실행 없이 상대 요청 목록에 등록 — 상대가 수용 · 반려합니다</span>
-              <span class="hint mono kbd-hint">Enter 보내기 · Shift+Enter 줄바꿈</span>
+              <span id="ask_hint" class="hint" hidden>실행하지 않고 상대의 요청 목록에 올립니다</span>
+              <span class="hint kbd-hint"><kbd>Enter</kbd> 보내기 · <kbd>Shift+Enter</kbd> 줄바꿈</span>
               <button type="submit" class="primary">보내기</button>
             </div>
           </form>
@@ -255,7 +252,7 @@
         <dialog id="scope_dialog" aria-labelledby="scope_title">
           <form method="dialog">
             <p id="scope_title"></p>
-            <p class="hint">어디에 반영할까요? 에이전트는 다시 실행하지 않고, 이미 실행에 쓰인 내용은 에이전트 기억에 남습니다.</p>
+            <p class="hint">어디에 반영할까요? 이미 실행한 내용은 에이전트 기억에 남습니다.</p>
             <div class="actions">
               <button value="mine">내 창에서만</button>
               <button value="both">상대 창에도</button>
@@ -273,15 +270,15 @@
           <select id="chat_peer"></select>
           <label for="chat_agent">상대 에이전트</label>
           <select id="chat_agent"></select>
-          <label for="chat_relay_agent">내 에이전트로 자동 왕복</label>
-          <select id="chat_relay_agent"><option value="">안 함 — 상대 에이전트에게만</option></select>
+          <label for="chat_relay_agent">자동 왕복</label>
+          <select id="chat_relay_agent"><option value="">안 함</option></select>
           <label for="chat_relay_cap">자동 왕복 상한</label>
           <input id="chat_relay_cap" type="number" min="1" max="50" value="10">
           <label for="chat_title">제목</label>
-          <input id="chat_title" maxlength="100" placeholder="비우면 첫 메시지 앞부분 — 이 PC 에만 보입니다" autocomplete="off">
+          <input id="chat_title" maxlength="100" placeholder="비우면 첫 메시지 앞부분" autocomplete="off">
           <label for="chat_text">메시지</label>
-          <div class="field"><textarea id="chat_text" rows="4" placeholder="markdown 가능 — 상대 에이전트가 실행합니다"></textarea></div>
-          <span id="chat_ask_label" class="label">글 종류</span>
+          <div class="field"><textarea id="chat_text" rows="4" placeholder="메시지 입력"></textarea></div>
+          <span id="chat_ask_label" class="label">메시지 종류</span>
           <div class="ask-kind" role="radiogroup" aria-labelledby="chat_ask_label">
             <label><input type="radio" name="ask" value="query" checked> 질의</label>
             <label><input type="radio" name="ask" value="request"> 요청</label>
@@ -295,7 +292,7 @@
         <nav id="settings_tree" aria-label="설정 항목"></nav>
         <div class="settings-body">
           <section id="conn" class="card">
-            <h2>페어링<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_conn">?</button><span id="tip_conn" class="tip" role="tooltip">한쪽이 초대를 만들어 보내고, 받은 쪽이 붙여 넣으면 연결됩니다. "초대 생성" 을 누르면 초대 메시지가 나옵니다 — "초대 복사" 후 상대에게 보내세요. 5분 동안 그 초대로 들어온 요청 1건을 승인 없이 바로 등록하고 알립니다. 모르는 연결이면 연결 목록에서 삭제하세요.</span></span></h2>
+            <h2>페어링<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_conn">?</button><span id="tip_conn" class="tip" role="tooltip">초대를 만들어 보내면 상대가 붙여 넣어 연결합니다. 5분 안에 들어온 첫 요청 1건은 승인 없이 등록되니 모르는 연결은 연결 목록에서 지우세요.</span></span></h2>
             <div class="pair-btns">
               <button type="button" id="window_btn" class="primary big"><span class="ico ico-plus" aria-hidden="true"></span>초대 생성</button>
               <button type="button" id="accept_btn" class="primary big" aria-expanded="false" aria-controls="invite_accept"><span class="ico ico-enter" aria-hidden="true"></span>초대 수락</button>
@@ -308,9 +305,9 @@
             </section>
             <section id="invite_accept" class="sub" hidden>
               <form id="invite_form" class="stack">
-                <span class="label-row"><label for="invite_text">초대 수락</label><span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_accept">?</button><span id="tip_accept" class="tip" role="tooltip">'초대 생성' 에서 만든 초대 메시지를 통째로 붙여 넣으세요 — 초대의 지문과 맞는 상대에게만 연결합니다.</span></span></span>
-                <textarea id="invite_text" rows="3" placeholder="'초대 생성' 에서 만든 초대 메시지를 통째로 붙여 넣으세요"></textarea>
-                <p><button type="submit" class="primary">추가 · 승인</button></p>
+                <span class="label-row"><label for="invite_text">초대 수락</label><span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_accept">?</button><span id="tip_accept" class="tip" role="tooltip">받은 초대를 통째로 붙여 넣으세요. 지문이 맞는 상대에게만 연결합니다.</span></span></span>
+                <textarea id="invite_text" rows="3" placeholder="받은 초대를 붙여 넣으세요"></textarea>
+                <p><button type="submit" class="primary">수락</button></p>
               </form>
             </section>
             <p id="invite_msg" role="status"></p>
@@ -318,7 +315,7 @@
 
           <section id="peers" class="card">
             <div class="sub-head">
-              <h2>연결 목록<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_peers">?</button><span id="tip_peers" class="tip" role="tooltip">끌어서 다른 그룹으로 옮기거나 '그룹 ▾' 로 넣고 뺍니다 — 바꾼 그룹은 레일 그룹 타일에 바로 반영됩니다. 처음 잇는 상대라면 상대 화면의 "프로필 → 사용자 정보 → 지문" 과 같은지 전화 · 대면으로 확인하세요.</span></span></h2>
+              <h2>연결 목록<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_peers">?</button><span id="tip_peers" class="tip" role="tooltip">처음 연결한 상대는 지문이 상대 화면(프로필 → 사용자 정보)과 같은지 전화나 대면으로 확인하세요.</span></span></h2>
               <label for="peer_q" class="sr-only">연결 검색</label>
               <input id="peer_q" type="search" placeholder="이름 · PC · 지문">
               <button type="button" id="peer_group_add">+ 그룹 추가</button>
@@ -329,7 +326,7 @@
 
           <section id="agents" class="card">
             <div class="sub-head">
-              <h2>내 에이전트<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_agents">?</button><span id="tip_agents" class="tip" role="tooltip">페어링된 상대가 부를 수 있는 이 PC 의 Claude 프로필입니다. 폴더 안에서 문의에 답만 합니다 — 파일 수정 · 삭제 · 명령 실행은 하지 않습니다. 도구는 읽기 전용(Read · Grep · Glob · LS · NotebookRead) 안에서만 고릅니다. 이름은 상대 PC 가 부르는 이름이라 바꿀 수 없습니다.</span></span></h2>
+              <h2>내 에이전트<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_agents">?</button><span id="tip_agents" class="tip" role="tooltip">상대가 부를 수 있는 이 PC 의 Claude 프로필입니다. 폴더 안 파일을 읽기만 하고 답합니다(수정 · 삭제 · 명령 실행 없음).</span></span></h2>
               <button type="button" id="agent_new_btn" class="primary" aria-expanded="false" aria-controls="agent_new">에이전트 등록</button>
             </div>
             <p id="agent_msg" role="status"></p>
@@ -337,7 +334,7 @@
             <div id="agent_new" class="new-agent" hidden>
               <form id="agent_form" class="grid">
                 <label for="agent_name">이름</label>
-                <input id="agent_name" required maxlength="64" placeholder="review">
+                <input id="agent_name" required maxlength="64" placeholder="review" title="등록한 뒤에는 이름을 바꿀 수 없습니다">
                 <label for="agent_folder">폴더(절대 경로)</label>
                 <input id="agent_folder" required placeholder="D:\work\project">
                 <span class="label">도구</span>
@@ -350,21 +347,21 @@
           </section>
 
           <section id="run" class="card">
-            <h2>실행 — 모델 · effort<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_run">?</button><span id="tip_run" class="tip" role="tooltip">받은 요청 실행(<span class="mono">claude -p</span>)의 기본값입니다. 상대별로 덮어쓰려면 연결 목록에서 그 상대를 펼치세요. 동시 실행 상한(1 ~ 8, 이 PC)을 넘는 요청은 거절하지 않고 닿은 순서로 기다립니다. 자동 압축 — 이 PC 에서 돈 대화 세션이 컨텍스트 80%(800k / 1M)를 넘으면 그 에이전트가 대화를 요약하고 다음 글부터 새 세션으로 이어 갑니다(이 PC 의 Claude 사용량을 씁니다).</span></span></h2>
+            <h2>실행<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_run">?</button><span id="tip_run" class="tip" role="tooltip">받은 요청을 실행할 때의 기본값입니다. 상대별 값은 연결 목록에서 바꿉니다.</span></span></h2>
             <div class="form-grid">
               <label for="claude_model">모델</label>
               <select id="claude_model"></select>
               <label for="claude_effort">effort</label>
               <select id="claude_effort"></select>
               <label for="max_runs">동시 실행 상한</label>
-              <input type="number" id="max_runs" min="1" max="8">
-              <label for="auto_compact">자동 압축 — 컨텍스트 80% 넘으면</label>
-              <input type="checkbox" id="auto_compact">
+              <input type="number" id="max_runs" min="1" max="8" title="넘는 요청은 닿은 순서로 기다립니다">
+              <label for="auto_compact">자동 압축</label>
+              <input type="checkbox" id="auto_compact" title="컨텍스트가 80% 를 넘으면 대화를 요약해 새 세션으로 이어 갑니다(이 PC 의 Claude 사용량을 씁니다)">
             </div>
           </section>
 
           <section id="screen" class="card">
-            <h2>화면 — 테마 · 타일 순서</h2>
+            <h2>화면</h2>
             <div class="form-grid">
               <label for="ui_theme">테마</label>
               <select id="ui_theme">
@@ -380,7 +377,7 @@
           </section>
 
           <section id="startup" class="card">
-            <h2>시작 — 자동 실행<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_startup">?</button><span id="tip_startup" class="tip" role="tooltip">끄면 다음 로그인부터 자동으로 켜지지 않습니다. 비정상 종료되면 자동으로 다시 실행합니다.</span></span></h2>
+            <h2>시작<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_startup">?</button><span id="tip_startup" class="tip" role="tooltip">로그인할 때 켜고, 비정상 종료되면 다시 실행합니다.</span></span></h2>
             <div class="form-grid">
               <label for="autostart">로그인할 때 자동 실행</label>
               <input type="checkbox" id="autostart">
@@ -388,25 +385,25 @@
           </section>
 
           <section id="notify" class="card">
-            <h2>알림<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_notify">?</button><span id="tip_notify" class="tip" role="tooltip">페어링 · 새 연결 등록 · 받은 메시지를 이 탭이 열려 있으면 브라우저 알림으로, 탭과 무관하게 트레이 아이콘의 주황 점으로 알립니다. 알림 표시 · 억제(집중 지원 · 방해 금지)는 OS 설정을 따릅니다. 잠시 멈추려면 상단 바 프로필의 '알림 일시 중지'.</span></span></h2>
+            <h2>알림<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_notify">?</button><span id="tip_notify" class="tip" role="tooltip">탭이 열려 있으면 브라우저 알림으로, 아니면 트레이 아이콘의 주황 점으로 알립니다.</span></span></h2>
             <div class="form-grid">
-              <label for="notify_inbound">인바운드 요청 알림(브라우저 알림 · 트레이 표시)</label>
+              <label for="notify_inbound">알림 받기</label>
               <input type="checkbox" id="notify_inbound">
-              <label for="notify_pair">페어링 요청 · 승인 · 새 연결 등록</label>
+              <label for="notify_pair">페어링</label>
               <input type="checkbox" id="notify_pair">
-              <label for="notify_request">받은 요청(상대 사람 글)</label>
+              <label for="notify_request">받은 요청</label>
               <input type="checkbox" id="notify_request">
               <label for="notify_reply">받은 답</label>
               <input type="checkbox" id="notify_reply">
               <label for="notify_relay">자동 왕복</label>
               <select id="notify_relay">
-                <option value="start_end">시작 · 끝만</option>
-                <option value="every">글마다</option>
+                <option value="start_end">시작과 끝</option>
+                <option value="every">메시지마다</option>
                 <option value="off">알리지 않음</option>
               </select>
-              <label for="notify_preview">알림에 글 앞부분 보이기</label>
+              <label for="notify_preview">알림에 미리보기 보이기</label>
               <input type="checkbox" id="notify_preview">
-              <label for="relay_cap_default">대화 턴에 대한 상한 기본값</label>
+              <label for="relay_cap_default">자동 왕복 기본 상한</label>
               <input id="relay_cap_default" type="number" min="1" max="50" title="왕복 1 ~ 50">
             </div>
           </section>
@@ -437,16 +434,16 @@
       <p id="status_msg" role="status"></p>
     </main>
 
-    <aside id="detail" aria-label="실행 상세" hidden>
+    <aside id="detail" aria-label="세부정보" hidden>
       <header class="detail-head">
-        <h2>실행 상세</h2>
+        <h2>세부정보</h2>
         <button type="button" id="detail_close" class="icon-btn" title="닫기" aria-label="닫기">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg>
         </button>
       </header>
       <div class="detail-body">
         <section class="detail-sec">
-          <h3 id="detail_runs_title">이 PC 실행</h3>
+          <h3>이 PC 실행 <span id="detail_runs_n" class="stat"></span></h3>
           <ol id="detail_runs" class="saved-list"></ol>
         </section>
         <section class="detail-sec">
@@ -485,7 +482,7 @@
           <ol id="detail_req" class="saved-list"></ol>
         </section>
         <section id="detail_saved_sec" class="detail-sec">
-          <h3>북마크 항목 <span id="detail_saved_n" class="count"></span></h3>
+          <h3>북마크 <span id="detail_saved_n" class="count"></span></h3>
           <ol id="detail_saved" class="saved-list"></ol>
         </section>
       </div>

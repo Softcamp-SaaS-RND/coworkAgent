@@ -1,4 +1,4 @@
-"""DDD 문서 규약 conformance 체커 (docs/etc/ddd-workflow.md "문서 체계" 절).
+"""DDD 문서 규약 conformance 체커 (docs/etc/doc-conventions.md "문서 체계" 절).
 
 빌드·테스트 green 과 **별개로** 문서 규약을 기계적으로 검증한다. 매 커밋 전과 문서
 이동·이름 변경 후에 돌린다. 실행형은 루트 PROJECT.md "검증 명령" 표.
@@ -122,7 +122,7 @@ TASK_STATES = {"tasks": "⏳", "archive": "✅", "discard": "⛔"}
 #: plan 개정 줄의 미승인 표기 — 종결 Task 에 남아 있으면 FAIL (eval-protocol 규약 3).
 UNAPPROVED_MARK = "사용자 미승인"
 
-# docs/etc/ddd-workflow.md "루트 3문서 계약" 의 PROJECT.md 표와 **같은 값**(바꾸려면 표와 동시 개정).
+# docs/etc/doc-conventions.md "루트 3문서 계약" 의 PROJECT.md 표와 **같은 값**(바꾸려면 표와 동시 개정).
 # 🔴 **일하는 방식**만 여기 — 제품 구조는 PRODUCT.md, 진행 현황·미조치는 STATE.md 가 갖는다.
 PROJECT_MD_SECTIONS = (
     "치명 가드레일",
@@ -131,7 +131,7 @@ PROJECT_MD_SECTIONS = (
     "검증 명령",
     "참조 문서",
 )
-# docs/etc/ddd-workflow.md "루트 3문서 계약" 의 PRODUCT.md 표와 **같은 값**.
+# docs/etc/doc-conventions.md "루트 3문서 계약" 의 PRODUCT.md 표와 **같은 값**.
 # 제품 문서에 프로세스(도구 전제·브랜치·Task 현황)를 섞지 않는다.
 PRODUCT_MD_SECTIONS = (
     "제품 개요",
@@ -173,7 +173,7 @@ STATE_MD_SECTIONS = (
     "다음 행동",
 )
 
-# 치명 가드레일 계약 — **정확값**. ddd-workflow.md 계약 표 1행("3~7줄")을 프로젝트 확정 개수로 못박는다.
+# 치명 가드레일 계약 — **정확값**. doc-conventions.md PROJECT 계약 표 1행("3~7줄")을 프로젝트 확정 개수로 못박는다.
 # 개수만 세면 5줄을 아무 내용으로나 바꿔치기할 수 있으므로 **각 줄의 키워드**까지 동결한다.
 # **부트스트랩 시 이 프로젝트의 가드레일로 작성한다** — n행 = GUARDRAIL_KEYWORDS[n-1].
 # 비어 있으면 FAIL 한다(자리별 검사가 조용히 사라지는 것을 막는다).
@@ -827,7 +827,7 @@ def _ledger_problems() -> list[str]:
     ledger = REPO / LEDGER_DOC
     if not ledger.is_file():
         return [f"{LEDGER_DOC} 가 없다 — 적대적 평가 미조치·반박·조건부의 단일 추적처가 필수다 "
-                "(ddd-workflow.md '미조치 원장')"]
+                "(doc-conventions.md '미조치 원장')"]
     text = ledger.read_text(encoding="utf-8")
     if section_body(text, LEDGER_HEADING) is None:
         return [f"{LEDGER_DOC}: '{LEDGER_HEADING}' 절 없음 — 표의 자리가 고정이어야 기계가 센다"]
@@ -848,9 +848,9 @@ def _product_md_problems() -> list[str]:
     product = REPO / "PRODUCT.md"
     if not product.is_file():
         return ["루트 PRODUCT.md 가 없다 — 제품 구조·규칙·설계의 단일 위치가 필수다 "
-                "(ddd-workflow.md 'PRODUCT.md — 필수 6절')"]
+                "(doc-conventions.md 'PRODUCT.md — 필수 6절')"]
     return _required_sections("PRODUCT.md", product.read_text(encoding="utf-8"),
-                              PRODUCT_MD_SECTIONS, "ddd-workflow.md 'PRODUCT.md — 필수 6절'")
+                              PRODUCT_MD_SECTIONS, "doc-conventions.md 'PRODUCT.md — 필수 6절'")
 
 
 def _project_md_problems() -> list[str]:
@@ -858,11 +858,11 @@ def _project_md_problems() -> list[str]:
     project = REPO / "PROJECT.md"
     if not project.is_file():
         return ["루트 PROJECT.md 가 없다 — 가드레일 · 개발 환경 · 검증의 단일 위치가 필수다 "
-                "(ddd-workflow.md 'PROJECT.md — 필수 5절')"]
+                "(doc-conventions.md 'PROJECT.md — 필수 5절')"]
 
     text = project.read_text(encoding="utf-8")
     found = _required_sections("PROJECT.md", text, PROJECT_MD_SECTIONS,
-                               "ddd-workflow.md 'PROJECT.md — 필수 5절'")
+                               "doc-conventions.md 'PROJECT.md — 필수 5절'")
     sections = _sections(text)
     if sections and not _heading_matches(sections[0][0], "치명 가드레일"):
         found.append(

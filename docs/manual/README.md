@@ -4,8 +4,7 @@
 > 매뉴얼을 추가·이동하면 **아래 표를 함께 고친다.** 등록·갱신 시점은 Task 종결
 > ([etc/ddd-workflow.md](../etc/ddd-workflow.md) "개발 Flow" 6).
 
-**먼저 읽는다**: 루트 `PROJECT.md`(가드레일·검증 명령) · `PRODUCT.md`(모듈 구조) →
-[etc/ddd-workflow.md](../etc/ddd-workflow.md)(DDD 절차).
+**먼저 읽는다**: 매 세션 필독은 루트 `CLAUDE.md` 가 정한다. 코드를 고치기 전에는 루트 `PRODUCT.md` 의 손댈 절 → 아래 매뉴얼의 그 절만.
 
 | 나는 … | 폴더 | 무엇이 있나 |
 | --- | --- | --- |
@@ -34,6 +33,8 @@
 - [dev/an_app.md](dev/an_app.md) — app: 로컬 웹UI 서버 · 핸드오프 · 트레이 · 브라우저 · 에이전트 · 대화 API · AI 에이전트용 CLI · 시작 순서
 - [dev/developer-guide.md](dev/developer-guide.md) — 절차·운영(모듈 매뉴얼 형식의 예외): 빌드 · 개발 검증 · 통신 구성 · 피어 프로토콜 · 생성되는
   프로세스 · 서비스 역할 · `claude -p` 세션 관리 · 보내기 보관 · 저장소(코드 · 데이터 · Claude Code 기록) · 워크플로우 — 모듈을 가로지른 실행 구조
+- [dev/web-ui.md](dev/web-ui.md) — 화면 규칙(모듈 매뉴얼 형식의 예외): 5영역 구조 · 메신저형 말풍선 · 설정 · 레일 그룹 화면 · 공유 대화 화면 · 컨텍스트 ·
+  접속 표시 · 알림 · 디자인 토큰 · 문구 규칙 · 용어 표 — `crates/app/web/` 을 고칠 때만
 
 ## user/ — 돌려 쓰는 사람
 

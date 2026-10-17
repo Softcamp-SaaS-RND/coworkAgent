@@ -2,7 +2,7 @@
 //! 원격에서 온 것은 신뢰하지 않는 입력: 페어링 확인은 `Node`, 에이전트 이름 · 본문 크기 · 대화 소유는 여기서 본다.
 use crate::runner::{RunInput, RunOutput, SUMMARY_PROMPT, Session, StepSink};
 use an_core::chat::{self, Author, Conversation, Dir, Message, ReqState, State};
-use an_core::db::Connection;
+use an_core::db::{Connection, db_err};
 use an_core::peers::Peer;
 use an_core::{agents, cli_tx, outbox, share};
 use an_net::node::{MessageKind, Node, PeerEvent};
@@ -197,10 +197,6 @@ pub struct Chat {
     watching: Mutex<std::collections::HashSet<i64>>,
     /// 줄 작업을 띄울 때 쓰는 자기 참조.
     me: Weak<Chat>,
-}
-
-fn db_err(e: an_core::db::Error) -> io::Error {
-    io::Error::other(e)
 }
 
 /// UUID v4 문자열 — `claude --session-id` 는 유효한 UUID 만 받는다.
