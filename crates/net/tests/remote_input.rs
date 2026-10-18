@@ -29,6 +29,7 @@ async fn hello_from(from: &str, to: SocketAddr, code: &str) -> Response {
 const WRONG: &str = "AAAA-AAAA";
 
 #[tokio::test]
+#[cfg_attr(not(windows), ignore = "macOS 루프백은 127.0.0.1 만 — 다른 출처 IP 를 못 만든다")]
 async fn invite_guesses_capped_per_ip() {
     let b = common::start("ri-cap").await;
     let code = b.open().unwrap();
@@ -47,6 +48,7 @@ async fn invite_guesses_capped_per_ip() {
 }
 
 #[tokio::test]
+#[cfg_attr(not(windows), ignore = "macOS 루프백은 127.0.0.1 만 — 다른 출처 IP 를 못 만든다")]
 async fn nine_wrong_then_right_pairs() {
     let b = common::start("ri-nine").await;
     let code = b.open().unwrap();
@@ -64,6 +66,7 @@ async fn nine_wrong_then_right_pairs() {
 }
 
 #[tokio::test]
+#[cfg_attr(not(windows), ignore = "macOS 루프백은 127.0.0.1 만 — 다른 출처 IP 를 못 만든다")]
 async fn capped_ip_does_not_block_others() {
     let b = common::start("ri-other-b").await;
     let code = b.open();
@@ -76,6 +79,7 @@ async fn capped_ip_does_not_block_others() {
 }
 
 #[tokio::test]
+#[cfg_attr(not(windows), ignore = "macOS 루프백은 127.0.0.1 만 — 다른 출처 IP 를 못 만든다")]
 async fn new_window_resets_count() {
     let b = common::start("ri-reset").await;
     b.open();

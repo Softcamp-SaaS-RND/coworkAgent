@@ -595,6 +595,9 @@ async fn removed_mid_flight_not_delivered() {
         )
         .unwrap();
     readdr(&t.a, t.c_id, &was);
+    // 실제 `backoff` 는 줄 작업 안에서 돌아 줄이 이어 간다 — DB 로만 되살린 행은 줄을 깨운다. 닫힌 포트가 바로 거절되는 OS(macOS)에서는
+    // 줄이 `inflight` 앞에서 이미 잠들어 있다.
+    t.a.chat.recover().unwrap();
     let copy = copy_of(&t.c, &conv.uuid).unwrap();
     common::eventually(|| {
         share::copy(&common::db(&t.c), copy.id)

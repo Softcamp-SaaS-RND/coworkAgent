@@ -60,12 +60,18 @@ cargo build --release -p coworkagent-app   # target\release\coworkAgent.exe — 
 .\target\release\coworkAgent.exe           # 트레이에 상주 — 창은 뜨지 않는다(트레이 "열기" → 기본 브라우저에 웹UI)
 cargo run -p coworkagent-app               # 디버그 빌드 — 콘솔 창이 남는다(로그는 똑같이 파일로)
 python tools/rebuild_run.py                # 떠 있는 앱 강제 종료 → 위 릴리스 빌드 → 실행(빌드 실패면 꺼진 채)
+python tools/rebuild_run.py --yes          # 빌드 도구(Rust · C 컴파일러)가 없으면 묻지 않고 설치한 뒤 위와 같이
 ```
 
 - 이미 떠 있을 때 다시 실행하면 웹UI 만 열린다(보조 실행 — 3.1). 데이터는 `%LOCALAPPDATA%\coworkAgent\`(7.1).
 - `tools/rebuild_run.py` 는 실행 파일 잠금 때문에 앱을 끄고 빌드한다 — 실행 중이던 요청은 다음 시작 때 실패 답이 되고, 빌드가 실패하면 앱은 꺼진 채로
   남는다. 앱은 탐색기로 띄워 부른 셸의 환경 변수가 앱 · `claude -p` 로 새지 않는다(Claude Code 세션 환경에는 `CLAUDE_CODE_MESSAGING_TOKEN` ·
   `CLAUDE_EFFORT` 등이 있다 — 세션에서 `Start-Process` 로 띄우면 그대로 물려간다).
+- macOS 도 같은 명령이다 — `target/release/coworkAgent`(이 PC 아키텍처 하나, universal 은 Phase 4). 종료는 `SIGKILL`(앱이 띄운 `claude -p` 프로세스 그룹
+  먼저), 실행은 로그인 기본 변수(`HOME` · `PATH` · `LANG` 등 — 스크립트 `KEEP_ENV`)만 남긴 새 세션이라 세션 변수가 새지 않는다.
+- 빌드 도구가 빠졌으면 먼저 설치한다(앱은 끄지 않은 채) — Rust stable 1.85 이상(rustup, `~/.cargo/bin`) · C 컴파일러 · 링커(`ring` · rusqlite
+  `bundled`): Windows 는 winget 으로 Visual Studio 2022 Build Tools(C++ — 관리자 승인 창), macOS 는 Xcode Command Line Tools(`xcode-select --install`
+  창). 터미널이면 묻고, 터미널이 아닌 곳(Claude Code 세션)은 `--yes` 일 때만 설치한다. crate 는 cargo 가 받는다.
 - 버전은 `crates/*/Cargo.toml` 의 `version` 하나 — 화면 상태(`/api/status`)와 실행 파일 속성(파일 · 제품 버전)이 같은 값이다. `crates/app/build.rs` 가
   빌드 때 아이콘 · 버전 리소스를 만들어 넣는다.
 

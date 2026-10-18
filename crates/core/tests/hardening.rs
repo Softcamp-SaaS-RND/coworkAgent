@@ -1,6 +1,8 @@
 //! 데이터 루트 소유자 전용 권한 · 오염된 잠금(1a A1 · A14).
 use an_core::{owner_only, sync};
-use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 fn temp_root(name: &str) -> PathBuf {

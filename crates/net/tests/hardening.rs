@@ -69,6 +69,7 @@ async fn stale_approve_rejected() {
 }
 
 #[tokio::test]
+#[cfg_attr(not(windows), ignore = "macOS 루프백은 127.0.0.1 만 — 다른 출처 IP 를 못 만든다")]
 async fn slow_clients_do_not_block_others() {
     let b = common::start("h-slow-b").await;
     // 다른 출처(127.0.0.2)에서 인증 없이 붙잡고만 있는 연결 — 전체 자리보다 많이.

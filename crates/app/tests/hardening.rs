@@ -32,7 +32,8 @@ fn folder_blocks_data_root_inside_and_ancestor() {
         &base,
         &[base.join("agentNetwork")]
     ));
-    // 네트워크 경로(관리 공유로 로컬을 가리켜도)는 정규화가 로컬과 맞지 않아 통째로 거부.
+    // 네트워크 경로(관리 공유로 로컬을 가리켜도)는 정규화가 로컬과 맞지 않아 통째로 거부. UNC 는 Windows 경로 — macOS 에서는 보통 파일 이름이다.
+    #[cfg(windows)]
     for unc in [r"\\localhost\C$\Users", r"\\?\UNC\server\share\x"] {
         assert_eq!(
             an_core::paths::agent_folder_problem(std::path::Path::new(unc)),
