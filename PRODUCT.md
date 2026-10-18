@@ -118,6 +118,10 @@
 - **AI 에이전트용 CLI**(D14 보강 · #15 `say` 삭제): `coworkAgent peers` · `ask` · `history` — 떠 있는 주 인스턴스의 로컬 API 를 `instance.json` 토큰으로
   부른다(웹UI 와 같은 신뢰 경계, 앱을 띄우지 않는다). 종료 코드 · 트랜잭션(`cli_tx`)은 개발자 가이드 8.7.
 - **부모 도구 메뉴**(#1n · D14 보강): `coworkAgent start` · `open` · `stop` — 어떤 실행 경로로도 앱 · 감시는 하나, 트레이는 많아야 하나 — 개발자 가이드 8.10.
+- **CLI 도움말**(#1q · D14 보강): `coworkAgent /?`(`-h` · `--help`, 첫 인자만) — 앱 없이 명령 · 출력 형식 · 종료 코드를 표준 출력 · 0, 다른 AI 도구 연동용(README).
+- **내 활동 범위**(#1q · D35): 받은 요청 · 내 요청(상대가 상태를 바꾸면 `relay_events.kind = req_state` 로 안 본 것) · 받은 답 · 실패만 — 화면 규칙은 [web-ui](docs/manual/dev/web-ui.md).
+- **웹UI 다듬기**(#1r · S4 · D35): 새 대화 "내 응답 에이전트"(= 자동 왕복 상대 에이전트, `relay_agent`) + 하위 줄 "최대 응답 횟수"(`relay_cap`) · 메뉴 아이콘 상시 ·
+  연필 통일 · `.peer-fold` 단계 들여쓰기 · 설정 "초대 생성" 메뉴 = 초대 만들기(`press`, 한 번에 하나) · 초대 수락 칸은 라우터가 여닫음 — API 변경 없음, [web-ui](docs/manual/dev/web-ui.md).
 
 ### 저장
 

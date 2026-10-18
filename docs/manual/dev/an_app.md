@@ -53,7 +53,7 @@
   #1d: `PATCH /api/messages/{id} {saved?, req_state?, note?}`(하나 이상 — 없으면 400, `req_state` = `accepted` · `rejected` · `done` 받은 요청만 ·
   `note` 는 `req_state` 와 함께만, 둘 다면 한 트랜잭션, 응답은 준 항목만 `{id, saved?, req_state?, req_note?, warning?}`) · 메시지 JSON 에
   `req_state` · `req_note` · `req_at` · `GET /api/messages` 의 `req=wait|accepted|rejected|done`(`ask=request` 와 함께만) · `GET /api/activity` 종류는
-  `all` · `human` · `agent` · `relay` · `failed` 만 · 요청 · 멘션 · CLI 함께면 400 · 모델은 `opus` · `sonnet` · `haiku` 만(설정 · 상대별).
+  `all` · `human` · `agent` · `relay` · `failed` 만(#1q 에서 바뀜 — 아래) · 요청 · 멘션 · CLI 함께면 400 · 모델은 `opus` · `sonnet` · `haiku` 만(설정 · 상대별).
   #1f: `PATCH /api/messages/{id} {text, mirror?}`(끝난 내 사람 글만 — 그 밖 400, `text` 는 다른 항목과 함께 못 씀 · `mirror` 는 `text` 와 함께만 →
   `{id, text, edited_at, warning?}`) · `POST /api/messages/delete {ids, mirror?}`(1 ~ 200개 · 한 대화 · 하나라도 안 되면 아무것도 안 지움 →
   `{deleted, warning?}`) · 대화 글 JSON 에 `editable`(`Chat::tidy_ok`) · 메시지 JSON 에 `edited_at` · 내 활동 항목 `kind = sync_failed`(`detail` = 사유).
@@ -66,6 +66,13 @@
   400), 새 대화 본문 `group?`(없는 그룹 404 — 보내지 않음, 소속은 대화와 같은 트랜잭션), 대화 요약 JSON 에 `pos`, `GET /api/peers` 순서 = 자리.
   거절(`focus` 등)은 403 + 글 `refused`. CLI `ask --conv N --agent X` — X 가 대화 에이전트가 아니면 멘션(자동 왕복 대화는 오류, 상대 PC 목록에 없으면
   사용법 오류), `history` 발화자 = 실행한 에이전트.
+  #1q: `GET /api/activity?kind=all|request|mine|answer|failed`(받은 요청 · 내 요청 · 받은 답 · 실패, 옛 `human` · `agent` · `relay` 는 400) — 항목 `kind` =
+  `message`(받은 요청 · 받은 답) · `my_request`(시각 = 마지막 상태 바뀐 때, 안 본 = 받은 상태 알림 기록 `relay_events.kind = req_state`) · `failed` · `sync_failed`,
+  자동 왕복 시작 · 끝과 상대 사람 일반 메시지는 목록 · 안 본 수에 없다(`core::chat::activity` · `activity_unseen` · `note_req_state`). `GET /api/messages?side=both
+  &peer=|group=&before=&before_at=&limit=`(양쪽 글 · `(created_at, id)` 최신순 · 받은 마지막 글의 id · 시각 복합 커서 — 둘 다 주거나 둘 다 빼고, `kind` · `ask` · `req` · `q` 와 함께면 400 · 커서는 `both` 만) · `GET /api/messages/peers
+  ?peer=|group=` → `[{peer, count, last}]`(주고받은 메시지 상대별 요약, context 글 제외). `GET /api/messages/req_counts?side=theirs|mine&peer=|group=` →
+  `{wait, accepted, rejected, done, total}`(요청 개요 머리 — 범위 전체, 목록 상한과 무관 · `core::chat::req_counts`). 요청 화면 상태 거르기는 서버(`req=`). CLI `coworkAgent /?` · `-h` · `--help`(첫 인자) → 표준 출력에 `cli::help()`
+  (소개 + `USAGE` + 출력 형식 · 종료 코드 · 연동 예) · 0, 앱 불필요.
 - guard 순서(#1a): Host(`127.0.0.1:{port}`) 403 → Origin(있으면 일치) 403 → 정적 자산(`server::PUBLIC` GET — 토큰 없이, 진입 `/?t=` 는 틀리면
   401) → `Authorization: Bearer` 만(쿠키 읽지 않음 · `/api/events` 만 `?t=` 도) 401. 모든 응답(401 · 403 포함)에 `server::CSP` · `X-Frame-Options:
   DENY` · `X-Content-Type-Options: nosniff` · `Referrer-Policy: no-referrer`, `GET /` 는 `Cache-Control: no-store`. 웹UI 는 `view::entryToken` 으로

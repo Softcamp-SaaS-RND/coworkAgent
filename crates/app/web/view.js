@@ -311,6 +311,7 @@ export class Latest {
 // ---- 설정 트리 ----
 
 /// 설정 화면 왼쪽 트리 — 항목 `id` = 그 절의 요소 id(누르면 그 절로), `icon` = `.ico-{이름}`(#1l). 내 정보는 프로필 메뉴 "사용자 정보" 팝업(#1l).
+/// `press` = 누르면 그 절로 간 뒤 함께 누를 단추 id(#1r — "초대 생성" 은 초대를 만든다, 해시로 다시 올 때는 누르지 않는다).
 export function settingsTree() {
   return [
     {
@@ -318,7 +319,7 @@ export function settingsTree() {
       label: "연결",
       icon: "link",
       children: [
-        { id: "invite_make", label: "초대 생성", icon: "plus" },
+        { id: "invite_make", label: "초대 생성", icon: "plus", press: "window_btn" },
         { id: "invite_accept", label: "초대 수락", icon: "enter" },
         { id: "peers", label: "연결 목록", icon: "users" },
       ],
@@ -399,6 +400,7 @@ export function inboxRows(messages, peerNames, { kind = "" } = {}) {
         // 어느 에이전트와의 대화인지(#1k — 주고받은 글 칩): 보낸 대화 = 상대 에이전트, 받은 대화 = 내 에이전트.
         agent: conv.dir === "in" ? `내 ${conv.agent}` : conv.agent,
         kind: askTag(m),
+        saved: m.saved === true,
         room: conv.title || "",
         preview: preview(m.text),
         at: m.created_at,
@@ -408,9 +410,55 @@ export function inboxRows(messages, peerNames, { kind = "" } = {}) {
     });
 }
 
-/// 레일 상대 = 그 상대와 주고받은 글 — 상대 쪽(`theirs`) · 내 쪽(`mine`) 두 목록을 최신순(같은 시각이면 id 큰 것 먼저)으로 합쳐 `limit` 건.
-export function peerMessages(theirs, mine, limit = 200) {
-  return [...theirs, ...mine].sort((a, b) => b.created_at - a.created_at || b.id - a.id).slice(0, limit);
+/// 주고받은 메시지 한 번에 받는 건수(#1q).
+export const PEER_PAGE = 20;
+
+/// 주고받은 메시지 상대 절 머리(#1q, `GET /api/messages/peers`) — 레일 순서(`paired`), 그 밖(페어링 풀린 상대)은 id 순으로 뒤. 이름 · 건수 · 마지막 메시지
+/// 한 줄 · 시각.
+export function peerSummaryRows(items, paired, peerNames) {
+  const rank = (id) => (paired.includes(id) ? paired.indexOf(id) : paired.length + id);
+  return [...items]
+    .sort((a, b) => rank(a.peer) - rank(b.peer))
+    .map((x) => ({ peer: x.peer, name: shortName(peerNames.get(x.peer)), count: `${x.count}건`, total: x.count, last: preview(x.last?.text), at: x.last?.created_at ?? 0 }));
+}
+
+/// 주고받은 메시지 다시 그리기 서명(#1q 적대적 평가 R1) — 행에 보이는 값 전부(본문 · 요청 상태 · 메모 · 편집 · 상태 · 북마크 · 대화 제목 · 에이전트).
+export function peerMsgsSig(heads, pages) {
+  const msg = (m) => [
+    m.id,
+    m.text,
+    m.saved,
+    m.req_state,
+    m.req_note,
+    m.edited_at,
+    m.state,
+    m.created_at,
+    // 발화자 표시(`authorLabel`)가 기대는 값 — 공유 사본은 같은 글의 이것만 바뀔 수 있다(R2).
+    m.author,
+    m.mine,
+    m.via,
+    m.agent,
+    m.owner,
+    m.conversation?.title,
+    m.conversation?.agent,
+    m.conversation?.dir,
+  ];
+  return JSON.stringify([heads, heads.map((h) => (pages.get(h.peer) ?? []).map(msg))]);
+}
+
+/// 펼친 절 새로 고침(#1q 적대적 평가 R2) — 새로 받은 첫 페이지(`fresh`, 최신순) + 이미 받은 글 중 그 페이지 마지막보다 앞(`(created_at, id)`)의 꼬리.
+/// 첫 페이지가 다 차지 않으면(그 상대 글 전부) 꼬리는 없다 — "더 보기" 로 받은 쪽을 5초 새로 고침이 지우지 않는다.
+export function mergePage(fresh, have, page = PEER_PAGE) {
+  if (fresh.length < page) return fresh;
+  const end = fresh.at(-1);
+  const older = (m) => m.created_at < end.created_at || (m.created_at === end.created_at && m.id < end.id);
+  const ids = new Set(fresh.map((m) => m.id));
+  return [...fresh, ...have.filter((m) => older(m) && !ids.has(m.id))];
+}
+
+/// 펼친 상대 절 끝 줄(#1q) — "{보인 수} / {전체}", 남았을 때만 더 보기.
+export function pageMore(shown, total) {
+  return { text: `${shown} / ${total}`, more: shown < total };
 }
 
 /// 목록에 보일 본문 앞부분 — 줄바꿈은 공백으로, 120자까지.
@@ -444,28 +492,28 @@ export function sideNav(tile, unseen = 0, waiting = 0, starred = 0) {
   return [top, mid, end].filter((s) => s.length).flatMap((s, i) => (i ? [{ sep: true }, ...s] : s));
 }
 
-/// 상단 바 "+ 새로 만들기" 메뉴 — 각 화면과 그 화면에서 초점을 줄 칸 · 아이콘. 자동 왕복은 새 대화 화면 안에서(#1l — 메뉴에서 뺌).
+/// 상단 바 "+ 새로 만들기" 메뉴 — 각 화면과 그 화면에서 초점을 줄 칸 · 아이콘 · 함께 누를 단추(`press`, #1r). 자동 왕복은 새 대화 화면 안에서(#1l — 메뉴에서 뺌).
 export function newMenu() {
   return [
     { label: "새 대화", href: "#new", focus: "chat_peer", icon: "chat" },
-    { label: "초대 생성", href: "#settings/invite_make", focus: "window_btn", icon: "plus" },
+    { label: "초대 생성", href: "#settings/invite_make", focus: "window_btn", icon: "plus", press: "window_btn" },
     { label: "초대 수락", href: "#settings/invite_accept", focus: "invite_text", icon: "enter" },
     { label: "에이전트 등록", href: "#settings/agents", focus: "agent_name", icon: "bot" },
   ];
 }
 
 /// 상단 바 프로필 메뉴(#1j) — 상태 고르기(받기 가능 · 집중 — 하나만 켜짐) · 앱과 연결 끊김(자동 표시, 고를 수 없음) | 사용자 정보(팝업 — #1l) · 표시 이름 · 아이콘('나' 타일 편집) ·
-/// 알림 일시 중지(켜짐 표시) · 환경설정. `state` = 그 상태의 색(`presenceOf` 열쇠).
+/// 알림 일시 중지(켜짐 표시) · 환경설정. `state` = 그 상태의 색(`presenceOf` 열쇠), 상태가 아닌 항목은 `icon`(#1r).
 export function profileMenu(paused, focus, offline = false) {
   return [
     { key: "avail", label: "받기 가능", hint: "새 요청을 받습니다", state: "online", radio: true, checked: focus !== true },
     { key: "focus", label: "집중", hint: "새 요청을 거절합니다", state: "focus", radio: true, checked: focus === true },
     { key: "offline", label: "앱과 연결 끊김", hint: "자동 표시", state: "offline", info: true, current: offline === true },
     { sep: true },
-    { key: "me", label: "사용자 정보" },
-    { key: "tile", label: "프로필 편집" },
-    { key: "pause", label: "알림 일시 중지", checked: paused === true },
-    { key: "settings", label: "설정", href: "#settings" },
+    { key: "me", label: "사용자 정보", icon: "user" },
+    { key: "tile", label: "프로필 편집", icon: "pencil" },
+    { key: "pause", label: "알림 일시 중지", icon: "bell", checked: paused === true },
+    { key: "settings", label: "설정", icon: "gear", href: "#settings" },
   ];
 }
 
@@ -654,6 +702,21 @@ export function requestRows(messages, peerNames) {
       };
     });
 }
+
+/// 요청 화면 절 데이터(#1q) — 쪽(`box`)마다 머리 건수 = 서버 집계(`GET /api/messages/req_counts` — 목록 상한과 무관, 적대적 평가 R1), 행 = 서버가 상태로 거른
+/// 목록(`req=`) 그대로.
+export function reqBoxes(boxes, lists, counts, peerNames) {
+  return boxes.map((box, i) => ({ box, sum: counts[i], rows: requestRows(lists[i], peerNames) }));
+}
+
+/// 요청 개요 절 머리(#1q) — 이름 · 전체 건수 · 상태별 건수(대기 · 수용 · 완료 · 반려 순, 0건 상태는 뺀다).
+export function reqHead(title, sum) {
+  const states = ["wait", "accepted", "done", "rejected"].filter((k) => sum[k]).map((k) => ({ key: k, text: `${REQ_STATES[k]} ${sum[k]}` }));
+  return { title, count: String(sum.total), states };
+}
+
+/// 요청 목록 글자 단추 모양(#1q) — 바꿀 상태 → 색(`ok` 초록 · `no` 붉음) · 아이콘(`app.css` `.ico-{이름}`).
+export const REQ_BTN = { accepted: { tone: "ok", icon: "check" }, done: { tone: "ok", icon: "check" }, rejected: { tone: "no", icon: "x" } };
 
 /// 사이드바 대화방 절 — ★ 는 줄의 별로 보이고 대화방은 제자리에 남는다(#1j — 모아 보기는 메뉴 "즐겨찾기"). `paired`(레일 순서 상대 id)를 주면
 /// ('나', #1g) 상대별 절(`peer:{id}`)로 — 대화가 하나도 없으면 빈 '대화' 절 하나.
@@ -862,12 +925,21 @@ export function unreadByPeer(convs) {
   return sums;
 }
 
-/// 내 활동 항목(`GET /api/activity`) → 목록 행. 라벨 = 글 종류 · 요청 태그(상대 쪽 글 — 실패한 답이면 "· 실패") · "실패"(내 쪽) · "자동 왕복 시작" ·
-/// "자동 왕복 끝 — {사유}". 글은 누르면 그 글로(`#c/{대화}/m/{글}`), 자동 왕복 기록은 그 대화로. 대화를 모르는 항목은 뺀다.
+/// 내 활동 거르기 탭(#1q) — `kind` = `GET /api/activity?kind=`, `icon` = `.ico-{이름}`(#1r).
+export const ACT_KINDS = [
+  { kind: "all", label: "전체", icon: "bell" },
+  { kind: "request", label: "받은 요청", icon: "arrow-down" },
+  { kind: "mine", label: "내 요청", icon: "arrow-up" },
+  { kind: "answer", label: "받은 답", icon: "chat" },
+  { kind: "failed", label: "실패", icon: "x" },
+];
+
+/// 내 활동 항목(`GET /api/activity`) → 목록 행(#1q). 라벨 = "받은 요청 · {상태}" · "받은 답"(실패한 답이면 "· 실패") · "내 요청 · {상태}"(+ 메모) ·
+/// "실패"(내 쪽) · "상대 반영 실패 · {사유}". 글은 누르면 그 글로(`#c/{대화}/m/{글}`), 상대 반영 실패는 그 대화로. 대화를 모르는 항목 · 모르는 종류는 뺀다.
 /// `key` = 다시 그려도 같은 항목을 가리키는 열쇠.
 export function activityRows(items, peerNames) {
   return items
-    .filter((a) => a.conversation)
+    .filter((a) => a.conversation && (a.message || a.kind === "sync_failed"))
     .map((a) => {
       const conv = a.conversation;
       const peer = peerNames.get(conv.peer_id);
@@ -878,24 +950,22 @@ export function activityRows(items, peerNames) {
         at: a.at,
         unseen: a.unseen === true,
         title: convLabel(conv, peerNames).title,
+        note: "",
       };
-      if (m) {
-        // 방향 라벨은 없다(#1j) — 요청 칩 · 실패만.
-        const kind = askTag(m);
-        const label = a.kind === "failed" ? "실패" : m.state === "error" ? [kind, "실패"].filter(Boolean).join(" · ") : kind;
-        return { ...row, label, who: authorLabel(conv, m, peer), preview: preview(m.text), href: `#c/${conv.id}/m/${m.id}` };
-      }
-      if (a.kind === "sync_failed") {
-        return { ...row, label: `상대 반영 실패 · ${a.detail ?? ""}`, who: shortName(peer), preview: "", href: `#c/${conv.id}` };
-      }
-      const end = a.kind === "relay_end";
-      return {
-        ...row,
-        label: end ? `자동 왕복 끝 · ${a.detail ?? ""}` : "자동 왕복 시작",
-        who: shortName(peer),
-        preview: end ? "" : preview(a.detail),
-        href: `#c/${conv.id}`,
-      };
+      if (!m) return { ...row, label: `상대 반영 실패 · ${a.detail ?? ""}`, who: shortName(peer), preview: "", href: `#c/${conv.id}` };
+      const state = REQ_STATES[m.req_state] ?? REQ_STATES.wait;
+      const label =
+        a.kind === "failed"
+          ? "실패"
+          : a.kind === "my_request"
+            ? `내 요청 · ${state}`
+            : m.author === "human"
+              ? `받은 요청 · ${state}`
+              : m.state === "error"
+                ? "받은 답 · 실패"
+                : "받은 답";
+      const note = a.kind === "my_request" ? (m.req_note ?? "") : "";
+      return { ...row, label, note, who: authorLabel(conv, m, peer), preview: preview(m.text), href: `#c/${conv.id}/m/${m.id}` };
     });
 }
 

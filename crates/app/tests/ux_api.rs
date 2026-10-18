@@ -161,6 +161,31 @@ async fn ask(from: &Side, peer: i64, text: &str) -> i64 {
     conv
 }
 
+/// 요청을 보내고(#1d — 실행 없음) 받는 쪽에 닿을 때까지 기다린다 — 보낸 쪽 대화 id.
+async fn send_request(from: &Side, to: &Side, peer: i64, text: &str) -> i64 {
+    let (code, r) = from
+        .call(
+            "POST",
+            "/api/conversations",
+            json!({ "peer_id": peer, "agent": "review", "text": text, "request": true }),
+        )
+        .await;
+    assert_eq!(code, 201, "{r}");
+    let until = Instant::now() + Duration::from_secs(5);
+    loop {
+        let n: i64 = to
+            .db()
+            .query_row("SELECT count(*) FROM messages WHERE text = ?1", [text], |r| r.get(0))
+            .unwrap();
+        if n > 0 {
+            break;
+        }
+        assert!(Instant::now() < until, "요청 {text} 이 닿기를 기다렸다");
+        tokio::time::sleep(Duration::from_millis(30)).await;
+    }
+    r["conversation"]["id"].as_i64().unwrap()
+}
+
 fn texts(list: &Value) -> Vec<&str> {
     list.as_array()
         .unwrap()
@@ -1014,34 +1039,31 @@ async fn search_treats_like_wildcards_literally() {
     assert_eq!(found("%5C").await, (0, 0), "역슬래시는 어디에도 없다");
 }
 
-/// 내 활동 — 상대 쪽 글(사람 · 에이전트) · 내 쪽 실패 · 자동 왕복 시작 · 끝을 최신순으로 합치고 종류 · 본문 · 상대로 거른다.
+/// 내 활동(#1q) — 받은 요청 · 받은 답 · 내 요청 · 실패를 최신순으로 합치고 종류(`request` · `answer` · `mine` · `failed`) · 본문 · 상대로 거른다.
+/// 상대 사람의 일반 메시지 · 자동 왕복 기록은 없고, 옛 종류(`human` · `agent` · `relay`)는 400.
 #[tokio::test(flavor = "multi_thread")]
-async fn activity_merges_theirs_failures_relay_events() {
+async fn activity_kinds_scope() {
     let (a, b) = (side("ac-a").await, side("ac-b").await);
     let (pb, pa) = pair(&a, &b).await;
     agents::add(&a.db(), "review", ".", "").unwrap();
     agents::add(&b.db(), "review", ".", "").unwrap();
     let mine = ask(&a, pb, "A 의 질문").await; // A 가 받은 에이전트 답
-    ask(&b, pa, "B 의 질문").await; // A 가 받은 사람 글
-    // 내 쪽 실패 — 내 질문을 실패로.
+    ask(&b, pa, "B 의 질문").await; // A 가 받은 사람 일반 메시지 — 내 활동에 없다
+    send_request(&b, &a, pa, "B 의 요청").await; // A 가 받은 요청
+    // 내 요청 · 내 쪽 실패(내 질문을 실패로) · 자동 왕복 기록.
+    let my_req = chat::add_human(&a.db(), mine, "my-req", "내 요청 글", chat::State::Done, true, false).unwrap();
+    chat::set_request(&a.db(), my_req.id, true).unwrap();
     let asked = chat::messages(&a.db(), mine).unwrap().remove(0);
     chat::set_state(&a.db(), asked.id, chat::State::Error).unwrap();
     chat::add_relay_event(&a.db(), mine, chat::RelayMark::Start, "자동 왕복 미리보기").unwrap();
     chat::add_relay_event(&a.db(), mine, chat::RelayMark::End, "상한 도달").unwrap();
-    // 시각을 벌린다 — 끝(가장 최근) > 두 글 > 시작 > 실패(가장 오래). 같은 초면 순서를 가릴 수 없다.
+    // 시각을 벌린다 — 내 요청(가장 최근) > 받은 두 글 > 실패(가장 오래). 같은 초면 순서를 가릴 수 없다.
     let db = a.db();
-    db.execute(
-        "UPDATE messages SET created_at = created_at - 100 WHERE id = ?1",
-        [asked.id],
-    )
-    .unwrap();
-    for (kind, by) in [("start", -50), ("end", 50)] {
-        db.execute(
-            "UPDATE relay_events SET created_at = created_at + ?2 WHERE kind = ?1",
-            (kind, by),
-        )
+    db.execute("UPDATE messages SET created_at = created_at - 100 WHERE id = ?1", [asked.id])
         .unwrap();
-    }
+    db.execute("UPDATE messages SET created_at = created_at + 50 WHERE id = ?1", [my_req.id])
+        .unwrap();
+    drop(db);
     let get = |q: &'static str| {
         let a = &a;
         async move {
@@ -1068,34 +1090,21 @@ async fn activity_merges_theirs_failures_relay_events() {
     let all = get("").await;
     assert_eq!(
         kinds(&all),
-        [
-            "failed/human",
-            "message/agent",
-            "message/human",
-            "relay_end/",
-            "relay_start/"
-        ],
+        ["failed/human", "message/agent", "message/human", "my_request/human"],
         "{all}"
     );
-    let at: Vec<i64> = all["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|i| i["at"].as_i64().unwrap())
-        .collect();
-    assert!(at.windows(2).all(|w| w[0] >= w[1]), "최신순 {at:?}");
     let order: Vec<&str> = all["items"]
         .as_array()
         .unwrap()
         .iter()
         .map(|i| i["kind"].as_str().unwrap())
         .collect();
-    assert_eq!(
-        order,
-        ["relay_end", "message", "message", "relay_start", "failed"],
-        "{all}"
+    assert_eq!(order, ["my_request", "message", "message", "failed"], "{all}");
+    assert!(
+        !all.to_string().contains("B 의 질문") && !all.to_string().contains("상한 도달"),
+        "일반 메시지 · 자동 왕복 기록 없음 {all}"
     );
-    // 합친 뒤 자른다 — 두 목록 각각의 최신이 아니라 합친 최신 2건.
+    // 합친 뒤 자른다 — 목록 각각의 최신이 아니라 합친 최신 2건.
     let two = get("?limit=2").await;
     assert_eq!(
         two["items"]
@@ -1104,37 +1113,24 @@ async fn activity_merges_theirs_failures_relay_events() {
             .iter()
             .map(|i| i["kind"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        ["relay_end", "message"],
+        ["my_request", "message"],
         "{two}"
     );
-    let end = all["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|i| i["kind"] == "relay_end")
-        .unwrap()
-        .clone();
-    assert_eq!(
-        (
-            &end["detail"],
-            &end["conversation"]["id"],
-            &end["conversation"]["peer_id"]
-        ),
-        (&json!("상한 도달"), &json!(mine), &json!(pb))
-    );
-    assert_eq!(kinds(&get("?kind=human").await), ["message/human"]);
-    assert_eq!(kinds(&get("?kind=agent").await), ["message/agent"]);
+    assert_eq!(all["items"][0]["message"]["req_state"], json!("wait"), "{all}");
+    assert_eq!(kinds(&get("?kind=request").await), ["message/human"]);
+    assert_eq!(kinds(&get("?kind=answer").await), ["message/agent"]);
+    assert_eq!(kinds(&get("?kind=mine").await), ["my_request/human"]);
     assert_eq!(kinds(&get("?kind=failed").await), ["failed/human"]);
-    assert_eq!(
-        kinds(&get("?kind=relay").await),
-        ["relay_end/", "relay_start/"]
-    );
-    let q = get("?q=%EC%83%81%ED%95%9C").await; // "상한"
-    assert_eq!(kinds(&q), ["relay_end/"], "{q}");
+    let q = get("?q=%EB%82%B4%20%EC%9A%94%EC%B2%AD").await; // "내 요청"
+    assert_eq!(kinds(&q), ["my_request/human"], "{q}");
     let none = get("?peer=999").await;
     assert!(none["items"].as_array().unwrap().is_empty(), "{none}");
-    let (code, r) = a.call("GET", "/api/activity?kind=bogus", Value::Null).await;
-    assert_eq!(code, 400, "{r}");
+    for bad in ["bogus", "human", "agent", "relay"] {
+        let (code, r) = a
+            .call("GET", &format!("/api/activity?kind={bad}"), Value::Null)
+            .await;
+        assert_eq!(code, 400, "{bad} → {r}");
+    }
 }
 
 /// 내 활동 안 본 수 — 상대별 마지막 열람 뒤의 것. 열람은 상대 하나 또는 전부.
@@ -1144,8 +1140,8 @@ async fn activity_unseen_by_peer_and_mark_seen() {
     let (_, pa) = pair(&b, &a).await;
     let (_, pa2) = pair(&c, &a).await;
     agents::add(&a.db(), "review", ".", "").unwrap();
-    ask(&b, pa, "B 가 묻는다").await;
-    ask(&c, pa2, "C 가 묻는다").await;
+    send_request(&b, &a, pa, "B 가 묻는다").await;
+    send_request(&c, &a, pa2, "C 가 묻는다").await;
     // A 쪽에서 본 상대 id.
     let peer_of = |name: &str| {
         a.node
@@ -1204,33 +1200,26 @@ async fn activity_unseen_by_peer_and_mark_seen() {
     assert_eq!(seen(None, shown(String::new()).await).await, 204);
     assert_eq!(unseen(String::new()).await, (0, 0));
     // 본 뒤에 온 것은 같은 초여도 안 본 것(시각이 아니라 id).
-    ask(&b, pa, "B 가 또 묻는다").await;
+    send_request(&b, &a, pa, "B 가 또 묻는다").await;
     assert_eq!(unseen(format!("?peer={ab}")).await, (1, 1));
-    // 자동 왕복 기록 · 내 쪽 실패도 센다.
+    // 상대 반영 실패 기록 · 내 쪽 실패도 센다 — 자동 왕복 기록은 세지 않는다(#1q).
     let latest = chat::activity(&a.db(), Some(ab), chat::ActivityFilter::All, None, 1)
         .unwrap()
         .remove(0);
-    chat::add_relay_event(
-        &a.db(),
-        latest.conversation_id,
-        chat::RelayMark::Start,
-        "시작",
-    )
-    .unwrap();
-    let answered = chat::messages(&a.db(), latest.conversation_id)
-        .unwrap()
-        .pop()
-        .unwrap();
-    assert!(answered.mine, "{answered:?}");
-    chat::set_state(&a.db(), answered.id, chat::State::Error).unwrap();
+    let cid = latest.conversation_id;
+    chat::add_relay_event(&a.db(), cid, chat::RelayMark::Start, "시작").unwrap();
+    chat::add_relay_event(&a.db(), cid, chat::RelayMark::SyncFailed(None), "삭제").unwrap();
+    let failed = chat::add_human(&a.db(), cid, "a-fail", "못 간 글", chat::State::Sent, true, false).unwrap();
+    chat::set_state(&a.db(), failed.id, chat::State::Error).unwrap();
+    chat::add_human(&a.db(), cid, "a-done", "간 글", chat::State::Done, true, false).unwrap(); // 아래 "늦은 실패" 감
     assert_eq!(
         unseen(format!("?peer={ab}")).await,
         (3, 3),
-        "글 · 자동 왕복 · 실패"
+        "받은 요청 · 상대 반영 실패 · 실패"
     );
     // 받은 뒤 본 표시를 보내기 전에 온 것은 안 본 것으로 남는다.
     let upto = shown(String::new()).await;
-    ask(&c, pa2, "C 가 또 묻는다").await;
+    send_request(&c, &a, pa2, "C 가 또 묻는다").await;
     assert_eq!(seen(None, upto).await, 204);
     assert_eq!(unseen(String::new()).await, (1, 1), "C 의 새 글");
     // 지금 마지막 항목을 넘는 범위는 거기까지만 — 앞으로 올 것을 미리 본 것으로 하지 않는다.
@@ -1239,7 +1228,7 @@ async fn activity_unseen_by_peer_and_mark_seen() {
         204
     );
     assert_eq!(unseen(String::new()).await, (0, 0));
-    ask(&b, pa, "B 가 세 번째").await;
+    send_request(&b, &a, pa, "B 가 세 번째").await;
     assert_eq!(unseen(String::new()).await, (1, 1));
     // 수만(limit=0) — 목록 없이 안 본 수(5초 새로 고침).
     let (code, r) = a.call("GET", "/api/activity?limit=0", Value::Null).await;
@@ -1291,11 +1280,11 @@ async fn activity_unseen_by_peer_and_mark_seen() {
     let (_, r) = a
         .call(
             "GET",
-            &format!("/api/activity?peer={ab}&kind=relay"),
+            &format!("/api/activity?peer={ab}&kind=failed"),
             Value::Null,
         )
         .await;
-    assert_eq!(r["items"].as_array().map(Vec::len), Some(1), "{r}");
+    assert_eq!(r["items"].as_array().map(Vec::len), Some(3), "실패 둘 · 상대 반영 실패 하나 {r}");
     // 지운 상대의 이력은 남고 본 것으로 센다 — 본 표시를 둘 곳이 없어 영영 안 본 것으로 남지 않게.
     assert_eq!(seen(None, shown(String::new()).await).await, 204);
     a.db()
@@ -1685,10 +1674,25 @@ async fn ask_kind_recorded_and_filtered() {
         let (code, r) = list("a", "mine", bad).await;
         assert_eq!(code, 400, "{bad} → {r}");
     }
-    // 내 활동은 질의 · 요청으로 거르지 않는다 — 요청은 '요청' 화면.
-    let (code, _) = b
+    // 내 활동 '받은 요청'(#1q) — 받은 요청만(질의는 없다).
+    let (code, r) = b
         .call("GET", "/api/activity?kind=request", Value::Null)
         .await;
+    assert_eq!(code, 200, "{r}");
+    let got: Vec<&str> = r["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["message"]["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(got, ["요청 첫 글"], "{r}");
+    // 요청 상태별 건수(#1q R1) — 목록 상한과 무관한 서버 집계.
+    let (code, n) = b
+        .call("GET", "/api/messages/req_counts?side=theirs", Value::Null)
+        .await;
+    assert_eq!(code, 200, "{n}");
+    assert_eq!((&n["wait"], &n["total"], &n["done"]), (&json!(1), &json!(1), &json!(0)), "{n}");
+    let (code, _) = b.call("GET", "/api/messages/req_counts?side=x", Value::Null).await;
     assert_eq!(code, 400);
 }
 
@@ -1857,4 +1861,56 @@ async fn mention_api_rules() {
     let relay = r["conversation"]["id"].as_i64().unwrap();
     let (code, r) = post("a", relay, json!({ "text": "@guide", "agent": "guide" })).await;
     assert_eq!(code, 400, "자동 왕복 {r}");
+}
+
+/// 주고받은 메시지 서버 페이지(#1q) — 상대별 요약(건수 · 마지막 메시지) · `side=both` 양쪽 함께 · `before` 커서로 이어 받기 · 범위.
+#[tokio::test(flavor = "multi_thread")]
+async fn peer_pages_summary_and_cursor() {
+    let (a, b, c) = (side("pg-a").await, side("pg-b").await, side("pg-c").await);
+    let (pb, _) = pair(&a, &b).await;
+    let (pc, _) = pair(&a, &c).await;
+    agents::add(&b.db(), "review", ".", "").unwrap();
+    agents::add(&c.db(), "review", ".", "").unwrap();
+    ask(&a, pb, "B 첫 질문").await;
+    ask(&a, pb, "B 둘째 질문").await;
+    ask(&a, pc, "C 질문").await;
+    let (code, r) = a.call("GET", "/api/messages/peers", Value::Null).await;
+    assert_eq!(code, 200, "{r}");
+    let of = |p: i64| r.as_array().unwrap().iter().find(|x| x["peer"] == p).unwrap().clone();
+    let (sb, sc) = (of(pb), of(pc));
+    assert_eq!((&sb["count"], &sc["count"]), (&json!(4), &json!(2)), "{r}");
+    assert_eq!(sb["last"]["author"], "agent", "{sb}");
+    assert_eq!(sb["last"]["conversation"]["peer_id"], json!(pb), "{sb}");
+    let (_, only_c) = a
+        .call("GET", &format!("/api/messages/peers?peer={pc}"), Value::Null)
+        .await;
+    assert_eq!(only_c.as_array().map(Vec::len), Some(1), "{only_c}");
+    // 양쪽 함께 3건 → 커서로 나머지 1건, 겹침 없음 · 최신부터.
+    let page = |q: String| {
+        let a = &a;
+        async move {
+            let (code, r) = a.call("GET", &format!("/api/messages?side=both&peer={pb}{q}"), Value::Null).await;
+            assert_eq!(code, 200, "{r}");
+            r.as_array().unwrap().clone()
+        }
+    };
+    let first = page("&limit=3".into()).await;
+    assert_eq!(first.len(), 3);
+    assert_eq!(first[0]["text"], sb["last"]["text"], "최신부터");
+    assert!(first.iter().any(|m| m["mine"] == true) && first.iter().any(|m| m["mine"] == false), "양쪽 함께");
+    let (last_id, last_at) = (first[2]["id"].as_i64().unwrap(), first[2]["created_at"].as_i64().unwrap());
+    let rest = page(format!("&limit=3&before={last_id}&before_at={last_at}")).await;
+    assert_eq!(rest.len(), 1);
+    assert!(rest[0]["id"].as_i64().unwrap() < last_id);
+    assert_eq!(rest[0]["text"], "B 첫 질문");
+    for bad in [
+        "/api/messages?side=theirs&before=5&before_at=1",
+        "/api/messages?side=both&before=5",
+        "/api/messages?side=both&kind=human",
+        "/api/messages?side=both&ask=request",
+        "/api/messages?side=x",
+    ] {
+        let (code, r) = a.call("GET", bad, Value::Null).await;
+        assert_eq!(code, 400, "{bad} → {r}");
+    }
 }

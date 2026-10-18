@@ -998,3 +998,139 @@ fn schema20_share_tables_from_19() {
     assert!(!share::set_watched(&c, inn, 2).unwrap());
     assert_eq!(share::watched(&c, inn).unwrap(), 2);
 }
+
+/// 내 활동 범위(#1q) — 받은 요청 · 받은 답(내 사람 글에 단 답만) · 내 요청 · 실패만. 상대 사람 일반 메시지 · 자동 왕복 기록 · 내 에이전트 글에
+/// 단 상대 답은 빠지고, 안 본 수도 같은 범위다. 내 요청은 상태가 바뀐 기록(`req_state`)이 있을 때만 안 본 것.
+#[test]
+fn activity_scope() {
+    use chat::{ActivityFilter as F, ActivityKind as K, Author, Dir, State};
+    let c = conn("activity-scope");
+    let p = an_core::peers::upsert(&c, &[7u8], "p7", "h", "1.2.3.4:7", "r").unwrap().id;
+    let out = chat::open_conversation(&c, "u-out", p, "guide", Dir::Out).unwrap();
+    let inn = chat::open_conversation(&c, "u-in", p, "review", Dir::In).unwrap();
+    // 받은 대화 — 상대 요청 · 상대 일반 메시지.
+    let req = chat::add_human(&c, inn.id, "req", "로그 형식 바꿔 주세요", State::Done, false, false).unwrap();
+    chat::set_request(&c, req.id, true).unwrap();
+    chat::add_human(&c, inn.id, "chat", "점심 뒤에 볼까요", State::Done, false, false).unwrap();
+    // 보낸 대화 — 내 질의 → 상대 답 · 내 요청 · 실패한 내 글 · 자동 왕복(내 에이전트 글에 단 상대 답 · 시작 · 끝 기록).
+    let q = chat::add_human(&c, out.id, "q", "배포 절차?", State::Done, true, true).unwrap();
+    chat::add_reply(&c, out.id, "ans", "절차는 …", State::Done, q.id, None, None, None, None).unwrap();
+    let mreq = chat::add_human(&c, out.id, "mreq", "QA 서버 올려 주세요", State::Done, true, false).unwrap();
+    chat::set_request(&c, mreq.id, true).unwrap();
+    let fail = chat::add_human(&c, out.id, "fail", "못 간 글", State::Sent, true, true).unwrap();
+    chat::set_state(&c, fail.id, State::Error).unwrap();
+    let mine_agent = chat::add_message(&c, out.id, "relay-mine", Author::Agent, "내 에이전트 말", State::Done).unwrap();
+    chat::set_flags(&c, mine_agent.id, true, true, State::Done).unwrap();
+    chat::add_reply(&c, out.id, "relay-ans", "상대 에이전트 말", State::Done, mine_agent.id, None, None, None, None).unwrap();
+    chat::add_relay_event(&c, out.id, chat::RelayMark::Start, "시작").unwrap();
+    chat::add_relay_event(&c, out.id, chat::RelayMark::End, "상한").unwrap();
+    // 공유 사본(관람자 — #1o)의 사람 요청 · 에이전트 답도 빠진다.
+    let copy = an_core::share::open_copy(&c, "u-copy", p, "rev", None, ("원 상대", "in"))
+        .unwrap()
+        .unwrap();
+    let post = |uuid: &'static str, author| an_core::share::Post {
+        uuid,
+        author,
+        text: "사본 글",
+        lc: Some(1),
+        at: 1_700_000_000,
+        owner: true,
+        via: None,
+        agent: None,
+        ok: true,
+        edited: false,
+    };
+    assert!(an_core::share::upsert(&c, copy.id, &post("copy-h", Author::Human)).unwrap());
+    assert!(an_core::share::upsert(&c, copy.id, &post("copy-a", Author::Agent)).unwrap());
+    let copied = chat::message_by_uuid(&c, "copy-h").unwrap().unwrap();
+    chat::set_request(&c, copied.id, true).unwrap();
+
+    let got = |f| {
+        let mut v: Vec<(K, String)> = chat::activity(&c, None, f, None, 50)
+            .unwrap()
+            .into_iter()
+            .map(|a| (a.kind, a.message.map(|m| m.uuid).unwrap_or_default()))
+            .collect();
+        v.sort_by(|a, b| a.1.cmp(&b.1));
+        v
+    };
+    let s = |k, u: &str| (k, u.to_string());
+    assert_eq!(
+        got(F::All),
+        [s(K::Message, "ans"), s(K::Failed, "fail"), s(K::MyRequest, "mreq"), s(K::Message, "req")],
+        "일반 메시지 · 자동 왕복 답 · 시작 · 끝 기록 없음"
+    );
+    assert_eq!(got(F::Request), [s(K::Message, "req")]);
+    assert_eq!(got(F::Answer), [s(K::Message, "ans")]);
+    assert_eq!(got(F::MyRequest), [s(K::MyRequest, "mreq")]);
+    assert_eq!(got(F::Failed), [s(K::Failed, "fail")]);
+    // 안 본 수 = 받은 요청 · 받은 답 · 실패(막 보낸 내 요청은 아니다).
+    assert_eq!(chat::activity_unseen(&c, None).unwrap(), 3);
+    assert_eq!(chat::activity_unseen(&c, Some(p)).unwrap(), 3);
+    let seen = |c: &db::Connection| chat::mark_activity_seen(c, None, chat::activity_upto(c).unwrap()).unwrap();
+    seen(&c);
+    assert_eq!(chat::activity_unseen(&c, None).unwrap(), 0);
+    // 상대가 내 요청 상태를 바꿨다 → 안 본 것 하나(같은 요청이 두 번 바뀌어도 하나).
+    chat::set_req_state(&c, mreq.id, chat::ReqState::Accepted, Some("오늘")).unwrap();
+    chat::note_req_state(&c, mreq.id).unwrap();
+    chat::set_req_state(&c, mreq.id, chat::ReqState::Done, None).unwrap();
+    chat::note_req_state(&c, mreq.id).unwrap();
+    assert_eq!(chat::activity_unseen(&c, None).unwrap(), 1);
+    let mine = chat::activity(&c, None, F::MyRequest, None, 50).unwrap();
+    assert!(mine[0].unseen);
+    assert_eq!(mine[0].message.as_ref().unwrap().req_state, Some(chat::ReqState::Done));
+    seen(&c);
+    assert_eq!(chat::activity_unseen(&c, None).unwrap(), 0);
+    assert!(!chat::activity(&c, None, F::MyRequest, None, 50).unwrap()[0].unseen);
+    // 내 요청이 아닌 글에는 기록하지 않는다.
+    chat::note_req_state(&c, req.id).unwrap();
+    chat::note_req_state(&c, q.id).unwrap();
+    assert_eq!(chat::activity_unseen(&c, None).unwrap(), 0);
+}
+
+/// 주고받은 메시지 순서(#1q 적대적 평가 R2) — 페이지 · 상대별 마지막 메시지 모두 `(created_at, id)` 최신순. 나중에 들어온 공유 사본의 옛 글(상대 시각)이
+/// 맨 위 · 마지막 메시지가 되지 않고, 복합 커서로 한 건씩 넘겨도 빠짐 · 겹침이 없다.
+#[test]
+fn peer_pages_order() {
+    use chat::{Dir, State};
+    let c = conn("peer-pages");
+    let p = an_core::peers::upsert(&c, &[8u8], "p8", "h", "1.2.3.4:8", "r").unwrap().id;
+    let out = chat::open_conversation(&c, "u-pp", p, "guide", Dir::Out).unwrap();
+    for (i, t) in ["첫", "둘", "셋"].iter().enumerate() {
+        let m = chat::add_human(&c, out.id, &format!("pp-{i}"), t, State::Done, true, true).unwrap();
+        c.execute("UPDATE messages SET created_at = ?2 WHERE id = ?1", (m.id, 1_800_000_000 + i as i64)).unwrap();
+    }
+    // 나중에 들어온 공유 사본의 옛 글.
+    let copy = an_core::share::open_copy(&c, "u-pp-copy", p, "rev", None, ("원 상대", "in")).unwrap().unwrap();
+    let post = an_core::share::Post {
+        uuid: "pp-old",
+        author: chat::Author::Agent,
+        text: "옛 사본 글",
+        lc: Some(1),
+        at: 1_700_000_000,
+        owner: true,
+        via: None,
+        agent: None,
+        ok: true,
+        edited: false,
+    };
+    assert!(an_core::share::upsert(&c, copy.id, &post).unwrap());
+    let page = |before| chat::messages_page(&c, chat::Scope::All, before, 10).unwrap();
+    assert_eq!(
+        page(None).iter().map(|m| m.text.as_str()).collect::<Vec<_>>(),
+        ["셋", "둘", "첫", "옛 사본 글"]
+    );
+    let (_, n, last) = chat::peer_message_counts(&c, chat::Scope::All).unwrap()[0];
+    assert_eq!(n, 4);
+    assert_eq!(chat::message_by_id(&c, last).unwrap().unwrap().text, "셋", "마지막 메시지 = 가장 최근 시각");
+    // 한 건씩 넘기기.
+    let mut seen = Vec::new();
+    let mut cur = None;
+    loop {
+        let one = chat::messages_page(&c, chat::Scope::All, cur, 1).unwrap();
+        let Some(m) = one.first() else { break };
+        seen.push(m.text.clone());
+        cur = Some((m.created_at, m.id));
+    }
+    assert_eq!(seen, ["셋", "둘", "첫", "옛 사본 글"]);
+}

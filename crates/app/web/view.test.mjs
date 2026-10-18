@@ -32,10 +32,14 @@ import {
   josa,
   peerGroupText,
   inboxRows,
+  peerSummaryRows,
+  pageMore,
+  peerMsgsSig,
+  mergePage,
+  PEER_PAGE,
   isHtmlDoc,
   htmlSrcdoc,
   markdownBlocks,
-  peerMessages,
   presenceOf,
   starredSections,
   displayName,
@@ -54,6 +58,7 @@ import {
   convMeta,
   unreadByPeer,
   activityRows,
+  ACT_KINDS,
   messageActions,
   editedTag,
   keepPicked,
@@ -73,6 +78,9 @@ import {
   askTag,
   reqMoves,
   requestRows,
+  reqBoxes,
+  reqHead,
+  REQ_BTN,
   peerGroups,
   peerSummary,
   sortByPos,
@@ -576,20 +584,6 @@ test("inbox_rows — 메시지 행 · 종류 거르기 · 누르면 그 대화",
   assert.deepEqual(inboxRows(ms, names, { kind: "human" }).map((r) => r.id), [9]);
 });
 
-test("peer_messages — 레일 상대 = 주고받은 메시지, 최신순 합침 · 상한", () => {
-  const theirs = [
-    { id: 9, created_at: 300 },
-    { id: 4, created_at: 100 },
-  ];
-  const mine = [
-    { id: 8, created_at: 300 },
-    { id: 6, created_at: 200 },
-  ];
-  assert.deepEqual(peerMessages(theirs, mine).map((m) => m.id), [9, 8, 6, 4], "같은 시각은 id 큰 것 먼저");
-  assert.deepEqual(peerMessages(theirs, mine, 3).map((m) => m.id), [9, 8, 6]);
-  assert.deepEqual(peerMessages([], []), []);
-});
-
 test("direction_tag — 방향 표시 없음(#1j — 보냄 · 받음 태그도 없앰)", () => {
   const names = new Map([[2, "user2 · DEV-PC"]]);
   const out = convLabel({ peer_id: 2, dir: "out", agent: "guide", title: "→ 배포 절차" }, names);
@@ -681,7 +675,7 @@ test("row_peer — 주고받은 메시지 · 요청 · 내 활동 행에 상대 
   const m = { id: 1, author: "human", mine: true, text: "x", created_at: 1, conversation: conv, request: true };
   assert.equal(inboxRows([m], names)[0].peer, 4);
   assert.equal(requestRows([m], names)[0].peer, 4);
-  assert.equal(activityRows([{ kind: "relay_start", at: 1, conversation: conv }], names)[0].peer, 4);
+  assert.equal(activityRows([{ kind: "sync_failed", at: 1, conversation: conv, detail: "삭제" }], names)[0].peer, 4);
   assert.equal(activityRows([{ kind: "message", at: 1, conversation: conv, message: m }], names)[0].peer, 4);
 });
 
@@ -871,31 +865,45 @@ test("conv_sections — ★ 대화도 제자리(#1j), 행 표시 · 레일 배�
   ]);
 });
 
-test("activity_rows — 상대 글 · 실패 · 자동 왕복 시작 · 끝, 안 본 항목, 누르면 그 글", () => {
+test("activity_rows — 받은 요청 · 받은 답 · 내 요청 · 실패(#1q), 안 본 항목, 누르면 그 글", () => {
   const names = new Map([[2, "이도윤 · DYOON"]]);
   const conv = { id: 5, peer_id: 2, agent: "guide", dir: "out", title: "배포 절차" };
   const items = [
     { kind: "message", at: 300, unseen: true, conversation: conv, message: { id: 9, author: "agent", mine: false, text: "답\n둘째 줄" } },
+    { kind: "my_request", at: 250, unseen: true, conversation: conv, message: { id: 6, author: "human", mine: true, request: true, req_state: "rejected", req_note: "범위 밖", text: "QA 서버 올려 주세요" } },
+    { kind: "message", at: 240, unseen: false, conversation: conv, message: { id: 4, author: "human", mine: false, request: true, req_state: "accepted", text: "로그 형식 바꿔 주세요" } },
     { kind: "failed", at: 200, unseen: false, conversation: conv, message: { id: 8, author: "human", mine: true, exec: true, text: "요청", state: "error" } },
-    { kind: "relay_end", at: 150, unseen: false, conversation: conv, detail: "상한 도달" },
-    { kind: "relay_start", at: 100, unseen: false, conversation: conv, detail: "첫 답 앞부분" },
     { kind: "message", at: 95, unseen: false, conversation: conv, message: { id: 7, author: "agent", mine: false, text: "실행 실패", state: "error" } },
     { kind: "message", at: 90, unseen: true, conversation: null, message: { id: 1, author: "human", text: "고아" } },
   ];
   const rows = activityRows(items, names);
   assert.deepEqual(
-    rows.map((r) => [r.label, r.who, r.preview, r.href, r.unseen]),
+    rows.map((r) => [r.label, r.who, r.preview, r.note, r.href, r.unseen]),
     [
-      ["", "이도윤/guide", "답 둘째 줄", "#c/5/m/9", true],
-      ["실패", "나", "요청", "#c/5/m/8", false],
-      ["자동 왕복 끝 · 상한 도달", "이도윤", "", "#c/5", false],
-      ["자동 왕복 시작", "이도윤", "첫 답 앞부분", "#c/5", false],
-      ["실패", "이도윤/guide", "실행 실패", "#c/5/m/7", false],
+      ["받은 답", "이도윤/guide", "답 둘째 줄", "", "#c/5/m/9", true],
+      ["내 요청 · 반려", "나", "QA 서버 올려 주세요", "범위 밖", "#c/5/m/6", true],
+      ["받은 요청 · 수용", "이도윤", "로그 형식 바꿔 주세요", "", "#c/5/m/4", false],
+      ["실패", "나", "요청", "", "#c/5/m/8", false],
+      ["받은 답 · 실패", "이도윤/guide", "실행 실패", "", "#c/5/m/7", false],
     ],
-    "방향 라벨 없음(#1j) — 상대 에이전트의 실패 답은 실패",
   );
   assert.ok(rows.every((r) => r.title === "배포 절차" && !("tag" in r)));
   assert.equal(new Set(rows.map((r) => r.key)).size, rows.length, "항목 열쇠는 겹치지 않는다");
+});
+
+test("activity_rows_tabs — 내 활동 거르기 탭(#1q): 전체 · 받은 요청 · 내 요청 · 받은 답 · 실패, 자동 왕복 없음", () => {
+  assert.deepEqual(
+    ACT_KINDS.map((k) => [k.kind, k.label]),
+    [
+      ["all", "전체"],
+      ["request", "받은 요청"],
+      ["mine", "내 요청"],
+      ["answer", "받은 답"],
+      ["failed", "실패"],
+    ],
+  );
+  const conv = { id: 5, peer_id: 2, agent: "guide", dir: "out", title: "t" };
+  assert.deepEqual(activityRows([{ kind: "relay_end", at: 1, unseen: true, conversation: conv, detail: "상한" }], new Map()), [], "옛 자동 왕복 항목은 그리지 않는다");
 });
 
 test("message_actions — 북마크 · 복사는 말풍선 아이콘(#1j, 막대에 없음), 다시 보내기 없음(#1k)", () => {
@@ -1061,7 +1069,7 @@ test("ask_marks — 요청 태그(상태) · 상태 바꾸기 작업(받은 요�
   assert.ok(!acts({ author: "human", mine: false, exec: true, request: false }).some(([k]) => k.startsWith("req:")), "질의");
   const conv = { id: 1, peer_id: 2, agent: "guide", dir: "in", title: "t" };
   const rows = activityRows([{ kind: "message", at: 1, unseen: false, conversation: conv, message: { id: 5, ...req(false, "done"), text: "x", state: "done" } }], new Map());
-  assert.equal(rows[0].label, "요청 · 완료");
+  assert.equal(rows[0].label, "받은 요청 · 완료", "#1q 내 활동 라벨");
   const sent = inboxRows([{ id: 6, ...req(true, "accepted"), text: "y", created_at: 1, conversation: { ...conv, dir: "out" } }], new Map());
   assert.equal(sent[0].kind, "요청 · 수용");
 });
@@ -1759,4 +1767,158 @@ test("share_head_candidates — 머리 표시 · 관람자 후보(원 상대 · 
   assert.equal(MAX_OBSERVERS, 5);
   assert.deepEqual(shareCandidates({ ...conv, observers: [2, 3, 4, 5, 6] }, peers), [], "5명이면 더 넣지 못한다");
   assert.deepEqual(shareCandidates(shared(), peers), [], "공유 대화는 다시 공유하지 않는다");
+});
+
+test("req_overview_summary — 머리 건수(#1q R1): 서버 집계 그대로 — 목록이 상한으로 잘려도 건수는 범위 전체", () => {
+  const conv = { id: 9, peer_id: 2, agent: "review", dir: "in", title: "로그" };
+  const m = (id, req_state) => ({ id, author: "human", mine: false, request: true, req_state, created_at: id, text: "t", conversation: conv });
+  const counts = { wait: 1, accepted: 0, rejected: 0, done: 501, total: 502 };
+  const [d] = reqBoxes(["theirs"], [[m(600, "done")]], [counts], new Map());
+  assert.equal(d.rows.length, 1, "행은 받은 목록");
+  assert.deepEqual(d.sum, counts, "건수는 서버 집계");
+  assert.deepEqual(reqHead("받은 요청", d.sum).states.map((x) => x.text), ["대기 1", "완료 501"]);
+});
+
+test("req_overview_head — 절 머리(#1q): 이름 · 전체 건수 · 대기 · 수용 · 완료 · 반려 순, 0건 상태는 뺀다", () => {
+  const h = reqHead("받은 요청", { total: 5, wait: 2, accepted: 1, done: 1, rejected: 1 });
+  assert.deepEqual(h, {
+    title: "받은 요청",
+    count: "5",
+    states: [
+      { key: "wait", text: "대기 2" },
+      { key: "accepted", text: "수용 1" },
+      { key: "done", text: "완료 1" },
+      { key: "rejected", text: "반려 1" },
+    ],
+  });
+  assert.deepEqual(reqHead("보낸 요청", { total: 3, wait: 0, accepted: 0, done: 3, rejected: 0 }).states, [{ key: "done", text: "완료 3" }]);
+  assert.deepEqual(reqHead("보낸 요청", { total: 0, wait: 0, accepted: 0, done: 0, rejected: 0 }), { title: "보낸 요청", count: "0", states: [] });
+});
+
+test("req_overview_buttons — 글자 단추(#1q): 수용 · 완료 = ✓ 초록(ok), 반려 = ✕ 붉음(no), 상태 바꾸기마다 모양이 있다", () => {
+  assert.deepEqual(REQ_BTN.accepted, { tone: "ok", icon: "check" });
+  assert.deepEqual(REQ_BTN.done, { tone: "ok", icon: "check" });
+  assert.deepEqual(REQ_BTN.rejected, { tone: "no", icon: "x" });
+  for (const req_state of ["wait", "accepted"])
+    for (const mv of reqMoves({ author: "human", mine: false, request: true, req_state })) assert.ok(REQ_BTN[mv.to], mv.to);
+});
+
+test("peer_msgs_heads — 주고받은 메시지 상대 절 머리(#1q): 레일 순서 · 페어링 풀린 상대는 뒤 · 이름 · 건수 · 마지막 메시지 한 줄 · 시각", () => {
+  const names = new Map([[2, "이준호 · QA"], [3, "최유나 · DEV"], [9, "옛 상대 · OLD"]]);
+  const last = (id, text, created_at) => ({ id, text, created_at, author: "human", mine: false });
+  const heads = peerSummaryRows(
+    [
+      { peer: 9, count: 3, last: last(90, "옛 글", 10) },
+      { peer: 2, count: 48, last: last(20, "QA 서버 올려\n주세요", 300) },
+      { peer: 3, count: 31, last: last(30, "그 PR 머지됐어요", 200) },
+    ],
+    [3, 2],
+    names,
+  );
+  assert.deepEqual(
+    heads.map((h) => [h.peer, h.name, h.count, h.last, h.at]),
+    [
+      [3, "최유나", "31건", "그 PR 머지됐어요", 200],
+      [2, "이준호", "48건", "QA 서버 올려 주세요", 300],
+      [9, "옛 상대", "3건", "옛 글", 10],
+    ],
+  );
+  assert.deepEqual(peerSummaryRows([], [2], names), []);
+});
+
+test("peer_msgs_more — 20건씩(#1q): 보인 수 / 전체 · 더 보기는 남았을 때만", () => {
+  assert.equal(PEER_PAGE, 20);
+  assert.deepEqual(pageMore(20, 48), { text: "20 / 48", more: true });
+  assert.deepEqual(pageMore(48, 48), { text: "48 / 48", more: false });
+  assert.deepEqual(pageMore(3, 3), { text: "3 / 3", more: false });
+});
+
+test("peer_msgs_saved — 행 북마크 상태(#1q): 메시지 saved 를 행에 그대로", () => {
+  const conv = { id: 4, peer_id: 2, agent: "guide", dir: "out", title: "t" };
+  const rows = inboxRows(
+    [
+      { id: 1, author: "human", mine: true, text: "a", created_at: 1, saved: true, conversation: conv },
+      { id: 2, author: "agent", mine: false, text: "b", created_at: 2, saved: false, conversation: conv },
+    ],
+    new Map(),
+  );
+  assert.deepEqual(rows.map((r) => [r.id, r.saved]), [[1, true], [2, false]]);
+});
+
+test("req_overview_filter — 절 데이터(#1q): 쪽 순서 그대로 · 행 = 서버가 상태로 거른 목록 · 요청 아닌 글은 빠짐", () => {
+  const conv = { id: 9, peer_id: 2, agent: "review", dir: "in", title: "로그" };
+  const m = (id, req_state, mine, request = true) => ({ id, author: "human", mine, request, req_state, created_at: id, text: "t", conversation: conv });
+  const zero = { wait: 0, accepted: 0, rejected: 0, done: 0, total: 0 };
+  const got = reqBoxes(["theirs", "mine"], [[m(2, "done", false), m(5, null, false, false)], []], [zero, zero], new Map());
+  assert.deepEqual(
+    got.map((d) => [d.box, d.rows.map((r) => r.id)]),
+    [
+      ["theirs", [2]],
+      ["mine", []],
+    ],
+  );
+});
+
+test("peer_msgs_sig — 펼친 절 다시 그리기(#1q R1): 요청 상태 · 메모 · 같은 길이 편집 · 북마크가 바뀌면 서명이 바뀐다", () => {
+  const heads = [{ peer: 2, name: "a", count: "1건", total: 1, last: "x", at: 1 }];
+  const conv = { id: 4, peer_id: 2, agent: "guide", dir: "out", title: "t" };
+  const base = { id: 7, author: "human", mine: false, text: "abc", saved: false, request: true, req_state: "wait", req_note: null, edited_at: null, state: "done", conversation: conv };
+  const sig = (m) => peerMsgsSig(heads, new Map([[2, [{ ...base, ...m }]]]));
+  const same = sig({});
+  for (const change of [
+    { req_state: "accepted" },
+    { req_note: "곧" },
+    { text: "abd", edited_at: 5 },
+    { text: "abd" },
+    { saved: true },
+    { conversation: { ...conv, title: "u" } },
+    { owner: true },
+    { author: "agent" },
+    { mine: true },
+    { via: "cli" },
+    { agent: "guide" },
+  ])
+    assert.notEqual(sig(change), same, JSON.stringify(change));
+  assert.equal(sig({}), same);
+});
+
+test("peer_msgs_merge — 새로 고침(#1q R2): 첫 페이지 + 그보다 앞의 받은 꼬리, 겹침 없음 · 첫 페이지가 다 안 차면 꼬리 없음", () => {
+  const m = (id, created_at) => ({ id, created_at });
+  const have = [m(30, 300), m(29, 290), m(28, 280), m(27, 270)]; // 20건 페이지 대신 2건 페이지로
+  const fresh = [m(31, 310), m(30, 300)];
+  assert.deepEqual(mergePage(fresh, have, 2).map((x) => x.id), [31, 30, 29, 28, 27], "새 글 위 · 받은 꼬리 보존");
+  assert.deepEqual(mergePage([m(31, 310)], have, 2).map((x) => x.id), [31], "다 안 찬 첫 페이지 = 전부");
+  assert.deepEqual(mergePage([m(30, 300), m(28, 280)], have, 2).map((x) => x.id), [30, 28, 27], "지워진 29 는 첫 페이지 범위 안이라 빠진다");
+  assert.deepEqual(mergePage([m(5, 300), m(4, 300)], [m(5, 300), m(4, 300), m(9, 290)], 2).map((x) => x.id), [5, 4, 9], "같은 시각은 id 로");
+});
+
+test("ui_polish_menu_icons — 프로필 메뉴(상태 셋 빼고) · 내 활동 탭 · 요청 탭 항목마다 아이콘, 모두 app.css 에 정의(#1r)", () => {
+  const css = readFileSync(new URL("./app.css", import.meta.url), "utf8");
+  const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+  const items = [...profileMenu(false, false).filter((i) => !i.sep && !i.state), ...ACT_KINDS];
+  assert.deepEqual(items.map((i) => i.icon), ["user", "pencil", "bell", "gear", "bell", "arrow-down", "arrow-up", "chat", "x"]);
+  for (const i of items) assert.ok(css.includes(`.ico-${i.icon} {`), `app.css .ico-${i.icon}`);
+  for (const [id, icon] of [["req_tab_theirs", "arrow-down"], ["req_tab_mine", "arrow-up"]]) {
+    const tab = html.slice(html.indexOf(`id="${id}"`), html.indexOf("</a>", html.indexOf(`id="${id}"`)));
+    assert.ok(tab.includes(`ico-${icon}`), `${id} 아이콘`);
+  }
+});
+
+test("ui_polish_invite_press — 설정 트리 · 새로 만들기의 '초대 생성' 만 초대 생성 단추를 누른다(#1r)", () => {
+  const flat = settingsTree().flatMap((n) => [n, ...(n.children ?? [])]);
+  assert.deepEqual(flat.filter((n) => n.press).map((n) => [n.id, n.press]), [["invite_make", "window_btn"]]);
+  assert.deepEqual(newMenu().filter((i) => i.press).map((i) => [i.label, i.press]), [["초대 생성", "window_btn"]]);
+});
+
+test("ui_polish_new_chat — 새 대화 폼: '자동 왕복' 없음 · 내 응답 에이전트 · 최대 응답 횟수(처음 숨김) · 라벨마다 아이콘(#1r)", () => {
+  const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+  const form = html.slice(html.indexOf('<form id="chat_form"'), html.indexOf("</form>", html.indexOf('<form id="chat_form"')));
+  assert.ok(!form.includes("자동 왕복"), "새 대화에 자동 왕복 낱말 없음");
+  assert.ok(form.includes(">내 응답 에이전트</label>") && form.includes(">최대 응답 횟수</label>"));
+  assert.match(form, /<label for="chat_relay_cap" id="chat_relay_cap_label" class="sub-label" hidden>/);
+  assert.match(form, /<input id="chat_relay_cap" type="number" min="1" max="50" step="1" value="10" required disabled hidden>/, "숨긴 동안 disabled — 폼 검사에서 빠진다");
+  const labels = [...form.matchAll(/<label for="\w+"[^>]*>(.*?)<\/label>/g)].map((m) => m[1]);
+  labels.push(form.match(/<span id="chat_ask_label" class="label">(.*?<\/span>[^<]*)<\/span>/)[1]);
+  assert.equal(labels.length, 7, "상대 · 상대 에이전트 · 내 응답 에이전트 · 최대 응답 횟수 · 제목 · 메시지 · 메시지 종류");
+  for (const l of labels) assert.match(l, /^<span class="ico ico-[a-z-]+" aria-hidden="true"><\/span>\S/, l);
 });

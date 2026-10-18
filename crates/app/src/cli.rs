@@ -50,6 +50,37 @@ pub const USAGE: &str = "사용법:
 <상대> = 피어 표시 이름 또는 지문 앞자리(4자 이상). 본문이 -- 로 시작하면 앞에 -- 를 둔다(그 뒤는 전부 인자)
 start · open 은 트레이 아이콘 없이 띄우고 부모 프로세스(기본 = 부른 프로세스)가 끝나면 함께 끝난다. stop 은 끝날 때까지(최대 10초) 기다린다. 종료 코드 8 = 시작 실패.";
 
+/// 도움말 인자(#1q) — `/?`(Windows 관례) · `-h` · `--help`. 첫 인자일 때만 — 다른 자리의 `/?` 는 묻는 본문일 수 있다.
+pub fn is_help(arg: &str) -> bool {
+    matches!(arg, "/?" | "-h" | "--help")
+}
+
+/// `coworkAgent /?` 의 머리 · 꼬리(#1q) — 사이에 [`USAGE`]. 다른 AI 도구가 읽고 연동하도록 출력 형식 · 종료 코드까지.
+const HELP_HEAD: &str = "coworkAgent — 같은 사내망 동료 PC 의 Claude Code 에이전트에게 묻고 답을 받는 앱.
+인자 없이 실행하면 트레이 앱이다. 아래 명령은 CLI — start · open · stop 밖의 명령은 앱이 떠 있어야 한다(아니면 종료 코드 3).";
+const HELP_TAIL: &str = "출력:
+  결과는 표준 출력, 진행 · 오류는 표준 오류에 한 줄씩. --json 이면 결과 · 진행 줄이 JSON 한 줄씩이다.
+  peers --json = 상대 배열 · history --json = 대화 배열(--conv 면 그 대화의 메시지 배열) · status --json = 트랜잭션.
+  ask · wait --json = {\"conversation\", \"asked\", \"reply\", \"tx\"}(--no-wait 는 reply 없이), 기다리는 동안 표준 오류에
+  {\"progress\": \"sending\"|\"queued\"|\"running\", …} 줄.
+종료 코드:
+  0 = 성공 · 2 = 사용법 오류 · 3 = 앱이 실행 중이 아님 · 4 = API 거부 또는 전달 여부 불명(다시 보내지 말고 history 로 확인)
+  5 = 답이 실패 · 질문을 상대에 보내지 못함 · 6 = 시간 초과(24시간) · 7 = 상대에 닿지 않아 멈춤(wait 로 이어 받기) · 8 = 시작 실패
+연동 예:
+  coworkAgent peers --json
+  coworkAgent ask <상대> \"질문\" --agent <이름> --id <키> --json
+도움말:
+  coworkAgent /?   (-h · --help 도 같다)";
+
+/// `coworkAgent /?` 출력 전체(#1q) — 앱이 꺼져 있어도 나온다.
+pub fn help() -> String {
+    format!("{HELP_HEAD}
+
+{USAGE}
+
+{HELP_TAIL}")
+}
+
 /// 첫 인자가 CLI 하위 명령인가 — `main` 이 트레이 시작 전에 가른다.
 pub fn is_command(arg: &str) -> bool {
     matches!(arg, "peers" | "ask" | "wait" | "status" | "history")
@@ -88,6 +119,10 @@ pub fn run(
     err: &mut dyn Write,
     wait_limit: Duration,
 ) -> i32 {
+    if args.first().is_some_and(|a| is_help(a)) {
+        let _ = writeln!(out, "{}", help());
+        return EXIT_OK;
+    }
     let result = Cli::parse(args).and_then(|cli| {
         let api = Api::open(instance_file)?;
         api.handshake()?;

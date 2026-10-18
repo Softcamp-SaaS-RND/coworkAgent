@@ -110,14 +110,7 @@
           </div>
         </header>
         <div class="filters">
-          <label for="act_kind">종류</label>
-          <select id="act_kind">
-            <option value="all">전체</option>
-            <option value="human">사람 메시지</option>
-            <option value="agent">에이전트 답</option>
-            <option value="relay">자동 왕복</option>
-            <option value="failed">실패</option>
-          </select>
+          <nav id="act_tabs" class="tabs" aria-label="내 활동 종류"></nav>
           <label for="act_q" class="sr-only">내 활동 본문 검색</label>
           <input id="act_q" type="search" placeholder="본문 검색">
         </div>
@@ -130,8 +123,8 @@
             <strong><span class="ico ico-inbox" aria-hidden="true"></span>요청</strong>
           </div>
           <nav class="tabs" aria-label="요청 목록">
-            <a id="req_tab_theirs" href="#requests" data-box="theirs" aria-current="page">받은 요청</a>
-            <a id="req_tab_mine" href="#requests" data-box="mine">보낸 요청</a>
+            <a id="req_tab_theirs" href="#requests" data-box="theirs" aria-current="page"><span class="ico ico-arrow-down" aria-hidden="true"></span>받은 요청</a>
+            <a id="req_tab_mine" href="#requests" data-box="mine"><span class="ico ico-arrow-up" aria-hidden="true"></span>보낸 요청</a>
           </nav>
         </header>
         <div class="filters">
@@ -219,7 +212,7 @@
         <div id="panel_conv" class="panel">
           <div id="messages" aria-live="polite"></div>
           <div class="edit-row">
-            <button id="edit_btn" type="button" class="edit-toggle" aria-pressed="false" title="편집 모드">편집</button>
+            <button id="edit_btn" type="button" class="edit-toggle" aria-pressed="false" title="편집 모드"><span class="ico ico-pencil" aria-hidden="true"></span>편집</button>
           </div>
           <div id="edit_bar" class="edit-bar" role="toolbar" aria-label="편집 모드" hidden>
             <span id="edit_count">0개 선택</span>
@@ -266,19 +259,19 @@
       <section id="new" class="view pad" hidden>
         <h1>새 대화</h1>
         <form id="chat_form" class="grid">
-          <label for="chat_peer">상대</label>
+          <label for="chat_peer"><span class="ico ico-user" aria-hidden="true"></span>상대</label>
           <select id="chat_peer"></select>
-          <label for="chat_agent">상대 에이전트</label>
+          <label for="chat_agent"><span class="ico ico-bot" aria-hidden="true"></span>상대 에이전트</label>
           <select id="chat_agent"></select>
-          <label for="chat_relay_agent">자동 왕복</label>
+          <label for="chat_relay_agent"><span class="ico ico-swap" aria-hidden="true"></span>내 응답 에이전트</label>
           <select id="chat_relay_agent"><option value="">안 함</option></select>
-          <label for="chat_relay_cap">자동 왕복 상한</label>
-          <input id="chat_relay_cap" type="number" min="1" max="50" value="10">
-          <label for="chat_title">제목</label>
+          <label for="chat_relay_cap" id="chat_relay_cap_label" class="sub-label" hidden><span class="ico ico-reset" aria-hidden="true"></span>최대 응답 횟수</label>
+          <input id="chat_relay_cap" type="number" min="1" max="50" step="1" value="10" required disabled hidden>
+          <label for="chat_title"><span class="ico ico-title" aria-hidden="true"></span>제목</label>
           <input id="chat_title" maxlength="100" placeholder="비우면 첫 메시지 앞부분" autocomplete="off">
-          <label for="chat_text">메시지</label>
+          <label for="chat_text"><span class="ico ico-chat" aria-hidden="true"></span>메시지</label>
           <div class="field"><textarea id="chat_text" rows="4" placeholder="메시지 입력"></textarea></div>
-          <span id="chat_ask_label" class="label">메시지 종류</span>
+          <span id="chat_ask_label" class="label"><span class="ico ico-inbox" aria-hidden="true"></span>메시지 종류</span>
           <div class="ask-kind" role="radiogroup" aria-labelledby="chat_ask_label">
             <label><input type="radio" name="ask" value="query" checked> 질의</label>
             <label><input type="radio" name="ask" value="request"> 요청</label>
@@ -331,8 +324,9 @@
             </div>
             <p id="agent_msg" role="status"></p>
             <div id="agent_groups"></div>
-            <div id="agent_new" class="new-agent" hidden>
-              <form id="agent_form" class="grid">
+            <div id="agent_new" class="manage-item new-agent" hidden>
+              <div class="manage-head"><span class="pa new-tile" aria-hidden="true"><span class="ico ico-plus" aria-hidden="true"></span></span><span class="manage-name"><strong>새 에이전트</strong><span class="hint">등록하면 위 목록에 들어갑니다</span></span></div>
+              <form id="agent_form" class="grid item-body">
                 <label for="agent_name">이름</label>
                 <input id="agent_name" required maxlength="64" placeholder="review" title="등록한 뒤에는 이름을 바꿀 수 없습니다">
                 <label for="agent_folder">폴더(절대 경로)</label>
@@ -341,7 +335,7 @@
                 <p id="agent_tools" class="hint"></p>
                 <span class="label-row"><label for="agent_prompt">추가 지시</label><span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_prompt">?</button><span id="tip_prompt" class="tip" role="tooltip"><span class="tip-line">추가 지시 사용 예</span><span class="tip-line">• 답하기 전에 docs/ 의 설계 문서를 먼저 읽고 근거 파일 경로를 함께 적는다.</span><span class="tip-line">• 답은 한국어로, 결론 먼저 세 줄 안에 쓰고 근거를 아래에 붙인다.</span><span class="tip-line">• 모르는 내용은 추측하지 말고 "확인 필요" 와 확인할 파일을 적는다.</span></span></span></span>
                 <div class="field"><textarea id="agent_prompt" rows="3"></textarea></div>
-                <button type="submit" class="primary">등록</button>
+                <div class="actions"><button type="button" id="agent_new_cancel">취소</button><button type="submit" class="primary">등록</button></div>
               </form>
             </div>
           </section>
@@ -395,7 +389,7 @@
               <input type="checkbox" id="notify_request">
               <label for="notify_reply">받은 답</label>
               <input type="checkbox" id="notify_reply">
-              <label for="notify_relay">자동 왕복</label>
+              <span class="label-row"><label for="notify_relay">자동 왕복</label><span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_relay">?</button><span id="tip_relay" class="tip up" role="tooltip"><span class="tip-line">자동 왕복 — 새 대화에서 '내 응답 에이전트' 를 고르면 상대 에이전트의 답에 내 에이전트가 이어 답하기를 최대 응답 횟수까지 자동으로 주고받습니다.</span><span class="tip-line">• 시작과 끝 — 왕복이 시작할 때와 끝날 때(상한 도달 · 실패 · 상대가 멈춤 등)만 알림</span><span class="tip-line">• 메시지마다 — 시작 · 끝에 더해 상대 에이전트의 답이 올 때마다 알림</span><span class="tip-line">• 알리지 않음 — 자동 왕복 알림 없음</span></span></span></span>
               <select id="notify_relay">
                 <option value="start_end">시작과 끝</option>
                 <option value="every">메시지마다</option>

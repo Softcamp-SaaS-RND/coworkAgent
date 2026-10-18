@@ -435,6 +435,17 @@ async fn relay_events_first_run_fails() {
     assert_eq!(b_conv(&b).relay.unwrap().agent, "mine");
 }
 
+/// 자동 왕복 시작 · 끝 기록(`relay_events` 의 `start` · `end`) — (종류, 사유), 남은 순서대로.
+fn relay_marks(s: &common::Side) -> Vec<(String, String)> {
+    common::db(s)
+        .prepare("SELECT kind, detail FROM relay_events WHERE kind IN ('start', 'end') ORDER BY id")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}
+
 /// 자동 왕복 시작 · 끝(상한)을 양쪽이 기록한다 — 알림 설정과 무관(이 크레이트에는 알림 설정이 없다), 내 활동에서 보인다.
 #[tokio::test(flavor = "multi_thread")]
 async fn relay_start_end_events_recorded() {
@@ -448,24 +459,18 @@ async fn relay_start_end_events_recorded() {
     assert_eq!(settled(&a, conv.id).await, 3);
     let bc = b_conv(&b);
     assert_eq!(settled(&b, bc.id).await, 3);
-    let marks = |s: &common::Side| {
-        let mut v: Vec<_> =
-            chat::activity(&common::db(s), None, chat::ActivityFilter::Relay, None, 10)
-                .unwrap()
-                .into_iter()
-                .map(|i| (i.kind, i.detail.unwrap_or_default()))
-                .collect();
-        v.sort_by_key(|(k, _)| *k == chat::ActivityKind::RelayEnd);
-        v
-    };
+    // 자동 왕복 시작 · 끝 기록(`relay_events`) — 내 활동에는 들지 않는다(#1q).
+    let marks = |s: &common::Side| relay_marks(s);
     for (side, ma) in [("연 쪽", marks(&a)), ("받은 쪽", marks(&b))] {
         assert_eq!(ma.len(), 2, "{side}: {ma:?}");
-        assert_eq!(ma[0].0, chat::ActivityKind::RelayStart, "{side}: {ma:?}");
-        assert_eq!(
-            (ma[1].0, ma[1].1.as_str()),
-            (chat::ActivityKind::RelayEnd, "상한 도달"),
-            "{side}"
-        );
+        assert_eq!(ma[0].0, "start", "{side}: {ma:?}");
+        assert_eq!((ma[1].0.as_str(), ma[1].1.as_str()), ("end", "상한 도달"), "{side}");
+    }
+    for s in [&a, &b] {
+        assert!(chat::activity(&common::db(s), None, chat::ActivityFilter::All, None, 50)
+            .unwrap()
+            .iter()
+            .all(|x| x.detail.is_none()));
     }
     // 상한의 마지막 답(Post)도 받은 쪽에 실행 정보를 그대로 남긴다.
     let last =
@@ -483,12 +488,7 @@ async fn relay_start_end_events_recorded() {
 #[tokio::test(flavor = "multi_thread")]
 async fn focus_stops_relay_both_sides() {
     let ends = |s: &common::Side| -> Vec<String> {
-        chat::activity(&common::db(s), None, chat::ActivityFilter::Relay, None, 10)
-            .unwrap()
-            .into_iter()
-            .filter(|e| e.kind == chat::ActivityKind::RelayEnd)
-            .filter_map(|e| e.detail)
-            .collect()
+        relay_marks(s).into_iter().filter(|(k, _)| k == "end").map(|(_, d)| d).collect()
     };
     // 받은 쪽 집중 — A 의 내 에이전트가 첫 차례를 도는 동안 B 가 켠다.
     let (a, b, b_id) = two("fb", Duration::from_millis(400)).await;

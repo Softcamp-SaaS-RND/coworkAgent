@@ -2238,7 +2238,11 @@ impl Chat {
             if m.req_state == Some(state) && m.req_note == note {
                 return Ok(Response::Ok);
             }
-            chat::set_req_state(&db, m.id, state, note.as_deref()).map_err(db_err)?;
+            // 상태와 내 활동 기록(#1q — 안 본 것)을 한 트랜잭션으로 — 기록만 빠지면 재전송이 "같은 상태" 로 일찍 돌아가 영영 남지 않는다.
+            let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+            chat::set_req_state(&tx, m.id, state, note.as_deref()).map_err(db_err)?;
+            chat::note_req_state(&tx, m.id).map_err(db_err)?;
+            tx.commit().map_err(db_err)?;
             (c.id, c.agent, note)
         };
         let label = match state {

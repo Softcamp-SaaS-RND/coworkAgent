@@ -550,13 +550,12 @@ pub fn add_relay_event(
     .map(drop)
 }
 
-/// 내 활동 한 줄의 종류 — 상대 쪽 글 · 내 쪽 실패 · 자동 왕복 시작 · 끝 · 상대 반영 실패(#1f).
+/// 내 활동 한 줄의 종류(#1q) — 상대 쪽 글(받은 요청 · 받은 답) · 내 쪽 실패 · 내 요청 · 상대 반영 실패(#1f).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivityKind {
     Message,
     Failed,
-    RelayStart,
-    RelayEnd,
+    MyRequest,
     SyncFailed,
 }
 
@@ -565,20 +564,19 @@ impl ActivityKind {
         match self {
             ActivityKind::Message => "message",
             ActivityKind::Failed => "failed",
-            ActivityKind::RelayStart => "relay_start",
-            ActivityKind::RelayEnd => "relay_end",
+            ActivityKind::MyRequest => "my_request",
             ActivityKind::SyncFailed => "sync_failed",
         }
     }
 }
 
-/// 내 활동 거르기 — 전체 · 상대 사람 글 · 상대 에이전트 답 · 자동 왕복 · 실패.
+/// 내 활동 거르기(#1q) — 전체 · 받은 요청 · 내 요청 · 받은 답 · 실패.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivityFilter {
     All,
-    Human,
-    Agent,
-    Relay,
+    Request,
+    MyRequest,
+    Answer,
     Failed,
 }
 
@@ -586,23 +584,48 @@ pub enum ActivityFilter {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Activity {
     pub kind: ActivityKind,
-    /// 남은 시각(유닉스 초) — 글이면 저장 시각.
+    /// 남은 시각(유닉스 초) — 글이면 저장 시각, 내 요청이면 마지막으로 상태가 바뀐 시각.
     pub at: i64,
     pub conversation_id: i64,
     pub peer_id: i64,
-    /// 글(상대 쪽 글 · 실패한 내 글) — 자동 왕복 기록이면 `None`.
+    /// 글(받은 요청 · 받은 답 · 내 요청 · 실패한 내 글) — 상대 반영 실패 기록이면 `None`.
     pub message: Option<Message>,
-    /// 자동 왕복 기록의 사유 · 미리보기.
+    /// 상대 반영 실패 기록의 사유 · 미리보기.
     pub detail: Option<String>,
     /// 그 상대의 내 활동을 본 마지막 글 · 기록(id) 뒤의 것(지운 상대의 것은 본 것으로 — 본 표시를 둘 곳이 없다).
     pub unseen: bool,
 }
 
-/// 내 활동에 드는 글 — 상대 쪽 글 전부 · 실패한 내 쪽 글(공유 사본 글은 빼고 — #1o). `messages m` · `conversations c` 문맥의 SQL 식.
-const ACTIVITY_MESSAGES: &str =
-    "(m.author <> 'context' AND (m.mine = 0 OR m.state = 'error') AND c.dir <> 'shared')";
+/// 받은 요청 — 상대 사람의 요청(공유 사본 글은 빼고 — #1o). `messages m` · `conversations c` 문맥의 SQL 식.
+const RECV_REQUEST: &str =
+    "(m.mine = 0 AND m.author = 'human' AND coalesce(m.request, 0) = 1 AND c.dir <> 'shared')";
+/// 받은 답 — 내 사람 글에 단 상대 에이전트 답(자동 왕복에서 내 에이전트 글에 단 답은 아니다).
+const RECV_ANSWER: &str = "(m.mine = 0 AND m.author = 'agent' AND c.dir <> 'shared'
+   AND EXISTS (SELECT 1 FROM messages q WHERE q.id = m.reply_to AND q.mine = 1 AND q.author = 'human'))";
+/// 실패한 내 글.
+const MINE_FAILED: &str = "(m.mine = 1 AND m.state = 'error' AND m.author <> 'context')";
+/// 내 요청 — 실패한 것은 '실패' 로만.
+const MY_REQUEST: &str =
+    "(m.mine = 1 AND m.author = 'human' AND coalesce(m.request, 0) = 1 AND m.state <> 'error')";
 
-/// 내 활동 — 최신 것부터 `limit` 건. `peer` 로 그 상대 대화만, `q` 는 글 본문 · 자동 왕복 기록 사유의 부분 일치.
+/// 내 활동에 드는 글 중 글 id 로 안 본 것을 가르는 것 — 받은 요청 · 받은 답 · 실패한 내 글(#1q — 상대 사람 일반 메시지는 빠진다).
+fn activity_messages() -> String {
+    format!("({RECV_REQUEST} OR {RECV_ANSWER} OR {MINE_FAILED})")
+}
+
+/// 상대가 내 요청의 상태를 바꿨다(#1q) — `relay_events` 의 `req_state` 행(글 id 는 그대로라, 내 활동을 본 뒤 바뀐 상태를 안 본 것으로 센다).
+/// 내 사람 요청 글이 아니면 남기지 않는다.
+pub fn note_req_state(conn: &Connection, message_id: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO relay_events (conversation_id, kind, detail, created_at, message_id)
+         SELECT conversation_id, 'req_state', coalesce(req_state, ''), unixepoch(), id FROM messages
+         WHERE id = ?1 AND mine = 1 AND author = 'human' AND coalesce(request, 0) = 1",
+        [message_id],
+    )
+    .map(drop)
+}
+
+/// 내 활동 — 최신 것부터 `limit` 건. `peer` 로 그 상대 대화만, `q` 는 글 본문 · 상대 반영 실패 사유의 부분 일치.
 pub fn activity(
     conn: &Connection,
     peer: Option<i64>,
@@ -612,17 +635,15 @@ pub fn activity(
 ) -> rusqlite::Result<Vec<Activity>> {
     let like = q.map(like_pattern);
     let mut out = Vec::new();
+    let cols = prefixed(MSG_COLS, "m");
     let msg_where = match filter {
-        ActivityFilter::All => Some(ACTIVITY_MESSAGES),
-        ActivityFilter::Human => Some("m.mine = 0 AND m.author = 'human' AND c.dir <> 'shared'"),
-        ActivityFilter::Agent => Some("m.mine = 0 AND m.author = 'agent' AND c.dir <> 'shared'"),
-        ActivityFilter::Failed => {
-            Some("m.mine = 1 AND m.state = 'error' AND m.author <> 'context'")
-        }
-        ActivityFilter::Relay => None,
+        ActivityFilter::All => Some(activity_messages()),
+        ActivityFilter::Request => Some(RECV_REQUEST.to_string()),
+        ActivityFilter::Answer => Some(RECV_ANSWER.to_string()),
+        ActivityFilter::Failed => Some(MINE_FAILED.to_string()),
+        ActivityFilter::MyRequest => None,
     };
     if let Some(w) = msg_where {
-        let cols = prefixed(MSG_COLS, "m");
         let mut stmt = conn.prepare(&format!(
             "SELECT {cols}, c.peer_id, p.id IS NOT NULL AND (m.id > coalesce(p.activity_seen_msg, 0)
                OR EXISTS (SELECT 1 FROM relay_events f WHERE f.message_id = m.id AND f.kind = 'failed'
@@ -651,58 +672,72 @@ pub fn activity(
             out.push(a?);
         }
     }
-    // 기록 종류 — 자동 왕복 시작 · 끝, 상대 반영 실패(실패 거르기에도).
-    let kinds = match filter {
-        ActivityFilter::All => Some("'start', 'end', 'sync_failed'"),
-        ActivityFilter::Relay => Some("'start', 'end'"),
-        ActivityFilter::Failed => Some("'sync_failed'"),
-        ActivityFilter::Human | ActivityFilter::Agent => None,
-    };
-    if let Some(kinds) = kinds {
+    // 내 요청 — 요청 하나 = 한 줄, 시각 = 마지막으로 상태가 바뀐 때, 안 본 것 = 본 뒤 상태가 바뀐 기록이 있을 때.
+    if matches!(filter, ActivityFilter::All | ActivityFilter::MyRequest) {
         let mut stmt = conn.prepare(&format!(
-            "SELECT e.kind, e.created_at, e.conversation_id, c.peer_id, e.detail,
-               p.id IS NOT NULL AND e.id > coalesce(p.activity_seen_event, 0)
-             FROM relay_events e JOIN conversations c ON c.id = e.conversation_id LEFT JOIN peers p ON p.id = c.peer_id
-             WHERE e.kind IN ({kinds}) AND (?1 IS NULL OR c.peer_id = ?1) AND (?2 IS NULL OR e.detail LIKE ?2 ESCAPE '\\')
-             ORDER BY e.created_at DESC, e.id DESC LIMIT ?3"
+            "SELECT {cols}, c.peer_id, p.id IS NOT NULL AND EXISTS (SELECT 1 FROM relay_events f WHERE f.message_id = m.id
+               AND f.kind = 'req_state' AND f.id > coalesce(p.activity_seen_event, 0)), coalesce(m.req_at, m.created_at) AS at
+             FROM messages m JOIN conversations c ON c.id = m.conversation_id LEFT JOIN peers p ON p.id = c.peer_id
+             WHERE {MY_REQUEST} AND (?1 IS NULL OR c.peer_id = ?1) AND (?2 IS NULL OR m.text LIKE ?2 ESCAPE '\\')
+             ORDER BY at DESC, m.id DESC LIMIT ?3"
         ))?;
         let rows = stmt.query_map(params![peer, like, limit], |r| {
-            let kind: String = r.get(0)?;
+            let m = msg_row(r)?;
             Ok(Activity {
-                kind: match kind.as_str() {
-                    "start" => ActivityKind::RelayStart,
-                    "end" => ActivityKind::RelayEnd,
-                    "sync_failed" => ActivityKind::SyncFailed,
-                    v => return Err(bad(0, v)),
-                },
-                at: r.get(1)?,
-                conversation_id: r.get(2)?,
-                peer_id: r.get(3)?,
-                message: None,
-                detail: Some(r.get(4)?),
-                unseen: r.get(5)?,
+                kind: ActivityKind::MyRequest,
+                at: r.get(MSG_N + 2)?,
+                conversation_id: m.conversation_id,
+                peer_id: r.get(MSG_N)?,
+                unseen: r.get(MSG_N + 1)?,
+                message: Some(m),
+                detail: None,
             })
         })?;
         for a in rows {
             out.push(a?);
         }
     }
-    // 같은 초면 글이 먼저(안정 정렬) — 두 목록 각각은 이미 최신순.
+    // 상대 반영 실패 기록(실패 거르기에도).
+    if matches!(filter, ActivityFilter::All | ActivityFilter::Failed) {
+        let mut stmt = conn.prepare(
+            "SELECT e.created_at, e.conversation_id, c.peer_id, e.detail,
+               p.id IS NOT NULL AND e.id > coalesce(p.activity_seen_event, 0)
+             FROM relay_events e JOIN conversations c ON c.id = e.conversation_id LEFT JOIN peers p ON p.id = c.peer_id
+             WHERE e.kind = 'sync_failed' AND (?1 IS NULL OR c.peer_id = ?1) AND (?2 IS NULL OR e.detail LIKE ?2 ESCAPE '\\')
+             ORDER BY e.created_at DESC, e.id DESC LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![peer, like, limit], |r| {
+            Ok(Activity {
+                kind: ActivityKind::SyncFailed,
+                at: r.get(0)?,
+                conversation_id: r.get(1)?,
+                peer_id: r.get(2)?,
+                message: None,
+                detail: Some(r.get(3)?),
+                unseen: r.get(4)?,
+            })
+        })?;
+        for a in rows {
+            out.push(a?);
+        }
+    }
+    // 같은 초면 글이 먼저(안정 정렬) — 목록 각각은 이미 최신순.
     out.sort_by_key(|a| std::cmp::Reverse(a.at));
     out.truncate(usize::try_from(limit).unwrap_or(0));
     Ok(out)
 }
 
-/// 내 활동 안 본 수 — `peer` 가 있으면 그 상대만(지운 상대의 것은 세지 않는다). 본 뒤 온 글 + 본 뒤 실패로 바뀐 내 글(이미 본 id) + 본 뒤
-/// 자동 왕복 기록. 가장 앞선 본 표시 뒤의 id 만 훑는다(5초 새로 고침).
+/// 내 활동 안 본 수 — `peer` 가 있으면 그 상대만(지운 상대의 것은 세지 않는다). 본 뒤 온 받은 요청 · 받은 답 · 실패 글 + 본 뒤 실패로 바뀐 내 글
+/// (이미 본 id) + 본 뒤 상대 반영 실패 기록 + 본 뒤 상태가 바뀐 내 요청(요청마다 하나). 가장 앞선 본 표시 뒤의 id 만 훑는다(5초 새로 고침).
 pub fn activity_unseen(conn: &Connection, peer: Option<i64>) -> rusqlite::Result<i64> {
+    let messages = activity_messages();
     conn.query_row(
         &format!(
             "SELECT
                (SELECT count(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id
                   LEFT JOIN peers p ON p.id = c.peer_id
                 WHERE m.id > coalesce((SELECT min(coalesce(activity_seen_msg, 0)) FROM peers WHERE ?1 IS NULL OR id = ?1), 0)
-                  AND {ACTIVITY_MESSAGES} AND (?1 IS NULL OR c.peer_id = ?1)
+                  AND {messages} AND (?1 IS NULL OR c.peer_id = ?1)
                   AND p.id IS NOT NULL AND m.id > coalesce(p.activity_seen_msg, 0))
              + (SELECT count(DISTINCT m.id) FROM relay_events f JOIN messages m ON m.id = f.message_id
                   JOIN conversations c ON c.id = m.conversation_id LEFT JOIN peers p ON p.id = c.peer_id
@@ -712,8 +747,13 @@ pub fn activity_unseen(conn: &Connection, peer: Option<i64>) -> rusqlite::Result
              + (SELECT count(*) FROM relay_events e JOIN conversations c ON c.id = e.conversation_id
                   LEFT JOIN peers p ON p.id = c.peer_id
                 WHERE e.id > coalesce((SELECT min(coalesce(activity_seen_event, 0)) FROM peers WHERE ?1 IS NULL OR id = ?1), 0)
-                  AND e.kind IN ('start', 'end', 'sync_failed') AND (?1 IS NULL OR c.peer_id = ?1)
-                  AND p.id IS NOT NULL AND e.id > coalesce(p.activity_seen_event, 0))"
+                  AND e.kind = 'sync_failed' AND (?1 IS NULL OR c.peer_id = ?1)
+                  AND p.id IS NOT NULL AND e.id > coalesce(p.activity_seen_event, 0))
+             + (SELECT count(DISTINCT m.id) FROM relay_events f JOIN messages m ON m.id = f.message_id
+                  JOIN conversations c ON c.id = m.conversation_id LEFT JOIN peers p ON p.id = c.peer_id
+                WHERE f.id > coalesce((SELECT min(coalesce(activity_seen_event, 0)) FROM peers WHERE ?1 IS NULL OR id = ?1), 0)
+                  AND f.kind = 'req_state' AND {MY_REQUEST} AND (?1 IS NULL OR c.peer_id = ?1)
+                  AND p.id IS NOT NULL AND f.id > coalesce(p.activity_seen_event, 0))"
         ),
         params![peer],
         |r| r.get(0),
@@ -1209,6 +1249,82 @@ pub fn messages_across(
         ],
         msg_row,
     )?
+    .collect()
+}
+
+/// 요청 상태별 건수(#1q 적대적 평가 R1) — 한 쪽(`mine`) 사람 요청 전부(공유 사본 제외), 목록 상한과 무관.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ReqCounts {
+    pub wait: i64,
+    pub accepted: i64,
+    pub rejected: i64,
+    pub done: i64,
+}
+
+impl ReqCounts {
+    pub fn total(self) -> i64 {
+        self.wait + self.accepted + self.rejected + self.done
+    }
+}
+
+/// [`ReqCounts`] — `scope` 범위, 상태가 없는 요청은 대기.
+pub fn req_counts(conn: &Connection, mine: bool, scope: Scope) -> rusqlite::Result<ReqCounts> {
+    let (peer, group) = scope.ids();
+    let mut out = ReqCounts::default();
+    let mut stmt = conn.prepare(&format!(
+        "SELECT coalesce(m.req_state, 'wait'), count(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id
+         WHERE m.mine = ?3 AND m.author = 'human' AND coalesce(m.request, 0) = 1 AND c.dir <> 'shared' AND {}
+         GROUP BY 1",
+        Scope::sql(1, 2)
+    ))?;
+    let rows = stmt.query_map(params![peer, group, mine], |r| Ok((r.get::<_, String>(0)?, r.get(1)?)))?;
+    for row in rows {
+        let (state, n) = row?;
+        match ReqState::parse(&state) {
+            Some(ReqState::Wait) => out.wait = n,
+            Some(ReqState::Accepted) => out.accepted = n,
+            Some(ReqState::Rejected) => out.rejected = n,
+            Some(ReqState::Done) => out.done = n,
+            None => {}
+        }
+    }
+    Ok(out)
+}
+
+/// 주고받은 메시지 한 쪽(#1q) — 양쪽 글(context 글 제외)을 `(created_at, id)` 최신부터 `limit` 건, `before` = 그 `(created_at, id)` 보다 앞의 것만
+/// (복합 커서 — 공유 사본은 상대 시각을 남겨 id 순과 다를 수 있다, 적대적 평가 R2).
+pub fn messages_page(
+    conn: &Connection,
+    scope: Scope,
+    before: Option<(i64, i64)>,
+    limit: i64,
+) -> rusqlite::Result<Vec<Message>> {
+    let cols = prefixed(MSG_COLS, "m");
+    let (peer, group) = scope.ids();
+    let (at, id) = before.unzip();
+    conn.prepare(&format!(
+        "SELECT {cols} FROM messages m JOIN conversations c ON c.id = m.conversation_id
+         WHERE m.author <> 'context' AND {} AND (?3 IS NULL OR m.created_at < ?3 OR (m.created_at = ?3 AND m.id < ?4))
+         ORDER BY m.created_at DESC, m.id DESC LIMIT ?5",
+        Scope::sql(1, 2)
+    ))?
+    .query_map(params![peer, group, at, id, limit], msg_row)?
+    .collect()
+}
+
+/// 주고받은 메시지 상대별 요약(#1q) — (상대 id, 메시지 수, 마지막 메시지 id — [`messages_page`] 와 같은 `(created_at, id)` 순), 모집단도 같다.
+pub fn peer_message_counts(conn: &Connection, scope: Scope) -> rusqlite::Result<Vec<(i64, i64, i64)>> {
+    let (peer, group) = scope.ids();
+    conn.prepare(&format!(
+        "SELECT peer_id, n, id FROM (
+           SELECT c.peer_id, m.id, count(*) OVER (PARTITION BY c.peer_id) AS n,
+             row_number() OVER (PARTITION BY c.peer_id ORDER BY m.created_at DESC, m.id DESC) AS rn
+           FROM messages m JOIN conversations c ON c.id = m.conversation_id
+           WHERE m.author <> 'context' AND {})
+         WHERE rn = 1 ORDER BY peer_id",
+        Scope::sql(1, 2)
+    ))?
+    .query_map(params![peer, group], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
     .collect()
 }
 

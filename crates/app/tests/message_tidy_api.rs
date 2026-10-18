@@ -291,7 +291,7 @@ async fn activity_lists_sync_failed() {
             .map(|i| i["kind"].as_str().unwrap().to_string())
             .collect()
     };
-    for (kind, want) in [("all", true), ("failed", true), ("relay", false)] {
+    for (kind, want) in [("all", true), ("failed", true), ("request", false)] {
         let (code, r) = a
             .call("GET", &format!("/api/activity?kind={kind}"), Value::Null)
             .await;

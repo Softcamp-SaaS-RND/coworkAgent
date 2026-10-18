@@ -420,16 +420,19 @@ fn schema11_workspace() {
     let m = chat::messages(&conn, 1).unwrap().remove(1);
     assert_eq!((m.saved_at, m.model, m.effort), (None, None, None));
     chat::add_relay_event(&conn, 1, chat::RelayMark::End, "상한 도달").unwrap();
-    let items = chat::activity(&conn, None, chat::ActivityFilter::Relay, None, 10).unwrap();
-    assert_eq!(items.len(), 1);
-    assert_eq!(
-        (
-            items[0].kind,
-            items[0].detail.as_deref(),
-            items[0].conversation_id
-        ),
-        (chat::ActivityKind::RelayEnd, Some("상한 도달"), 1)
-    );
+    let ended: (String, String, i64) = conn
+        .query_row(
+            "SELECT kind, detail, conversation_id FROM relay_events ORDER BY id DESC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(ended, ("end".into(), "상한 도달".into(), 1));
+    // 자동 왕복 기록은 남지만 내 활동에는 들지 않는다(#1q).
+    assert!(chat::activity(&conn, None, chat::ActivityFilter::All, None, 10)
+        .unwrap()
+        .iter()
+        .all(|a| a.detail.as_deref() != Some("상한 도달")));
     // 대화별 글 · 자동 왕복 기록 색인 — 5초 새로 고침의 대화 목록 · 안 읽음 · 내 활동이 표 전체를 훑지 않게.
     let names: Vec<String> = conn
         .prepare(

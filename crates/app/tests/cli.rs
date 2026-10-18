@@ -444,6 +444,40 @@ fn unknown_command_exe_exits_usage() {
     }
 }
 
+/// 실제 실행 파일 — `/?` · `-h` · `--help`(첫 인자)는 앱이 꺼져 있어도 표준 출력에 명령 · 옵션 · 종료 코드 · `--json` 형식을 쓰고 0(#1q — 다른 AI
+/// 도구가 파이프로 읽고 연동). 표준 오류는 비어 있다.
+#[test]
+fn help_exe_prints_commands() {
+    for arg in ["/?", "-h", "--help"] {
+        let r = std::process::Command::new(env!("CARGO_BIN_EXE_coworkAgent"))
+            .arg(arg)
+            .output()
+            .unwrap();
+        assert_eq!(r.status.code(), Some(cli::EXIT_OK), "{arg}");
+        let out = String::from_utf8_lossy(&r.stdout);
+        for want in [
+            "coworkAgent /?",
+            "coworkAgent ask",
+            "coworkAgent start",
+            "coworkAgent history",
+            "종료 코드",
+            "7 = ",
+            "--json",
+            "\"progress\"",
+        ] {
+            assert!(out.contains(want), "{arg}: {want} 없음
+{out}");
+        }
+        assert!(r.stderr.is_empty(), "{arg}: {}", String::from_utf8_lossy(&r.stderr));
+    }
+    // 첫 인자만 — 다른 자리의 `/?` 는 도움말이 아니다(묻는 본문일 수 있다).
+    let r = std::process::Command::new(env!("CARGO_BIN_EXE_coworkAgent"))
+        .args(["peerz", "/?"])
+        .output()
+        .unwrap();
+    assert_eq!(r.status.code(), Some(cli::EXIT_USAGE));
+}
+
 /// 이전 버전 주 인스턴스(`/api/status` 에 `cli_api` 없음) — 아무것도 보내지 않고 4.
 #[test]
 fn old_primary_refused_before_send() {

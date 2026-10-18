@@ -363,3 +363,89 @@ async fn state_give_up_marked_and_sent_again() {
     assert_eq!((m.refused, warning), (None, None), "다시 알리기 — 표시를 지운다");
     within(10, || msg(&a, &r.uuid).req_state == Some(ReqState::Done)).await;
 }
+
+/// 내 요청 상태 바뀜(#1q) — 받은 쪽이 수용 · 완료하면 요청자 내 활동에 그 요청이 맨 위 · 안 본 것(안 본 수 +1). 같은 상태 재전송은 기록하지 않고,
+/// 본 뒤에는 0, 다시 바뀌면 다시 1.
+#[tokio::test(flavor = "multi_thread")]
+async fn activity_my_request_state_unseen() {
+    let (a, b, b_id, _) = pair_review("act").await;
+    let (conv, r) = a
+        .chat
+        .send_with(b_id, "review", None, "QA 서버 올려 주세요", ask(true))
+        .await
+        .unwrap();
+    let (_, r2, _) = a.chat.post_with(conv.id, "둘째 요청", true, ask(true)).await.unwrap();
+    common::eventually(|| has(&b, &r.uuid) && has(&b, &r2.uuid)).await;
+    let mine = |s: &common::Side| {
+        chat::activity(&common::db(s), None, chat::ActivityFilter::MyRequest, None, 50)
+            .unwrap()
+            .into_iter()
+            .map(|x| (x.message.unwrap().uuid, x.unseen))
+            .collect::<Vec<_>>()
+    };
+    let unseen = |s: &common::Side| chat::activity_unseen(&common::db(s), None).unwrap();
+    let seen = |s: &common::Side| {
+        let db = common::db(s);
+        chat::mark_activity_seen(&db, None, chat::activity_upto(&db).unwrap()).unwrap();
+    };
+    // 막 보낸 요청은 안 본 것이 아니다.
+    assert_eq!(unseen(&a), 0);
+    assert!(mine(&a).iter().all(|(_, u)| !u));
+    tokio::time::sleep(Duration::from_millis(1100)).await; // 상태 바뀐 시각이 보낸 시각보다 뒤가 되게
+    b.chat
+        .set_req_state(msg(&b, &r.uuid).id, ReqState::Accepted, "오늘", None)
+        .await
+        .unwrap();
+    common::eventually(|| unseen(&a) == 1).await;
+    assert_eq!(mine(&a)[0], (r.uuid.clone(), true), "상태가 바뀐 요청이 맨 위 · 안 본 것");
+    assert_eq!(mine(&a)[1], (r2.uuid.clone(), false));
+    // 같은 상태 · 메모 재전송 — 기록 없음.
+    let pa = b.node.peers().unwrap().remove(0);
+    let again = Request::ReqState {
+        conv: conv.uuid.clone(),
+        msg: r.uuid.clone(),
+        state: "accepted".into(),
+        note: Some("오늘".into()),
+    };
+    seen(&a);
+    let (resp, _) = b.node.send(a.addr, Some(pa.spki.clone()), &again).await.unwrap();
+    assert_eq!(resp, Response::Ok);
+    assert_eq!(unseen(&a), 0, "재전송은 다시 알리지 않는다");
+    b.chat
+        .set_req_state(msg(&b, &r.uuid).id, ReqState::Done, "", None)
+        .await
+        .unwrap();
+    common::eventually(|| unseen(&a) == 1).await;
+    seen(&a);
+    assert_eq!(unseen(&a), 0);
+    assert!(mine(&a).iter().all(|(_, u)| !u));
+}
+
+/// 상태 저장과 내 활동 기록은 한 트랜잭션(#1q 적대적 평가 R1) — 기록이 실패하면 상태도 바뀌지 않고(`retry`), 보낸 쪽이 다시 보내면 둘 다 남는다.
+#[tokio::test(flavor = "multi_thread")]
+async fn activity_my_request_atomic_with_state() {
+    let (a, b, b_id, _) = pair_review("act-tx").await;
+    b.chat.set_retry(1, 1, 600);
+    let (_, r) = a
+        .chat
+        .send_with(b_id, "review", None, "원자성 요청", ask(true))
+        .await
+        .unwrap();
+    common::eventually(|| has(&b, &r.uuid)).await;
+    // A 의 `req_state` 기록만 실패하게.
+    common::db(&a)
+        .execute_batch(
+            "CREATE TRIGGER fail_req_state BEFORE INSERT ON relay_events WHEN NEW.kind = 'req_state'
+             BEGIN SELECT RAISE(ABORT, '주입 실패'); END;",
+        )
+        .unwrap();
+    b.chat
+        .set_req_state(msg(&b, &r.uuid).id, ReqState::Accepted, "확인", None)
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert_eq!(msg(&a, &r.uuid).req_state, Some(ReqState::Wait), "기록이 실패하면 상태도 그대로");
+    common::db(&a).execute_batch("DROP TRIGGER fail_req_state;").unwrap();
+    within(10, || msg(&a, &r.uuid).req_state == Some(ReqState::Accepted)).await;
+    assert_eq!(chat::activity_unseen(&common::db(&a), None).unwrap(), 1, "다시 보낸 상태가 안 본 것으로");
+}

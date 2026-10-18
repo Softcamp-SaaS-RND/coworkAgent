@@ -183,3 +183,43 @@ fn list_filters_by_kind_and_state() {
         None
     );
 }
+
+/// 요청 상태별 건수는 범위 전체(#1q 적대적 평가 R1) — 한 쪽 목록(최대 500)을 넘는 요청도 세고, 상태로 거르면 오래된 대기 요청도 나온다.
+#[test]
+fn req_counts_beyond_page() {
+    use an_core::chat::{self, AskFilter, ReqState};
+    let conn = db::open(&path("counts")).unwrap();
+    conn.execute_batch(
+        "INSERT INTO peers (id, spki, name, host, addr, round, created_at) VALUES (1, x'01', 'p', 'h', '1.2.3.4:1', 'r', 0);
+         INSERT INTO conversations (id, uuid, peer_id, agent, dir, created_at) VALUES (1, 'c', 1, 'a', 'in', 0), (2, 'o', 1, 'a', 'out', 0);
+         INSERT INTO messages (uuid, conversation_id, author, text, state, created_at, mine, request, req_state)
+           VALUES ('old-wait', 1, 'human', '오래된 대기', 'done', 1, 0, 1, 'wait');
+         WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 501)
+         INSERT INTO messages (uuid, conversation_id, author, text, state, created_at, mine, request, req_state)
+           SELECT 'done-' || i, 1, 'human', '완료 ' || i, 'done', 100 + i, 0, 1, 'done' FROM n;
+         INSERT INTO messages (uuid, conversation_id, author, text, state, created_at, mine, request, req_state)
+           VALUES ('mine-acc', 2, 'human', '내 요청', 'done', 5, 1, 1, 'accepted'),
+                  ('query', 1, 'human', '질의', 'done', 6, 0, 0, NULL);",
+    )
+    .unwrap();
+    let c = |mine| chat::req_counts(&conn, mine, chat::Scope::All).unwrap();
+    assert_eq!(
+        c(false),
+        chat::ReqCounts { wait: 1, accepted: 0, rejected: 0, done: 501 },
+        "질의는 세지 않는다"
+    );
+    assert_eq!(c(false).total(), 502);
+    assert_eq!(c(true), chat::ReqCounts { wait: 0, accepted: 1, rejected: 0, done: 0 });
+    assert_eq!(chat::req_counts(&conn, false, chat::Scope::Peer(9)).unwrap().total(), 0);
+    let waits = chat::messages_across(
+        &conn,
+        Some(false),
+        chat::Scope::All,
+        None,
+        Some(AskFilter::Request(Some(ReqState::Wait))),
+        None,
+        500,
+    )
+    .unwrap();
+    assert_eq!(waits.iter().map(|m| m.uuid.as_str()).collect::<Vec<_>>(), ["old-wait"]);
+}

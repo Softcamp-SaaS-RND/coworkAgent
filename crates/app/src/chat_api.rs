@@ -133,7 +133,7 @@ struct ReadUpto {
 struct ActivityQuery {
     #[serde(default)]
     peer: Option<i64>,
-    /// `all`(기본) | `human` | `agent` | `relay` | `failed`.
+    /// `all`(기본) | `request`(받은 요청) | `mine`(내 요청) | `answer`(받은 답) | `failed`(#1q).
     #[serde(default)]
     kind: Option<String>,
     #[serde(default)]
@@ -185,8 +185,13 @@ struct AgentPatch {
 /// `GET /api/messages` — 대화를 가로지른 글 목록.
 #[derive(Deserialize)]
 struct MessageQuery {
-    /// `theirs`(상대 쪽이 쓴 글) | `mine`(내가 쓴 글).
+    /// `theirs`(상대 쪽이 쓴 글) | `mine`(내가 쓴 글) | `both`(양쪽 — 주고받은 메시지 페이지, #1q).
     side: String,
+    /// 커서(#1q, `side=both` 만) — 받은 마지막 글의 id · 시각(`before_at`), 둘 다 주면 그 `(created_at, id)` 보다 앞의 것만.
+    #[serde(default)]
+    before: Option<i64>,
+    #[serde(default)]
+    before_at: Option<i64>,
     #[serde(default)]
     peer: Option<i64>,
     /// 레일 그룹(#1i) — 그 그룹 대화만. `peer` 와 함께 주면 400.
@@ -250,6 +255,8 @@ pub fn routes(chat: Arc<Chat>) -> Router {
         .route("/api/messages", get(list_across))
         .route("/api/messages/{id}", axum::routing::patch(save_message))
         .route("/api/messages/delete", axum::routing::post(delete_messages))
+        .route("/api/messages/peers", get(message_peers))
+        .route("/api/messages/req_counts", get(req_counts))
         .route("/api/search", get(search))
         .route("/api/activity", get(activity))
         .route("/api/activity/seen", axum::routing::post(activity_seen))
@@ -624,8 +631,12 @@ async fn list_across(State(chat): State<Arc<Chat>>, Query(q): Query<MessageQuery
     let mine = match q.side.as_str() {
         "theirs" => false,
         "mine" => true,
-        _ => return bad("side 는 theirs 또는 mine"),
+        "both" => return message_page(&chat, &q),
+        _ => return bad("side 는 theirs · mine · both"),
     };
+    if q.before.is_some() || q.before_at.is_some() {
+        return bad("before · before_at 은 side=both 와 함께");
+    }
     let author = match q.kind.as_deref() {
         None => None,
         Some("human") => Some(Author::Human),
@@ -676,6 +687,69 @@ async fn list_across(State(chat): State<Arc<Chat>>, Query(q): Query<MessageQuery
         out.push(v);
     }
     Json(out).into_response()
+}
+
+/// 주고받은 메시지 한 쪽(#1q, `side=both`) — 양쪽 글 최신부터 · `before` 커서. 거르기(kind · ask · req · q)는 받지 않는다.
+fn message_page(chat: &Chat, q: &MessageQuery) -> Response {
+    if q.kind.is_some() || q.ask.is_some() || q.req.is_some() || q.q.is_some() {
+        return bad("side=both 는 peer · group · before · limit 만");
+    }
+    let limit = q.limit.unwrap_or(MESSAGES_DEFAULT);
+    if !(1..=MESSAGES_MAX).contains(&limit) {
+        return bad(&format!("limit 은 1 ~ {MESSAGES_MAX}"));
+    }
+    let Some(scope) = scope_of(q.peer, q.group) else {
+        return bad("peer 와 group 은 함께 주지 않는다");
+    };
+    let before = match (q.before_at, q.before) {
+        (Some(at), Some(id)) => Some((at, id)),
+        (None, None) => None,
+        _ => return bad("before 와 before_at 은 함께"),
+    };
+    let db = chat.db();
+    match chat::messages_page(&db, scope, before, limit).and_then(|ms| Ok((ms, summary_map(&db)?))) {
+        Ok((ms, sums)) => Json(ms.iter().map(|m| message_in(m, &sums)).collect::<Vec<_>>()).into_response(),
+        Err(e) => db_fail(e),
+    }
+}
+
+/// 요청 상태별 건수(#1q 적대적 평가 R1) — `side=theirs|mine` · `peer` | `group` 범위 전체 → `{wait, accepted, rejected, done, total}`.
+async fn req_counts(State(chat): State<Arc<Chat>>, Query(q): Query<MessageQuery>) -> Response {
+    let mine = match q.side.as_str() {
+        "theirs" => false,
+        "mine" => true,
+        _ => return bad("side 는 theirs 또는 mine"),
+    };
+    let Some(scope) = scope_of(q.peer, q.group) else {
+        return bad("peer 와 group 은 함께 주지 않는다");
+    };
+    match chat::req_counts(&chat.db(), mine, scope) {
+        Ok(n) => Json(json!({ "wait": n.wait, "accepted": n.accepted, "rejected": n.rejected, "done": n.done, "total": n.total() }))
+            .into_response(),
+        Err(e) => db_fail(e),
+    }
+}
+
+/// 주고받은 메시지 상대별 요약(#1q) — `[{peer, count, last}]`(`last` = 마지막 메시지 JSON + 대화).
+async fn message_peers(State(chat): State<Arc<Chat>>, Query(q): Query<SavedQuery>) -> Response {
+    let Some(scope) = scope_of(q.peer, q.group) else {
+        return bad("peer 와 group 은 함께 주지 않는다");
+    };
+    let db = chat.db();
+    let rows = (|| {
+        let sums = summary_map(&db)?;
+        chat::peer_message_counts(&db, scope)?
+            .into_iter()
+            .map(|(peer, count, last)| {
+                let m = chat::message_by_id(&db, last)?;
+                Ok(json!({ "peer": peer, "count": count, "last": m.map_or(Value::Null, |m| message_in(&m, &sums)) }))
+            })
+            .collect::<Result<Vec<Value>, an_core::db::Error>>()
+    })();
+    match rows {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => db_fail(e),
+    }
 }
 
 async fn start_conversation(
@@ -926,11 +1000,11 @@ async fn search(State(chat): State<Arc<Chat>>, Query(q): Query<SearchQuery>) -> 
 async fn activity(State(chat): State<Arc<Chat>>, Query(q): Query<ActivityQuery>) -> Response {
     let filter = match q.kind.as_deref() {
         None | Some("all") => ActivityFilter::All,
-        Some("human") => ActivityFilter::Human,
-        Some("agent") => ActivityFilter::Agent,
-        Some("relay") => ActivityFilter::Relay,
+        Some("request") => ActivityFilter::Request,
+        Some("mine") => ActivityFilter::MyRequest,
+        Some("answer") => ActivityFilter::Answer,
         Some("failed") => ActivityFilter::Failed,
-        Some(_) => return bad("kind 는 all · human · agent · relay · failed"),
+        Some(_) => return bad("kind 는 all · request · mine · answer · failed"),
     };
     let limit = q.limit.unwrap_or(MESSAGES_DEFAULT);
     if !(0..=MESSAGES_MAX).contains(&limit) {

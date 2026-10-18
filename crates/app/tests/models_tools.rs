@@ -193,12 +193,11 @@ async fn models_tools_request_filter() {
 #[tokio::test(flavor = "multi_thread")]
 async fn models_tools_activity_has_no_ask_kinds() {
     let a = side("act").await;
-    for kind in ["query", "request"] {
-        let (code, r) = a
-            .call("GET", &format!("/api/activity?kind={kind}"), Value::Null)
-            .await;
-        assert_eq!(code, 400, "{kind} → {r}");
-    }
+    // 질의 거르기는 없다. '받은 요청'(`request`)은 #1q 부터 내 활동 거르기다.
+    let (code, r) = a.call("GET", "/api/activity?kind=query", Value::Null).await;
+    assert_eq!(code, 400, "{r}");
+    let (code, r) = a.call("GET", "/api/activity?kind=request", Value::Null).await;
+    assert_eq!(code, 200, "{r}");
     let (code, _) = a.call("GET", "/api/activity?kind=all", Value::Null).await;
     assert_eq!(code, 200);
 }
