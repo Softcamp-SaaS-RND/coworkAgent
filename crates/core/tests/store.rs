@@ -680,7 +680,7 @@ fn schema18_peer_groups_from_old_text() {
         // 스키마 17 이 남긴 파일 — `group_peers` 가 없고 상대마다 자유 입력 그룹(`grp`), 같은 이름 레일 그룹 하나는 이미 있다.
         let c = db::open(&p).unwrap();
         c.execute_batch(
-            "DROP TABLE group_peers; INSERT INTO groups (name, pos) VALUES ('결제 모듈', 0); PRAGMA user_version = 17;",
+            "DROP TABLE IF EXISTS group_peers; INSERT INTO groups (name, pos) VALUES ('결제 모듈', 0); PRAGMA user_version = 17;",
         )
         .unwrap();
         let olds = [
@@ -720,17 +720,19 @@ fn schema18_peer_groups_from_old_text() {
     assert_eq!(db::user_version(&c).unwrap(), db::SCHEMA_VERSION);
     assert!(db::backup_path(&p, 17).exists(), "올리기 전 사본");
     // 같은 이름은 한 그룹(있던 그룹 포함) · 앞뒤 공백 · 제어 문자 뺌 · 40자 · 빈 이름 · 없음은 건너뜀, 새 그룹은 상대 순서대로 끝에.
+    // 상대 소속은 스키마 21 이 그 상대의 대화로 옮겼다(#1w) — 대화가 없는 상대라 소속이 빈다.
+    assert_eq!(ids.len(), 7);
     assert_eq!(
         groups::list(&c)
             .unwrap()
             .into_iter()
-            .map(|g| (g.name, g.peers, g.convs))
+            .map(|g| (g.name, g.convs))
             .collect::<Vec<_>>(),
         vec![
-            ("결제 모듈".to_string(), vec![ids[1]], vec![]),
-            ("QA".to_string(), vec![ids[0], ids[2]], vec![]),
-            ("가".repeat(40), vec![ids[5]], vec![]),
-            ("ab".to_string(), vec![ids[6]], vec![]),
+            ("결제 모듈".to_string(), vec![]),
+            ("QA".to_string(), vec![]),
+            ("가".repeat(40), vec![]),
+            ("ab".to_string(), vec![]),
         ]
     );
     let agent_grp: String = c
@@ -744,63 +746,6 @@ fn schema18_peer_groups_from_old_text() {
     );
     assert_eq!(groups::fit_name(" \u{1}\t "), None);
     assert_eq!(groups::fit_name(" x "), Some("x".to_string()));
-}
-
-#[test]
-fn schema18_group_includes_peer_conversations() {
-    use an_core::{groups, peers};
-    let c = conn("s18-scope");
-    let a = peers::upsert(&c, b"a", "a", "h", "1.2.3.4:1", "r").unwrap();
-    let b = peers::upsert(&c, b"b", "b", "h", "1.2.3.4:2", "r").unwrap();
-    let say = |conv: i64, uuid: &str| {
-        chat::add_message(&c, conv, uuid, chat::Author::Human, "글", chat::State::Sent)
-            .unwrap()
-            .id
-    };
-    let ca = chat::open_conversation(&c, "u-a", a.id, "x", chat::Dir::Out).unwrap();
-    let cb = chat::open_conversation(&c, "u-b", b.id, "x", chat::Dir::Out).unwrap();
-    let cb2 = chat::open_conversation(&c, "u-b2", b.id, "y", chat::Dir::Out).unwrap();
-    let (ma, mb, mb2) = (say(ca.id, "m-a"), say(cb.id, "m-b"), say(cb2.id, "m-b2"));
-    let g = groups::add(&c, "묶음").unwrap();
-    assert!(groups::change(&c, g.id, &[cb.id], &[]).unwrap());
-    assert!(groups::change_peers(&c, g.id, &[a.id], &[]).unwrap());
-    assert!(
-        !groups::change_peers(&c, 999, &[a.id], &[]).unwrap(),
-        "없는 그룹"
-    );
-    // 넣은 뒤 생긴 그 상대의 대화도 그룹에.
-    let ca2 = chat::open_conversation(&c, "u-a2", a.id, "y", chat::Dir::In).unwrap();
-    let ma2 = say(ca2.id, "m-a2");
-    let in_group = |c: &db::Connection| {
-        let mut ids: Vec<i64> =
-            chat::messages_across(c, None, chat::Scope::Group(g.id), None, None, None, 100)
-                .unwrap()
-                .into_iter()
-                .map(|m| m.id)
-                .collect();
-        ids.sort();
-        ids
-    };
-    assert_eq!(in_group(&c), vec![ma, mb, ma2]);
-    assert!(
-        !in_group(&c).contains(&mb2),
-        "하나씩 넣지 않은 다른 상대 대화는 아니다"
-    );
-    assert_eq!(groups::by_id(&c, g.id).unwrap().unwrap().peers, vec![a.id]);
-    assert_eq!(
-        groups::unknown_peers(&c, &[a.id, 77, 77]).unwrap(),
-        vec![77]
-    );
-    // 상대를 빼도 하나씩 넣은 대화는 남는다 · 그룹을 지우면 상대 소속도 지운다.
-    assert!(groups::change(&c, g.id, &[ca.id], &[]).unwrap());
-    assert!(groups::change_peers(&c, g.id, &[], &[a.id]).unwrap());
-    assert_eq!(in_group(&c), vec![ma, mb]);
-    assert!(groups::change_peers(&c, g.id, &[b.id], &[]).unwrap());
-    assert!(groups::remove(&c, g.id).unwrap());
-    let left: i64 = c
-        .query_row("SELECT count(*) FROM group_peers", [], |r| r.get(0))
-        .unwrap();
-    assert_eq!(left, 0);
 }
 
 /// 대화방 미리보기(#1j 라운드 1) — 마지막 글 = 대화 화면과 같은 `(lc, uuid)` 순서의 마지막(로컬 `id` 가 더 커도 공통 순서가 앞이면 아니다).
@@ -885,8 +830,7 @@ fn schema20_share_tables_from_19() {
         (pr.id, out.id, inn.id)
     };
     let c = db::open(&p).unwrap();
-    assert_eq!(db::SCHEMA_VERSION, 20);
-    assert_eq!(db::user_version(&c).unwrap(), 20);
+    assert_eq!(db::user_version(&c).unwrap(), db::SCHEMA_VERSION);
     assert!(db::backup_path(&p, 19).exists(), "올리기 전 사본");
     // 기존 대화 dir · 글 그대로.
     assert_eq!(chat::by_id(&c, out).unwrap().unwrap().dir, chat::Dir::Out);
@@ -1133,4 +1077,134 @@ fn peer_pages_order() {
         cur = Some((m.created_at, m.id));
     }
     assert_eq!(seen, ["셋", "둘", "첫", "옛 사본 글"]);
+}
+
+/// 스키마 21(#1w) — 상대 단위 그룹 소속은 그 상대의 지금 대화로 옮기고 표를 지운다. 뒤에 생긴 그 상대의 대화는 들어오지 않는다.
+#[test]
+fn schema21_group_peers_to_convs() {
+    use an_core::{groups, peers};
+    let p = std::env::temp_dir().join(format!("an-core-store-s21g-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&p);
+    let _ = std::fs::remove_file(db::backup_path(&p, 20));
+    let (g, ca1, ca2, cb, a) = {
+        // 스키마 20 이 남긴 파일 — 상대 소속 표가 있고 나간 시각 · 묘비가 없다.
+        let c = db::open(&p).unwrap();
+        let a = peers::upsert(&c, b"ka", "a", "h", "1.2.3.4:1", "r").unwrap();
+        let b = peers::upsert(&c, b"kb", "b", "h", "1.2.3.4:2", "r").unwrap();
+        let ca1 = chat::open_conversation(&c, "u-a1", a.id, "x", chat::Dir::Out).unwrap();
+        let ca2 = chat::open_conversation(&c, "u-a2", a.id, "y", chat::Dir::In).unwrap();
+        let cb = chat::open_conversation(&c, "u-b", b.id, "x", chat::Dir::Out).unwrap();
+        let g = groups::add(&c, "묶음").unwrap();
+        assert!(groups::change(&c, g.id, &[cb.id], &[]).unwrap());
+        c.execute_batch(&format!(
+            "CREATE TABLE group_peers (group_id INTEGER NOT NULL, peer_id INTEGER NOT NULL, PRIMARY KEY (group_id, peer_id));
+             INSERT INTO group_peers VALUES ({}, {});
+             DROP TABLE left_convs;
+             ALTER TABLE conversations DROP COLUMN left_at; ALTER TABLE conversations DROP COLUMN peer_left_at;
+             PRAGMA user_version = 20;",
+            g.id, a.id
+        ))
+        .unwrap();
+        (g.id, ca1.id, ca2.id, cb.id, a.id)
+    };
+    let c = db::open(&p).unwrap();
+    assert_eq!(db::user_version(&c).unwrap(), db::SCHEMA_VERSION);
+    assert!(db::backup_path(&p, 20).exists(), "올리기 전 사본");
+    let mut want = vec![ca1, ca2, cb];
+    want.sort();
+    assert_eq!(groups::by_id(&c, g).unwrap().unwrap().convs, want);
+    let gone = !c
+        .prepare("SELECT 1 FROM sqlite_master WHERE name = 'group_peers'")
+        .unwrap()
+        .exists([])
+        .unwrap();
+    assert!(gone, "상대 소속 표 없음");
+    // 이전 뒤 생긴 그 상대의 대화는 그룹에 없다.
+    let late = chat::open_conversation(&c, "u-a3", a, "x", chat::Dir::Out).unwrap();
+    chat::add_message(&c, late.id, "m-late", chat::Author::Human, "글", chat::State::Sent).unwrap();
+    assert!(!groups::by_id(&c, g).unwrap().unwrap().convs.contains(&late.id));
+    let in_group =
+        chat::messages_across(&c, None, chat::Scope::Group(g), None, None, None, 100).unwrap();
+    assert!(in_group.iter().all(|m| m.conversation_id != late.id));
+    let conv = chat::by_id(&c, ca1).unwrap().unwrap();
+    assert_eq!((conv.left_at, conv.peer_left_at), (None, None));
+}
+
+/// 스키마 21(#1w) — 대화 번호를 다시 쓰지 않는다: AUTOINCREMENT 로 다시 만들고(열 · 행 그대로) 순번은 남은 딸린 행의 번호까지. 지운 가장 큰 번호도.
+#[test]
+fn schema21_conversations_autoincrement() {
+    let p = std::env::temp_dir().join(format!("an-core-store-s21a-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&p);
+    let _ = std::fs::remove_file(db::backup_path(&p, 20));
+    let columns = |c: &db::Connection| {
+        let mut st = c
+            .prepare("SELECT name FROM pragma_table_info('conversations') ORDER BY cid")
+            .unwrap();
+        st.query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>()
+    };
+    let before;
+    {
+        // 스키마 20 이 남긴 파일 — `conversations` 에 AUTOINCREMENT 가 없다. 대화 1 · 3, 지운 대화 9 의 글이 남았다.
+        let c = db::open(&p).unwrap();
+        let sql: String = c
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE name = 'conversations'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        c.execute_batch(&format!(
+            "{}; DROP TABLE conversations; ALTER TABLE conversations_old RENAME TO conversations;
+             DELETE FROM sqlite_sequence WHERE name = 'conversations';
+             ALTER TABLE conversations DROP COLUMN left_at; ALTER TABLE conversations DROP COLUMN peer_left_at;
+             PRAGMA user_version = 20;",
+            sql.replace("CREATE TABLE \"conversations\"", "CREATE TABLE conversations_old")
+                .replace("CREATE TABLE conversations ", "CREATE TABLE conversations_old ")
+                .replace(" AUTOINCREMENT", "")
+        ))
+        .unwrap();
+        c.execute_batch(
+            "INSERT INTO conversations (id, uuid, peer_id, agent, dir, created_at, title) VALUES
+               (1, 'c1', 2, 'a', 'out', 10, '제목'), (3, 'c3', 2, 'a', 'in', 20, NULL);
+             INSERT INTO messages (id, uuid, conversation_id, author, text, state, created_at) VALUES
+               (1, 'm1', 1, 'human', '하나', 'done', 30), (2, 'm9', 9, 'human', '남은 글', 'done', 40);",
+        )
+        .unwrap();
+        let s: String = c
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE name = 'conversations'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(!s.contains("AUTOINCREMENT"));
+        before = columns(&c);
+    }
+    let c = db::open(&p).unwrap();
+    assert_eq!(db::user_version(&c).unwrap(), db::SCHEMA_VERSION);
+    let s: String = c
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE name = 'conversations'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(s.contains("AUTOINCREMENT"), "{s}");
+    let mut want = before.clone();
+    want.extend(["left_at".to_string(), "peer_left_at".to_string()]);
+    assert_eq!(columns(&c), want, "열 그대로 + 나간 시각");
+    let one = chat::by_id(&c, 1).unwrap().unwrap();
+    assert_eq!((one.uuid.as_str(), one.dir), ("c1", chat::Dir::Out));
+    assert_eq!(chat::marks(&c, 1).unwrap().unwrap().0.as_deref(), Some("제목"));
+    assert!(chat::by_id(&c, 3).unwrap().is_some());
+    // 남은 글의 대화 번호 9 까지 다시 쓰지 않는다.
+    let n = chat::open_conversation(&c, "c-new", 2, "a", chat::Dir::Out).unwrap();
+    assert_eq!(n.id, 10);
+    // 가장 큰 번호를 지워도 새 대화는 더 큰 번호.
+    assert!(chat::delete_conversation(&c, n.id).unwrap());
+    let m = chat::open_conversation(&c, "c-next", 2, "a", chat::Dir::Out).unwrap();
+    assert_eq!(m.id, 11);
 }

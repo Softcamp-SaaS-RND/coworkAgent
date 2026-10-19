@@ -97,6 +97,17 @@ pub struct Conversation {
     pub relay: Option<Relay>,
     /// 받은 쪽: 에이전트발 실행 요청을 거절한다(받은 쪽 사람이 멈춤).
     pub relay_blocked: bool,
+    /// 이 PC 가 나간 시각(#1w) — 그 뒤 이 대화로 온 요청은 거절(`left`), 읽기 전용.
+    pub left_at: Option<i64>,
+    /// 상대가 나간 시각(#1w — 상대의 `Leave`) — 읽기 전용.
+    pub peer_left_at: Option<i64>,
+}
+
+impl Conversation {
+    /// 나간 대화(#1w) — 내가 나갔거나 상대가 나갔다. 읽기 전용(글쓰기 · 실행 · 보내기 없음).
+    pub fn closed(&self) -> bool {
+        self.left_at.is_some() || self.peer_left_at.is_some()
+    }
 }
 
 /// 자동 왕복 상태 — 1왕복 = 내 에이전트가 상대 답에 한 번 답함.
@@ -245,9 +256,9 @@ fn bad(col: usize, v: &str) -> rusqlite::Error {
     )
 }
 
-const CONV_COLS: &str = "id, uuid, peer_id, agent, dir, session, relay_agent, relay_cap, relay_count, relay_on, relay_blocked";
+const CONV_COLS: &str = "id, uuid, peer_id, agent, dir, session, relay_agent, relay_cap, relay_count, relay_on, relay_blocked, left_at, peer_left_at";
 /// `CONV_COLS` 열 수 — 그 뒤에 붙는 열의 위치.
-const CONV_N: usize = 11;
+const CONV_N: usize = 13;
 
 fn conv_row(r: &Row) -> rusqlite::Result<Conversation> {
     let dir: String = r.get(4)?;
@@ -275,6 +286,8 @@ fn conv_row(r: &Row) -> rusqlite::Result<Conversation> {
             })
             .transpose()?,
         relay_blocked: r.get::<_, Option<bool>>(10)?.unwrap_or(false),
+        left_at: r.get(11)?,
+        peer_left_at: r.get(12)?,
     })
 }
 
@@ -352,6 +365,13 @@ pub fn open_conversation(
     if let Some(c) = find(conn, uuid, peer_id)? {
         return Ok(c);
     }
+    // 지운 대화(#1w — 묘비)는 되살리지 않는다 — 받기 앞 확인과 삭제 사이에 끼어든 글도 여기서 막힌다.
+    if conn
+        .prepare("SELECT 1 FROM left_convs WHERE uuid = ?1 AND peer_id = ?2")?
+        .exists(params![uuid, peer_id])?
+    {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
     conn.execute(
         // 새 대화는 맨 위(#1i — 손으로 놓은 순서의 앞).
         "INSERT INTO conversations (uuid, peer_id, agent, dir, created_at, pos)
@@ -368,6 +388,16 @@ pub fn find_own(
     peer_id: i64,
 ) -> rusqlite::Result<Option<Conversation>> {
     Ok(find(conn, uuid, peer_id)?.filter(|c| c.dir != Dir::Shared))
+}
+
+/// [`find_own`] 중 닫히지 않은 것(#1w) — 상대의 대화 프레임이 이력을 바꾸는 받기 처리기가 쓴다(받기 앞 `left` 확인 뒤 나가기가 끼어도 바꾸기와 같은
+/// 잠금 안에서 다시 걸러진다). 닫힌 대화는 `None`(= `unknown`).
+pub fn find_open(
+    conn: &Connection,
+    uuid: &str,
+    peer_id: i64,
+) -> rusqlite::Result<Option<Conversation>> {
+    Ok(find_own(conn, uuid, peer_id)?.filter(|c| !c.closed()))
 }
 
 pub fn find(conn: &Connection, uuid: &str, peer_id: i64) -> rusqlite::Result<Option<Conversation>> {
@@ -461,6 +491,12 @@ pub fn delete_message(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
         [id],
     )?;
     let gone = conn.execute("DELETE FROM messages WHERE id = ?1", [id])? > 0;
+    lower_marks(conn)?;
+    Ok(gone)
+}
+
+/// 글 · 기록을 지운 뒤 — 읽음 · 내 활동 본 표시 · 공유 보낸 커서를 남은 마지막 id 로 낮춘다([`delete_message`]).
+fn lower_marks(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "UPDATE conversations SET read_id = (SELECT coalesce(max(id), 0) FROM messages)
            WHERE read_id > (SELECT coalesce(max(id), 0) FROM messages);
@@ -470,11 +506,106 @@ pub fn delete_message(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
            WHERE activity_seen_event > (SELECT coalesce(max(id), 0) FROM relay_events);
          UPDATE shares SET sent_upto = (SELECT coalesce(max(id), 0) FROM messages)
            WHERE sent_upto > (SELECT coalesce(max(id), 0) FROM messages);",
+    )
+}
+
+/// 나간 대화의 거절 코드(#1w) — 나간 쪽이 그 대화로 온 요청에 답하고, 나가며 닫은 글에 남긴다.
+pub const LEFT: &str = "left";
+
+/// 닫힌 대화 · 지운 대화(묘비)인가(#1w) — 이 PC 가 나갔거나 그 상대가 나갔다(`Leave` 를 보낸 상대의 글도 받지 않는다 — 원격 입력은 신뢰하지 않는다).
+/// 공유 사본은 아니다(사본은 `share` 규칙).
+pub fn left(conn: &Connection, uuid: &str, peer_id: i64) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM conversations WHERE uuid = ?1 AND peer_id = ?2 AND dir <> 'shared'
+             AND (left_at IS NOT NULL OR peer_left_at IS NOT NULL))
+           OR EXISTS (SELECT 1 FROM left_convs WHERE uuid = ?1 AND peer_id = ?2)",
+        params![uuid, peer_id],
+        |r| r.get(0),
+    )
+}
+
+/// 실행 시작(#1w) — 대기 글(`queued`)이고 대화가 닫히지 않았을 때만 `running` 으로(한 문장 — 확인과 바꾸기 사이에 나가기 · 삭제가 끼지 못한다).
+/// 바꿨으면 참 — 거짓이면 실행하지 않는다(그 사이 취소 · 나감 · 지움).
+pub fn start_run(conn: &Connection, message_id: i64) -> rusqlite::Result<bool> {
+    Ok(conn.execute(
+        "UPDATE messages SET state = 'running' WHERE id = ?1 AND state = 'queued'
+           AND conversation_id IN (SELECT id FROM conversations WHERE left_at IS NULL AND peer_left_at IS NULL)",
+        [message_id],
+    )? == 1)
+}
+
+/// 도는 실행이 있나(#1w — 실행 중이면 나가기 · 삭제를 막는다). 구분선(압축)도 실행이다.
+pub fn running(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = ?1 AND state = 'running')",
+        [id],
+        |r| r.get(0),
+    )
+}
+
+/// 끝나지 않은 글을 닫는다(#1w) — 실행 대기(`queued`) · 보낸 뒤 상대를 기다리는 내 글(`sent`)은 실패 + [`LEFT`], 자동 왕복은 끈다.
+fn close_pending(conn: &Connection, id: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE messages SET state = 'error', refused = ?2
+         WHERE conversation_id = ?1 AND (state = 'queued' OR (mine = 1 AND state = 'sent'))",
+        params![id, LEFT],
     )?;
+    conn.execute("UPDATE conversations SET relay_on = 0 WHERE id = ?1", [id])
+        .map(drop)
+}
+
+/// 이 PC 가 나간다(#1w) — 끝나지 않은 글 닫기 · 자동 왕복 끔 · 나간 시각(이미 나갔으면 그 시각 그대로). 없는 대화면 거짓.
+pub fn leave(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
+    close_pending(conn, id)?;
+    Ok(conn.execute(
+        "UPDATE conversations SET left_at = coalesce(left_at, unixepoch()) WHERE id = ?1",
+        [id],
+    )? == 1)
+}
+
+/// 상대가 나갔다(#1w — 받은 `Leave`) — [`leave`] 와 같이 닫고 상대 나간 시각. 이미 받았으면 거짓.
+pub fn set_peer_left(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
+    close_pending(conn, id)?;
+    Ok(conn.execute(
+        "UPDATE conversations SET peer_left_at = unixepoch() WHERE id = ?1 AND peer_left_at IS NULL",
+        [id],
+    )? == 1)
+}
+
+/// 대화를 이 PC 에서 지운다(#1w — D40) — 글 · 실행 · 에이전트 세션 기록 · 요약 · 그룹 소속 · 공유 · 보낼 글 · 기록 · CLI 트랜잭션. 끝 알림 행
+/// (`Leave` — `conv_id` 없이 넣는다 · 관람자 앞 `ShareEnd`)은 대화에서 떼어 남긴다(상대 · 관람자가 끝을 받게). 공유 사본이 아니면 묘비를 남긴다
+/// — 같은 uuid 로 온 글이 대화를 되살리지 않게(사본은 다시 초대로 새로 받는다). 없는 대화면 거짓.
+pub fn delete_conversation(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
+    conn.execute(
+        "INSERT OR IGNORE INTO left_convs (uuid, peer_id, at)
+         SELECT uuid, peer_id, unixepoch() FROM conversations WHERE id = ?1 AND dir <> 'shared'",
+        [id],
+    )?;
+    conn.execute(
+        "UPDATE outbox SET conv_id = NULL
+         WHERE conv_id = ?1 AND kind = ?2 AND json_extract(frame, '$.type') = 'share_end'",
+        params![id, crate::outbox::SHARE],
+    )?;
+    for sql in [
+        "DELETE FROM cli_tx WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ?1)",
+        "DELETE FROM relay_events WHERE conversation_id = ?1
+           OR message_id IN (SELECT id FROM messages WHERE conversation_id = ?1)",
+        "DELETE FROM outbox WHERE conv_id = ?1
+           OR msg_id IN (SELECT id FROM messages WHERE conversation_id = ?1)",
+        "DELETE FROM agent_sessions WHERE conversation_id = ?1",
+        "DELETE FROM ctx_seeds WHERE conversation_id = ?1",
+        "DELETE FROM group_convs WHERE conversation_id = ?1",
+        "DELETE FROM shares WHERE conversation_id = ?1",
+        "DELETE FROM messages WHERE conversation_id = ?1",
+    ] {
+        conn.execute(sql, [id])?;
+    }
+    let gone = conn.execute("DELETE FROM conversations WHERE id = ?1", [id])? == 1;
+    lower_marks(conn)?;
     Ok(gone)
 }
 
-/// 목록 범위(#1i) — 전부 · 한 상대의 대화 · 한 그룹(이 PC 의 그룹 소속 — 하나씩 넣은 대화 + 넣은 상대의 대화, #1j)의 대화.
+/// 목록 범위(#1i) — 전부 · 한 상대의 대화 · 한 그룹(이 PC 의 그룹 소속 — 넣은 대화, #1w 그룹 = 대화만)의 대화.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Scope {
     #[default]
@@ -496,8 +627,7 @@ impl Scope {
     /// 거르는 SQL — 대화 별칭 `c`, 자리표 `?{peer}` · `?{group}`.
     pub fn sql(peer: usize, group: usize) -> String {
         format!(
-            "(?{peer} IS NULL OR c.peer_id = ?{peer}) AND (?{group} IS NULL OR c.id IN (SELECT conversation_id FROM group_convs WHERE group_id = ?{group}) \
-             OR c.peer_id IN (SELECT peer_id FROM group_peers WHERE group_id = ?{group}))"
+            "(?{peer} IS NULL OR c.peer_id = ?{peer}) AND (?{group} IS NULL OR c.id IN (SELECT conversation_id FROM group_convs WHERE group_id = ?{group}))"
         )
     }
 }

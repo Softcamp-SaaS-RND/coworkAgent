@@ -1,6 +1,6 @@
 [package]
 name = "an-core"
-version = "0.8.0"
+version = "1.0.0"
 edition = "2024"
 
 [lib]

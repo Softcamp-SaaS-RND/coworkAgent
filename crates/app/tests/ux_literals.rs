@@ -64,7 +64,6 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("web", "코드", "#17 라벨"),
     ("index.html", r#"<span class="hint kbd-hint"><kbd>Enter</kbd> 보내기 · <kbd>Shift+Enter</kbd> 줄바꿈</span>"#, "#17 라벨 · #1p 키만 고정폭"),
     ("web", "보내기", "#17 라벨"),
-    ("web", " 에게 보내기`", "#17 라벨"),
     ("web", "닫기", "#17 라벨"),
     ("web", "진행", "#17 라벨"),
     ("web", "요청 보냄", "#17 라벨"),
@@ -88,7 +87,6 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("web", "질의", "#18 문구"),
     ("web", "요청", "#18 문구"),
     ("web", "에이전트 멘션", "#18 문구"),
-    ("web", "@ 로 상대 에이전트 부르기", "#18 문구"),
     // 1d — 요청 목록 · 상태 · 도구 · 모델
     ("web", "받은 요청", "#1d 요청 목록"),
     ("web", "보낸 요청", "#1d 요청 목록"),
@@ -97,24 +95,21 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("web", "탐색 도구(읽기 전용) 항상 사용", "#1d 도구"),
     ("web", r#"<select id="claude_model"></select>"#, "#1d 모델"),
     ("web", r#"export const MODELS = ["opus", "sonnet", "haiku"];"#, "#1d 모델"),
-    // 1f — 이력 정리
-    ("index.html", r#"aria-pressed="false" title="편집 모드"><span class="ico ico-pencil" aria-hidden="true"></span>편집</button>"#, "#1f 편집 · #1r 연필"),
-    ("index.html", r#"<span id="edit_count">0개 선택</span>"#, "#1f 편집"),
-    ("index.html", r#"<button id="edit_delete" type="button" class="danger" disabled>삭제</button>"#, "#1f 편집"),
-    ("index.html", r#"<button id="edit_done" type="button" class="primary">완료</button>"#, "#1f 편집"),
-    ("index.html", r#"<button value="mine">내 창에서만</button>"#, "#1f 반영 범위"),
-    ("index.html", r#"<button value="both">상대 창에도</button>"#, "#1f 반영 범위"),
-    ("index.html", r#"<button value="cancel">취소</button>"#, "#1f 반영 범위"),
+    // 1f — 이력 정리(웹UI 편집 모드는 #1v 에서 삭제 — 없음 표)
     ("app.js", r#"iconButton(COPY_SVG, "복사""#, "#1f 복사"),
     ("app.js", r#""복사했습니다""#, "#1f 복사"),
-    ("app.js", r#"iconButton(PENCIL_SVG, "본문 편집""#, "#1f 편집"),
     ("view.js", r#""(편집됨)""#, "#1f 편집됨"),
     // 1g — 레일 범위('나' 메뉴 · 상대 타일)
     ("view.js", r##"{ label: "요청", href: "#requests", count: waiting, icon: "inbox" },"##, "#1g 메뉴"),
     ("view.js", r##"{ label: "북마크", href: "#saved", icon: "bookmark" }"##, "#1g 메뉴"),
     ("view.js", r##"{ label: "주고받은 메시지", href: "#p", icon: "swap" }"##, "#1g 메뉴"),
     ("view.js", r##"{ label: "즐겨찾기", href: "#starred", count: starred, icon: "star" }"##, "#1g 메뉴"),
-    ("view.js", r##"{ label: "에이전트", href: "#agents", icon: "bot" }"##, "#1g 메뉴"),
+    ("view.js", r##"{ label: "에이전트", icon: "bot", head: true }"##, "#1v 메뉴 머리"),
+    ("view.js", r##"{ label: "등록된 에이전트", href: "#agents", icon: "bot", sub: true }"##, "#1v 하위 메뉴"),
+    ("view.js", r##"{ label: "에이전트 대화", href: "#agents/convs", icon: "chat", sub: true, count: agentUnread }"##, "#1v 하위 메뉴"),
+    ("index.html", r#"<button id="req_view_list" type="button" aria-pressed="true">목록</button>"#, "#1v 요청 보기"),
+    ("index.html", r#"<button id="req_view_board" type="button" aria-pressed="false">보드</button>"#, "#1v 요청 보기"),
+    ("app.js", r#"`요청 피드백 · ${formatTime(f.at)}`"#, "#1v 피드백 말풍선"),
     ("view.js", r##"[{ label: "개요", href: "#", icon: "home" }]"##, "#1g 메뉴"),
     ("view.js", r##"{ label: "내 활동", href: "#activity", count: unseen, icon: "bell" }"##, "#1g 메뉴"),
     ("index.html", r#"<ol id="home_summary" class="rows"></ol>"#, "#1g 개요"),
@@ -151,7 +146,6 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app.js", r#"el("span", { class: "avatar-name", text: name })"#, "#1h 프로필"),
     ("app.js", "`${name} · ${st.text}`", "#1h 프로필"),
     ("app.js", r#": "개요";"#, "#1h 개요"),
-    ("app.js", r#"askScope("고친 본문 저장")"#, "#1h 북마크가 아닌 저장"),
     ("app.js", r#"peerAct("연결 설정 저장""#, "#1h 북마크가 아닌 저장"),
     ("app.js", r#"iconButton(BOOKMARK_SVG, on ? "북마크 해제" : "북마크""#, "#1h 북마크"),
     ("app.css", ".side-nav .nav-sep {", "#1h 구분선"),
@@ -199,16 +193,10 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("index.html", r#"<button type="button" id="peer_group_add">+ 그룹 추가</button>"#, "#1j 설정"),
     ("index.html", r#"<section id="peers" class="card">"#, "#1j 설정"),
     ("index.html", r#"<p id="invite_msg" role="status"></p>"#, "#1j 설정"),
-    ("app.js", r#"text: "그룹 ▾","#, "#1j 상대 그룹"),
     ("app.js", r#"el("span", { text: "그룹" })"#, "#1j 상대 그룹"),
-    ("app.js", r#"ico("plus"), el("span", { text: "새 그룹에 넣기…" })"#, "#1j 상대 그룹"),
-    ("app.js", "/api/groups/${id}/peers", "#1j 상대 그룹"),
     ("app.js", r#""data-peer-section""#, "#1j 상대 그룹"),
     ("app.js", "function openGroupRename(", "#1j 상대 그룹"),
     ("app.js", "function groupDeleteForm(", "#1j 상대 그룹"),
-    ("app.js", "peerMove(d.peer, d.from, to, state.groups)", "#1j 상대 그룹"),
-    ("view.js", r#"export const NO_PEER_GROUP = "그룹에 없는 연결";"#, "#1j 상대 그룹"),
-    ("view.js", "그룹 \"${group}\" 에 넣었습니다`", "#1j 상대 그룹"),
     // 1k — 다듬기
     ("index.html", r#"<button type="button" id="accept_btn" class="primary big" aria-expanded="false" aria-controls="invite_accept">"#, "#1k 설정"),
     ("index.html", r#"<section id="invite_accept" class="sub" hidden>"#, "#1k 설정"),
@@ -220,7 +208,20 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app.js", "function editAgent(", "#1k 에이전트"),
     ("app.js", r#""data-peer-sub": String(p.id)"#, "#1k 관리 줄"),
     ("app.js", "function peerSub(", "#1k 관리 줄"),
-    ("app.js", "`peer${p.id}_${s.group ?? \"none\"}`", "#1k 관리 줄"),
+    ("app.js", "`peer${p.id}`,", "#1k 관리 줄 · #1w 사용자 목록은 상대마다 한 줄"),
+    // 1w — 대화 나가기 · 삭제, 그룹 = 대화만 · 설정 연결 목록
+    ("view.js", r#"export const USER_LIST = "사용자 목록";"#, "#1w 설정 연결 목록"),
+    ("view.js", r#"{ key: "leave", label: "나가기", icon: "exit" }"#, "#1w 대화 메뉴"),
+    ("view.js", r#"{ key: "delete", label: "삭제", icon: "trash", danger: true }"#, "#1w 대화 메뉴"),
+    ("view.js", r#"if (m.refused === "left") return "상대가 대화를 나갔습니다";"#, "#1w 거절 사유"),
+    ("view.js", r#"if (c.left_at != null) return "나감";"#, "#1w 닫힌 대화"),
+    ("view.js", r#"return c.peer_left_at != null ? "상대가 나감" : "";"#, "#1w 닫힌 대화"),
+    ("app.js", r#""더 받지 않습니다. 이력은 읽기 전용으로 남습니다.""#, "#1w 나가기 확인"),
+    ("app.js", r#""이 PC 에서 대화 · 글을 지웁니다. 상대 PC 기록은 남습니다.""#, "#1w 삭제 확인"),
+    ("app.js", r#"text: "그룹에서 빼기","#, "#1w 설정 그룹 절"),
+    ("app.js", "`settingsconvs:${p.id}`", "#1w 사용자 목록 대화 트리"),
+    ("app.js", "convCopy(id, to, state.groups)", "#1w 끌어 놓기 = 복사"),
+    ("app.css", ".ico-exit {", "#1w 아이콘"),
     ("app.js", r#"rowEls(rows, "주고받은 메시지 없음", { tile: true })"#, "#1k 주고받은 글(#1q 상대 절 페이지)"),
     ("app.js", r#"class: "chip agent-chip""#, "#1k 주고받은 글"),
     ("app.js", r#"goSettings("invite_accept", "invite_text")"#, "#1k 레일 + · #1r 수락 칸은 라우터가"),
@@ -282,7 +283,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("view.js", r#"{ dir: "in", title: "에이전트 대화" }"#, "#1o 목록 나눔"),
     ("view.js", "export function splitByDir(", "#1o 목록 나눔"),
     ("view.js", "export function splitKey(", "#1o 목록 나눔"),
-    ("app.js", "splitByDir(s.rows)", "#1o 목록 나눔"),
+    ("app.js", "convListParts(s.rows, group)", "#1o 목록 나눔 · #1v 내 대화만"),
     ("app.js", "foldEl(`convs:${s.peer}`", "#1o 목록 나눔"),
     ("app.js", "starredSections(", "#1o 즐겨찾기 그대로"),
     ("app.js", r#"$("rail").addEventListener("contextmenu", (ev) => ev.preventDefault());"#, "#1o 레일 우클릭"),
@@ -302,7 +303,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     // 1q — 요청 개요 · 글자 단추
     ("app.js", "function reqBoxEl(", "#1q 요청 개요"),
     ("app.js", r#"foldEl(`requests:${box}`, head, body, "peer-fold req-box", null, box === "mine")"#, "#1q 보낸 요청 처음 접힘"),
-    ("app.js", "state.reqBox = state.reqBox === b ? null : b;", "#1q 탭 토글"),
+    ("app.js", "state.reqBox = state.reqBox === b && !reqBoard() ? null : b;", "#1q 탭 토글 · #1v 보드엔 개요 없음"),
     ("app.js", r#"onclick: target === "requests" && current ? () => loadRequests(true) : null"#, "#1q 메뉴 다시 누름 = 개요"),
     ("app.js", "bar.append(textButton(mv.label, REQ_BTN[mv.to]", "#1q 글자 단추"),
     ("view.js", r#"rejected: { tone: "no", icon: "x" }"#, "#1q 반려 ✕"),
@@ -453,6 +454,15 @@ const ABSENT: &[(&str, &str, &str)] = &[
     ("app.js", "에게 보내기 — markdown 가능", "#1p 문구"),
     ("web", "실행 없이 상대 요청 목록에 등록", "#1p 문구"),
     ("index.html", "편집 모드 — ", "#1p 문구"),
+    ("web", "@ 로 상대 에이전트 부르기", "#1v 입력창 안내 삭제"),
+    ("app.js", " 에게 보내기`", "#1v 입력창 placeholder = \"메시지 입력\" 고정(적대적 평가 R2)"),
+    ("app.js", r#"$("reply_text").placeholder"#, "#1v placeholder 다시 넣지 않음(적대적 평가 R2)"),
+    ("index.html", r#"id="edit_btn""#, "#1v 웹UI 편집 모드 삭제"),
+    ("index.html", r#"id="edit_bar""#, "#1v 웹UI 편집 모드 삭제"),
+    ("index.html", r#"id="scope_dialog""#, "#1v 웹UI 편집 모드 삭제"),
+    ("app.js", "function setEditMode(", "#1v 웹UI 편집 모드 삭제"),
+    ("app.js", r#""본문 편집""#, "#1v 웹UI 편집 모드 삭제"),
+    ("app.js", "`메모: ${m.req_note}`", "#1v 메모는 피드백 말풍선으로"),
     ("app.js", r#""복사했다""#, "#1p 문구"),
     ("index.html", ">그룹 +<", "#1p 문구"),
     ("app.js", "대화는 지우지 않습니다", "#1p 문구"),
@@ -493,6 +503,13 @@ const ABSENT: &[(&str, &str, &str)] = &[
     ("app.js", r#"$("window_btn").disabled = true;"#, "#1r R2 초대 생성 중에도 초점을 받는다"),
     // 1s — 접이식 하위 줄 세로선 없음(들여쓰기만)
     ("app.css", ".peer-fold > :not(summary) { margin-left: var(--sp-5); border-left", "#1s 세로선 제거"),
+    // 1w — 상대 단위 그룹 소속 없음(D37 개정)
+    ("app.js", "/api/groups/${id}/peers", "#1w 상대 소속 API 없음"),
+    ("app.js", "/api/peers/${d.peer}/groups", "#1w 상대 소속 API 없음"),
+    ("app.js", "peerGroupMenu", "#1w 레일 상대 타일 '그룹' 메뉴 없음"),
+    ("app.js", r#"text: "그룹 ▾""#, "#1w 설정 '그룹 ▾' 없음"),
+    ("view.js", "그룹에 없는 연결", "#1w '사용자 목록' 으로"),
+    ("view.js", "NO_PEER_GROUP", "#1w '사용자 목록' 으로"),
 ];
 
 /// 정확한 개수 — (파일 키, 문구, 개수, 출처).
@@ -527,7 +544,7 @@ fn literals_absent() {
     assert!(found.is_empty(), "{}", found.join("\n"));
 }
 
-/// 개수 표 + 개수로만 말할 수 있는 규칙 둘 — '받은 메시지' 라벨 없음('주고받은 메시지' 안의 것만, #17 · #1p T7) · 편집 단추는 입력창 위(#1f).
+/// 개수 표 + 개수로만 말할 수 있는 규칙 — '받은 메시지' 라벨 없음('주고받은 메시지' 안의 것만, #17 · #1p T7).
 #[test]
 fn literal_counts() {
     for (key, lit, n, why) in COUNTS {
@@ -542,9 +559,6 @@ fn literal_counts() {
             "#17 '받은 메시지' 라벨 없음 — {file}"
         );
     }
-    let edit = INDEX.find(r#"id="edit_btn""#).expect("편집 단추");
-    let reply = INDEX.find(r#"<form id="reply_form""#).expect("입력창");
-    assert!(edit < reply, "#1f 편집 단추는 입력창 위");
 }
 
 /// 초대 글(#15) — "초대 수락" 기준 안내, "메신저" · "초대 붙여넣기" 없음.

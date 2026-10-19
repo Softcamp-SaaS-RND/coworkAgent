@@ -268,7 +268,7 @@ pub fn routes(chat: Arc<Chat>) -> Router {
         )
         .route(
             "/api/conversations/{id}",
-            axum::routing::patch(patch_conversation),
+            axum::routing::patch(patch_conversation).delete(delete_conversation),
         )
         .route(
             "/api/conversations/{id}/read",
@@ -299,7 +299,7 @@ pub fn routes(chat: Arc<Chat>) -> Router {
         )
         .route(
             "/api/conversations/{id}/leave",
-            axum::routing::post(leave_share),
+            axum::routing::post(leave_conversation),
         )
         .with_state(chat.clone())
         .merge(crate::groups_api::routes(chat))
@@ -309,7 +309,9 @@ fn fail(e: io::Error) -> Response {
     let code = match e.kind() {
         io::ErrorKind::NotFound => StatusCode::NOT_FOUND,
         io::ErrorKind::InvalidInput => StatusCode::BAD_REQUEST,
-        io::ErrorKind::AlreadyExists | io::ErrorKind::Unsupported => StatusCode::CONFLICT,
+        io::ErrorKind::AlreadyExists | io::ErrorKind::Unsupported | io::ErrorKind::ResourceBusy => {
+            StatusCode::CONFLICT
+        }
         io::ErrorKind::PermissionDenied => StatusCode::FORBIDDEN,
         _ => StatusCode::BAD_GATEWAY,
     };
@@ -374,6 +376,7 @@ fn conversation_json(c: &Conversation) -> Value {
         "id": c.id, "uuid": c.uuid, "peer_id": c.peer_id, "agent": c.agent, "dir": c.dir.as_str(),
         "relay_agent": r.map(|r| &r.agent), "relay_cap": r.map(|r| r.cap), "relay_count": r.map(|r| r.count),
         "relay_on": r.is_some_and(|r| r.on), "relay_blocked": c.relay_blocked,
+        "left_at": c.left_at, "peer_left_at": c.peer_left_at,
     })
 }
 
@@ -413,7 +416,10 @@ fn message_json(m: &Message) -> Value {
 /// 글이 속한 대화 — 목록 · 검색 · 내 활동 항목에 붙는다(제목 포함).
 fn conversation_ref(s: &Summary) -> Value {
     let c = &s.conversation;
-    json!({ "id": c.id, "peer_id": c.peer_id, "agent": c.agent, "dir": c.dir.as_str(), "title": s.title })
+    json!({
+        "id": c.id, "peer_id": c.peer_id, "agent": c.agent, "dir": c.dir.as_str(), "title": s.title,
+        "left_at": c.left_at, "peer_left_at": c.peer_left_at,
+    })
 }
 
 /// 대화 id → 요약(제목 · 대화 정보).
@@ -680,7 +686,10 @@ async fn list_across(State(chat): State<Arc<Chat>>, Query(q): Query<MessageQuery
         let mut v = message_json(m);
         v["conversation"] = match &convs[&m.conversation_id] {
             Some(c) => {
-                json!({ "id": c.id, "peer_id": c.peer_id, "agent": c.agent, "dir": c.dir.as_str() })
+                json!({
+                    "id": c.id, "peer_id": c.peer_id, "agent": c.agent, "dir": c.dir.as_str(),
+                    "left_at": c.left_at, "peer_left_at": c.peer_left_at,
+                })
             }
             None => Value::Null,
         };
@@ -1140,9 +1149,17 @@ async fn remove_observer(
     }
 }
 
-/// 공유 대화에서 나가기(#1o, 관람자) — 204. 사본이 아니면 400.
-async fn leave_share(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) -> Response {
-    match chat.share_leave(id) {
+/// 대화에서 나가기(#1w — 모든 대화, 공유 사본은 #1o 공유 나가기) — 204. 없는 대화 404 · 도는 실행이 있으면 409.
+async fn leave_conversation(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) -> Response {
+    match chat.leave_conversation(id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => fail(e),
+    }
+}
+
+/// 대화 삭제(#1w) — 나가기 + 이 PC 의 대화 · 글 · 딸린 항목. 204. 없는 대화 404 · 도는 실행이 있으면 409.
+async fn delete_conversation(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) -> Response {
+    match chat.delete_conversation(id) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => fail(e),
     }

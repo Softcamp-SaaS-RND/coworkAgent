@@ -314,7 +314,8 @@ fn old_pong_has_no_context() {
         an_net::proto::Response::Pong {
             focus: true,
             ctx: false,
-            share: false
+            share: false,
+            leave: false
         }
     );
     // 0.4.0 이 보낸 답 — 크기 없음.

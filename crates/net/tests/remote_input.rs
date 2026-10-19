@@ -276,7 +276,8 @@ async fn share_frames_ids_checked() {
         Response::Pong {
             focus: false,
             ctx: true,
-            share: false
+            share: false,
+            leave: false
         }
     );
 }

@@ -128,7 +128,11 @@
           </nav>
         </header>
         <div class="filters">
-          <label for="req_state">상태</label>
+          <div class="seg" role="group" aria-label="요청 보기">
+            <button id="req_view_list" type="button" aria-pressed="true">목록</button>
+            <button id="req_view_board" type="button" aria-pressed="false">보드</button>
+          </div>
+          <label for="req_state" id="req_state_label">상태</label>
           <select id="req_state">
             <option value="">전체</option>
             <option value="wait">대기</option>
@@ -138,6 +142,7 @@
           </select>
         </div>
         <ol id="req_list" class="rows"></ol>
+        <div id="req_board" class="req-board" hidden></div>
       </section>
 
       <section id="starred" class="view" hidden>
@@ -164,6 +169,15 @@
           </div>
         </header>
         <ol id="agents_list" class="rows"></ol>
+      </section>
+
+      <section id="agent_convs" class="view" hidden>
+        <header class="view-head">
+          <div class="head-title">
+            <strong><span class="ico ico-chat" aria-hidden="true"></span>에이전트 대화</strong>
+          </div>
+        </header>
+        <div id="agent_convs_list" class="starred-list"></div>
       </section>
 
       <section id="peer" class="view" hidden>
@@ -211,15 +225,6 @@
 
         <div id="panel_conv" class="panel">
           <div id="messages" aria-live="polite"></div>
-          <div class="edit-row">
-            <button id="edit_btn" type="button" class="edit-toggle" aria-pressed="false" title="편집 모드"><span class="ico ico-pencil" aria-hidden="true"></span>편집</button>
-          </div>
-          <div id="edit_bar" class="edit-bar" role="toolbar" aria-label="편집 모드" hidden>
-            <span id="edit_count">0개 선택</span>
-            <span class="hint">끝난 내 메시지만 고를 수 있습니다</span>
-            <button id="edit_delete" type="button" class="danger" disabled>삭제</button>
-            <button id="edit_done" type="button" class="primary">완료</button>
-          </div>
           <form id="reply_form" class="composer">
             <label for="reply_text" class="sr-only">메시지</label>
             <textarea id="reply_text" rows="3" placeholder="메시지 입력" aria-autocomplete="list" aria-controls="mention_box"></textarea>
@@ -231,10 +236,9 @@
                 <button type="button" class="icon-btn mono" data-md="code" title="코드" aria-label="코드">&lt;/&gt;</button>
               </div>
               <div class="ask-kind" role="radiogroup" aria-label="메시지 종류">
-                <label><input type="radio" name="ask" value="query" checked> 질의</label>
-                <label><input type="radio" name="ask" value="request"> 요청</label>
+                <label><input type="radio" name="ask" value="query" checked><span>질의</span></label>
+                <label><input type="radio" name="ask" value="request"><span>요청</span></label>
               </div>
-              <span id="mention_hint" class="hint kbd-hint" hidden>@ 로 상대 에이전트 부르기</span>
               <span id="ask_hint" class="hint" hidden>실행하지 않고 상대의 요청 목록에 올립니다</span>
               <span class="hint kbd-hint"><kbd>Enter</kbd> 보내기 · <kbd>Shift+Enter</kbd> 줄바꿈</span>
               <button type="submit" class="primary">보내기</button>
@@ -242,17 +246,6 @@
           </form>
         </div>
 
-        <dialog id="scope_dialog" aria-labelledby="scope_title">
-          <form method="dialog">
-            <p id="scope_title"></p>
-            <p class="hint">어디에 반영할까요? 이미 실행한 내용은 에이전트 기억에 남습니다.</p>
-            <div class="actions">
-              <button value="mine">내 창에서만</button>
-              <button value="both">상대 창에도</button>
-              <button value="cancel">취소</button>
-            </div>
-          </form>
-        </dialog>
 
       </section>
 
@@ -273,8 +266,8 @@
           <div class="field"><textarea id="chat_text" rows="4" placeholder="메시지 입력"></textarea></div>
           <span id="chat_ask_label" class="label"><span class="ico ico-inbox" aria-hidden="true"></span>메시지 종류</span>
           <div class="ask-kind" role="radiogroup" aria-labelledby="chat_ask_label">
-            <label><input type="radio" name="ask" value="query" checked> 질의</label>
-            <label><input type="radio" name="ask" value="request"> 요청</label>
+            <label><input type="radio" name="ask" value="query" checked><span>질의</span></label>
+            <label><input type="radio" name="ask" value="request"><span>요청</span></label>
           </div>
           <button type="submit" class="primary">보내기</button>
         </form>

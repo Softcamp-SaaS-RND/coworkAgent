@@ -630,7 +630,7 @@ async fn share_observer_api() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
-    // 나가기(C) → A 관람자 비고 사본은 '공유 해제됨'. 나간 뒤 A 의 빼기는 404, 사본 아닌 대화의 나가기 400.
+    // 나가기(C) → A 관람자 비고 사본은 '공유 해제됨'. 나간 뒤 A 의 빼기는 404.
     assert_eq!(
         call(
             cport,
@@ -660,18 +660,6 @@ async fn share_observer_api() {
             .0,
         404
     );
-    assert_eq!(
-        call(
-            port,
-            &h,
-            "POST",
-            &format!("/api/conversations/{conv}/leave"),
-            ""
-        )
-        .await
-        .0,
-        400
-    );
     // 다시 넣고 빼기 204.
     assert_eq!(call(port, &h, "POST", &path, &add).await.0, 204);
     assert_eq!(
@@ -680,4 +668,56 @@ async fn share_observer_api() {
             .0,
         204
     );
+}
+
+/// 대화 나가기 · 삭제 경로(#1w) — 모든 대화 나가기 204(목록 `left_at`), 도는 실행이 있으면 409(나가기 · 삭제), 삭제 204 뒤 목록에서 사라짐 · 다시 404.
+#[tokio::test(flavor = "multi_thread")]
+async fn leave_and_delete_routes() {
+    let (a, b) = (side("leave-a").await, side("leave-b").await);
+    let (pb, _) = pair_sides(&a, &b).await;
+    agents::add(&db::open(&b.paths.db_file()).unwrap(), "review", ".", "").unwrap();
+    let (port, h) = web(a.chat.clone()).await;
+    let body = serde_json::json!({ "peer_id": pb.id, "agent": "review", "text": "질문" });
+    let (code, r) = call(port, &h, "POST", "/api/conversations", &body.to_string()).await;
+    assert_eq!(code, 201, "{r}");
+    let conv = r["conversation"]["id"].as_i64().unwrap();
+    messages(port, &h, conv, 2).await;
+    let (_, list) = call(port, &h, "GET", "/api/conversations", "").await;
+    assert!(list[0]["left_at"].is_null() && list[0]["peer_left_at"].is_null(), "{list}");
+    // 도는 실행(이 PC) — 나가기 · 삭제 409.
+    let db = db::open(&a.paths.db_file()).unwrap();
+    db.execute(
+        "UPDATE messages SET state = 'running' WHERE conversation_id = ?1 AND author = 'agent'",
+        [conv],
+    )
+    .unwrap();
+    let leave = format!("/api/conversations/{conv}/leave");
+    let one = format!("/api/conversations/{conv}");
+    let (code, r) = call(port, &h, "POST", &leave, "").await;
+    assert_eq!(code, 409, "{r}");
+    assert!(r["error"].as_str().unwrap().contains("실행이 끝난 뒤"), "{r}");
+    assert_eq!(call(port, &h, "DELETE", &one, "").await.0, 409);
+    db.execute(
+        "UPDATE messages SET state = 'done' WHERE conversation_id = ?1 AND author = 'agent'",
+        [conv],
+    )
+    .unwrap();
+    assert_eq!(call(port, &h, "POST", &leave, "").await.0, 204);
+    let (_, list) = call(port, &h, "GET", "/api/conversations", "").await;
+    assert!(list[0]["left_at"].is_i64(), "{list}");
+    // 나간 대화는 읽기 전용.
+    let (code, _) = call(
+        port,
+        &h,
+        "POST",
+        &format!("/api/conversations/{conv}/messages"),
+        r#"{"text":"더"}"#,
+    )
+    .await;
+    assert_eq!(code, 400);
+    assert_eq!(call(port, &h, "DELETE", &one, "").await.0, 204);
+    let (_, list) = call(port, &h, "GET", "/api/conversations", "").await;
+    assert!(list.as_array().unwrap().is_empty(), "{list}");
+    assert_eq!(call(port, &h, "DELETE", &one, "").await.0, 404);
+    assert_eq!(call(port, &h, "POST", &leave, "").await.0, 404);
 }

@@ -23,18 +23,18 @@
   `StepDetail{turns, tools: BTreeMap<이름, 횟수>, secs}` 실행 중 단계 요약(턴 · 도구 이름별 횟수 · 경과 초만 — 입력 · 경로 · 모델 글 없음),
   `StepDetail::cleaned()`(받은 쪽 — 이름 `clean_name` 뒤 `MAX_STEP_NAME` 24자 · 빈 이름 버림 · `MAX_STEP_TOOLS` 16개), `Status{conv, msg}` — 보낸 쪽이
   자기 실행 요청 글의 지금 상태를 묻는다, 페어링된 상대만). #1m: `Context{conv, msg, op, text}` — 컨텍스트 압축 · 비우기(`op` = `CTX_OPS` `compact` · `auto_compact` ·
-  `clear` 요청 · `done`(요약) · `failed`(사유 코드) 결과, `ids_ok` 대상) · `Reply.ctx?` · `Post.ctx?`(답 세션의 창 사용량, 없으면 싣지 않음) · #1o 공유: `Share{conv, title, agent, owner_dir, other}` · `SharePost{conv, msg: ShareMsg{uuid, author, text, lc, at, owner, via, agent, ok, edited}}` · `ShareDelete{conv, msg}` · `ShareEnd{conv}` · `ShareNotice{conv, n}`(모두 `ids_ok` 대상 — `SharePost` 는 `msg.uuid`). `Response::{Hello{name, host, approved}, Ok, Pong{focus, ctx, share}, Agents{names}, Status{state,
-  ahead}, Error{code}}`(`Pong.focus` — 답한 PC 의 집중, 설정을 못 읽으면 거짓. `Pong.ctx` — `Context` 를 앎(#1m, 0.4.0 은 없음 = 거짓). `Pong.share` — 공유 프레임을 앎(#1o, 0.5.0 은 없음 = 거짓). `Status.state` = `queued`(`ahead` = 앞 사람 수) · `running` · `done` ·
+  `clear` 요청 · `done`(요약) · `failed`(사유 코드) 결과, `ids_ok` 대상) · `Reply.ctx?` · `Post.ctx?`(답 세션의 창 사용량, 없으면 싣지 않음) · #1o 공유: `Share{conv, title, agent, owner_dir, other}` · `SharePost{conv, msg: ShareMsg{uuid, author, text, lc, at, owner, via, agent, ok, edited}}` · `ShareDelete{conv, msg}` · `ShareEnd{conv}` · `ShareNotice{conv, n}`(모두 `ids_ok` 대상 — `SharePost` 는 `msg.uuid`) · #1w `Leave{conv}`(대화 나가기 — `ids_ok` · `conv()` 대상). `Response::{Hello{name, host, approved}, Ok, Pong{focus, ctx, share, leave}, Agents{names}, Status{state,
+  ahead}, Error{code}}`(`Pong.focus` — 답한 PC 의 집중, 설정을 못 읽으면 거짓. `Pong.ctx` — `Context` 를 앎(#1m, 0.4.0 은 없음 = 거짓). `Pong.share` — 공유 프레임을 앎(#1o, 0.5.0 은 없음 = 거짓). `Pong.leave` — `Leave` 를 앎(#1w, 0.8.0 은 없음 = 거짓). `Status.state` = `queued`(`ahead` = 앞 사람 수) · `running` · `done` ·
   `unknown`)(`approved` = 초대 생성 측이 이 hello 를 초대 코드로 자동 승인 — 보낸 쪽은
   같은 세대의 상대 승인으로 기록)(`not_paired` · `unknown` · `stale` · `busy` · `closed` ·
-  `bad_request` · `unknown_agent` · `unsupported` — 받는 쪽에 처리기가 없음 · `focus` — 받는 PC 가 집중 중 · `invalid` — 대화 요청 id 가 UUID 꼴 아님 ·
+  `bad_request` · `unknown_agent` · `unsupported` — 받는 쪽에 처리기가 없음 · `focus` — 받는 PC 가 집중 중 · `invalid` — 대화 요청 id 가 UUID 꼴 아님 · `left` — 받는 쪽이 그 대화를 나갔거나 지웠다(#1w) ·
   `retry` — 받는 쪽이 처리 중 오류로 잠시 처리하지 못함, 보낸 쪽은 거절이 아니라 다시 보낸다(#1c)). `clean_name` — 제어 문자 · 서식 문자(Cf, `is_format`)
   제거 · 64자. `is_uuid` · `Request::ids_ok()`(Message · Done · Progress · Status · Reply · Post · Relay 의 `conv` · `msg` · `reply_to`, #1a). `clean_code(code)` — 상대가 준 오류 코드는 영소문자 · `_`
   1 ~ 32 자만, 그 밖 `unknown`(저장 · 표시 전에).
 - `node::Node::new(identity, conn, me)` · `serve(listener)`(출처 IP 당 4 · 전체 32 · 연결당 3초) · `open_window(d) -> 코드`(새 창마다 IP 별 틀린
   초대 코드 셈을 비운다 — 한 창에서 `MAX_CODE_MISSES` 10회 틀린 IP 는 그 창 동안 `closed`, #1a) ·
   `open_invite(ip, d) -> Invite` · `add(addr, code)` · `add_invite(&invite)`(지문 고정) · `approve(id)` · `remove(id) -> 통지 여부` ·
-  `ping(id) -> 상대 집중`(받은 `Pong` 을 접속 상태로 — `set_presence`) · `knows_context(id) -> 상대가 Context 를 앎`(#1m — 같은 Ping) · `knows_share(id)`(#1o) · `MessageKind::Share`(원 상대 관람자 알림) · `refresh(id, within) -> 상대 집중`(#1c — 마지막 통신이 `within` 초 안이면 보내지
+  `ping(id) -> 상대 집중`(받은 `Pong` 을 접속 상태로 — `set_presence`) · `knows_context(id) -> 상대가 Context 를 앎`(#1m — 같은 Ping) · `knows_share(id)`(#1o) · `knows_leave(id)`(#1w) · `MessageKind::Share`(원 상대 관람자 알림) · `refresh(id, within) -> 상대 집중`(#1c — 마지막 통신이 `within` 초 안이면 보내지
   않고 저장된 집중, 아니면 `ping`) · `announce()`(#1c — 시작 때 페어링된 상대마다 `ping` 한 번 · 상대별 작업 · 실패는 넘어감. 주기 확인은 없다) ·
   `peers()` · `set_peer_meta(id, group, model, effort)` · `set_peer_tile(id, alias, icon)` · `send(addr, pinned, req)`(응답을 받으면 그 키의 `peers::touch`
   — 기록 실패는 보내기를 실패로 만들지 않음) · `on_request(f)`(대화 요청 처리기) · `on_seen(f)`(#1c — 페어링된 상대의 `Ping` 을 받을 때 상대 id 로

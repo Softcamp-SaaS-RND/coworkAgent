@@ -224,6 +224,9 @@ pub const DELETE: &str = "msg_delete";
 pub const SHARE: &str = "share";
 pub const SHARE_NOTICE: &str = "share_notice";
 
+/// 대화 나가기(#1w) — 상대 앞 `Leave`. 대화를 지워도 남게 `conv_id` 없이 넣고(uuid 는 프레임에), 포기하지 않는다.
+pub const LEAVE: &str = "leave";
+
 /// 그 글을 실어 나르는 가장 최근 행(보관 상태 표시 · 편집 가능 판정) — 편집 · 삭제 반영 행([`EDIT`] · [`DELETE`])은 뺀다.
 pub fn for_message(conn: &Connection, msg_id: i64) -> rusqlite::Result<Option<Item>> {
     conn.query_row(

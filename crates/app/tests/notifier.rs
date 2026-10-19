@@ -1,4 +1,4 @@
-use an_app::notify::{Notifier, SettingsPatch};
+use an_app::notify::{self, Notifier, SettingsPatch};
 use an_net::node::PeerEvent;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -164,6 +164,7 @@ fn message(kind: an_net::node::MessageKind) -> PeerEvent {
         agent: "review".into(),
         preview: "비밀 본문".into(),
         kind,
+        conv: 1,
     }
 }
 
@@ -322,4 +323,85 @@ fn focus_pauses_notices() {
     n.on_event(&request());
     assert_eq!(rx.try_recv().unwrap().kind, "pair_request");
     assert_eq!(*marks.lock().unwrap(), vec![1]);
+}
+
+fn res(kind: &'static str, id: Option<i64>) -> notify::Res {
+    notify::Res { kind, id }
+}
+
+/// 변경 신호는 알림 설정과 무관하다 — 전체 끔 · 일시 중지 · 집중에서도 간다(D39 ② · 1u 결정 1).
+#[test]
+fn change_ignores_prefs() {
+    let (n, _) = notifier("chg-prefs");
+    let mut rx = n.subscribe_changes();
+    let mut notices = n.subscribe();
+    assert!(!n.enabled(), "기본 OFF");
+    n.on_event(&request());
+    n.set_enabled(true).unwrap();
+    pause(&n, true);
+    n.on_event(&message(an_net::node::MessageKind::Request));
+    pause(&n, false);
+    n.update(&SettingsPatch {
+        focus: Some(true),
+        ..Default::default()
+    })
+    .unwrap();
+    n.on_event(&message(an_net::node::MessageKind::Reply));
+    for _ in 0..3 {
+        assert!(!rx.try_recv().unwrap().res.is_empty());
+    }
+    assert_eq!(
+        notices.try_recv().unwrap_err(),
+        TryRecvError::Empty,
+        "알림은 그대로 걸러진다"
+    );
+}
+
+/// 원천별 자원 키 — 메시지 = 이 PC 대화 id, 페어링 = 연결, 상대 요청 처리 = 그 대화(못 찾으면 id 없음).
+#[test]
+fn change_keys_by_source() {
+    let (n, _) = notifier("chg-keys");
+    let mut rx = n.subscribe_changes();
+    n.on_event(&message(an_net::node::MessageKind::Ask));
+    n.on_event(&request());
+    n.on_event(&PeerEvent::Changed { conv: Some(9) });
+    n.on_event(&PeerEvent::Changed { conv: None });
+    assert_eq!(rx.try_recv().unwrap().res, vec![res("conv", Some(1))]);
+    assert_eq!(rx.try_recv().unwrap().res, vec![res("peer", None)]);
+    assert_eq!(rx.try_recv().unwrap().res, vec![res("conv", Some(9))]);
+    assert_eq!(rx.try_recv().unwrap().res, vec![res("conv", None)]);
+    let json = serde_json::to_string(&notify::Change {
+        res: vec![res("conv", None)],
+    })
+    .unwrap();
+    assert_eq!(
+        json, r#"{"res":[{"kind":"conv"}]}"#,
+        "id 없으면 필드를 뺀다"
+    );
+}
+
+/// 변경 신호만인 이벤트는 알림 · 트레이 건수를 건드리지 않는다.
+#[test]
+fn change_not_counted() {
+    let (n, marks) = notifier("chg-count");
+    n.set_enabled(true).unwrap();
+    let mut notices = n.subscribe();
+    n.on_event(&PeerEvent::Changed { conv: Some(3) });
+    assert_eq!(notices.try_recv().unwrap_err(), TryRecvError::Empty);
+    assert!(marks.lock().unwrap().is_empty());
+    assert_eq!(n.pending(), 0);
+}
+
+/// 뒤처진 구독자는 놓친 신호 대신 빈 `res`(전체 다시 읽기) 하나를 받는다(1u 결정 5).
+#[tokio::test]
+async fn change_lagged_is_full() {
+    let (n, _) = notifier("chg-lag");
+    let mut rx = n.subscribe_changes();
+    for i in 0..(notify::BACKLOG as i64 + 5) {
+        n.on_event(&PeerEvent::Changed { conv: Some(i) });
+    }
+    let first = notify::next_change(&mut rx).await.unwrap();
+    assert!(first.res.is_empty(), "{first:?}");
+    let next = notify::next_change(&mut rx).await.unwrap();
+    assert!(!next.res.is_empty(), "그 뒤는 남은 신호");
 }

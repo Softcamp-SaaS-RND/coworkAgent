@@ -2,7 +2,7 @@ use rusqlite::OptionalExtension;
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 20;
+pub const SCHEMA_VERSION: i64 = 21;
 
 /// DB 오류를 `io::Error` 로 — 상위 크레이트가 `map_err(db_err)` 로 쓴다(`Error` 는 rusqlite 것이라 `From` 을 구현할 수 없다).
 pub fn db_err(e: Error) -> std::io::Error {
@@ -475,6 +475,90 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
              );
              PRAGMA user_version = 20;",
         )?;
+        tx.commit()?;
+    }
+    if v < 21 {
+        // 대화 나가기 · 삭제(#1w — D40): 대화 번호를 다시 쓰지 않는다(지운 가장 큰 번호를 새 대화가 받아 남은 딸린 행 · 표시가 붙지 않게 — 스키마 17
+        // `peers` 와 같은 방법), 내가 · 상대가 나간 시각, 지운 대화의 묘비(같은 uuid 로 온 글이 대화를 되살리지 않게). 그룹 = 대화만(D37 개정) —
+        // 상대 단위 소속은 그 상대의 지금 대화를 하나씩 넣어 옮기고 표를 지운다(뒤에 생긴 대화는 들어오지 않는다).
+        let tx = conn.unchecked_transaction()?;
+        let sql: String = tx.query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'conversations'",
+            [],
+            |r| r.get(0),
+        )?;
+        if !sql.contains("AUTOINCREMENT") {
+            let new = sql
+                .replacen(
+                    "CREATE TABLE \"conversations\"",
+                    "CREATE TABLE conversations",
+                    1,
+                )
+                .replacen(
+                    "CREATE TABLE conversations",
+                    "CREATE TABLE conversations_new",
+                    1,
+                )
+                .replacen(
+                    "id INTEGER PRIMARY KEY",
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT",
+                    1,
+                );
+            if !new.contains("CREATE TABLE conversations_new") || !new.contains("AUTOINCREMENT") {
+                return Err(rusqlite::Error::InvalidParameterName(format!(
+                    "스키마 21 — conversations 정의를 알 수 없다: {sql}"
+                )));
+            }
+            tx.execute_batch(&format!(
+                "{new};
+                 INSERT INTO conversations_new SELECT * FROM conversations;
+                 DROP TABLE conversations;
+                 ALTER TABLE conversations_new RENAME TO conversations;"
+            ))?;
+        }
+        // 순번 시작 = 지금 대화 · 딸린 행이 가리키는 가장 큰 번호(이미 지운 대화의 남은 흔적도 다시 쓰지 않는다).
+        tx.execute(
+            "DELETE FROM sqlite_sequence WHERE name = 'conversations'",
+            [],
+        )?;
+        tx.execute(
+            "INSERT INTO sqlite_sequence (name, seq) VALUES ('conversations', max(
+               (SELECT coalesce(max(id), 0) FROM conversations),
+               (SELECT coalesce(max(conversation_id), 0) FROM messages),
+               (SELECT coalesce(max(conversation_id), 0) FROM relay_events),
+               (SELECT coalesce(max(conversation_id), 0) FROM agent_sessions),
+               (SELECT coalesce(max(conversation_id), 0) FROM ctx_seeds),
+               (SELECT coalesce(max(conversation_id), 0) FROM group_convs),
+               (SELECT coalesce(max(conversation_id), 0) FROM shares),
+               (SELECT coalesce(max(conv_id), 0) FROM outbox)))",
+            [],
+        )?;
+        for col in ["left_at", "peer_left_at"] {
+            if !has_column(&tx, "conversations", col)? {
+                tx.execute_batch(&format!(
+                    "ALTER TABLE conversations ADD COLUMN {col} INTEGER;"
+                ))?;
+            }
+        }
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS left_convs (
+               uuid TEXT NOT NULL,
+               peer_id INTEGER NOT NULL,
+               at INTEGER NOT NULL,
+               PRIMARY KEY (uuid, peer_id)
+             );",
+        )?;
+        let had_peers = tx
+            .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'group_peers'")?
+            .exists([])?;
+        if had_peers {
+            tx.execute_batch(
+                "INSERT OR IGNORE INTO group_convs (group_id, conversation_id)
+                   SELECT gp.group_id, c.id FROM group_peers gp JOIN conversations c ON c.peer_id = gp.peer_id;
+                 DROP TABLE group_peers;",
+            )?;
+        }
+        tx.execute_batch("PRAGMA user_version = 21;")?;
         tx.commit()?;
     }
     Ok(conn)

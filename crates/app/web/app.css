@@ -37,6 +37,7 @@
   --on-danger: #FFFFFF;
   --backdrop: rgb(0 0 0 / 0.35);
   --shadow: 0 4px 16px rgba(16,20,28,.10);
+  --shadow-sm: 0 1px 3px rgba(16,20,28,.08); /* 입력창 · 세그먼트(#1v — 시안 A) */
 
   --dark-bg: #0F1112;
   --dark-topbar: #0B0C0E;
@@ -66,6 +67,7 @@
   --dark-rail-text: #AAAEB3;
   --dark-on-danger: #170C0B;
   --dark-shadow: 0 4px 16px rgba(0,0,0,.45);
+  --dark-shadow-sm: 0 1px 3px rgba(0,0,0,.35);
 
   --font: 'IBM Plex Sans KR', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
   --mono: Consolas, 'SF Mono', Menlo, monospace;
@@ -125,6 +127,7 @@
   --rail-text: var(--dark-rail-text);
   --on-danger: var(--dark-on-danger);
   --shadow: var(--dark-shadow);
+  --shadow-sm: var(--dark-shadow-sm);
   color-scheme: dark;
 }
 
@@ -384,34 +387,54 @@ button.text-btn.no { color: var(--danger); }
 .msg-icons { margin-left: auto; display: inline-flex; gap: var(--sp-1); }
 .msg-icon { width: 26px; height: 26px; }
 .msg-icon.copied { color: var(--accent); }
-.msg-pick { flex: 0 0 auto; align-self: flex-start; margin-top: var(--sp-3); width: 18px; height: 18px; }
-.msg-edit { display: flex; flex-direction: column; gap: var(--sp-2); }
-.msg-edit textarea { min-height: 96px; }
-.edit-row { display: flex; justify-content: flex-end; margin: 0 var(--sp-4) var(--sp-1); }
-.edit-toggle { display: inline-flex; align-items: center; gap: var(--sp-1); height: 26px; padding: 0 var(--sp-3); font-size: var(--fs-xs); }
-.edit-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
-.edit-bar { margin: 0 var(--sp-4) var(--sp-4); padding: var(--sp-3) var(--sp-3); border: 1px solid var(--accent); border-radius: var(--radius-lg); background: var(--surface); display: flex; align-items: center; gap: var(--sp-3); }
-.edit-bar .hint { flex-grow: 1; }
-#scope_dialog { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); padding: var(--sp-5); max-width: 420px; }
-#scope_dialog::backdrop { background: var(--backdrop); }
 .raw { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: var(--fs-sm); background: var(--subtle); border-radius: var(--radius); padding: var(--sp-3) var(--sp-3); }
 .msg.agent .md { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--sp-4); background: var(--surface); }
 /* 원문 보기(머리글 버튼 하나) — 켜면 대화의 모든 본문이 원문 */
 #conversation:not(.show-raw) .raw, #conversation.show-raw .body-view { display: none; }
 .html-doc { width: 100%; height: 360px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); resize: vertical; }
-.composer { margin: 0 var(--sp-4) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 0; }
+/* 입력창(#1v — 시안 A): 최대 폭 · 옅은 그림자, 바 = 서식 | 빈칸 | 질의 · 요청 세그먼트 | 키 안내 | 보내기. 색은 테마 토큰 그대로. */
+.composer { margin: 0 var(--sp-4) var(--sp-4); max-width: 860px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 0; }
 .composer:focus-within { border-color: var(--accent); }
 .composer textarea { border: 0; border-radius: var(--radius-lg) var(--radius-lg) 0 0; background: transparent; padding: var(--sp-3) var(--sp-4); min-height: 76px; }
 .composer textarea:focus-visible { outline: 0; }
 .composer-bar { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-2); border-top: 1px solid var(--border); }
 .fmt { display: flex; gap: var(--sp-1); margin-right: auto; }
 .kbd-hint { font-size: var(--fs-xs); color: var(--faint); }
-.ask-kind { display: inline-flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-sm); color: var(--muted); }
-.ask-kind label { display: inline-flex; align-items: center; gap: var(--sp-1); cursor: pointer; }
+.ask-kind { display: inline-flex; align-items: center; gap: 0; padding: var(--sp-1); border-radius: var(--radius); background: var(--subtle); font-size: var(--fs-sm); color: var(--muted); }
+.grid > .ask-kind { justify-self: start; }
+.ask-kind label { position: relative; display: inline-flex; cursor: pointer; }
+/* 라디오는 그대로(키보드 · 화면 읽기), 모양만 세그먼트 — `:has()` 대신 형제 선택자(Safari 15.0 ~ 15.3 대상). */
+.ask-kind input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.ask-kind span { display: inline-flex; align-items: center; height: 24px; padding: 0 var(--sp-3); border-radius: var(--radius-sm); }
+.ask-kind input:checked + span { background: var(--surface); color: var(--text); font-weight: var(--fw-medium); box-shadow: var(--shadow-sm); }
+.ask-kind input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
 #reply_form { position: relative; }
 .mention-box { bottom: calc(100% + 6px); left: 12px; min-width: 200px; max-height: 240px; overflow-y: auto; margin: 0; padding: var(--sp-2); list-style: none; }
 .mention-box li { padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); font-size: var(--fs-sm); cursor: pointer; }
 .mention-box li[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
+
+/* 요청 피드백 말풍선(#1v) — 요청 바로 아래, 받은 쪽 사람 쪽. 상태를 크게, 메모는 본문. */
+.msg.feedback .bubble { padding-right: var(--sp-4); }
+.feedback-state { font-size: var(--fs-md); padding: var(--sp-1) var(--sp-3); }
+.feedback-state.req-accepted { color: var(--accent); }
+.feedback-state.req-done { color: var(--ok); }
+.feedback-state.req-rejected { color: var(--danger); }
+.feedback-note { margin: var(--sp-2) 0 0; font-size: var(--fs-lg); line-height: var(--lh-body); white-space: pre-wrap; word-break: break-word; }
+
+/* 요청 보드(#1v — D39 ①) — 열 = 상태, 열 위 띠 = 상태 색, 놓을 수 있는 열은 강조색 테두리. 좁으면 가로 스크롤. */
+.req-board { display: grid; grid-template-columns: repeat(4, minmax(220px, 1fr)); gap: var(--sp-3); padding: var(--sp-3) var(--sp-4) var(--sp-5); overflow-x: auto; }
+.board-col { display: flex; flex-direction: column; gap: var(--sp-2); min-height: 240px; padding: var(--sp-2); border: 1px solid var(--border); border-top: 3px solid var(--muted); border-radius: var(--radius); background: var(--surface-2); }
+.board-col.req-wait { border-top-color: var(--run); }
+.board-col.req-accepted { border-top-color: var(--accent); }
+.board-col.req-rejected { border-top-color: var(--danger); }
+.board-col.req-done { border-top-color: var(--ok); }
+.board-col.drop-ok { border-color: var(--accent); background: var(--accent-soft); }
+.board-head { margin: 0; padding: var(--sp-1) var(--sp-1) var(--sp-2); display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); }
+.board-col .rows { gap: var(--sp-2); }
+.board-col .rows > li[data-req] { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.board-col .rows > li[draggable="true"] { cursor: grab; }
+.board-col .rows > li.dragging { opacity: .5; }
+.board-col .req-acts, .board-col .req-notes { padding-left: var(--sp-3); padding-right: var(--sp-3); }
 
 /* markdown 뷰어 */
 .md { line-height: var(--lh-body); word-break: break-word; }
@@ -568,6 +591,9 @@ details { margin: var(--sp-2) 0; }
 /* ---- 안정화(#1h) ---- */
 /* 사이드바 메뉴 절 구분선 — 상단 개요 / 중단 / 하단 북마크 항목 · 에이전트 */
 .side-nav .nav-sep { height: 1px; margin: var(--sp-2) var(--sp-3); background: var(--border); }
+/* 에이전트 머리 · 하위(#1v) — 머리는 링크 없음, 하위는 들여쓴다. */
+.side-nav .nav-head { display: flex; align-items: center; height: 32px; padding: 0 var(--sp-3); color: var(--muted); }
+.side-nav .nav-sub a { padding-left: calc(var(--sp-3) + var(--sp-5)); }
 /* 프로필 단추 = 알약 — 아이콘(없으면 사람 모양) + 이름 한 번, 이름은 약 12자에서 말줄임 · 전체는 title. 테두리 · 점 = 내 상태(#1j) */
 .avatar-btn { width: auto; height: 36px; display: inline-flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3) 0 var(--sp-1); border: 1px solid var(--border); border-radius: var(--radius-pill); overflow: visible; }
 .avatar-btn .avatar-face { position: relative; width: 28px; height: 28px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--rail); box-shadow: 0 0 0 2px var(--st); }
@@ -666,8 +692,14 @@ details { margin: var(--sp-2) 0; }
 .peer-section-tools { margin-left: auto; display: inline-flex; gap: var(--sp-1); }
 .peer-section summary[draggable="true"] { cursor: grab; }
 .peer-section summary .drag-handle { color: var(--faint); letter-spacing: -2px; }
-.peer-section summary .peer-group-btn { margin-left: auto; }
 .peer-section .dragging { opacity: 0.5; }
+/* 설정 연결 목록 대화 줄(#1w) — 그룹 절 · 사용자 목록 트리, 끌어 그룹 절에 놓으면 복사. */
+.settings-convs { list-style: none; margin: var(--sp-1) 0; padding: 0; }
+.settings-conv { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2); border-radius: var(--radius); cursor: grab; }
+.settings-conv:hover { background: var(--surface-2); }
+.settings-conv .drag-handle { color: var(--faint); letter-spacing: -2px; }
+.settings-conv > button { margin-left: auto; }
+.settings-tree { margin: 0 0 var(--sp-2) var(--sp-5); }
 .peer-groups { display: flex; flex-direction: column; gap: var(--sp-1); }
 
 /* ---- 다듬기(#1k) — 설정 두 열(디자인 캔버스 ④) · 관리 줄 · 줄 타일 · 주고받은 글 타일 · 에이전트 연필 ---- */
@@ -716,6 +748,7 @@ details { margin: var(--sp-2) 0; }
 .ico-plus { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E"); }
 .ico-minus { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14'/%3E%3C/svg%3E"); }
 .ico-enter { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4'/%3E%3Cpath d='m10 17 5-5-5-5'/%3E%3Cpath d='M15 12H3'/%3E%3C/svg%3E"); }
+.ico-exit { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/%3E%3Cpath d='m16 17 5-5-5-5'/%3E%3Cpath d='M21 12H9'/%3E%3C/svg%3E"); }
 .ico-users { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='9' cy='7' r='4'/%3E%3Cpath d='M22 21v-2a4 4 0 0 0-3-3.87'/%3E%3Cpath d='M16 3.13a4 4 0 0 1 0 7.75'/%3E%3C/svg%3E"); }
 .ico-user { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7'/%3E%3C/svg%3E"); }
 .ico-gear { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1'/%3E%3C/svg%3E"); }

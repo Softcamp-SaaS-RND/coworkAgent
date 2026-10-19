@@ -33,10 +33,15 @@
   새 대화 `relay_agent?` · `relay_cap?` → 자동 왕복, 대화 JSON 에 `relay_agent` · `relay_cap` · `relay_count` · `relay_on` · `relay_blocked`) ·
   `POST /api/conversations/{id}/relay {on}`(멈춤 · 재개, 받은 쪽 재개 · 보통 대화는 400) · `POST /api/conversations/{id}/context {op}`(#1m — `compact` ·
   `clear` → 구분선 글, 틀린 값 400 · 없는 대화 404 · 진행 중 409; 글 JSON 에 `ctx_tokens` · `ctx_op`). #1o 공유: `POST /api/conversations/{id}/observers {peer_id}` ·
-  `DELETE /api/conversations/{id}/observers/{peer}` · `POST /api/conversations/{id}/leave`(204 · 400 · 404 · 409 — `fail` 이 `Unsupported` 도 409), 대화 목록 JSON
+  `DELETE /api/conversations/{id}/observers/{peer}` · `POST /api/conversations/{id}/leave`(204 · 404 · 409 — `fail` 이 `Unsupported` · `ResourceBusy` 도 409, #1w 부터 모든 대화), 대화 목록 JSON
   `observers` · `watchers` · `share{other, owner_dir, ended}`, 글 JSON `owner`. 웹 — `view.js` `CONV_GROUPS`(내 대화 · 에이전트 대화 · 공유 대화) · `splitByDir` ·
   `splitKey` · `sharedAuthor` · `shareHead` · `shareCandidates` · `MAX_OBSERVERS`, `app.js` `renderShare`(세부정보 "관람자") · 사본 읽기 전용 · `#rail` 우클릭 막기.
-  CLI `author_label` 공유 갈래. 오류 404 · 400 · 409 ·
+  CLI `author_label` 공유 갈래. #1w 나가기 · 삭제: `POST /api/conversations/{id}/leave` = 모든 대화(`Chat::leave_conversation`) · `DELETE /api/conversations/{id}`
+  (`Chat::delete_conversation`) → 204 · 없는 대화 404 · 도는 실행 409 "실행이 끝난 뒤 나갈 수 있습니다", 대화 JSON(`conversation_json` — 목록 · 한 대화) · 글의
+  `conversation` 요약(요청 · 내 활동 · 가로지른 글)에 `left_at` · `peer_left_at`. 프레임 `Leave{conv}` · `Pong.leave` · 오류 코드 `left` 는 [an_net](an_net.md).
+  웹 — `view.js` `convMenuItems` · `convClosed` · `refusedText`(`left`) · `reqMoves(m, closed)` · `reqResend(m, closed)` · `messageActions(m, closed)` ·
+  `settingsGroupSections` · `USER_LIST` · `convCopy`, `app.js` `openConvMenu` 끝 나가기 · 삭제(`convEndForm`) · 닫힌 대화 읽기 전용 · `renderPeerList`(`groupSection` ·
+  `userListSection` · `settingsConvRow` — 끌기 = 복사). 오류 404 · 400 · 409 ·
   403(페어링 아님 · 상대 거절, 본문에 코드) · 502. 상대에 닿지 않은 새 글은 오류가 아니다 — 보관하고 201(글 `outbox`).
   CLI 트랜잭션(#1c): 새 대화 · 이어 쓰기 본문 `tx_key?`(`via: cli` 일 때만 — 아니면 400, 규칙 `an_core::cli_tx::key_ok` 밖 400) — 같은 키가 있으면
   보내지 않고 그 트랜잭션 JSON 을 200, 없으면 보내고 201 `{conversation, message, tx}`(`via: cli` 면 트랜잭션을 만든다 — 키 없어도, 기록 실패면
@@ -57,11 +62,10 @@
   #1f: `PATCH /api/messages/{id} {text, mirror?}`(끝난 내 사람 글만 — 그 밖 400, `text` 는 다른 항목과 함께 못 씀 · `mirror` 는 `text` 와 함께만 →
   `{id, text, edited_at, warning?}`) · `POST /api/messages/delete {ids, mirror?}`(1 ~ 200개 · 한 대화 · 하나라도 안 되면 아무것도 안 지움 →
   `{deleted, warning?}`) · 대화 글 JSON 에 `editable`(`Chat::tidy_ok`) · 메시지 JSON 에 `edited_at` · 내 활동 항목 `kind = sync_failed`(`detail` = 사유).
-  #1i(`groups_api.rs` — 이 PC 에만, 상대 PC 로 가는 프레임 없음): `GET /api/groups` → `[{id, name, icon, pos, convs, peers}]`(레일 순서 — `peers` #1j) · `POST /api/groups {name}`
+  #1i(`groups_api.rs` — 이 PC 에만, 상대 PC 로 가는 프레임 없음): `GET /api/groups` → `[{id, name, icon, pos, convs}]`(레일 순서 — #1j 의 `peers` 는 #1w 에서 없앰) · `POST /api/groups {name}`
   → 201(이름 = 앞뒤 공백 뺀 1 ~ 40자 · 제어 문자 없음 — 400, 같은 이름 409 "같은 이름의 그룹이 있습니다") · `PATCH /api/groups/{id} {name?, icon?}`(둘 다
   검증한 뒤 쓴다, 빈 `icon` = 지움, 없으면 404) · `DELETE /api/groups/{id}` → 204(소속도, 대화는 그대로) · `PUT /api/groups/{id}/conversations {add?,
-  remove?}`(이미 있음 · 없음은 무시, 없는 대화 400, 합쳐 10000개까지) · `PUT /api/groups/{id}/peers {add?, remove?}`(#1j — 상대 단위: 그 상대의 대화
-  전부(뒤에 생길 것도)가 그 그룹에, 이미 있음 · 없음은 무시, 없는 상대 400 · 없는 그룹 404 → 그룹 JSON, 상대를 빼도 하나씩 넣은 대화는 남음) · `PUT /api/peers/{id}/groups {add?, remove?}`(#1j 라운드 1 — 한 상대를 여러 그룹에 넣고 빼기를 한 트랜잭션으로 · 연결 목록 끌어 옮기기, 없는 상대 404 · 없는 그룹 400 — 아무것도 안 바뀜 → 그룹 목록) · `PUT /api/order {kind: peers|groups|conversations, ids}` → 204(준 순서대로 자리
+  remove?}`(이미 있음 · 없음은 무시, 없는 대화 400, 합쳐 10000개까지) · (#1j 상대 단위 `PUT /api/groups/{id}/peers` · `PUT /api/peers/{id}/groups` 는 #1w 에서 없앰 — 그룹 = 대화만, 404) · `PUT /api/order {kind: peers|groups|conversations, ids}` → 204(준 순서대로 자리
   0 ..; 겹침 · 없는 id 400 — 아무것도 안 바뀜, 빠진 id 는 제 자리 · 같은 자리면 id 순). `GET /api/messages` · `GET /api/saved` 에 `group`(`peer` 와 함께면
   400), 새 대화 본문 `group?`(없는 그룹 404 — 보내지 않음, 소속은 대화와 같은 트랜잭션), 대화 요약 JSON 에 `pos`, `GET /api/peers` 순서 = 자리.
   거절(`focus` 등)은 403 + 글 `refused`. CLI `ask --conv N --agent X` — X 가 대화 에이전트가 아니면 멘션(자동 왕복 대화는 오류, 상대 PC 목록에 없으면
@@ -88,7 +92,8 @@
   `notify::routes` — `GET/PUT /api/settings`(PUT 은 준 항목만 · 모르는 항목 · 틀린 값 400, `relay_cap_default` 1 ~ 50, `claude_model` ·
   `claude_effort`(실행 기본값 `sonnet` · `high`) · `ui_theme`(`dark` 기본 · `light`) · `ui_side_width`(200 ~ 560) · `ui_folded`(접은 절 열쇠 목록 — `{화면}:{상대 id | me}` 300개까지, #1g) · `me_alias` · `me_icon`(빈 = 지움),
   설정 DB 읽기 오류는 500) ·
-  `GET /api/events`(SSE, 상태 변경 없음) · `POST /api/seen`(지움). 상한 없는 자동 왕복 새 대화는 `relay_cap_default`.
+  `GET /api/events`(SSE, 상태 변경 없음 — 알림 `message` + 변경 신호 `event: change` `{res: [{kind, id?}]}`, 변경 신호는 `Notifier::on_event` 가 켜짐 · 세부 설정 앞에서 늘 보내고
+  뒤처지면 빈 `res` 하나 — `notify::next_change`, D39 ②) · `POST /api/seen`(지움). 상한 없는 자동 왕복 새 대화는 `relay_cap_default`.
 - `handoff::request_open(&InstanceInfo)` — 전체 5초 상한(`HANDOFF_DEADLINE`). `handoff::local_request(info, method, path, body, deadline) ->
   (상태, 본문)` — 원시 HTTP/1.1(bearer · `Connection: close` · 끝까지 읽기, 전체 상한). HTTP 아닌 응답은 `InvalidData`, 보낸 뒤 읽기 오류 ·
   빈 응답은 `UnexpectedEof`(받았는지 모름).
@@ -163,23 +168,22 @@
   '나' 는 상대별 절, 메뉴에 ★ 수 — `sideNav(tile, unseen, waiting, starred)`).
   상대 타일 = 메뉴 4개(#1j — 요청 / 즐겨찾기 · 북마크 · 에이전트), 첫 화면 `#` = 그 상대 하나의 개요(`renderHome` "개요 · {이름}"), 그 상대 것만 —
   `#activity` · `#p` 는 '나' 로. 절 접힘은 설정 `ui_folded`(`{화면}:{상대 id | me}`, 시작할 때만 읽는다). 사이드바 에이전트 절은 없다(에이전트 화면만). 레일 그룹(#1i): 그룹 타일 =
-  메뉴 4개(`sideNav("group")` — 개요 / 요청 / 즐겨찾기 · 북마크 — #1j), 목록 · 요약은 그 그룹 대화만(`view.inGroup` — `convs` 또는 `peers`(#1j) · `groupPeers` — 대화 있는 상대만,
+  메뉴 4개(`sideNav("group")` — 개요 / 요청 / 즐겨찾기 · 북마크 — #1j), 목록 · 요약은 그 그룹 대화만(`view.inGroup` — `convs`(#1w — 대화만) · `groupPeers` — 대화 있는 상대만,
   서버 거르기 `group=`), 그룹인 채 `#activity` · `#agents` 는 '나' 로(`view.groupLeaves`). 접힘 열쇠는 '나' 와 같은 화면 열쇠. 떠 있는 상자 `#float`(화면 기준 —
-  "+ 그룹" · 대화 ⋯ "그룹" 체크 · "그룹에서 빼기" · "대화 추가" · 타일 메뉴 "타일 편집" · "이미지 지우기"("이미지를 지웠습니다") · 상대 그룹 체크(#1j `peerGroupMenu` — "그룹" ·
-  "+ 새 그룹에 넣기…" → `PUT /api/groups/{id}/peers`, 안내 `view.peerGroupText`) · "위로 옮기기 · 아래로 옮기기"(#1j `stepMove` — Alt + ↑ / ↓ 와 같음, 끝이면 꺼짐) ·
+  "+ 그룹" · 대화 ⋯ "그룹" 체크 · "그룹에서 빼기" · "대화 추가" · 타일 메뉴 "타일 편집" · "이미지 지우기"("이미지를 지웠습니다") · "위로 옮기기 · 아래로 옮기기"(#1j `stepMove` — Alt + ↑ / ↓ 와 같음, 끝이면 꺼짐) ·
   "그룹 삭제"(상자 안 확인)) — 레일 우클릭 · 메뉴 키 ·
   사이드 머리 ⋯. 순서 = 손으로 놓은 자리(`view.sortByPos` — 대화 · 상대 · 그룹 모두): 끌어 놓기(HTML 기본 드래그, `view.dropKind` — 같은 종류 · 대화는 같은
   절, 대화 → 그룹 타일 = 넣기) · Alt + ↑ / ↓(`view.stepTarget`, `#order_live` 알림 `movedText`) → 전체 순서에 끼워(`view.moveInOrder`) `PUT /api/order`. 레일 · 대화 목록은 다시 그려도 초점 항목을 되돌린다(`keepFocus` — #1j, 누른 뒤 바로 Alt + ↑ / ↓).
   설정(#1j): "페어링" 카드(초대 생성 · 초대 수락 같은 `primary` 단추, "주소 · 코드로 직접 추가" 없음 — 서버 경로는 남음) · 내 정보 · 연결 상세(`kvTable`)에 "읽기 전용"
-  없음 · 연결 목록 카드 = `view.peerSections`(레일 그룹 절 + `NO_PEER_GROUP` "그룹에 없는 연결", 한 상대는 여러 절에) · 줄 끌기 `view.peerMove`(넣기 먼저 · 옛 절
-  빼기) · "그룹 ▾" `view.peerGroupItems` · "+ 그룹 추가" · 절 머리 이름 바꾸기 · 삭제 · 검색 `view.searchItems` · 내 에이전트 평평한 목록(그룹 칸 없음).
+  없음 · 연결 목록 카드 = `view.settingsGroupSections`(#1w — 그룹 절 = 대화 줄 · "그룹에서 빼기" + 끝 `USER_LIST` "사용자 목록" = 관리 줄 + 대화 트리, 대화 줄 끌기 =
+  `view.convCopy` 복사) · "+ 그룹 추가" · 절 머리 이름 바꾸기 · 삭제 · 검색 `view.searchItems` · 내 에이전트 평평한 목록(그룹 칸 없음).
   설정(#1k — 디자인 캔버스 ④): `.settings-cols` 두 열(왼쪽 페어링 · 연결 목록, 오른쪽 내 정보 · 내 에이전트 — 1100px 미만 한 열, 실행 · 화면 · 시작 · 알림은
   아래 전체 폭) · 페어링 큰 단추 둘 `.pair-btns`(`window_btn` "초대 생성" · `accept_btn` "초대 수락" = `showAccept(on)` — `invite_accept` 여닫기 ·
   `aria-expanded`, 제출 단추 "수락") · 레일 "+" = `showAccept(true)` + `goSettings("conn", "invite_text")`(카드 맨 위 · 칸 초점), 트리 · 새로 만들기
   "초대 수락"(`#settings/invite_accept`)도 `render` 가 펼친다 · 관리 줄 `manageItem(key, label, head, ...body)`(머리 + "관리" `{key}_manage` 로 여닫는
   `detail_{key}`, 펼침 `state.open` — `<details>` `remembered` 대체) · 줄 타일 `rowTile(cls, icon, group)`(`tileFace`) · 절 머리 그림 단추
-  `svgButton(svg, label, onClick, cls)`(`PENCIL_SVG` 이름 바꾸기 · `TRASH_SVG` 삭제) · 연결 줄 = ⋮⋮ · 타일 · 이름 · 부제(이름 · PC · 접속 상태) · "그룹 ▾" ·
-  "관리"(지문 · 주소 · 모델 · effort · 단추, 끌기는 `.manage-head` 만) · 내 에이전트 줄 = 타일 · 이름 · 폴더 · "관리", 머리 `agent_new_btn` "에이전트 등록"
+  `svgButton(svg, label, onClick, cls)`(`PENCIL_SVG` 이름 바꾸기 · `TRASH_SVG` 삭제) · 연결 줄 = 타일 · 이름 · 부제(이름 · PC · 접속 상태) ·
+  "관리"(지문 · 주소 · 모델 · effort · 단추 — #1w 부터 연결 줄은 끌지 않는다) · 내 에이전트 줄 = 타일 · 이름 · 폴더 · "관리", 머리 `agent_new_btn` "에이전트 등록"
   (1l 에서 `showAgentNew(on)` 보이기 · 숨기기로 바뀜). 에이전트 화면(#1k): 머리 안내문 없음 · 내 에이전트 줄 오른쪽 ✎(`aria-label` "{이름} 편집") · 줄 누르기 =
   `editAgent(id)`(`state.open` 에 넣고 `goSettings("agents", "agent{id}_manage")` — 상세 펼침 · "관리" 초점), 상대 에이전트 = 새 대화. 주고받은 메시지(#1k):
   머리 안내문 없음 · `rowEls(rows, empty, {tile: true})`(주고받은 메시지만 — 왼쪽 상대 타일 `.row-tile` · 이름 옆 에이전트 칩 `.agent-chip`) ·

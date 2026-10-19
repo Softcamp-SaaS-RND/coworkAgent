@@ -53,8 +53,8 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   `pending(conv)`(DB 대기열 — 커서 없이 매번 처음부터) · `pending_conversations` · `summaries`(`Summary{conversation, title(이 PC 에서 붙인 제목,
   없으면 첫 사람 메시지 앞 40자), last_state, last_at}`, 최근 것 먼저) · `Summary.last: Option<LastMessage{text, author, mine, agent, via}>`(#1j — 대화
   목록 미리보기: 마지막 글 본문 앞 `PREVIEW_CHARS`(120)자 · 쓴 쪽 · 이 PC 쪽 글인가 · 멘션 에이전트 · 출처(`cli`), 글이 없으면 `None` — 마지막 = 화면과 같은 `(lc, uuid)` 순서, `last_state` · `last_at` 도 그 글) · `set_title(id, title)`(`None` = 지움) ·
-  `messages_across(mine, scope, author, request, q, limit)`(대화를 가로지른 글 — 범위 `Scope::All` · `Peer(id)` · `Group(id)`(#1i — 하나씩 넣은 대화
-  `group_convs` ∪ 넣은 상대의 대화 `group_peers`, #1j) · 종류 · 사람 글
+  `messages_across(mine, scope, author, request, q, limit)`(대화를 가로지른 글 — 범위 `Scope::All` · `Peer(id)` · `Group(id)`(#1i — 넣은 대화
+  `group_convs`, #1w 그룹 = 대화만) · 종류 · 사람 글
   종류(`request` — 사람 글만) · 본문 일치를 거른 뒤 최신 `limit` 건) · `saved(scope, conversation, limit)` · `Summary.pos`(손으로 놓은 자리 — 목록 자체는 최근
   활동순 그대로). 새 대화 `pos = min - 1`(맨 위). `Message` 에 `created_at` · `reply_to` · `turns` · `duration_ms` · `mine`(이 PC 의 글) · `exec`(실행 요청) ·
   `lc`(양쪽 공통 순서 — 램포트 시계, `messages` 는 `(lc, uuid)` 순) · `via`(`Some("cli")` = 사용자 AI 에이전트가 CLI 로 쓴 글, 동작은 사람 글과 같다). `set_via(id, via)`(`VIA_CLI` 만 남기고 그 밖 값은 NULL — 삽입과 같은 트랜잭션에서 부른다). `add_human(…, mine, exec)` · `observe(id, lc)`(받은 글의 순서 — 1 ~ `MAX_LC` 만, 밖이면 무시) ·
@@ -97,12 +97,10 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   전역 → 기본값) · `theme` · `side_width` · `me_tile`. 읽기는 `rusqlite::Result` — 없거나 틀린 값만 기본값, DB 오류는 그대로 낸다.
 - `log_file::FileLogger::install(path, level)` — `LOG_ROTATE_BYTES`(1 MiB)를 넘게 되는 기록 전에 `.1` 로 회전(1개 보관). 패닉 훅도 단다(#1e) —
   `error` "패닉: {메시지} — {파일}:{줄}" 뒤 기본 훅(stderr).
-- `groups`(#1i — 이 PC 에만): `Group{id, name, icon, pos, convs, peers}`(`convs` = 하나씩 넣은 대화 · `peers` = 넣은 상대 — #1j, 그 상대의 대화가 모두 보인다) ·
+- `groups`(#1i — 이 PC 에만): `Group{id, name, icon, pos, convs}`(`convs` = 넣은 대화 — #1w 그룹 = 대화만, 상대 소속 API 없음) ·
   `clean_name`(1 ~ `NAME_CHARS` 40자) · `fit_name(raw)`(#1j — 옛 자유 입력 그룹 이름 → 그룹 이름: 제어 문자 빼고 앞뒤 공백 지운 앞 40자, 빈 값 `None`) ·
   `list`(자리 순) · `by_id` · `name_taken(name,
-  except)` · `add`(끝에) · `rename` · `set_icon` · `remove`(소속 `group_convs` · `group_peers` 함께 — 외래 키를 켜지 않는 DB) · `unknown_conversations` · `change(id, add, remove)` ·
-  `unknown_peers(ids)`(없는 상대 id — 준 순서, 겹치면 한 번) · `change_peers(id, add, remove)`(#1j — 이미 있음 · 없음은 그대로, 상대를 빼도 하나씩 넣은 대화는
-  남음, 없는 그룹이면 `false` — 상대 검증은 부르는 쪽) ·
+  except)` · `add`(끝에) · `rename` · `set_icon` · `remove`(소속 `group_convs` 함께 — 외래 키를 켜지 않는 DB) · `unknown_conversations` · `change(id, add, remove)` ·
   `join(id, conv)`(부르는 쪽 트랜잭션 안 — 새 대화) · `reorder(Order::{Peers, Groups, Conversations}, ids)`(겹침 · 없는 id → `Err(문구)`, 빠진 id 는 제 자리).
   스키마 16: `peers.pos`(새 상대 `max + 1`, `peers::list` = `ORDER BY pos, id`) · `conversations.pos` · `groups`(AUTOINCREMENT) · `group_convs`.
   스키마 17(#1h): `peers.id` AUTOINCREMENT — 지금 정의(뒤에 붙인 열 포함)로 새 표 · 번호째 복사 · 옛 표 지움 · 이름 바꿈(정의 머리 `CREATE TABLE peers` ·
@@ -113,6 +111,11 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   스키마 19(#1m, 한 트랜잭션): `messages.ctx_tokens` · `ctx_op` · `ctx_seeds(conversation_id, agent, text)`. `chat::Author::Context` · `set_ctx_tokens` ·
   `add_context` · `finish_context` · `sessions(conv)` · `clear_sessions(conv, keep_seeds)` · `set_ctx_seed` · `ctx_seed` · `drop_ctx_seed`, `pending` 은 구분선
   글 먼저 · 구분선은 내 활동 · 미리보기 · 안 읽음 · 가로지른 글 · 메모 범위에서 뺌.
+  스키마 21(#1w, 한 트랜잭션): `conversations.id` AUTOINCREMENT(스키마 17 방법 — 순번 = 대화 · 딸린 표 `conversation_id` · `outbox.conv_id` 최대) ·
+  `left_at` · `peer_left_at` · `left_convs(uuid, peer_id, at)` 묘비 · `group_peers` → `group_convs`(그 상대의 지금 대화) 뒤 DROP. `chat` — `Conversation.left_at` ·
+  `peer_left_at` · `closed()` · `LEFT`("left") · `left(uuid, peer)`(나간 대화 · 묘비, 사본 아님) · `running(conv)` · `leave(conv)`(대기 글 · 보낸 뒤 기다리는 내 글 →
+  `error` + `left`, 자동 왕복 끔, `left_at` 은 처음 값) · `set_peer_left(conv)`(같이 닫고 `peer_left_at`) · `delete_conversation(conv)`(딸린 표 전부 · 끝 알림 행은 떼어 남김 ·
+  사본이 아니면 묘비 · 표시 낮추기 `lower_marks` — `delete_message` 와 같이 씀). `outbox::LEAVE` · `share::forget_peer` 가 나가기 행도 지운다.
   스키마 20(#1o, 한 트랜잭션): `shares(conversation_id, peer_id, sent_upto, created_at)` · `conversations.share_other` · `share_dir` · `share_ended` ·
   `watchers` · `messages.owner`, `MINE_BY_DIR` `'shared' → 0`. `share` 모듈 — `MAX_WATCHERS`(5) · `watchers` · `add` · `remove` · `set_sent` · `forget_peer`(페어링
   해제 — `peers::remove` · `remove_spki` 가 부름) · `own_by_uuid` · `copy` · `open_copy` · `upsert`(사본 글 — mine 0 · exec 0 · request 0, 이 사본 것만 덮어씀) ·

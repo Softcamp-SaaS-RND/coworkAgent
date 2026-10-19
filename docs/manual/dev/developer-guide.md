@@ -3,7 +3,7 @@
 > 절차·운영 문서 — 모듈 매뉴얼 형식(개요 / 공개 계약 / 사용 예)의 예외다([매뉴얼 등록 규약](../README.md)).
 > 모듈별 API · 계약의 정본은 [an_core](an_core.md) · [an_net](an_net.md) · [an_agent](an_agent.md) · [an_app](an_app.md) 이고, 여기는
 > 그것들이 **실행 중에 어떻게 맞물리는지**를 적는다 — 어떤 프로세스가 생기고, 어떤 서비스가 무슨 역할을 하며, `claude -p` 헤드리스
-> 대화의 세션 · 저장소 · 흐름이 어떻게 이어지는가. 결정 번호(D · S)는 [masterPlan](../../masterPlan.md). 수치 · 경로는 스키마 20 ·
+> 대화의 세션 · 저장소 · 흐름이 어떻게 이어지는가. 결정 번호(D · S)는 [masterPlan](../../masterPlan.md). 수치 · 경로는 스키마 21 ·
 > 검증 환경 Windows 11 · Claude Code 2.1.296 기준. 쓰는 사람용 안내는 [사용자 가이드](../user/user-guide.md).
 
 ## 1. 한눈에 보기
@@ -213,7 +213,7 @@ PC 사이는 앱끼리 직접 통신한다.
 - **프레임** = 4바이트 big-endian 길이 + JSON(최대 64 KiB), 글 본문은 16 KiB(`MAX_TEXT`). 요청 1건에 응답 1건, 그리고 연결을 닫는다.
 - **요청**(`proto::Request`): 페어링 `Hello` · `Approve` · `Remove` · 접속 `Ping` · 대화 `Agents` · `Message` · `Reply` · `Post` ·
   `Relay` · `ReqState`(요청 상태 — #1d) · `Progress`(받는 쪽 차례 · 단계 요약) · `Status`(보낸 쪽 상태 질의) · `Edit` · `Delete`(이력 정리 — #1f) ·
-  `Context`(컨텍스트 압축 · 비우기 요청 · 결과 — #1m) · `Share` · `SharePost` · `ShareDelete` · `ShareEnd` · `ShareNotice`(공유 대화 — #1o, 8.11). 답 `Reply` · `Post` 는 `ctx`(그 답 세션의 창 사용량)를 싣는다. **응답**: `Hello` · `Ok` · `Pong{focus, ctx, share}`(`ctx` = `Context` · `share` = 공유 프레임을 앎) ·
+  `Context`(컨텍스트 압축 · 비우기 요청 · 결과 — #1m) · `Share` · `SharePost` · `ShareDelete` · `ShareEnd` · `ShareNotice`(공유 대화 — #1o, 8.11) · `Leave`(대화 나가기 — #1w, 8.12). 답 `Reply` · `Post` 는 `ctx`(그 답 세션의 창 사용량)를 싣는다. **응답**: `Hello` · `Ok` · `Pong{focus, ctx, share, leave}`(`ctx` = `Context` · `share` = 공유 프레임 · `leave` = `Leave` 를 앎) ·
   `Agents{names}` · `Status{state, ahead}` · `Error{code}`. 필드 정본은 [an_net](an_net.md).
 - 미페어링 상대는 `Hello` · `Approve` · `Remove` 만. 대화 요청은 페어링(`my_ok ∧ their_ok`)된 키만 처리기로 간다(SC2).
 - 수신 제한 — 연결당 3초 · 동시 32 · 출처 IP 당 4.
@@ -383,7 +383,7 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 
 ```text
 %LOCALAPPDATA%\coworkAgent\              macOS: ~/Library/Application Support/coworkAgent/
-├── coworkAgent.db                      SQLite — 연결 · 에이전트 · 대화 · 글 · 설정 · 보내기 보관 · CLI 트랜잭션 · 관람자(스키마 20)
+├── coworkAgent.db                      SQLite — 연결 · 에이전트 · 대화 · 글 · 설정 · 보내기 보관 · CLI 트랜잭션 · 관람자 · 지운 대화 묘비(스키마 21)
 ├── coworkAgent.db.v{N}.bak             스키마 N 에서 올리기 직전 사본(VACUUM INTO, 버전마다 한 번)
 ├── identity.key                        설치 신원 ed25519(PKCS#8) — 리포 · 로그 · UI 로 내보내지 않는다
 ├── instance.lock                       단일 인스턴스 잠금
@@ -401,18 +401,18 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 디버그 빌드만 환경 변수 `COWORKAGENT_DATA_DIR` 가 데이터 루트를 바꾼다(옛 데이터 이어받기 없음) — 시험이 실제 인스턴스 · 데이터를 건드리지 않게
 (`crates/app/tests/lifecycle.rs`). 릴리스 빌드는 읽지 않는다.
 
-### 7.2 DB 표 (스키마 20)
+### 7.2 DB 표 (스키마 21)
 
 | 표 | 한 행 | 주요 열 |
 |---|---|---|
 | `peers` | 연결한 PC — `id` AUTOINCREMENT(#1h 스키마 17 — 지운 상대의 번호를 다시 쓰지 않는다, 그 대화 · 보낼 글은 그 번호로 남는다) | `spki`(공개키) · `name` · `host` · `addr` · `my_ok` · `their_ok` · `round`(페어링 세대) · `grp`(옛 자유 입력 그룹 — 스키마 18 에서 같은 이름 레일 그룹으로 옮기고 읽지 않음) · `model` · `effort` · `alias` · `icon` · `activity_seen_msg` · `activity_seen_event` · `seen_at`(마지막 통신 — 보내기 성공 · 요청 받기 · `Pong`) · `focus`(마지막 `Pong` · 집중 거절 때 값) · `pos`(레일 자리 — #1i, 새 상대는 맨 뒤) |
 | `settings` | 키 · 값 | 아래 키 |
 | `agents` | 내 에이전트 | `name`(UNIQUE — 상대가 부르는 이름, 바꾸지 않는다) · `folder` · `tools`(#1d 부터 읽지 않음 — 도구는 읽기 전용 5개 고정) · `prompt` · `grp`(#1j 부터 읽지 않음 — 열만 남음) · `uid`(세대) |
-| `conversations` | 대화 | `uuid` · `peer_id` · `agent`(대화 에이전트) · `dir`(`out` 내가 엶 · `in` 상대가 엶 · `shared` 남이 나를 관람자로 넣은 사본 — #1o) · `session` · `relay_agent` · `relay_cap` · `relay_count` · `relay_on` · `relay_blocked` · `title` · `starred_at` · `read_id` · `pos`(손으로 놓은 자리 — #1i, 새 대화는 맨 위 `min - 1`) · `share_other` · `share_dir` · `share_ended`(사본 — 원 상대 이름 · 넣은 쪽 방향 · 빠진 시각, #1o) · `watchers`(원 상대 쪽 — 알림 받은 관람자 수) |
+| `conversations` | 대화 — `id` AUTOINCREMENT(#1w 스키마 21 — 지운 대화의 번호를 다시 쓰지 않는다) | `uuid` · `peer_id` · `agent`(대화 에이전트) · `dir`(`out` 내가 엶 · `in` 상대가 엶 · `shared` 남이 나를 관람자로 넣은 사본 — #1o) · `session` · `relay_agent` · `relay_cap` · `relay_count` · `relay_on` · `relay_blocked` · `title` · `starred_at` · `read_id` · `pos`(손으로 놓은 자리 — #1i, 새 대화는 맨 위 `min - 1`) · `share_other` · `share_dir` · `share_ended`(사본 — 원 상대 이름 · 넣은 쪽 방향 · 빠진 시각, #1o) · `watchers`(원 상대 쪽 — 알림 받은 관람자 수) · `left_at`(이 PC 가 나간 시각 — #1w) · `peer_left_at`(상대가 나간 시각 — 받은 `Leave`) |
+| `left_convs` | 지운 대화의 묘비(#1w) | (`uuid`, `peer_id`) PRIMARY KEY · `at`. 같은 uuid 로 온 글이 대화를 되살리지 않게(받기 앞에서 `left` 거절). 공유 사본은 남기지 않는다(다시 초대 = 새 사본) |
 | `shares` | 관람자 1명(#1o — 넣은 쪽) | (`conversation_id`, `peer_id`) PRIMARY KEY · `sent_upto`(그 관람자 줄에 넣은 마지막 `messages.id` — 커서) · `created_at`. 상대 페어링을 지우면 함께 지운다 |
 | `groups` | 레일 그룹(#1i — 이 PC 에만) | `id`(AUTOINCREMENT — 지운 번호를 다시 쓰지 않는다) · `name`(UNIQUE, 1 ~ 40자) · `icon` · `pos` |
-| `group_convs` | 그룹 소속(대화 하나씩) | (`group_id`, `conversation_id`) — 외래 키를 켜지 않는 DB 라 그룹을 지우면 `groups::remove` 가 함께 지운다. 대화는 여러 그룹에 |
-| `group_peers` | 그룹 소속(상대 단위 — #1j 스키마 18) | (`group_id`, `peer_id`) PRIMARY KEY · 색인 `group_peers_peer`. 그룹의 대화 = `group_convs` ∪ 그 상대들의 대화 전부(뒤에 생긴 대화 포함 — 계산, `chat::Scope::Group`). 상대를 빼도 `group_convs` 는 남고, 그룹을 지우면 `groups::remove` 가 함께 지운다 |
+| `group_convs` | 그룹 소속(대화 하나씩 — #1w 부터 그룹 = 대화만) | (`group_id`, `conversation_id`) — 외래 키를 켜지 않는 DB 라 그룹을 지우면 `groups::remove` 가, 대화를 지우면 `chat::delete_conversation` 이 함께 지운다. 대화는 여러 그룹에. 상대 단위 소속 표(스키마 18)는 스키마 21 이 그 상대의 대화로 옮기고 지웠다 |
 | `messages` | 사람 글 · 에이전트 답 · 컨텍스트 구분선(#1m) | `uuid` · `conversation_id` · `author`(`human` · `agent` · `context`) · `text` · `state` · `reply_to` · `turns` · `duration_ms` · `mine` · `exec`(실행 요청) · `lc` · `via`(`cli`) · `saved_at` · `model` · `effort` · `request` · `req_state`(`wait` · `accepted` · `rejected` · `done` — #1d) · `req_note` · `req_at` · `done_at`(#1d 부터 읽지 않음) · `agent`(멘션) · `refused` · `edited_at`(편집 시각 — #1f) · `ctx_tokens`(답 세션의 창 사용량 — #1m) · `ctx_op`(구분선 종류) · `owner`(사본 글이 넣은 사람 쪽 글인가 — #1o) |
 | `relay_events` | 자동 왕복 시작 · 끝 · 내 글이 실패로 바뀐 순간 · 상대 반영 실패(`sync_failed` — #1f) · 상대가 내 요청 상태를 바꾼 순간(`req_state` — #1q, 내 활동 안 본 표시) | `conversation_id` · `kind` · `detail` · `message_id` |
 | `agent_sessions` | 대화 × 멘션 에이전트 세션 | (`conversation_id`, `agent`) → `session` |
@@ -423,8 +423,8 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 - 글 상태 `state`: `sent` 보냄 · `queued` 실행 대기 · `running` 실행 중 · `done` 끝 · `error` 실패 · `undelivered` 답을 상대에 못 보냄.
 - `settings` 키: `notify_inbound` · `notify_pair` · `notify_request` · `notify_reply` · `notify_relay` · `notify_preview` · `notify_paused` ·
   `relay_cap_default` · `claude_model` · `claude_effort` · `ui_theme` · `ui_side_width` · `ui_folded` · `me_alias` · `me_icon` · `focus` · `auto_compact`(#1m — 없으면 켜짐).
-- **레일 그룹 저장**(D37 · #1i · #1j): 그룹의 대화 = 하나씩 넣은 대화(`group_convs`) ∪ 넣은 상대의 대화 전부(`group_peers` — 뒤에 생긴 대화 포함,
-  스키마 18 · #1j). 상대를 빼도 하나씩 넣은 대화는 남고, 그룹을 지우면 두 소속이 함께 지워진다. 옛 자유 입력 그룹(`peers.grp`)은 스키마 18 에서 같은
+- **레일 그룹 저장**(D37 개정 · #1i · #1w): 그룹의 대화 = 넣은 대화(`group_convs`)만. 상대 단위 소속(스키마 18 · #1j)은 스키마 21 이 그 상대의 그때 대화를
+  하나씩 넣어 옮기고 지웠다(뒤에 생긴 대화는 들어오지 않는다). 그룹을 지우면 소속이 함께 지워진다. 옛 자유 입력 그룹(`peers.grp`)은 스키마 18 에서 같은
   이름 레일 그룹으로 옮겼다(`agents.grp` 는 읽지 않음 — 에이전트는 묶지 않는다). 상대 PC 로 가는 프레임은 없다. 화면은 [web-ui](web-ui.md).
 - **상대 번호**(#1h): `peers.id` 는 다시 쓰지 않는다(스키마 17 AUTOINCREMENT — 지운 상대의 대화는 그 번호로 남는다).
 
@@ -467,6 +467,8 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 - v18(#1j)은 한 트랜잭션으로 `group_peers` 를 만들고 옛 `peers.grp` 값을 같은 이름 레일 그룹으로 옮긴다(없으면 만든다 — 이름은 `groups::fit_name`: 제어
   문자 빼고 앞뒤 공백 지운 앞 40자, 남는 글자가 없으면 건너뜀). `agents.grp` 는 읽지 않는다.
 - v19(#1m)는 한 트랜잭션으로 `messages.ctx_tokens` · `ctx_op` 열과 `ctx_seeds` 표를 더한다.
+- v21(#1w)은 한 트랜잭션으로 `conversations` 를 AUTOINCREMENT 로 다시 만들고(스키마 17 `peers` 와 같은 방법 — 순번 = 대화 · 딸린 표 `conversation_id` ·
+  `outbox.conv_id` 최대), `left_at` · `peer_left_at` 열 · `left_convs` 표를 더하고, `group_peers` 소속을 그 상대의 지금 대화(`group_convs`)로 옮긴 뒤 표를 지운다.
 - 같은 버전의 사본이 이미 있으면 새로 뜨지 않는다(`backup_before_migration`) — 되돌린 뒤 다시 올려도 `.v{N}.bak` 은 처음 시점 그대로다.
 - 배포 전 하위 호환은 두지 않지만(D32) 사용자 데이터는 순방향 마이그레이션으로 보존한다.
 - **스키마 올리기**: v5 부터 단계마다 한 트랜잭션(v2 ~ v4 는 `IF NOT EXISTS` 묶음), 올리기 전 `{db}.v{버전}.bak` 사본(롤백용 — 처음 버전 한 번만,
@@ -802,6 +804,30 @@ sequenceDiagram
   글 하나 = 프레임 하나 · 보내기 전 `Pong.share` · 보내기 직전 관람자 확인)으로, 관람자 PC 사본 `dir = shared`(실행 · 쓰기 · 자동 왕복 · 요청 · 다시 공유
   없음, 내 활동에서 뺌), 원 상대에는 관람자 수만. 끝 = 빼기 · 나가기 · 페어링 해제 · 24시간 닿지 않음 → 사본 "공유 해제됨". 스키마 20(`shares` 커서
   `sent_upto` · 사본 열 · `messages.owner`). 화면은 [web-ui](web-ui.md).
+
+### 8.12 대화 나가기 · 삭제 (#1w · D40)
+
+```mermaid
+sequenceDiagram
+  participant A as A(나가는 PC)
+  participant B as B(상대)
+  A->>A: 도는 실행(running)? → 409 "실행이 끝난 뒤 나갈 수 있습니다"
+  A->>A: 한 트랜잭션 — 대기 글 · 기다리던 내 글 닫기(error + left) · 자동 왕복 끔 · left_at · 관람자 ShareEnd · 그 대화의 B 앞 pending 버림 · Leave 행(conv_id 없이)
+  A->>B: Leave{conv} — 보내기 전 Ping → Pong.leave 아니면 행을 버린다(포기 없음)
+  B->>B: peer_left_at · 대기 글 · 기다리던 내 글 닫기 · 자동 왕복 끔 → 읽기 전용 "상대가 나감"
+  B->>A: (이전 버전 · 아직 모름) Message{conv}
+  A-->>B: Error{left} — 글은 실패 · refused = left("상대가 대화를 나갔습니다")
+```
+
+- **나가기**(`Chat::leave_conversation`) — 모든 대화. 공유 사본은 지금 공유 나가기(`share_leave`). 이력은 남고 읽기 전용(`writable` — 글쓰기 · 컨텍스트 · 자동 왕복 ·
+  요청 상태 · 이력 정리 · 공유 넣기 막음, "나간 대화는 읽기 전용"). 받기 앞(`handle`)에서 그 대화(`chat::left` — `left_at` 또는 묘비)로 온 요청은 `Leave` ·
+  `ShareEnd` 말고 모두 `left`. 나간 뒤 끝난 실행의 답은 이력에만(`record` — 보낼 행 없음), 줄을 서던 대기 글은 실행하지 않는다.
+- **삭제**(`Chat::delete_conversation`) — 나가기(아직이면 — 같은 막음) 뒤 `chat::delete_conversation`: 글 · 실행 · 에이전트 세션 기록(`conversations.session` ·
+  `agent_sessions`) · `ctx_seeds` · 그룹 소속 · 관람자 · 보낼 글 · `relay_events` · `cli_tx` · 대화 행, 읽음 · 내 활동 본 표시 · 공유 커서를 낮춘다. 끝 알림 행(`Leave` ·
+  관람자 앞 `ShareEnd`)은 대화에서 떼어(`conv_id` NULL) 남긴다. 공유 사본이 아니면 묘비(`left_convs`). 상대 PC 사본은 그대로. 실행 중 삭제된 대화의 답은 버린다.
+- **번호** — `conversations.id` AUTOINCREMENT(스키마 21) — 지운 가장 큰 번호를 새 대화가 받지 않는다.
+- **API** — `POST /api/conversations/{id}/leave` · `DELETE /api/conversations/{id}`(204 · 404 · 실행 중 409). 대화 JSON · 글의 `conversation` 요약에 `left_at` ·
+  `peer_left_at`. 화면은 [web-ui](web-ui.md).
 
 ## 9. 보안 경계 요약
 

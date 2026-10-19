@@ -4,6 +4,7 @@ mod common;
 use an_agent::chat::{Chat, Compose};
 use an_core::agents;
 use an_core::chat::{self, ActivityFilter, ActivityKind, AskFilter, Author, Message, ReqState};
+use an_net::node::PeerEvent;
 use an_net::proto::{Request, Response};
 use std::io::ErrorKind;
 use std::time::{Duration, Instant};
@@ -30,6 +31,15 @@ fn msg(s: &common::Side, uuid: &str) -> Option<Message> {
 fn tidy(s: &common::Side, m: &Message) -> bool {
     let now = msg(s, &m.uuid).unwrap();
     Chat::tidy_ok(&common::db(s), &now).unwrap()
+}
+
+fn notices(s: &common::Side) -> usize {
+    s.events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|e| !matches!(e, PeerEvent::Changed { .. }))
+        .count()
 }
 
 fn answer_of(s: &common::Side, conv: i64) -> Option<Message> {
@@ -301,7 +311,8 @@ async fn tidy_runs_and_notifies_nothing() {
         .await
         .unwrap();
     common::eventually(|| chat::messages(&common::db(&a), conv.id).unwrap().len() == 4).await;
-    let counts = |s: &common::Side| (s.runs.lock().unwrap().len(), s.events.lock().unwrap().len());
+    // 변경 신호(`Changed` — 1u)는 알림이 아니다 — 알림만 센다.
+    let counts = |s: &common::Side| (s.runs.lock().unwrap().len(), notices(s));
     let before = (counts(&a), counts(&b));
     a.chat.edit_message(q.id, "고친 질의", true).await.unwrap();
     a.chat.delete_messages(&[q2.id], true).await.unwrap();
@@ -312,6 +323,39 @@ async fn tidy_runs_and_notifies_nothing() {
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!((counts(&a), counts(&b)), before, "실행 · 알림 없음");
     assert_eq!(chat::messages(&common::db(&a), conv.id).unwrap().len(), 3);
+}
+
+/// 상대가 편집하면(알림 없음) 받은 쪽은 그 대화의 이 PC id 로 변경 신호를 낸다(1u — 웹UI 부분 다시 읽기).
+#[tokio::test(flavor = "multi_thread")]
+async fn inbound_edit_signals_change() {
+    let (a, b, b_id, _) = pair_review("signal", Duration::ZERO).await;
+    let (conv, q) = a
+        .chat
+        .send_with(b_id, "review", None, "질의", ask(false))
+        .await
+        .unwrap();
+    common::eventually(|| answer_of(&a, conv.id).is_some()).await;
+    let theirs = msg(&b, &q.uuid).unwrap().conversation_id;
+    b.events.lock().unwrap().clear();
+    a.chat.edit_message(q.id, "고친 질의", true).await.unwrap();
+    let changed = || -> Vec<Option<i64>> {
+        b.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|e| match e {
+                PeerEvent::Changed { conv } => Some(*conv),
+                _ => None,
+            })
+            .collect()
+    };
+    common::eventually(|| changed().contains(&Some(theirs))).await;
+    assert_eq!(
+        msg(&b, &q.uuid).unwrap().text,
+        "고친 질의",
+        "신호는 반영 뒤"
+    );
+    assert_eq!(notices(&b), 0, "편집은 알림이 아니다");
 }
 
 #[tokio::test(flavor = "multi_thread")]

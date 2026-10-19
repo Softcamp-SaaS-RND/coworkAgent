@@ -34,6 +34,48 @@ pub struct Notice {
     pub body: String,
 }
 
+/// 웹UI 변경 신호 한 건(SSE `event: change`) — 알림과 별개, 알림 설정 · 집중과 무관하게 항상 간다(D39 ②).
+/// `res` 가 비면 전체 다시 읽기(뒤처져 놓쳤을 때).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Change {
+    pub res: Vec<Res>,
+}
+
+/// 바뀐 자원 — `conv`(이 PC 대화 id) · `peer`(연결).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Res {
+    pub kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+}
+
+impl Change {
+    pub fn full() -> Self {
+        Change { res: Vec::new() }
+    }
+}
+
+/// 이벤트 → 바뀐 자원.
+pub fn change_of(e: &PeerEvent) -> Change {
+    let r = match e {
+        PeerEvent::Message { conv, .. } => Res {
+            kind: "conv",
+            id: Some(*conv),
+        },
+        PeerEvent::Changed { conv } => Res {
+            kind: "conv",
+            id: *conv,
+        },
+        PeerEvent::PairRequest { .. }
+        | PeerEvent::Approved { .. }
+        | PeerEvent::AutoPaired { .. } => Res {
+            kind: "peer",
+            id: None,
+        },
+    };
+    Change { res: vec![r] }
+}
+
 type Attention = Box<dyn Fn(usize) + Send + Sync>;
 /// 자동 시작 켜기(등록) · 끄기(지움) — 앱이 설치한다(디버그 빌드 · 시험은 없음).
 type AutostartHook = Box<dyn Fn(bool) -> io::Result<()> + Send + Sync>;
@@ -92,6 +134,7 @@ impl Prefs {
             PeerEvent::PairRequest { .. }
             | PeerEvent::Approved { .. }
             | PeerEvent::AutoPaired { .. } => self.notify_pair,
+            PeerEvent::Changed { .. } => false,
             PeerEvent::Message { kind, .. } => match kind {
                 MessageKind::Request
                 | MessageKind::Ask
@@ -117,6 +160,8 @@ pub struct Notifier {
     status: Mutex<Status>,
     db: Mutex<Connection>,
     tx: broadcast::Sender<Notice>,
+    /// 변경 신호 — 알림(`tx`)과 따로, 거르지 않는다.
+    changes: broadcast::Sender<Change>,
     /// 트레이 표시 갱신(건수, 0 = 지움). 막히면 안 된다 — 운영은 이벤트 루프 프록시로 보낸다.
     attention: Attention,
     autostart: Mutex<Option<AutostartHook>>,
@@ -138,6 +183,7 @@ impl Notifier {
             }),
             db: Mutex::new(db),
             tx: broadcast::channel(BACKLOG).0,
+            changes: broadcast::channel(BACKLOG).0,
             attention: Box::new(attention),
             autostart: Mutex::new(None),
         }))
@@ -406,6 +452,11 @@ impl Notifier {
     /// 막히지 않는다 — 켜져 있고 세부 설정이 허락하면 건수 · 트레이 표시를 올리고 구독자에게 뿌린다(구독자가 없으면 그냥
     /// 버려진다). 걸러진 이벤트는 건수에도 들지 않는다.
     pub fn on_event(&self, e: &PeerEvent) {
+        // 변경 신호는 켜짐 · 세부 설정 앞 — 알림을 꺼도 화면은 맞춰진다.
+        let _ = self.changes.send(change_of(e));
+        if matches!(e, PeerEvent::Changed { .. }) {
+            return;
+        }
         let mut st = self.status();
         if !st.enabled || !st.prefs.allows(e) {
             return;
@@ -417,6 +468,10 @@ impl Notifier {
 
     pub fn subscribe(&self) -> broadcast::Receiver<Notice> {
         self.tx.subscribe()
+    }
+
+    pub fn subscribe_changes(&self) -> broadcast::Receiver<Change> {
+        self.changes.subscribe()
     }
 
     /// 사용자가 봤다 — 트레이 "새 요청" 을 지운다.
@@ -466,6 +521,7 @@ pub fn notice_with(e: &PeerEvent, preview_on: bool) -> Notice {
             agent,
             preview,
             kind,
+            ..
         } => {
             let (code, title) = match kind {
                 MessageKind::RelayStart => ("relay", format!("자동 왕복 시작 — {agent}")),
@@ -491,6 +547,21 @@ pub fn notice_with(e: &PeerEvent, preview_on: bool) -> Notice {
                 body,
             }
         }
+        // 알림이 아니다 — `on_event` 가 먼저 돌려보낸다.
+        PeerEvent::Changed { .. } => Notice {
+            kind: "change",
+            title: String::new(),
+            body: String::new(),
+        },
+    }
+}
+
+/// 다음 변경 신호 — 뒤처져 놓쳤으면 빈 `res`(전체 다시 읽기) 하나, 닫히면 `None`.
+pub async fn next_change(rx: &mut broadcast::Receiver<Change>) -> Option<Change> {
+    match rx.recv().await {
+        Ok(c) => Some(c),
+        Err(RecvError::Lagged(_)) => Some(Change::full()),
+        Err(RecvError::Closed) => None,
     }
 }
 
@@ -586,12 +657,21 @@ async fn seen(State(n): State<Arc<Notifier>>) -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
-/// 이후 알림을 흘린다 — GET 이라 상태를 바꾸지 않는다. 뒤처지면 놓친 것을 건너뛴다.
+/// 이후 알림 · 변경 신호를 흘린다 — GET 이라 상태를 바꾸지 않는다. 알림은 뒤처지면 놓친 것을 건너뛰고, 변경 신호는
+/// 전체 다시 읽기 하나로 바꾼다.
 async fn events(
     State(n): State<Arc<Notifier>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let changes = stream::unfold(n.subscribe_changes(), |mut rx| async move {
+        let c = next_change(&mut rx).await?;
+        let ev = Event::default()
+            .event("change")
+            .json_data(&c)
+            .unwrap_or_else(|_| Event::default().comment("직렬화 실패"));
+        Some((Ok(ev), rx))
+    });
     let rx = n.subscribe();
-    let s = stream::unfold(rx, |mut rx| async move {
+    let notices = stream::unfold(rx, |mut rx| async move {
         loop {
             match rx.recv().await {
                 Ok(notice) => {
@@ -605,5 +685,5 @@ async fn events(
             }
         }
     });
-    Sse::new(s).keep_alive(KeepAlive::default())
+    Sse::new(stream::select(notices, changes)).keep_alive(KeepAlive::default())
 }

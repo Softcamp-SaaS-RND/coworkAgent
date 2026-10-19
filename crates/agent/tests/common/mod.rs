@@ -134,3 +134,31 @@ pub async fn delaying_relay(target: SocketAddr, first_delay: Duration) -> Socket
     });
     addr
 }
+
+/// 이전 버전 상대 대역 — `id` 로 TLS 를 받고 Ping 에는 `pong`(그 버전이 아는 깃발만), 그 밖 프레임은 읽고 끊는다(모르는 종류).
+pub async fn old_peer(id: Identity, pong: serde_json::Value) -> SocketAddr {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let acceptor = tokio_rustls::TlsAcceptor::from(an_net::tls::server_config(&id));
+    tokio::spawn(async move {
+        loop {
+            let Ok((tcp, _)) = listener.accept().await else {
+                return;
+            };
+            let (acceptor, pong) = (acceptor.clone(), pong.clone());
+            tokio::spawn(async move {
+                let Ok(mut s) = acceptor.accept(tcp).await else {
+                    return;
+                };
+                let Ok(req) = an_net::proto::read_frame::<_, serde_json::Value>(&mut s).await
+                else {
+                    return;
+                };
+                if req["type"] == "ping" {
+                    let _ = an_net::proto::write_frame(&mut s, &pong).await;
+                }
+            });
+        }
+    });
+    addr
+}

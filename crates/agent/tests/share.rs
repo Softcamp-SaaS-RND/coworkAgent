@@ -8,7 +8,6 @@ use an_net::node::{MessageKind, PeerEvent};
 use an_net::proto::{Request, Response, ShareMsg};
 use std::net::SocketAddr;
 use std::time::Duration;
-use tokio::net::TcpListener;
 
 struct Three {
     a: common::Side,
@@ -435,33 +434,9 @@ async fn cap_five_and_bad_targets() {
     );
 }
 
-/// 공유 대화를 모르는 상대(0.5.0) 대역 — `id` 로 TLS 를 받고 Ping 에는 `share` 없는 Pong, 그 밖 프레임은 읽고 끊는다(모르는 종류).
+/// 공유 대화를 모르는 상대(0.5.0) 대역 — Ping 에 `share` 없는 Pong.
 async fn old_peer(id: Identity) -> SocketAddr {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let acceptor = tokio_rustls::TlsAcceptor::from(an_net::tls::server_config(&id));
-    tokio::spawn(async move {
-        loop {
-            let Ok((tcp, _)) = listener.accept().await else {
-                return;
-            };
-            let acceptor = acceptor.clone();
-            tokio::spawn(async move {
-                let Ok(mut s) = acceptor.accept(tcp).await else {
-                    return;
-                };
-                let Ok(req) = an_net::proto::read_frame::<_, serde_json::Value>(&mut s).await
-                else {
-                    return;
-                };
-                if req["type"] == "ping" {
-                    let pong = serde_json::json!({"type": "pong", "focus": false, "ctx": true});
-                    let _ = an_net::proto::write_frame(&mut s, &pong).await;
-                }
-            });
-        }
-    });
-    addr
+    common::old_peer(id, serde_json::json!({"type": "pong", "focus": false, "ctx": true})).await
 }
 
 #[tokio::test(flavor = "multi_thread")]

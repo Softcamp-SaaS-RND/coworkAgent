@@ -236,6 +236,11 @@ pub enum Request {
         conv: String,
         n: u32,
     },
+    /// 대화 나가기(#1w) — 보낸 쪽이 그 대화를 끝냈다. 받은 쪽은 그 대화를 읽기 전용("상대가 나감")으로. 이 종류를 모르는 상대(0.8.0)는 연결을
+    /// 끊으므로 보내기 전에 `Pong.leave` 를 본다(모르면 보내지 않는다 — 그쪽은 보낼 때 `left` 를 받는다). 페어링된 상대만.
+    Leave {
+        conv: String,
+    },
 }
 
 /// 공유 대화 글(#1o) — `Post` 필드 관례. `owner` = 대화를 가진 PC(A) 쪽 글, `ok` 거짓 = 실패 글(없음 = 끝난 글), `at` = A 에 남은 시각(유닉스 초).
@@ -284,6 +289,9 @@ pub enum Response {
         /// 공유 대화(`Request::Share*`, #1o)를 아는가 — 이전 버전은 싣지 않는다(거짓).
         #[serde(default)]
         share: bool,
+        /// 대화 나가기(`Request::Leave`, #1w)를 아는가 — 이전 버전은 싣지 않는다(거짓).
+        #[serde(default)]
+        leave: bool,
     },
     Agents {
         names: Vec<String>,
@@ -296,7 +304,7 @@ pub enum Response {
     },
     /// `not_paired` · `unknown` · `stale`(이전 세대 승인) · `busy` · `closed`(페어링 받기 창이 닫혔거나 초대 코드 불일치) ·
     /// `bad_request` · `unknown_agent` · `unsupported`(받는 쪽에 처리기가 없음) · `focus`(받는 쪽이 집중 중 — 새 실행 요청 거부) ·
-    /// `invalid`(대화 요청의 id 가 [`is_uuid`] 꼴이 아님)
+    /// `invalid`(대화 요청의 id 가 [`is_uuid`] 꼴이 아님) · `left`(받는 쪽이 그 대화를 나갔거나 지웠다, #1w)
     Error {
         code: String,
     },
@@ -377,6 +385,29 @@ pub fn is_uuid(s: &str) -> bool {
 
 impl Request {
     /// 대화 요청의 id(`conv` · `msg` · `reply_to`)가 모두 [`is_uuid`] 꼴인가 — 처리기에 넘기기 전에 본다(원격 입력 총량 · 형식, 1a A8).
+    /// 요청이 닿는 대화 uuid — 대화 없는 요청은 `None`.
+    pub fn conv(&self) -> Option<&str> {
+        match self {
+            Request::Message { conv, .. }
+            | Request::ReqState { conv, .. }
+            | Request::Progress { conv, .. }
+            | Request::Status { conv, .. }
+            | Request::Edit { conv, .. }
+            | Request::Delete { conv, .. }
+            | Request::Context { conv, .. }
+            | Request::Reply { conv, .. }
+            | Request::Post { conv, .. }
+            | Request::Relay { conv, .. }
+            | Request::Share { conv, .. }
+            | Request::ShareEnd { conv }
+            | Request::ShareNotice { conv, .. }
+            | Request::ShareDelete { conv, .. }
+            | Request::SharePost { conv, .. }
+            | Request::Leave { conv } => Some(conv),
+            _ => None,
+        }
+    }
+
     pub fn ids_ok(&self) -> bool {
         match self {
             Request::Message { conv, msg, .. }
@@ -401,7 +432,8 @@ impl Request {
             Request::Relay { conv, .. }
             | Request::Share { conv, .. }
             | Request::ShareEnd { conv }
-            | Request::ShareNotice { conv, .. } => is_uuid(conv),
+            | Request::ShareNotice { conv, .. }
+            | Request::Leave { conv } => is_uuid(conv),
             Request::ShareDelete { conv, msg } => is_uuid(conv) && is_uuid(msg),
             Request::SharePost { conv, msg } => is_uuid(conv) && is_uuid(&msg.uuid),
             _ => true,

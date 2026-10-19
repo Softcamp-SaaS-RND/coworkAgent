@@ -63,12 +63,17 @@ pub fn set_sent(
     .map(drop)
 }
 
-/// 상대를 지울 때(페어링 해제) — 그 상대가 관람자인 공유 · 그 상대 앞 공유 프레임. 그 상대가 보낸 사본은 남긴다.
+/// 상대를 지울 때(페어링 해제) — 그 상대가 관람자인 공유 · 그 상대 앞 공유 · 나가기(#1w) 프레임. 그 상대가 보낸 사본은 남긴다.
 pub fn forget_peer(conn: &Connection, peer_id: i64) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM shares WHERE peer_id = ?1", [peer_id])?;
     conn.execute(
-        "DELETE FROM outbox WHERE peer_id = ?1 AND kind IN (?2, ?3)",
-        params![peer_id, crate::outbox::SHARE, crate::outbox::SHARE_NOTICE],
+        "DELETE FROM outbox WHERE peer_id = ?1 AND kind IN (?2, ?3, ?4)",
+        params![
+            peer_id,
+            crate::outbox::SHARE,
+            crate::outbox::SHARE_NOTICE,
+            crate::outbox::LEAVE
+        ],
     )
     .map(drop)
 }

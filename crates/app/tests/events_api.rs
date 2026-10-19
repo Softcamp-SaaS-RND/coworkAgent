@@ -80,6 +80,31 @@ async fn events_stream_delivers_without_clearing() {
     assert!(body.contains("\"kind\":\"pair_request\""), "{body}");
 }
 
+/// 변경 신호는 `event: change` 로 흐른다 — 알림이 꺼져 있어도(1u).
+#[tokio::test]
+async fn events_stream_change_event() {
+    let n = notifier("sse-chg", Arc::new(Mutex::new(Vec::new())));
+    let (port, (ck, cv)) = web(n.clone()).await;
+    let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .unwrap();
+    s.write_all(
+        format!("GET /api/events HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{ck}: {cv}\r\nAccept: text/event-stream\r\n\r\n")
+            .as_bytes(),
+    )
+    .await
+    .unwrap();
+    read_until(&mut s, "\r\n\r\n").await;
+    tokio::time::sleep(Duration::from_millis(100)).await; // 구독이 붙을 때까지
+    n.on_event(&PeerEvent::Approved {
+        name: "a".into(),
+        host: "b".into(),
+    });
+    let body = read_until(&mut s, "\"kind\":\"peer\"").await;
+    assert!(body.contains("event: change"), "{body}");
+    assert!(!body.contains("pair"), "알림은 꺼져 있다: {body}");
+}
+
 #[tokio::test]
 async fn events_need_token() {
     let n = notifier("sse401", Arc::new(Mutex::new(Vec::new())));

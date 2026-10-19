@@ -35,6 +35,11 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
   관람자 행 · Share 머리 · 이력 한 트랜잭션) · `share_remove(conv, peer)` · `share_leave(conv)` · `fan_share`(커서 `sent_upto` — `dispatch` · `enqueue` · `handle` 끝) ·
   보내기 직전 `watching`(빠진 관람자 몫은 지움 — `ShareEnd` 제외) · 24시간 포기 = 그 관람 끝(`unshare`) ·
   받는 처리기 `inbound_share*`(그 상대의 Shared 사본만) · 원 상대 `ShareNotice`(바뀔 때만 알림). 사본 쓰기 = `InvalidInput` "공유 대화는 읽기 전용".
+  나가기 · 삭제(#1w — D40): `leave_conversation(conv)`(사본 = `share_leave`, 도는 실행 `ResourceBusy` "실행이 끝난 뒤 나갈 수 있습니다", 아니면 한 트랜잭션 —
+  `chat::leave` · 관람자마다 `share::remove` + `ShareEnd` · 원 상대 앞 `pending` 버림 · `Leave` 행 `conv_id` 없이, 이미 나갔으면 그대로) · `delete_conversation(conv)`
+  (나가기 뒤 `chat::delete_conversation`) · `inbound_leave`(그 상대 대화에 `set_peer_left`, 없으면 `Ok`). `handle` 앞 — 나간 대화 · 묘비로 온 요청은 `Leave` · `ShareEnd`
+  말고 `left`. `deliver` 의 `leave` 는 `knows_leave` 거짓이면 버림 · 포기 없음. 나간 대화 쓰기 = `InvalidInput` "나간 대화는 읽기 전용"(`writable` — 이력 정리 · 공유 넣기 ·
+  자동 왕복도). `record` — 지운 대화면 답을 버리고 나간 대화면 이력에만, `process` — 줄을 서는 동안 취소된 대기 글은 실행하지 않는다. `refused()` `left` = "상대가 대화를 나갔습니다".
   받은 요청은 다시 넘기지 않는다. 자동 압축 = `process` 뒤 창 사용량 ≥ `settings::AUTO_COMPACT_AT`(800k) · `settings::auto_compact`. 새 세션 첫 실행에
   `ctx_seeds` 요약을 `<대화 요약>` 으로 붙이고(`execute`) 세션을 남기면 지운다(`record`).
 - 실행 문(#1b, D24 개정) — `gate::Gate`(FIFO): `enter(id) -> (Ticket, Option<앞 사람 수>)` · `Ticket::ready()` · 티켓 drop = 자리 놓기(실패 ·
