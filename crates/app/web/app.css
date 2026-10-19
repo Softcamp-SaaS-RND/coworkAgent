@@ -354,6 +354,7 @@ button.text-btn { display: inline-flex; align-items: center; gap: var(--sp-1); h
 button.text-btn:hover { border: 0; text-decoration: underline; }
 button.text-btn.ok { color: var(--ok); }
 button.text-btn.no { color: var(--danger); }
+button.text-btn.wait { color: var(--run); }
 /* 주고받은 메시지(#1q) — 상대 절 머리 한 줄 요약(타일 · 이름 · 건수 · 마지막 메시지 · 시각), 행 오른쪽 북마크, 끝 줄 더 보기. */
 .peer-msgs > summary { flex-wrap: nowrap; }
 .peer-msgs > summary > .row-tile { flex: none; width: 24px; height: 24px; border-radius: var(--radius); display: inline-flex; align-items: center; justify-content: center; color: var(--on-dark); overflow: hidden; }
@@ -432,8 +433,27 @@ button.text-btn.no { color: var(--danger); }
 .board-head { margin: 0; padding: var(--sp-1) var(--sp-1) var(--sp-2); display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); }
 .board-col .rows { gap: var(--sp-2); }
 .board-col .rows > li[data-req] { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
-.board-col .rows > li[draggable="true"] { cursor: grab; }
-.board-col .rows > li.dragging { opacity: .5; }
+.board-col .rows > li.board-card { position: relative; border-left: 4px solid var(--muted); }
+.board-col .rows > li.board-card.req-wait { border-left-color: var(--run); }
+.board-col .rows > li.board-card.req-accepted { border-left-color: var(--accent); }
+.board-col .rows > li.board-card.req-rejected { border-left-color: var(--danger); }
+.board-col .rows > li.board-card.req-done { border-left-color: var(--ok); }
+.board-col .rows > li.board-card:has(.drag-handle) > a { padding-left: var(--sp-6); }
+.board-col .rows > li.dragging { opacity: .35; }
+.board-col .rows > li.pending { outline: 2px solid var(--accent); outline-offset: -1px; }
+.board-col.drop-can { border-style: dashed; border-color: var(--accent); }
+.board-col.drop-no { opacity: .45; }
+button.drag-handle { position: absolute; top: var(--sp-2); left: var(--sp-1); width: 20px; height: 28px; padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); cursor: grab; touch-action: none; }
+button.drag-handle:hover, button.drag-handle:focus-visible { border: 0; background: var(--surface-2); color: var(--text); }
+button.drag-handle:active { cursor: grabbing; }
+.board-ghost { position: fixed; top: 0; left: 0; z-index: 1000; margin: 0; list-style: none; pointer-events: none; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); opacity: .92; }
+.req-feedback { display: flex; flex-direction: column; gap: var(--sp-1); margin: 0 var(--sp-5) var(--sp-3); padding: var(--sp-2) var(--sp-3); border-left: 3px solid var(--muted); border-radius: var(--radius); background: var(--surface-2); color: var(--text); font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.req-feedback.req-wait { border-left-color: var(--run); }
+.req-feedback.req-accepted { border-left-color: var(--accent); }
+.req-feedback.req-rejected { border-left-color: var(--danger); }
+.req-feedback.req-done { border-left-color: var(--ok); }
+.req-feedback-label { color: var(--muted); font-weight: var(--fw-medium); font-size: var(--fs-xs); }
+.board-col .req-feedback { margin-left: var(--sp-3); margin-right: var(--sp-3); }
 .board-col .req-acts, .board-col .req-notes { padding-left: var(--sp-3); padding-right: var(--sp-3); }
 
 /* markdown 뷰어 */
@@ -766,6 +786,7 @@ details { margin: var(--sp-2) 0; }
 .ico-trash { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M19 6l-1 14H6L5 6'/%3E%3Cpath d='M10 11v6M14 11v6'/%3E%3Cpath d='M9 6V4h6v2'/%3E%3C/svg%3E"); }
 .ico-gauge { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 14l4-4'/%3E%3Cpath d='M3.34 19a10 10 0 1 1 17.32 0'/%3E%3C/svg%3E"); }
 .ico-compress { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14h6v6'/%3E%3Cpath d='M20 10h-6V4'/%3E%3Cpath d='M14 10l7-7'/%3E%3Cpath d='M3 21l7-7'/%3E%3C/svg%3E"); }
+.ico-grip { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Ccircle cx='9' cy='6' r='1.6'/%3E%3Ccircle cx='15' cy='6' r='1.6'/%3E%3Ccircle cx='9' cy='12' r='1.6'/%3E%3Ccircle cx='15' cy='12' r='1.6'/%3E%3Ccircle cx='9' cy='18' r='1.6'/%3E%3Ccircle cx='15' cy='18' r='1.6'/%3E%3C/svg%3E"); }
 .ico-reset { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 3-6.7L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/svg%3E"); }
 .ico-check { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E"); }
 .ico-x { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E"); }

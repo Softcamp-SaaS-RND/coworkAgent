@@ -106,7 +106,7 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
   `REQUEST_NO_CLI`), 자동 왕복을 열지 않는다. 받기: `inbound_message` 가 집중 판정 **앞에서** `inbound_ask` 로(대기열 · 실행 기록 없이 사람 글
   `exec = false` · `done` · `req_state = wait`, 알림 `Ask` — 자동 왕복 · 멘션과 함께면 `bad_request`), `inbound_post` 의 요청 + 실행은 `bad_request`.
 - 요청 상태(#1d — #18 완료 표시 대체) — `set_req_state(id, state, note, saved?) -> (Message, 경고)`: 받은 요청(사람 글 · `mine = false` · `request`)만,
-  옮김은 `ReqState::can_become`(그 밖 · 메모 규칙 위반은 `InvalidInput` — 아무것도 쓰지 않는다). 대화 차례(`turn`) 안에서 확인 · 상태 · 저장 ·
+  옮김은 `ReqState::can_become`(같은 상태 · 메모 규칙 위반은 `InvalidInput` — 아무것도 쓰지 않는다). 대화 차례(`turn`) 안에서 확인 · 상태 · 저장 ·
   보내기 행(`ReqState`, 종류 `req_state` · 그 요청 글에 이음 — 바뀔 때마다 한 행, 합치지 않음)을 한 트랜잭션으로 쓰고 보낸다(닿지 않으면 보관).
   상대가 거절했을 때만 경고("이 PC 에는 바꿨다 — …"). 오래 닿지 않아 포기하면(`give_up`) 그 글 `refused = unreachable`, 요청자가 거절하면(바로 보낼 때 · 줄이 보낼 때
   `settle`) 그 거절 코드 — 같은 상태 · 메모로 다시 부르면(`refused` 가 있을 때만 같은 상태 허용) 다시 보내고 표시를 지운다. 받기는 같은 상태 ·

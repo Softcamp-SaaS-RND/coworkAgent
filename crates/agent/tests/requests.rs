@@ -136,8 +136,8 @@ async fn receiver_moves_state_with_note() {
     let (_, r, _) = a.chat.post_with(conv.id, "요청", true, ask(true)).await.unwrap();
     common::eventually(|| has(&b, &r.uuid) && has(&b, &q.uuid)).await;
     let id = msg(&b, &r.uuid).id;
-    // 대기 → 완료는 안 된다.
-    assert!(invalid(b.chat.set_req_state(id, ReqState::Done, "", None).await.unwrap_err()));
+    // 같은 상태로는 바꾸지 않는다(대기 → 대기).
+    assert!(invalid(b.chat.set_req_state(id, ReqState::Wait, "", None).await.unwrap_err()));
     let (m, warning) = b
         .chat
         .set_req_state(id, ReqState::Accepted, " 이번 주 안에 ", Some(true))
@@ -152,8 +152,10 @@ async fn receiver_moves_state_with_note() {
     assert_eq!(msg(&a, &r.uuid).req_note.as_deref(), Some("이번 주 안에"));
     b.chat.set_req_state(id, ReqState::Done, "반영함", None).await.unwrap();
     common::eventually(|| msg(&a, &r.uuid).req_state == Some(ReqState::Done)).await;
-    // 완료 뒤 되돌리기 없음.
-    assert!(invalid(b.chat.set_req_state(id, ReqState::Rejected, "", None).await.unwrap_err()));
+    // 끝난 요청도 되돌린다(완료 → 대기 — 사용자 2026-10-19) — 요청자에게 그대로 간다.
+    b.chat.set_req_state(id, ReqState::Wait, "다시 봄", None).await.unwrap();
+    common::eventually(|| msg(&a, &r.uuid).req_state == Some(ReqState::Wait)).await;
+    assert_eq!(msg(&a, &r.uuid).req_note.as_deref(), Some("다시 봄"));
     // 쓴 쪽 · 질의 · 답은 못 바꾼다.
     assert!(invalid(
         a.chat

@@ -71,7 +71,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   #18: `Message` 에 `request`(요청 — 아니면 질의) · `agent`(멘션 — 부른 · 실행한 에이전트) · `refused`(보낸 쪽 — 상대 거절 코드).
   `set_request(id, bool)`(요청이면 `req_state = wait`, 질의면 `NULL`) · `set_agent(id, Option)` · `set_refused(id, Option)`(다시
   보내면 `None`) · `message_by_id` · `agent_session(conv, agent)` · `set_agent_session(conv, agent, session)`.
-  #1d: `ReqState`(`Wait` · `Accepted` · `Rejected` · `Done` — `as_str` · `parse` · `can_become`(대기 → 수용 · 반려, 수용 → 완료만)) ·
+  #1d: `ReqState`(`Wait` · `Accepted` · `Rejected` · `Done` — `as_str` · `parse` · `can_become`(지금 상태 말고 어디로든 — 되돌리기 포함)) ·
   `Message.req_state` · `req_note` · `req_at` · `set_req_state(id, state, note)`(옮김 검사는 부르는 쪽) · `MAX_REQ_NOTE`(200) ·
   `clean_req_note`(한 줄 · 제어 문자 없음) · `AskFilter`(`Query` · `Request(Option<ReqState>)` — `messages_across` 의 종류 · 상태 거르기).
   #1f: `Message.edited_at` · `edit_text(id, text)`(본문 · 편집 시각만 — uuid · `lc` · 요청 상태 · 저장 그대로) · `delete_message(id)`(글 + 그 글의

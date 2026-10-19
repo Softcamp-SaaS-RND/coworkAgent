@@ -485,7 +485,7 @@ test("message_actions_no_resend — 다시 보내기 없음(#1k), 받은 요청 
   for (const m of [{ author: "human", mine: true, exec: true }, { author: "human", mine: true, request: true, req_state: "wait" }, { author: "human", mine: true, exec: false }]) {
     assert.ok(!keys(m).includes("resend"), JSON.stringify(m));
   }
-  assert.deepEqual(keys({ author: "human", mine: false, request: true, req_state: "wait" }), ["req:accepted", "req:rejected"]);
+  assert.deepEqual(keys({ author: "human", mine: false, request: true, req_state: "wait" }), ["req:accepted", "req:rejected", "req:done"]);
 });
 
 test("inbox_rows — 메시지 행 · 종류 거르기 · 누르면 그 대화", () => {
@@ -993,9 +993,9 @@ test("ask_marks — 요청 태그(상태) · 상태 바꾸기 작업(받은 요�
   assert.equal(askTag({ author: "human", request: false }), "", "질의는 표시 없음");
   assert.equal(askTag({ author: "agent", request: true }), "", "답에는 없다");
   const acts = (m) => messageActions(m).map((x) => [x.key, x.label]);
-  assert.deepEqual(acts(req(false, "wait")).slice(-2), [["req:accepted", "수용"], ["req:rejected", "반려"]]);
+  assert.deepEqual(acts(req(false, "wait")).slice(-3), [["req:accepted", "수용"], ["req:rejected", "반려"], ["req:done", "완료"]]);
   assert.deepEqual(acts(req(false, "accepted")).at(-1), ["req:done", "완료"]);
-  assert.ok(!acts(req(false, "done")).some(([k]) => k.startsWith("req:")), "끝난 요청");
+  assert.deepEqual(acts(req(false, "done")).filter(([k]) => k.startsWith("req:")).map(([k]) => k), ["req:wait", "req:accepted", "req:rejected"], "끝난 요청도 되돌린다");
   assert.ok(!acts(req(true, "wait")).some(([k]) => k.startsWith("req:")), "내 요청은 못 바꾼다");
   assert.deepEqual(acts(req(true, "wait")), [], "내 요청 — 다시 보내기 없음(#1k)");
   assert.ok(!acts({ author: "human", mine: false, exec: true, request: false }).some(([k]) => k.startsWith("req:")), "질의");
@@ -1006,12 +1006,14 @@ test("ask_marks — 요청 태그(상태) · 상태 바꾸기 작업(받은 요�
   assert.equal(sent[0].kind, "요청 · 수용");
 });
 
-test("req_moves — 대기 → 수용 · 반려, 수용 → 완료, 그 밖 없음", () => {
+test("req_moves — 받은 요청은 지금 상태 말고 네 상태 어디로든(되돌리기 포함), 이름 = 상태 이름", () => {
   const got = (req_state, mine = false) => reqMoves({ author: "human", mine, request: true, req_state }).map((x) => x.to);
-  assert.deepEqual(got("wait"), ["accepted", "rejected"]);
-  assert.deepEqual(got("accepted"), ["done"]);
-  assert.deepEqual(got("rejected"), []);
-  assert.deepEqual(got("done"), []);
+  assert.deepEqual(got("wait"), ["accepted", "rejected", "done"]);
+  assert.deepEqual(got("accepted"), ["wait", "rejected", "done"]);
+  assert.deepEqual(got("rejected"), ["wait", "accepted", "done"]);
+  assert.deepEqual(got("done"), ["wait", "accepted", "rejected"]);
+  assert.deepEqual(got(undefined), ["accepted", "rejected", "done"], "상태 없음 = 대기");
+  assert.deepEqual(reqMoves({ author: "human", mine: false, request: true, req_state: "done" })[0], { to: "wait", label: "대기" });
   assert.deepEqual(got("wait", true), [], "내 요청");
   assert.deepEqual(reqMoves({ author: "human", mine: false, request: false }), [], "질의");
   assert.deepEqual(Object.keys(REQ_STATES), ["wait", "accepted", "rejected", "done"], "an_core ReqState 와 같은 넷");
@@ -1039,7 +1041,7 @@ test("request_rows — 요청 화면 행: 상대 · 대화 · 상태 · 메모 �
   const [r] = rows;
   assert.deepEqual(
     [r.who, r.title, r.state, r.done, r.note, r.at, r.href, r.moves.map((m) => m.to)],
-    ["user-b", "로그", "수용", false, "이번 주", 50, "#c/9/m/3", ["done"]],
+    ["user-b", "로그", "수용", false, "이번 주", 50, "#c/9/m/3", ["wait", "rejected", "done"]],
   );
 });
 
@@ -1245,7 +1247,7 @@ test("message_actions_no_bookmark — 북마크는 막대에 없다(#1j 아이�
   }
   assert.deepEqual(
     messageActions({ author: "human", mine: false, request: true, req_state: "wait" }).map((a) => a.key),
-    ["req:accepted", "req:rejected"],
+    ["req:accepted", "req:rejected", "req:done"],
   );
 });
 
@@ -1727,11 +1729,12 @@ test("req_overview_head — 절 머리(#1q): 이름 · 전체 건수 · 대기 �
   assert.deepEqual(reqHead("보낸 요청", { total: 0, wait: 0, accepted: 0, done: 0, rejected: 0 }), { title: "보낸 요청", count: "0", states: [] });
 });
 
-test("req_overview_buttons — 글자 단추(#1q): 수용 · 완료 = ✓ 초록(ok), 반려 = ✕ 붉음(no), 상태 바꾸기마다 모양이 있다", () => {
+test("req_overview_buttons — 글자 단추(#1q): 수용 · 완료 = ✓ 초록(ok), 반려 = ✕ 붉음(no), 대기 = 되돌리기(wait), 상태 바꾸기마다 모양이 있다", () => {
+  assert.deepEqual(REQ_BTN.wait, { tone: "wait", icon: "reset" });
   assert.deepEqual(REQ_BTN.accepted, { tone: "ok", icon: "check" });
   assert.deepEqual(REQ_BTN.done, { tone: "ok", icon: "check" });
   assert.deepEqual(REQ_BTN.rejected, { tone: "no", icon: "x" });
-  for (const req_state of ["wait", "accepted"])
+  for (const req_state of ["wait", "accepted", "rejected", "done"])
     for (const mv of reqMoves({ author: "human", mine: false, request: true, req_state })) assert.ok(REQ_BTN[mv.to], mv.to);
 });
 
@@ -1980,12 +1983,13 @@ test("req_board_columns — 열 = 대기 · 수용 · 반려 · 완료 순, 건�
   assert.deepEqual(boardColumns([], undefined).map((c) => c.count), [0, 0, 0, 0], "집계 없으면 0");
 });
 
-test("req_board_drop — 받은 요청만, 대기 → 수용 · 반려 / 수용 → 완료, 같은 열 · 끝난 요청 · 보낸 요청은 놓지 못함", () => {
+test("req_board_drop — 받은 요청은 다른 세 열 어디로든(끝난 요청도), 같은 열 · 보낸 요청은 놓지 못함", () => {
   const [wait, acc, done, rej] = requestRows(boardMsgs, splitNames);
   const ok = (r) => ["wait", "accepted", "rejected", "done"].filter((to) => canDrop(r, to));
-  assert.deepEqual(ok(wait), ["accepted", "rejected"]);
-  assert.deepEqual(ok(acc), ["done"]);
-  assert.deepEqual([ok(done), ok(rej)], [[], []]);
+  assert.deepEqual(ok(wait), ["accepted", "rejected", "done"]);
+  assert.deepEqual(ok(acc), ["wait", "rejected", "done"]);
+  assert.deepEqual(ok(done), ["wait", "accepted", "rejected"]);
+  assert.deepEqual(ok(rej), ["wait", "accepted", "done"]);
   const [mine] = requestRows([{ ...boardMsgs[0], mine: true }], splitNames);
   assert.deepEqual(ok(mine), [], "보낸 요청 보드는 읽기 전용");
 });
@@ -2112,7 +2116,7 @@ test("refused_left — 상대가 나간 대화로 보낸 글의 거절 사유", 
 test("req_moves_closed — 닫힌 대화의 받은 요청은 읽기 전용(상태 바꾸기 · 다시 알리기 · 보드 끌기 없음)", () => {
   const m = { author: "human", mine: false, request: true, req_state: "wait", state: "done" };
   assert.deepEqual(reqMoves(m, true), []);
-  assert.equal(reqMoves(m).length, 2, "열린 대화는 그대로");
+  assert.equal(reqMoves(m).length, 3, "열린 대화는 그대로");
   assert.equal(reqResend({ ...m, refused: "unreachable" }, true), false);
   assert.deepEqual(messageActions({ ...m, refused: "unreachable" }, true), []);
   const conv = { id: 4, peer_id: 2, agent: "review", dir: "in", title: "t", peer_left_at: 7 };

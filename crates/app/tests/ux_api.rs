@@ -1774,9 +1774,8 @@ async fn req_state_only_by_receiver() {
     assert_eq!(a_ms().await[0]["saved"], false, "부분 적용 없음");
     for body in [
         json!({}),
-        json!({ "req_state": "wait" }),
+        json!({ "req_state": "accepted" }), // 같은 상태(수용 → 수용) — 다른 상태로는 어디로든 옮긴다(2026-10-19)
         json!({ "note": "메모만" }),
-        json!({ "req_state": "rejected" }),
         json!({ "done": true }),
     ] {
         let (code, r) = patch("b", b_req, body.clone()).await;

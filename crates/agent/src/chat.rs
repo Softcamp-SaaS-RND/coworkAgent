@@ -2219,7 +2219,7 @@ impl Chat {
             if !again && !now.req_state.unwrap_or(ReqState::Wait).can_become(state) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "대기 → 수용 · 반려, 수용 → 완료만",
+                    "이미 그 상태다",
                 ));
             }
             chat::set_req_state(&tx, id, state, note.as_deref()).map_err(db_err)?;

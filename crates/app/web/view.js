@@ -720,14 +720,14 @@ export function askTag(m) {
   return `요청 · ${REQ_STATES[m.req_state] ?? REQ_STATES.wait}`;
 }
 
-/// 받은 요청에 지금 할 수 있는 상태 바꾸기 — 대기 → 수용 · 반려, 수용 → 완료(내 요청 · 질의 · 답 · 끝난 요청은 없음). 닫힌 대화(`closed` —
+/// 받은 요청에 지금 할 수 있는 상태 바꾸기 — 지금 상태 말고 네 상태 어디로든(되돌리기 포함 — 사용자 2026-10-19, 내 요청 · 질의 · 답은 없음). 닫힌 대화(`closed` —
 /// [`convClosed`], #1w)는 읽기 전용이라 없음.
 export function reqMoves(m, closed = false) {
   if (closed || m.author !== "human" || m.mine !== false || !m.request) return [];
   const from = m.req_state ?? "wait";
-  if (from === "wait") return [{ to: "accepted", label: "수용" }, { to: "rejected", label: "반려" }];
-  if (from === "accepted") return [{ to: "done", label: "완료" }];
-  return [];
+  return Object.keys(REQ_STATES)
+    .filter((to) => to !== from)
+    .map((to) => ({ to, label: REQ_STATES[to] }));
 }
 
 /// 받은 요청의 상태를 요청자에 알리지 못했다(오래 닿지 않아 포기 · 요청자가 거절) — 같은 상태로 "다시 알리기"(#1d R1 · R2). 닫힌 대화는 아님(#1w).
@@ -773,7 +773,12 @@ export function reqHead(title, sum) {
 }
 
 /// 요청 목록 글자 단추 모양(#1q) — 바꿀 상태 → 색(`ok` 초록 · `no` 붉음) · 아이콘(`app.css` `.ico-{이름}`).
-export const REQ_BTN = { accepted: { tone: "ok", icon: "check" }, done: { tone: "ok", icon: "check" }, rejected: { tone: "no", icon: "x" } };
+export const REQ_BTN = {
+  wait: { tone: "wait", icon: "reset" },
+  accepted: { tone: "ok", icon: "check" },
+  done: { tone: "ok", icon: "check" },
+  rejected: { tone: "no", icon: "x" },
+};
 
 /// 요청 보드 열 순서(#1v — D39 ①).
 export const BOARD_COLS = ["wait", "accepted", "rejected", "done"];
@@ -783,7 +788,7 @@ export function boardColumns(rows, sum) {
   return BOARD_COLS.map((key) => ({ key, name: REQ_STATES[key], count: sum?.[key] ?? 0, rows: rows.filter((r) => r.stateKey === key) }));
 }
 
-/// 보드 카드를 그 열에 놓을 수 있나(#1v) — 받은 요청에 지금 할 수 있는 상태 바꾸기(`reqMoves`)만. 보낸 요청 · 끝난 요청 · 같은 열은 거짓.
+/// 보드 카드를 그 열에 놓을 수 있나(#1v) — 받은 요청에 지금 할 수 있는 상태 바꾸기(`reqMoves` — 네 상태 사이 어디로든)만. 보낸 요청 · 닫힌 대화 · 같은 열은 거짓.
 export function canDrop(row, to) {
   return row.moves.some((m) => m.to === to);
 }

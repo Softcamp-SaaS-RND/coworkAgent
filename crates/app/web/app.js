@@ -1960,7 +1960,7 @@ function messageEl(conv, m) {
 }
 
 /// 메시지 작업 — 다시 알리기,
-/// 요청 상태 바꾸기(`req:{상태}` — 받은 요청, 메모 한 줄 칸을 열고 확인하면 쓴 쪽에 간다).
+/// 요청 상태 바꾸기(`req:{상태}` — 받은 요청, 피드백 한 줄 칸을 열고 확인하면 쓴 쪽에 간다).
 function messageAct(m, key) {
   if (key === "req-again") {
     resendState(m.id, m.req_state, m.req_note);
@@ -2090,16 +2090,23 @@ function contextEl(m) {
 }
 
 
-/// 요청 상태 바꾸기 — `box` 끝에 메모 한 줄 칸 + 확인 · 취소를 연다(이미 열려 있으면 바꾼다). 확인하면 `PATCH` 뒤 새로 고침(대화 · 요청 목록 · 배지).
-function noteForm(box, id, to, label) {
+/// 요청 상태 바꾸기 — `box` 끝에 피드백 한 줄 칸 + 확인 · 취소를 연다(이미 열려 있으면 바꾼다). 확인하면 `PATCH` 뒤 새로 고침(대화 · 요청 목록 · 배지).
+function noteForm(box, id, to, label, onCancel) {
   box.querySelector(".req-note")?.remove();
-  const note = el("input", { maxlength: "200", placeholder: "메모(선택) · 요청자에게 보입니다", "aria-label": `${label} 메모` });
+  const note = el("input", { maxlength: "200", placeholder: "피드백(선택) · 요청자에게 보입니다", "aria-label": `${label} 피드백` });
   const form = el(
     "form",
     { class: "req-note" },
     note,
     el("button", { type: "submit", class: "primary", text: label }),
-    el("button", { type: "button", text: "취소", onclick: () => form.remove() }),
+    el("button", {
+      type: "button",
+      text: "취소",
+      onclick: () => {
+        form.remove();
+        onCancel?.();
+      },
+    }),
   );
   form.addEventListener("submit", (ev) => {
     ev.preventDefault();
@@ -2848,57 +2855,85 @@ function reqBoard() {
   return state.folded.has(REQ_BOARD);
 }
 
-/// 끄는 보드 카드의 행(`requestRows` 한 줄) — 끌기가 끝나면 `null`.
-let boardDrag = null;
-
-/// 요청 보드(#1v) — 열 = 상태(머리 = 이름 · 서버 집계 건수), 카드 = 요청 행 그대로(글자 단추 · 메모 칸 포함). 받은 요청 카드를 허용 열(`canDrop`)에 놓으면
-/// 그 상태의 메모 칸이 카드에 열리고, 확인해야 요청자에게 간다(취소면 그대로).
+/// 요청 보드(#1v) — 열 = 상태(머리 = 이름 · 서버 집계 건수), 카드 = 요청 행 그대로(글자 단추 · 피드백 칸 포함). 받은 요청 카드는 손잡이로 끌어
+/// 다른 열에 놓으면 카드가 그 열로 옮겨진 채 피드백 칸이 열리고, 확인해야 요청자에게 간다(취소면 제자리로).
+/// 끌기는 포인터 이벤트 — HTML 끌어 놓기(`draggable`)는 브라우저 끌기 확장(링크 · 글 끌어 검색 등)이 가로채 반응한다(사용자 2026-10-19).
 function boardEls(cols) {
   return cols.map((c) => {
     const cards = c.rows.map((r) => {
       const li = requestItem(r);
+      li.classList.add("board-card", `req-${r.stateKey}`);
       if (r.moves.length) {
-        li.draggable = true;
-        li.addEventListener("dragstart", (ev) => {
-          boardDrag = r;
-          ev.dataTransfer.effectAllowed = "move";
-          ev.dataTransfer.setData("text/plain", String(r.id));
-          li.classList.add("dragging");
-        });
-        li.addEventListener("dragend", () => {
-          boardDrag = null;
-          li.classList.remove("dragging");
-          for (const x of $("req_board").querySelectorAll(".drop-ok")) x.classList.remove("drop-ok");
-        });
+        const grip = el("button", { type: "button", class: "drag-handle", title: "끌어서 상태 옮기기", "aria-label": "끌어서 상태 옮기기" }, ico("grip"));
+        grip.addEventListener("pointerdown", (ev) => boardGrab(ev, li, r));
+        li.prepend(grip);
       }
       return li;
     });
-    const col = el(
+    return el(
       "section",
       { class: `board-col req-${c.key}`, "data-col": c.key },
       el("h3", { class: "board-head" }, el("span", { class: `tag ask req-${c.key}`, text: c.name }), el("b", { class: "count", text: String(c.count) })),
       el("ol", { class: "rows" }, ...(cards.length ? cards : [el("li", { class: "hint", text: "없음" })])),
     );
-    col.addEventListener("dragover", (ev) => {
-      if (!boardDrag || !canDrop(boardDrag, c.key)) return;
-      ev.preventDefault();
-      ev.dataTransfer.dropEffect = "move";
-      col.classList.add("drop-ok");
-    });
-    col.addEventListener("dragleave", (ev) => {
-      if (!col.contains(ev.relatedTarget)) col.classList.remove("drop-ok");
-    });
-    col.addEventListener("drop", (ev) => {
-      ev.preventDefault();
-      col.classList.remove("drop-ok");
-      const r = boardDrag;
-      boardDrag = null;
-      if (!r || !canDrop(r, c.key)) return;
-      const mv = r.moves.find((m) => m.to === c.key);
-      const bar = $("req_board").querySelector(`[data-req="${r.id}"] .req-acts`);
-      if (bar) noteForm(bar, r.id, mv.to, mv.label);
-    });
-    return col;
+  });
+}
+
+/// 보드 카드 끌기(포인터) — 손잡이를 누른 채 움직이면 카드 사본이 따라오고, 놓을 수 있는 열은 강조 · 없는 열은 흐리게. 놓을 수 있는 열 위에서 떼면 `boardDrop`.
+function boardGrab(ev, li, r) {
+  if (ev.button !== 0) return;
+  ev.preventDefault();
+  const grip = ev.currentTarget;
+  grip.setPointerCapture(ev.pointerId);
+  const box = li.getBoundingClientRect();
+  const dx = ev.clientX - box.left;
+  const dy = ev.clientY - box.top;
+  const ghost = li.cloneNode(true);
+  ghost.classList.add("board-ghost");
+  ghost.style.width = `${box.width}px`;
+  document.body.append(ghost);
+  li.classList.add("dragging");
+  const cols = [...$("req_board").querySelectorAll(".board-col")];
+  for (const c of cols) c.classList.add(canDrop(r, c.dataset.col) ? "drop-can" : "drop-no");
+  let over = null;
+  const move = (e) => {
+    ghost.style.transform = `translate(${e.clientX - dx}px, ${e.clientY - dy}px)`;
+    const col = document.elementFromPoint(e.clientX, e.clientY)?.closest(".board-col");
+    over = col && canDrop(r, col.dataset.col) ? col : null;
+    for (const c of cols) c.classList.toggle("drop-ok", c === over);
+  };
+  const end = (e) => {
+    grip.removeEventListener("pointermove", move);
+    grip.removeEventListener("pointerup", end);
+    grip.removeEventListener("pointercancel", end);
+    ghost.remove();
+    li.classList.remove("dragging");
+    for (const c of cols) c.classList.remove("drop-ok", "drop-can", "drop-no");
+    if (e.type === "pointerup" && over) boardDrop(li, r, over);
+  };
+  grip.addEventListener("pointermove", move);
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+  move(ev);
+}
+
+/// 카드를 놓은 열로 옮기고 그 상태의 피드백 칸을 연다 — 확인하면 바뀌고(새로 고침), 취소면 원래 열 · 자리로 돌아간다.
+function boardDrop(li, r, col) {
+  const mv = r.moves.find((m) => m.to === col.dataset.col);
+  const bar = li.querySelector(".req-acts");
+  if (!mv || !bar) return;
+  const home = li.parentNode;
+  const next = li.nextSibling;
+  const list = col.querySelector(".rows");
+  list.querySelector(":scope > li.hint")?.remove();
+  list.prepend(li);
+  if (!home.querySelector(":scope > li[data-req]")) home.append(el("li", { class: "hint", text: "없음" }));
+  li.classList.add("pending");
+  noteForm(bar, r.id, mv.to, mv.label, () => {
+    li.classList.remove("pending");
+    home.querySelector(":scope > li.hint")?.remove();
+    home.insertBefore(li, next);
+    if (!list.querySelector(":scope > li[data-req]")) list.append(el("li", { class: "hint", text: "없음" }));
   });
 }
 
@@ -2921,7 +2956,7 @@ function reqBoxEl({ box, sum, rows }) {
   return el("li", { class: "fold" }, foldEl(`requests:${box}`, head, body, "peer-fold req-box", null, box === "mine"));
 }
 
-/// 요청 행 — 위 링크(이름 · 상태 · 시각 · 대화 / 본문), 바로 아래 상태 바꾸기 글자 단추(#1q — 메모 칸도 이 줄에서), 그 아래 메모 · 알리지 못함.
+/// 요청 행 — 위 링크(이름 · 상태 · 시각 · 대화 / 본문), 바로 아래 상태 바꾸기 글자 단추(#1q — 피드백 칸도 이 줄에서), 그 아래 피드백 · 알리지 못함.
 function requestEls(rows, box) {
   if (!rows.length) return [el("li", { class: "hint", text: box === "theirs" ? "받은 요청 없음" : "보낸 요청 없음" })];
   return rows.map(requestItem);
@@ -2934,7 +2969,7 @@ function requestItem(r) {
     { "data-req": String(r.id) },
     el(
       "a",
-      { href: r.href },
+      { href: r.href, draggable: "false" },
       el(
         "span",
         { class: "meta" },
@@ -2952,8 +2987,9 @@ function requestItem(r) {
     if (r.resend) bar.append(textButton("다시 알리기", null, () => resendState(r.id, r.stateKey, r.note)));
     li.append(bar);
   }
-  const notes = [r.note ? `메모: ${r.note}` : "", r.resend ? "요청자에게 알리지 못함" : ""].filter(Boolean);
-  if (notes.length) li.append(el("div", { class: "req-notes" }, ...notes.map((t) => el("span", { class: "hint", text: t }))));
+  // 피드백(받은 쪽이 상태와 함께 남긴 한 줄) — 회색 힌트가 아니라 상태 색 띠의 상자로 읽히게.
+  if (r.note) li.append(el("div", { class: `req-feedback req-${r.stateKey}` }, el("span", { class: "req-feedback-label", text: "피드백" }), el("span", { text: r.note })));
+  if (r.resend) li.append(el("div", { class: "req-notes" }, el("span", { class: "hint", text: "요청자에게 알리지 못함" })));
   return li;
 }
 

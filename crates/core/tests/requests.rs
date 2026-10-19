@@ -96,16 +96,11 @@ fn schema14_moves_done_and_models() {
 }
 
 #[test]
-fn transitions_only_forward() {
-    use an_core::chat::ReqState::{self, *};
-    let allowed = [(Wait, Accepted), (Wait, Rejected), (Accepted, Done)];
+fn transitions_any_other_state() {
+    use an_core::chat::ReqState;
     for from in ReqState::ALL {
         for to in ReqState::ALL {
-            assert_eq!(
-                from.can_become(to),
-                allowed.contains(&(from, to)),
-                "{from:?} → {to:?}"
-            );
+            assert_eq!(from.can_become(to), from != to, "{from:?} → {to:?}");
         }
     }
     for s in ReqState::ALL {

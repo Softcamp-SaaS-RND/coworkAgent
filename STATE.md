@@ -3,14 +3,14 @@
 > **세션 시작 시 가장 먼저 읽는 문서.** 지금 어디서 재개하는지의 단일 좌표 — **매번 덮어쓴다.**
 > Task 목록은 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`), 미조치는 [overview/ledger.md](docs/overview/ledger.md).
 
-- **갱신**: 2026-10-19 16:40 / main — 1.0.0 배포(squash push · v1.0.0 사전 배포)
+- **갱신**: 2026-10-19 18:20 / main — 1.0.1 배포(요청 보드 손잡이 끌기 · 네 상태 자유 이동 · 메모 → 피드백, squash push · v1.0.1 사전 배포)
 
 ## 현재 작업
 
 | 항목 | 값 |
 |------|-----|
 | Task | 없음 — 1w.conv-leave 종결([report](docs/archive/1w.conv-leave/report.md)) |
-| 단계 | 다음 Task 착수 전 · v1.0.0 macOS 파일 첨부 대기 |
+| 단계 | 다음 Task 착수 전 · v1.0.0 · v1.0.1 macOS 파일 첨부 대기 |
 | 재개 좌표 | [masterPlan](docs/masterPlan.md) Phase 1 오버플로 "남음" 후보 |
 
 - **직전에 한 일**: 1w 종결 — 대화 ⋯ 나가기 · 삭제(D40 — `Leave` · `Pong.leave` · `left` · 스키마 21 묘비 · 번호 재사용 없음), 그룹 = 대화만 · 설정 "사용자 목록"(D37 개정),
@@ -20,7 +20,7 @@
 
 ## 다음 행동
 
-1. v1.0.0 릴리스에 macOS `coworkAgent-macos.zip` 첨부(보유한 Mac 빌드 — D11 · D25 보강) · 다음 Task 고르기(masterPlan 후보) · 이 PC 반영 — `python tools/rebuild_run.py`(사용자 확인 뒤, 스키마 21 로 오른다 — `.v20.bak` 사본).
+1. v1.0.0 · v1.0.1 릴리스에 macOS `coworkAgent-macos.zip` 첨부(보유한 Mac 빌드 — D11 · D25 보강) · 다음 Task 고르기(masterPlan 후보) · 이 PC 반영 — `python tools/rebuild_run.py`(사용자 확인 뒤, 스키마 21 로 오른다 — `.v20.bak` 사본).
 2. 19 acceptance TC 일괄(사용자 — 1u E10 · 1v E12 · 1w E12 포함). 다음 적대적 평가 전 Orca 에 `review` 이름의 Codex 세션 준비(`codex-peer-review`).
 
 - **블로커 / 미해소**: 19 acceptance TC(사용자). 구현자 해석(사용자 미확인 — 각 report): 1q 결정 7 · 15,

@@ -59,13 +59,9 @@ impl ReqState {
         Self::ALL.into_iter().find(|r| r.as_str() == s)
     }
 
-    /// 받은 쪽이 이 상태에서 `next` 로 옮길 수 있나.
+    /// 받은 쪽이 이 상태에서 `next` 로 옮길 수 있나 — 지금 상태 말고 네 상태 어디로든(되돌리기 포함 — 사용자 2026-10-19).
     pub fn can_become(self, next: Self) -> bool {
-        matches!(
-            (self, next),
-            (ReqState::Wait, ReqState::Accepted | ReqState::Rejected)
-                | (ReqState::Accepted, ReqState::Done)
-        )
+        self != next
     }
 }
 
