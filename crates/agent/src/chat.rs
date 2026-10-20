@@ -2330,7 +2330,7 @@ impl Chat {
                 conv: conv.uuid.clone(),
                 msg: now.uuid.clone(),
                 state: state.as_str().into(),
-                note: note.clone(),
+                note: note.as_deref().map(chat::note_to_wire),
             };
             // 보내기 행은 그 요청 글에 잇는다 — 포기하면 그 글에 "요청자에게 알리지 못함"(`give_up`).
             let staged = Self::stage(&tx, &conv, Some(id), REQ_STATE, &req)?;
@@ -2375,7 +2375,7 @@ impl Chat {
     ) -> io::Result<Response> {
         let (Some(state), Ok(note)) = (
             ReqState::parse(&state),
-            chat::clean_req_note(note.as_deref().unwrap_or("")),
+            chat::clean_req_note(&chat::note_from_wire(note.as_deref().unwrap_or(""))),
         ) else {
             return Ok(Response::error("bad_request"));
         };

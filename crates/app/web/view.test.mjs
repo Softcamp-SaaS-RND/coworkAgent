@@ -134,6 +134,14 @@ import {
   mergeChanges,
   unionLoaders,
   OneAtATime,
+  speakerIcon,
+  RAIL_W,
+  railSize,
+  noteCount,
+  groupSettingsList,
+  groupSettingsPick,
+  DRAG_SLOP,
+  pastSlop,
 } from "./view.js";
 
 test("상태 문구", () => {
@@ -331,12 +339,12 @@ test("CLI 출처 — 보는 쪽 기준 라벨 · 글 종류 · 타임라인", ()
   assert.equal(items[1].steps[0].title, "요청");
 });
 
-test("settings_tree — 설정 항목 전부(한 열 순서 — 내 정보 없음, #1l) · 연결 아래 초대 생성 · 초대 수락 · 연결 목록", () => {
+test("settings_tree — 설정 항목 전부(한 열 순서 — 내 정보 없음, #1l) · 연결 아래 초대 생성 · 초대 수락 · 그룹설정(#1z — 옛 연결 목록)", () => {
   const tree = settingsTree();
   const flat = tree.flatMap((n) => [n, ...(n.children ?? [])]);
   assert.deepEqual(
     flat.map((n) => n.label),
-    ["연결", "초대 생성", "초대 수락", "연결 목록", "내 에이전트", "실행", "화면", "시작", "알림"],
+    ["연결", "초대 생성", "초대 수락", "그룹설정", "내 에이전트", "실행", "화면", "시작", "알림"],
   );
   assert.equal(new Set(flat.map((n) => n.id)).size, flat.length, "id 는 절 요소 id — 겹치지 않는다");
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
@@ -2075,15 +2083,20 @@ test("req_feedback — 대기 · 질의 · 답은 없음, 수용 · 반려 · �
   assert.deepEqual(reqFeedback(req({ mine: false, req_state: "rejected" })), { key: "rejected", state: "반려", note: "", at: 10, side: "mine" }, "받은 요청 → 내 쪽(오른쪽)");
 });
 
-test("composer_a — 입력창: 질의 / 요청 라디오 2개 · 안내 문구 없음 · placeholder '메시지 입력' · 창 폭에 맞춰 늘어남(최대 폭 없음), 편집 모드 없음(#1v)", () => {
+test("composer_a — 입력창: 질의 / 요청 라디오 2개 · 안내 문구 없음 · placeholder '메시지 입력' · 창 폭에 맞춰 늘어남(최대 폭 없음, 좌우 = 말풍선 영역 max(48px, 8%) — #1z), 편집 모드 없음(#1v)", () => {
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
   const css = readFileSync(new URL("./app.css", import.meta.url), "utf8");
   const form = html.split('<form id="reply_form"')[1].split("</form>")[0];
   assert.equal(form.match(/name="ask"/g)?.length, 2);
   assert.ok(!html.includes("mention_hint") && !html.includes("에이전트 부르기"), "안내 문구 없음");
-  assert.ok(form.includes('id="reply_text" rows="3" placeholder="메시지 입력"'));
-  assert.doesNotMatch(css.split(".composer {")[1].split("}")[0], /max-width/, "입력창은 창 폭에 맞춰 늘어난다");
-  assert.match(css, /#messages \{ gap: var\(--sp-4\); padding-bottom: var\(--sp-4\); \}/, "말풍선 ↔ 입력창 간격 16px");
+  assert.ok(form.includes('id="reply_text" rows="1" placeholder="메시지 입력"'));
+  const composer = css.split(".composer {")[1].split("}")[0];
+  assert.doesNotMatch(composer, /max-width/, "입력창은 창 폭에 맞춰 늘어난다");
+  // #1z — 말풍선 ↔ 입력창 24px 는 스크롤 밖(입력창 위 여백), 말풍선 영역 아래 패딩 없음, 좌우 같은 여백.
+  assert.match(composer, /margin: var\(--sp-5\) var\(--chat-gutter\) var\(--sp-4\);/);
+  assert.match(css, /#messages \{ gap: var\(--sp-4\); padding: var\(--sp-5\) var\(--chat-gutter\) 0; \}/);
+  assert.ok(css.includes("--chat-gutter: max(48px, 8%);"), "좌우 여백 토큰");
+  assert.match(css, /\.composer textarea \{[^}]*min-height: 44px; max-height: 200px;/);
   for (const id of ['id="edit_btn"', "edit_bar", "scope_dialog"]) assert.ok(!html.includes(id), id);
   const app = readFileSync(new URL("./app.js", import.meta.url), "utf8");
   assert.ok(!app.includes('$("reply_text").placeholder'), "대화를 열 때 placeholder 를 덮어쓰지 않는다(적대적 평가 R2)");
@@ -2220,15 +2233,16 @@ test("conv_copy — 대화 줄을 그룹 절에 놓으면 복사(넣기만 · �
   assert.deepEqual(groups[0].convs, [5], "원래 그룹은 그대로");
 });
 
-test("screen_settings_1x — 설정 '타일 크기'(보통 · 작게) · 알림 '효과음' 칸, 작은 타일 CSS(넓은 화면 · 레일 폭 토큰)", () => {
+test("screen_settings_1x — 설정 '타일 크기'(크게 · 작게 — #1z 표시 이름) · 알림 '효과음' 칸, 작은 타일 CSS(넓은 화면 · 레일 폭 토큰)", () => {
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
   const sel = html.slice(html.indexOf('<select id="ui_tile_size">'), html.indexOf("</select>", html.indexOf('<select id="ui_tile_size">')));
-  assert.deepEqual([...sel.matchAll(/<option value="(\w+)">/g)].map((m) => m[1]), ["normal", "small"]);
+  assert.deepEqual([...sel.matchAll(/<option value="(\w+)">([^<]*)</g)].map((m) => [m[1], m[2]]), [["normal", "크게"], ["small", "작게 — 작은 아이콘 + 이름 한 줄"]]);
   assert.ok(html.includes('<label for="ui_tile_size">타일 크기</label>'));
   assert.match(html, /<label for="notify_sound">효과음<\/label>\s*<input type="checkbox" id="notify_sound"/);
   const css = readFileSync(new URL("./app.css", import.meta.url), "utf8");
   assert.ok(css.includes("--rail-w-small:"), "레일 폭 토큰");
-  assert.match(css, /@media \(min-width: 721px\) \{\s*#app\.tile-small \{ grid-template-columns: var\(--rail-w-small\)/);
+  assert.match(css, /@media \(min-width: 721px\) \{\s*#app\.tile-small \{ --rail-w: var\(--rail-w-small\); \}/);
+  assert.match(css, /grid-template-columns: var\(--rail-w\) auto auto minmax\(0, 1fr\) auto;/, "레일 열 = --rail-w(#1z 끌기)");
 });
 
 test("peer_weeks_options — 주고받은 메시지 기간 1 ~ 12주(#1y, 서버 PEER_WEEKS_MAX 와 같다)", () => {
@@ -2263,4 +2277,94 @@ test("merge_page_since — 받아 둔 꼬리도 보기 기간 안만(#1y 적대�
   const have = [m(30, 300), m(29, 290), m(28, 280), m(27, 100)];
   assert.deepEqual(mergePage(fresh, have, 2, 200).map((x) => x.id), [30, 29, 28], "기간 밖 27 은 빠진다");
   assert.deepEqual(mergePage(fresh, have, 2).map((x) => x.id), [30, 29, 28, 27], "기간 없으면 그대로");
+});
+
+test("speaker_icon — 발화자 종류(#1z): 에이전트 = 로봇, 그 밖 = 사람", () => {
+  assert.deepEqual(speakerIcon("agent"), { kind: "agent", icon: "bot", label: "에이전트" });
+  for (const a of ["human", undefined, ""]) assert.deepEqual(speakerIcon(a), { kind: "human", icon: "user", label: "사람" }, String(a));
+});
+
+test("inbox_rows_author — 메시지 줄에 발화자(#1z): 주고받은 메시지 · 내 활동", () => {
+  const names = new Map([[2, "이준호 · QA"]]);
+  const conv = { id: 4, peer_id: 2, agent: "guide", dir: "out" };
+  const rows = inboxRows(
+    [
+      { id: 1, author: "agent", mine: false, text: "답", created_at: 2, conversation: conv },
+      { id: 2, author: "human", mine: true, text: "질의", created_at: 1, conversation: conv },
+    ],
+    names,
+  );
+  assert.deepEqual(rows.map((r) => r.author), ["agent", "human"]);
+  const act = activityRows([{ kind: "message", at: 1, conversation: conv, message: { id: 1, author: "agent", text: "답" } }], names);
+  assert.equal(act[0].author, "agent");
+});
+
+test("rail_size — 레일 끌기 경계(#1z): 120px 미만 크게 · 이상 작게, 놓는 폭 72 · 168", () => {
+  assert.deepEqual([64, 119].map(railSize), ["normal", "normal"]);
+  assert.deepEqual([120, 121, 240].map(railSize), ["small", "small", "small"]);
+  assert.deepEqual([RAIL_W.normal, RAIL_W.small, RAIL_W.split, RAIL_W.min, RAIL_W.max], [72, 168, 120, 64, 240]);
+});
+
+test("note_count — 의견 글자 수(#1z): 문자 수 / 200, 줄바꿈도 한 글자", () => {
+  assert.equal(noteCount(""), "0 / 200");
+  assert.equal(noteCount("가\n나"), "3 / 200");
+  assert.equal(noteCount("가".repeat(200)), "200 / 200");
+});
+
+test("group_settings_list — 그룹설정 목록(#1z 시안 A): 대화 수 · 검색 = 그룹 이름 · 사용자(이름 · PC · 지문) · 대화 제목", () => {
+  const peers = [
+    { id: 1, name: "jiwon", alias: "이지원", host: "DEV-01", fingerprint: "AB12" },
+    { id: 2, name: "seojun", alias: "", host: "QA-PC", fingerprint: "CD34" },
+  ];
+  const convs = [
+    { id: 10, peer_id: 1, agent: "review", dir: "out", title: "배포 노트" },
+    { id: 11, peer_id: 2, agent: "qa", dir: "out", title: "로그인 오류" },
+    { id: 12, peer_id: 2, agent: "qa", dir: "in", title: "" },
+  ];
+  const groups = [
+    { id: 7, name: "배포 준비", convs: [10] },
+    { id: 8, name: "QA", convs: [11, 12] },
+    { id: 9, name: "빈 그룹", convs: [] },
+  ];
+  const names = new Map([[1, "이지원 · DEV-01"], [2, "seojun · QA-PC"]]);
+  const all = groupSettingsList(groups, peers, convs, "", names);
+  assert.deepEqual(all.groups.map((g) => [g.id, g.count]), [[7, 1], [8, 2], [9, 0]]);
+  assert.deepEqual(all.users, [{ id: 1, count: 1 }, { id: 2, count: 2 }]);
+  const ids = (q) => {
+    const l = groupSettingsList(groups, peers, convs, q, names);
+    return [l.groups.map((g) => g.id), l.users.map((u) => u.id)];
+  };
+  assert.deepEqual(ids("빈"), [[9], []], "그룹 이름");
+  assert.deepEqual(ids("qa-pc"), [[8], [2]], "PC(대소문자 무시) — 그 사용자 대화가 든 그룹도");
+  assert.deepEqual(ids("ab12"), [[7], [1]], "지문");
+  assert.deepEqual(ids("로그인"), [[8], [2]], "대화 제목");
+  assert.deepEqual(ids("없는말"), [[], []]);
+  // 상세에 보일 대화(적대적 리뷰 R1): 빈 검색 · 그룹 이름이 맞으면 전부, 대화 · 사용자로 맞으면 맞는 대화만.
+  const shown = (q) => groupSettingsList(groups, peers, convs, q, names).groups.map((g) => [g.id, g.convs]);
+  assert.deepEqual(shown(""), [[7, [10]], [8, [11, 12]], [9, []]]);
+  assert.deepEqual(shown("배포 준비"), [[7, [10]]], "그룹 이름만 맞아도 그 그룹 대화 전부");
+  assert.deepEqual(shown("qa"), [[8, [11, 12]]], "그룹 이름 'QA' — 전부(사용자 'qa-pc' 와 겹쳐도)");
+  assert.deepEqual(shown("로그인"), [[8, [11]]], "대화 제목 — 맞는 대화만");
+  assert.deepEqual(shown("ab12"), [[7, [10]]], "지문 — 그 사용자 대화만");
+});
+
+test("group_settings_pick — 고른 항목이 사라지면 첫 그룹 → 첫 사용자 → null", () => {
+  const list = { groups: [{ id: 7 }, { id: 8 }], users: [{ id: 1 }] };
+  assert.deepEqual(groupSettingsPick({ kind: "user", id: 1 }, list), { kind: "user", id: 1 });
+  assert.deepEqual(groupSettingsPick({ kind: "group", id: 8 }, list), { kind: "group", id: 8 });
+  assert.deepEqual(groupSettingsPick({ kind: "group", id: 1 }, list), { kind: "group", id: 7 }, "같은 id 라도 종류가 다르면 없음");
+  assert.deepEqual(groupSettingsPick(null, list), { kind: "group", id: 7 });
+  assert.deepEqual(groupSettingsPick({ kind: "group", id: 9 }, { groups: [], users: [{ id: 3 }] }), { kind: "user", id: 3 });
+  assert.equal(groupSettingsPick(null, { groups: [], users: [] }), null);
+});
+
+test("past_slop — 레일 타일 끌기 시작(#1z): 5px 미만 = 누름, 5px 이상 = 끌기", () => {
+  assert.equal(DRAG_SLOP, 5);
+  assert.equal(pastSlop(0, 0), false);
+  assert.equal(pastSlop(4, 0), false);
+  assert.equal(pastSlop(3, 3), false, "대각 4.24px");
+  assert.equal(pastSlop(5, 0), true);
+  assert.equal(pastSlop(0, -5), true);
+  assert.equal(pastSlop(3, 4), true, "대각 정확히 5px");
+  assert.equal(pastSlop(6, 0), true);
 });

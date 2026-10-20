@@ -75,7 +75,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   보내면 `None`) · `message_by_id` · `agent_session(conv, agent)` · `set_agent_session(conv, agent, session)`.
   #1d: `ReqState`(`Wait` · `Accepted` · `Rejected` · `Done` — `as_str` · `parse` · `can_become`(지금 상태 말고 어디로든 — 되돌리기 포함)) ·
   `Message.req_state` · `req_note` · `req_at` · `set_req_state(id, state, note)`(옮김 검사는 부르는 쪽) · `MAX_REQ_NOTE`(200) ·
-  `clean_req_note`(한 줄 · 제어 문자 없음) · `AskFilter`(`Query` · `Request(Option<ReqState>, bool)` — `messages_across` 의 종류 · 상태 거르기, 둘째 = archive 만(#1y — 거짓 = archive 제외)).
+  `clean_req_note`(#1z — 여러 줄: CRLF → LF, 줄바꿈 말고 제어 문자 없음, 오류 "의견은 200자까지, 제어 문자 없이") · `note_to_wire` · `note_from_wire`(상대에게 보내는 꼴 = 줄바꿈 → U+2028 — Cc 가 아니라 이전 버전 `clean_label` 통과, 받는 쪽이 되돌림 — `an-agent` `set_req_state` · `inbound_req_state`) · `AskFilter`(`Query` · `Request(Option<ReqState>, bool)` — `messages_across` 의 종류 · 상태 거르기, 둘째 = archive 만(#1y — 거짓 = archive 제외)).
   #1f: `Message.edited_at` · `edit_text(id, text)`(본문 · 편집 시각만 — uuid · `lc` · 요청 상태 · 저장 그대로) · `delete_message(id)`(글 + 그 글의
   `cli_tx` · `relay_events` · 실패 보관 outbox 행, 답은 남는다 · 읽음 · 내 활동 본 표시를 남은 최대 id 로 낮춤 — 지운 id 를 다음 글이 다시 받아도
   안 읽음으로 보이게, 부르는 쪽이 트랜잭션) · `RelayMark::SyncFailed(Option<글 id>)`(`sync_failed` — 편집 실패는

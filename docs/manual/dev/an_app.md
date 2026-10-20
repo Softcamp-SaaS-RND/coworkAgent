@@ -194,9 +194,9 @@
   사이드 머리 ⋯. 순서 = 손으로 놓은 자리(`view.sortByPos` — 대화 · 상대 · 그룹 모두): 끌어 놓기(HTML 기본 드래그 — #1x 부터 레일 타일만, 대화 줄은 손잡이 포인터 끌기 `convGrab`, `view.dropKind` — 같은 종류 · 대화는 같은
   절, 대화 → 그룹 타일 = 넣기) · Alt + ↑ / ↓(`view.stepTarget`, `#order_live` 알림 `movedText`) → 전체 순서에 끼워(`view.moveInOrder`) `PUT /api/order`. 레일 · 대화 목록은 다시 그려도 초점 항목을 되돌린다(`keepFocus` — #1j, 누른 뒤 바로 Alt + ↑ / ↓).
   설정(#1j): "페어링" 카드(초대 생성 · 초대 수락 같은 `primary` 단추, "주소 · 코드로 직접 추가" 없음 — 서버 경로는 남음) · 내 정보 · 연결 상세(`kvTable`)에 "읽기 전용"
-  없음 · 연결 목록 카드 = `view.settingsGroupSections`(#1w — 그룹 절 = 대화 줄 · "그룹에서 빼기" + 끝 `USER_LIST` "사용자 목록" = 관리 줄 + 대화 트리, 대화 줄 끌기 =
+  없음 · 그룹설정 카드 = `view.settingsGroupSections`(#1w — 그룹 절 = 대화 줄 · "그룹에서 빼기" + 끝 `USER_LIST` "사용자 목록" = 관리 줄 + 대화 트리, 대화 줄 끌기 =
   `view.convCopy` 복사) · "+ 그룹 추가" · 절 머리 이름 바꾸기 · 삭제 · 검색 `view.searchItems` · 내 에이전트 평평한 목록(그룹 칸 없음).
-  설정(#1k — 디자인 캔버스 ④): `.settings-cols` 두 열(왼쪽 페어링 · 연결 목록, 오른쪽 내 정보 · 내 에이전트 — 1100px 미만 한 열, 실행 · 화면 · 시작 · 알림은
+  설정(#1k — 디자인 캔버스 ④): `.settings-cols` 두 열(왼쪽 페어링 · 그룹설정, 오른쪽 내 정보 · 내 에이전트 — 1100px 미만 한 열, 실행 · 화면 · 시작 · 알림은
   아래 전체 폭) · 페어링 큰 단추 둘 `.pair-btns`(`window_btn` "초대 생성" · `accept_btn` "초대 수락" = `showAccept(on)` — `invite_accept` 여닫기 ·
   `aria-expanded`, 제출 단추 "수락") · 레일 "+" = `showAccept(true)` + `goSettings("conn", "invite_text")`(카드 맨 위 · 칸 초점), 트리 · 새로 만들기
   "초대 수락"(`#settings/invite_accept`)도 `render` 가 펼친다 · 관리 줄 `manageItem(key, label, head, ...body)`(머리 + "관리" `{key}_manage` 로 여닫는
@@ -217,7 +217,7 @@
   JS 는 `<span class="ico ico-{이름}">` · `ico(name)` 만 — 사이드바(`view.sideNav` 항목 `icon`) · 화면 머리 제목(동적 제목은 안쪽 `span` 이 id) · 설정 트리
   (`view.settingsTree` `icon`) · 타일 ⋯ · 대화 ⋯ · 상대 그룹 체크 · "+ 새로 만들기"(`view.newMenu` `icon`, "자동 왕복 대화" 없음 — 세션 생성 화면 안). 말풍선
   색 = `--surface` 바탕 + `::before` 색 층(내 글 `--accent` · 상대 글 `article[data-tone=colorOf(peer_id)]` → `--tone`, 불투명도 `--bubble-mine-alpha` · `--bubble-theirs-alpha` — Safari 15 때문에 `color-mix` 아님) · 옆 띠 없음(#1p). 설정 한 열(`.settings-cols`
-  없앰 — 페어링 → 연결 목록 → 내 에이전트 → 실행 → 화면 → 시작 → 알림) · 카드 안내 = 제목 옆 `.help-wrap`(`button.help` + `.tip[role=tooltip]`,
+  없앰 — 페어링 → 그룹설정 → 내 에이전트 → 실행 → 화면 → 시작 → 알림) · 카드 안내 = 제목 옆 `.help-wrap`(`button.help` + `.tip[role=tooltip]`,
   `aria-describedby`, `:hover` · `:focus` 에 뜸) · 내 정보 = `<dialog id="me_dialog">`(프로필 `profileMenu` 열쇠 `me` → `showModal`, 트리 · `#me` 경로
   없음) · 내 에이전트 검색 칸 없음 · 등록 칸 `<div id="agent_new" hidden>` = `showAgentNew(on)`("에이전트 등록" · 새로 만들기). 타일 순서 = 설정
   `ui_rail_order`(`peers_first` 기본 · `groups_first`, `an_core::run_opts::RAIL_ORDER_KEY` — 틀린 값 400) → `applyRailOrder` 가 레일 DOM 을 옮긴다

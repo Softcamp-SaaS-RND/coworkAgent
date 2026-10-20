@@ -32,8 +32,8 @@
     같은 내용이 두 벌 들어가지 않게). 그래프가 못 답하는 질의만 grep · 파일 읽기로 보충한다.
   - TDD · stage 리뷰 · 완료 증거 — `superpowers:test-driven-development` · `superpowers:requesting-code-review` ·
     `superpowers:verification-before-completion`.
-  - 적대적 평가자 — `codex-peer-review` 스킬로 구현 세션과 분리된 기존 Codex 리뷰 세션(`review` · `review2` …)에 적대적 리뷰를 배정(세션 선택 · 요청 절차는
-    그 스킬 · 사용자 전역 지침, 2026-10-19 — 옛 `codex-review` 세션에 `/codex:adversarial-review` 대행 요청은 폐지). **라운드 상한 2** —
+  - 적대적 평가자 — `codex-peer-review` 스킬로 구현 세션과 분리된 Codex 에 적대적 리뷰를 배정 — Orca 가 라운드마다 Codex 를 새로 띄운다(`worker-start --agent codex`,
+    요청 절차는 그 스킬 · 사용자 전역 지침, 2026-10-21 — 기존 `review` · `review2` 터미널 배정과 옛 `codex-review` 세션 대행 요청은 폐지). **라운드 상한 2** —
     사용자 전역 지침이 [etc/eval-protocol.md](docs/etc/eval-protocol.md) 의 "최대 3 라운드" 보다 우선한다.
 - **Git 브랜치**: Task 별 `task/NN-이름` 브랜치 → main 으로 merge. rebase 는 사용자 요청 시에만.
 - **squash push**: origin/main 은 릴리스 단위 squash 커밋 이력. 로컬 커밋 뒤 `git commit-tree HEAD^{tree} -p origin/main -m "<메시지>"` 로 만든 커밋을 `git push origin <sha>:refs/heads/main`, 이어서 `git reset --mixed origin/main` 으로 로컬을 맞춘다(2026-10-20 정리 — 이전 로컬 이력은 `backup/pre-reset-1020`).

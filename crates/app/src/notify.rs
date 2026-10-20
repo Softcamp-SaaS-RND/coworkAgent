@@ -598,7 +598,7 @@ pub fn notice_with(e: &PeerEvent, preview_on: bool) -> Notice {
             kind: "auto_paired",
             title: "새 연결 등록".into(),
             body: format!(
-                "{name} · {host}\n지문 {fingerprint} — 모르는 연결이면 연결 목록에서 삭제"
+                "{name} · {host}\n지문 {fingerprint} — 모르는 연결이면 그룹설정에서 삭제"
             ),
         },
         PeerEvent::Approved { name, host } => Notice {

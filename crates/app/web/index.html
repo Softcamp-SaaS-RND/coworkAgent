@@ -52,6 +52,7 @@
         </svg>
       </button>
     </nav>
+    <div id="rail_resize" role="separator" aria-orientation="vertical" aria-label="레일 폭 — 놓으면 크게 · 작게" aria-valuemin="72" aria-valuemax="168" aria-valuenow="168" tabindex="0"></div>
 
     <aside id="sidebar" aria-label="대화 목록">
       <div class="side-head">
@@ -230,7 +231,7 @@
           <div id="messages" aria-live="polite"></div>
           <form id="reply_form" class="composer">
             <label for="reply_text" class="sr-only">메시지</label>
-            <textarea id="reply_text" rows="3" placeholder="메시지 입력" aria-autocomplete="list" aria-controls="mention_box"></textarea>
+            <textarea id="reply_text" rows="1" placeholder="메시지 입력" aria-autocomplete="list" aria-controls="mention_box"></textarea>
             <ul id="mention_box" class="popover mention-box" role="listbox" aria-label="에이전트 멘션" hidden></ul>
             <div class="composer-bar">
               <div class="fmt">
@@ -273,7 +274,7 @@
         <nav id="settings_tree" aria-label="설정 항목"></nav>
         <div class="settings-body">
           <section id="conn" class="card">
-            <h2>페어링<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_conn">?</button><span id="tip_conn" class="tip" role="tooltip">초대를 만들어 보내면 상대가 붙여 넣어 연결합니다. 5분 안에 들어온 첫 요청 1건은 승인 없이 등록되니 모르는 연결은 연결 목록에서 지우세요.</span></span></h2>
+            <h2>페어링<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_conn">?</button><span id="tip_conn" class="tip" role="tooltip">초대를 만들어 보내면 상대가 붙여 넣어 연결합니다. 5분 안에 들어온 첫 요청 1건은 승인 없이 등록되니 모르는 연결은 그룹설정에서 지우세요.</span></span></h2>
             <div class="pair-btns">
               <button type="button" id="window_btn" class="primary big"><span class="ico ico-plus" aria-hidden="true"></span>초대 생성</button>
               <button type="button" id="accept_btn" class="primary big" aria-expanded="false" aria-controls="invite_accept"><span class="ico ico-enter" aria-hidden="true"></span>초대 수락</button>
@@ -296,9 +297,9 @@
 
           <section id="peers" class="card">
             <div class="sub-head">
-              <h2>연결 목록<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_peers">?</button><span id="tip_peers" class="tip" role="tooltip">처음 연결한 상대는 지문이 상대 화면(프로필 → 사용자 정보)과 같은지 전화나 대면으로 확인하세요.</span></span></h2>
-              <label for="peer_q" class="sr-only">연결 검색</label>
-              <input id="peer_q" type="search" placeholder="이름 · PC · 지문">
+              <h2>그룹설정<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_peers">?</button><span id="tip_peers" class="tip" role="tooltip">처음 연결한 상대는 지문이 상대 화면(프로필 → 사용자 정보)과 같은지 전화나 대면으로 확인하세요.</span></span></h2>
+              <label for="peer_q" class="sr-only">그룹설정 검색</label>
+              <input id="peer_q" type="search" placeholder="그룹 · 이름 · PC · 대화 제목">
               <button type="button" id="peer_group_add">+ 그룹 추가</button>
             </div>
             <p id="peer_msg" role="status"></p>
@@ -329,7 +330,7 @@
           </section>
 
           <section id="run" class="card">
-            <h2>실행<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_run">?</button><span id="tip_run" class="tip" role="tooltip">받은 요청을 실행할 때의 기본값입니다. 상대별 값은 연결 목록에서 바꿉니다.</span></span></h2>
+            <h2>실행<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_run">?</button><span id="tip_run" class="tip" role="tooltip">받은 요청을 실행할 때의 기본값입니다. 상대별 값은 그룹설정에서 바꿉니다.</span></span></h2>
             <div class="form-grid">
               <label for="claude_model">모델</label>
               <select id="claude_model"></select>
@@ -357,7 +358,7 @@
               </select>
               <label for="ui_tile_size">타일 크기</label>
               <select id="ui_tile_size">
-                <option value="normal">보통</option>
+                <option value="normal">크게</option>
                 <option value="small">작게 — 작은 아이콘 + 이름 한 줄</option>
               </select>
             </div>

@@ -173,7 +173,7 @@ async fn receiver_moves_state_with_note() {
     let (_, r2, _) = a.chat.post_with(conv.id, "요청 둘", true, ask(true)).await.unwrap();
     common::eventually(|| has(&b, &r2.uuid)).await;
     let id2 = msg(&b, &r2.uuid).id;
-    for bad in ["둘째\n줄", &"가".repeat(201)] {
+    for bad in ["탭\t가", &"가".repeat(201)] {
         assert!(invalid(b.chat.set_req_state(id2, ReqState::Rejected, bad, None).await.unwrap_err()));
     }
     assert_eq!(msg(&b, &r2.uuid).req_state, Some(ReqState::Wait));
@@ -182,6 +182,27 @@ async fn receiver_moves_state_with_note() {
         .await
         .unwrap();
     common::eventually(|| msg(&a, &r2.uuid).req_state == Some(ReqState::Rejected)).await;
+}
+
+/// 의견 여러 줄(#1z) — 받은 쪽 줄바꿈이 요청자에게 그대로(보낼 때 U+2028, 받을 때 되돌림).
+#[tokio::test(flavor = "multi_thread")]
+async fn note_lines_reach_requester() {
+    let (a, b, b_id, _) = pair_review("lines").await;
+    let (_, r) = a
+        .chat
+        .send_with(b_id, "review", None, "요청", ask(true))
+        .await
+        .unwrap();
+    common::eventually(|| has(&b, &r.uuid)).await;
+    let id = msg(&b, &r.uuid).id;
+    let (m, warning) = b
+        .chat
+        .set_req_state(id, ReqState::Accepted, "오늘\r\n금요일까지", None)
+        .await
+        .unwrap();
+    assert_eq!((m.req_note.as_deref(), warning), (Some("오늘\n금요일까지"), None));
+    common::eventually(|| msg(&a, &r.uuid).req_state == Some(ReqState::Accepted)).await;
+    assert_eq!(msg(&a, &r.uuid).req_note.as_deref(), Some("오늘\n금요일까지"));
 }
 
 #[tokio::test(flavor = "multi_thread")]

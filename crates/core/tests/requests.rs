@@ -110,18 +110,46 @@ fn transitions_any_other_state() {
 }
 
 #[test]
-fn note_one_line_200() {
+fn note_lines_200() {
     use an_core::chat::{MAX_REQ_NOTE, clean_req_note};
     assert_eq!(clean_req_note("  "), Ok(None));
     assert_eq!(clean_req_note(" 확인 ").unwrap().as_deref(), Some("확인"));
     assert!(clean_req_note(&"가".repeat(MAX_REQ_NOTE)).is_ok());
+    // 의견은 여러 줄(#1z — Shift+Enter) — CRLF 는 LF 로.
+    assert_eq!(clean_req_note("두\n줄").unwrap().as_deref(), Some("두\n줄"));
+    assert_eq!(
+        clean_req_note("두\r\n줄\n").unwrap().as_deref(),
+        Some("두\n줄")
+    );
     for bad in [
         "가".repeat(MAX_REQ_NOTE + 1),
-        "두\n줄".into(),
         "탭\t가".into(),
+        "종\x07".into(),
+        "캐\r리지".into(),
     ] {
-        assert!(clean_req_note(&bad).is_err(), "{bad:?}");
+        let e = clean_req_note(&bad).unwrap_err();
+        assert!(e.starts_with("의견은"), "{bad:?} {e}");
     }
+}
+
+/// 보낼 때 줄바꿈 → U+2028(#1z) — 이전 버전 상대의 검사(`clean_label` — 제어 문자 거부)도 통과하고, 새 버전은 되돌린다.
+#[test]
+fn note_wire_old_peer() {
+    use an_core::chat::{MAX_REQ_NOTE, note_from_wire, note_to_wire};
+    use an_core::run_opts::clean_label;
+    let note = "오늘\n금요일까지";
+    let wire = note_to_wire(note);
+    assert_eq!(wire, "오늘\u{2028}금요일까지");
+    assert_eq!(note_from_wire(&wire), note);
+    assert!(
+        clean_label(&wire, MAX_REQ_NOTE, "메모").is_ok(),
+        "이전 버전이 받는다"
+    );
+    assert!(
+        clean_label(note, MAX_REQ_NOTE, "메모").is_err(),
+        "줄바꿈 그대로면 이전 버전이 거절"
+    );
+    assert_eq!(note_to_wire("한 줄"), "한 줄");
 }
 
 #[test]

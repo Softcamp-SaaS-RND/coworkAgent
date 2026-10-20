@@ -65,12 +65,27 @@ impl ReqState {
     }
 }
 
-/// 요청 상태 메모 최대 글자 수.
+/// 요청 상태 의견 최대 글자 수.
 pub const MAX_REQ_NOTE: usize = 200;
 
-/// 요청 상태 메모 — 한 줄(제어 문자 · 줄바꿈 없음) [`MAX_REQ_NOTE`] 자까지, 비면 `None`.
+/// 요청 상태 의견 — 여러 줄(#1z — CRLF 는 LF, 줄바꿈 말고 제어 문자 없음) [`MAX_REQ_NOTE`] 자까지, 비면 `None`.
 pub fn clean_req_note(s: &str) -> Result<Option<String>, String> {
-    crate::run_opts::clean_label(s, MAX_REQ_NOTE, "메모")
+    let s = s.replace("\r\n", "\n");
+    let s = s.trim();
+    if s.chars().count() > MAX_REQ_NOTE || s.chars().any(|c| c.is_control() && c != '\n') {
+        return Err(format!("의견은 {MAX_REQ_NOTE}자까지, 제어 문자 없이"));
+    }
+    Ok((!s.is_empty()).then(|| s.to_string()))
+}
+
+/// 상대에게 보내는 의견 꼴(#1z) — 줄바꿈을 U+2028(LINE SEPARATOR)로. U+2028 은 제어 문자(Cc)가 아니라 줄바꿈을 거절하는 이전 버전
+/// 검사(`clean_label`)를 통과한다(호환 — 사용자 2026-10-21). 받는 쪽은 [`note_from_wire`] 로 되돌린다.
+pub fn note_to_wire(s: &str) -> String {
+    s.replace('\n', "\u{2028}")
+}
+
+pub fn note_from_wire(s: &str) -> String {
+    s.replace('\u{2028}', "\n")
 }
 
 /// 사람 글 종류 거르기 — 질의 · 요청(요청은 상태로 더 거른다, `None` = 모든 상태).

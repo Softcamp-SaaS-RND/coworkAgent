@@ -26,7 +26,6 @@ import {
   route,
   Latest,
   settingsTree,
-  searchItems,
   settingsGroupSections,
   convCopy,
   convClosed,
@@ -58,6 +57,13 @@ import {
   ACT_KINDS,
   insertMarkdown,
   enterSends,
+  speakerIcon,
+  RAIL_W,
+  railSize,
+  noteCount,
+  groupSettingsList,
+  groupSettingsPick,
+  pastSlop,
   timeline,
   runSteps,
   messageActions,
@@ -348,6 +354,7 @@ function applyTheme(theme) {
 /// 레일 타일 크기(#1x) — 작게 = 작은 아이콘 + 오른쪽 이름 한 줄(레일이 넓어진다, `app.css` `#app.tile-small`).
 function applyTileSize(size) {
   $("app").classList.toggle("tile-small", size === "small");
+  $("rail_resize").setAttribute("aria-valuenow", String(size === "small" ? RAIL_W.small : RAIL_W.normal));
 }
 
 /// 레일 타일 순서(#1l) — 상대 묶음(상대 타일 · +)과 그룹 묶음(그룹 타일 · 그룹 +)의 앞뒤. DOM 을 옮겨 Tab 순서도 화면과 같다(CSS `order` 는 어긋남).
@@ -365,7 +372,7 @@ async function loadPeers(force = false) {
   try {
     state.peers = keepOrder("peer", await api("GET", "/api/peers"), stamp);
   } catch (e) {
-    $("peer_msg").textContent = "연결 목록 오류: " + e.message;
+    $("peer_msg").textContent = "그룹설정 오류: " + e.message;
     return;
   }
   state.peerNames = new Map(state.peers.map((p) => [p.id, `${displayName(p)} · ${p.host}`]));
@@ -386,7 +393,7 @@ const GROUP_SVG =
 
 /// 타일 얼굴(#1j A안) — 그림이 있으면 그림, 없으면 사람(나 · 상대) · 사람 + 그림자(그룹) 모양. 누구인지는 아래 이름(`tileName`). 그림은 고정 문자열만.
 function tileFace(icon, group = false) {
-  if (icon) return el("img", { src: icon, alt: "" });
+  if (icon) return el("img", { src: icon, alt: "", draggable: "false" }); // 그림 기본 끌기가 레일 포인터 끌기를 가로채지 않게(#1z R2)
   const s = el("span", { class: "tile-shape", "aria-hidden": "true" });
   s.innerHTML = group ? GROUP_SVG : PERSON_SVG;
   return s;
@@ -414,7 +421,11 @@ function tileColor(p) {
   return colorOf(p.id);
 }
 
+/// 레일 타일을 끄는 중(#1z R1) — 그동안 `renderRail` 은 건너뛴다(서명을 적지 않으니 끝나고 부르면 그린다).
+let railDragging = false;
+
 function renderRail() {
+  if (railDragging) return;
   const paired = state.peers.filter((p) => p.paired);
   if (state.railPeer != null && !paired.some((p) => p.id === state.railPeer)) {
     state.railPeer = null;
@@ -455,8 +466,8 @@ function drawRailTiles(paired, unread) {
           "data-peer": String(p.id),
           "data-drag": "peer",
           "data-id": String(p.id),
-          draggable: "true",
           title: displayName(p),
+          onpointerdown: tileGrab,
           onclick: () => pickTile(p.id),
           oncontextmenu: (ev) => tileMenuEvent(ev, { kind: "peer", id: p.id }),
         },
@@ -480,8 +491,8 @@ function drawRailTiles(paired, unread) {
           "data-group": String(g.id),
           "data-drag": "group",
           "data-id": String(g.id),
-          draggable: "true",
           title: `그룹 ${g.name}`,
+          onpointerdown: tileGrab,
           "aria-label": `그룹 ${g.name} · 대화 ${inGroup(state.convs, g).length}${n ? ` · 안 읽음 ${n}` : ""}`,
           "aria-pressed": String(state.railGroup === g.id),
           onclick: () => pickGroup(g.id),
@@ -514,7 +525,7 @@ async function loadGroups() {
   renderSideNav();
   renderConvList();
   refreshHome();
-  renderPeerList(); // 연결 목록의 그룹 절(#1j)
+  renderPeerList(); // 그룹설정의 그룹 절(#1j)
 }
 
 /// 고른 그룹(없으면 `null`).
@@ -666,7 +677,7 @@ async function loadPeerAgents(id) {
 /// 세션 생성 화면에 상대 · 에이전트를 채워서 연다(사이드바 · 검색 결과의 상대 에이전트).
 async function newChat(peer, agent) {
   if (!state.peers.some((p) => p.id === peer && p.paired)) {
-    $("status_msg").textContent = "페어링되지 않은 상대 · 연결 목록에서 승인하세요";
+    $("status_msg").textContent = "페어링되지 않은 상대 · 그룹설정에서 승인하세요";
     go("#settings/peers");
     return;
   }
@@ -838,7 +849,7 @@ function openTileMenu(t, anchor) {
   openFloat(anchor, "menu", "타일 메뉴", items);
 }
 
-/// 그룹 삭제 확인(한 번) — 타일 메뉴 · 연결 목록 절 머리 공용. 그룹 · 소속만 지운다(대화 · 상대는 그대로).
+/// 그룹 삭제 확인(한 번) — 타일 메뉴 · 그룹설정 절 머리 공용. 그룹 · 소속만 지운다(대화 · 상대는 그대로).
 function groupDeleteForm(id) {
   const g = state.groups.find((x) => x.id === id);
   return el(
@@ -1010,20 +1021,83 @@ function renderPeerList(force = false) {
   const shown = state.peers.map(({ online, focus, ...p }) => p);
   const groupSig = state.groups.map((g) => [g.id, g.name, g.icon, g.convs]);
   const convSig = state.convs.map((c) => [c.id, c.peer_id, c.pos, c.title, c.agent, c.dir, convClosed(c)]);
-  const sig = JSON.stringify([shown, groupSig, convSig, $("peer_q").value, state.settings.claude_model, state.settings.claude_effort]);
+  const sig = JSON.stringify([shown, groupSig, convSig, $("peer_q").value, state.settings.claude_model, state.settings.claude_effort, state.gsPick]);
   // 접속 상태 글자는 시각이 흐르면 바뀐다(#1k 라운드 2) — 줄을 다시 만들지 않고(편집 중인 모델 · effort 를 지키게) 부제만 고친다.
   for (const n of $("peer_groups").querySelectorAll("[data-peer-sub]")) {
     const p = state.peers.find((x) => x.id === Number(n.dataset.peerSub));
     if (p) n.textContent = peerSub(p);
   }
+  for (const n of $("peer_groups").querySelectorAll("[data-peer-dot]")) {
+    const p = state.peers.find((x) => x.id === Number(n.dataset.peerDot));
+    if (p) n.replaceWith(gsDot(p));
+  }
   if (!needsRender($("peer_groups"), sig, force)) return;
   const q = $("peer_q").value;
-  const shownPeers = searchItems(state.peers, q, ["alias", "name", "host", "fingerprint"]);
-  const shownIds = new Set(shownPeers.map((p) => p.id));
   const convs = sortByPos(state.convs);
-  // 그룹 절 = 그 그룹 대화 줄(#1w — 그룹 = 대화만), 끝 절 "사용자 목록" = 관리 줄 + 그 사용자와의 대화 트리. 대화 줄을 그룹 절에 끌어 놓으면 복사.
-  $("peer_groups").replaceChildren(
-    ...settingsGroupSections(state.groups, convs, state.peerNames).map((s) => (s.group == null ? userListSection(s, shownPeers, convs, q) : groupSection(s, shownIds, q))),
+  // 그룹설정(#1z — 시안 A): 왼쪽 = 그룹 · 사용자 한 줄 목록, 오른쪽 = 고른 항목 상세(그룹 = 대화 줄 · 사용자 = 관리 줄 + 대화). 대화 줄을 왼쪽 그룹 줄에 끌어 놓으면 복사.
+  const list = groupSettingsList(state.groups, state.peers, convs, q, state.peerNames);
+  const pick = (state.gsPick = groupSettingsPick(state.gsPick, list));
+  let detail = el("p", { class: "hint", text: q ? "맞는 그룹 · 사용자 없음" : "그룹 · 연결 없음" });
+  if (pick?.kind === "group")
+    detail = groupSection(
+      settingsGroupSections(state.groups, convs, state.peerNames).find((s) => s.group === pick.id),
+      new Set(list.groups.find((g) => g.id === pick.id).convs),
+      q,
+    );
+  else if (pick?.kind === "user") detail = userDetail(state.peers.find((p) => p.id === pick.id), convs);
+  $("peer_groups").replaceChildren(groupSettingsListEl(list, pick), el("div", { class: "gs-detail" }, detail));
+}
+
+/// 그룹설정 사용자 줄의 접속 점(#1z) — 서명에 접속 상태가 없어(입력 중 다시 그리지 않게) `renderPeerList` 가 매번 이 점만 고친다(R2 — 시간이 흘러 끊김이 돼도 녹색이 남지 않게).
+function gsDot(p, pr = presence(p)) {
+  return el("span", { class: `gs-dot ${pr.key}`, title: pr.text, "aria-label": pr.text, role: "img", "data-peer-dot": String(p.id) });
+}
+
+/// 그룹설정 왼쪽 칸(#1z) — "그룹 n" · "사용자 n" 머리 + 한 줄(타일 · 이름 · (사용자) PC · 접속 점 · 대화 수). 누르면 오른쪽 칸이 그 항목.
+/// 그룹 줄은 대화 줄을 놓는 자리(`data-peer-section` — 아래 끌어 놓기).
+function groupSettingsListEl(list, pick) {
+  const row = (kind, id, face, name, sub, count, extra = "") =>
+    el(
+      "li",
+      {},
+      el(
+        "button",
+        {
+          type: "button",
+          class: "gs-row",
+          "aria-pressed": String(pick?.kind === kind && pick.id === id),
+          "data-peer-section": kind === "group" ? String(id) : null,
+          onclick: () => {
+            state.gsPick = { kind, id };
+            renderPeerList(true);
+          },
+        },
+        face,
+        el("span", { class: "gs-name" }, el("span", { text: name }), sub ? el("span", { class: "hint", text: sub }) : ""),
+        extra,
+        el("span", { class: "hint gs-count", text: `대화 ${count}` }),
+      ),
+    );
+  const head = (title, n) => el("div", { class: "gs-head" }, el("span", { text: title }), el("span", { text: String(n) }));
+  return el(
+    "div",
+    { class: "gs-list", role: "group", "aria-label": "그룹 · 사용자" },
+    head("그룹", list.groups.length),
+    list.groups.length
+      ? el("ul", { class: "gs-rows" }, ...list.groups.map((g) => row("group", g.id, rowTile(`small ${colorOf(g.id)}`, g.icon, true), g.name, "", g.count)))
+      : el("p", { class: "hint gs-empty", text: "그룹 없음 — + 그룹 추가" }),
+    head("사용자", list.users.length),
+    list.users.length
+      ? el(
+          "ul",
+          { class: "gs-rows" },
+          ...list.users.map((u) => {
+            const p = state.peers.find((x) => x.id === u.id);
+            const pr = presence(p);
+            return row("user", u.id, rowTile(`small ${tileColor(p)}`, p.icon), displayName(p), p.host, u.count, gsDot(p, pr));
+          }),
+        )
+      : el("p", { class: "hint gs-empty", text: "연결 없음" }),
   );
 }
 
@@ -1053,9 +1127,9 @@ function settingsConvRow(c, label, group) {
   );
 }
 
-/// 그룹 절(#1w) — 머리(타일 · 이름 · 대화 수 · 이름 바꾸기 · 삭제) + 그 그룹 대화 줄(검색 중이면 맞는 연결의 대화만). 비어도 둔다(놓을 자리).
-function groupSection(s, shownIds, q) {
-  const rows = s.rows.filter((r) => !q || shownIds.has(r.peer));
+/// 그룹 절(#1w) — 머리(타일 · 이름 · 대화 수 · 이름 바꾸기 · 삭제) + 그 그룹 대화 줄(검색 중이면 맞는 대화만 — 그룹 이름이 맞으면 전부, #1z R1). 비어도 둔다(놓을 자리).
+function groupSection(s, visible, q) {
+  const rows = s.rows.filter((r) => visible.has(r.id)); // 검색에 맞는 대화(`view.groupSettingsList` 의 `convs`)
   return el(
     "section",
     { class: "peer-section", "data-peer-section": String(s.group), "aria-label": s.title },
@@ -1078,96 +1152,90 @@ function groupSection(s, shownIds, q) {
   );
 }
 
-/// "사용자 목록" 절(#1w) — 연결 관리 줄(타일 · 이름 · 부제 · 관리) + 그 아래 접이식 "대화 n"(그 사용자와의 대화 줄 — 끌어 그룹 절에 복사).
-function userListSection(s, shownPeers, convs, q) {
+/// 그룹설정 사용자 상세(#1z — 옛 "사용자 목록" 절의 한 사람) — 연결 관리 줄(타일 · 이름 · 부제 · 관리) + 그 아래 접이식 "대화 n"(그 사용자와의 대화 줄 —
+/// 끌어 왼쪽 그룹 줄에 복사).
+function userDetail(p, convs) {
   const peerAct = (label, fn) => act(label, fn, "peer_msg", () => loadPeers(true));
   const defaults = state.settings;
-  return el(
-    "section",
-    { class: "peer-section", "data-peer-section": "", "aria-label": s.title },
-    el("div", { class: "peer-section-head" }, el("strong", { text: s.title }), el("span", { class: "hint", text: `· ${shownPeers.length}` })),
-    ...(shownPeers.length ? [] : [el("p", { class: "hint", text: q ? "맞는 연결 없음" : "연결 없음" })]),
-    ...shownPeers.map((p) => {
-      const model = el(
-        "select",
-        {},
-        el("option", { value: "", text: `기본값(${defaults.claude_model ?? "sonnet"})` }),
-        ...MODELS.map((m) => el("option", { value: m, text: m })),
-      );
-      model.value = p.model ?? "";
-      const effort = el(
-        "select",
-        {},
-        el("option", { value: "", text: `기본값(${defaults.claude_effort ?? "high"})` }),
-        ...EFFORTS.map((e) => el("option", { value: e, text: e })),
-      );
-      effort.value = p.effort ?? "";
-      const actions = el("div", { class: "actions" });
-      actions.append(
-        button("저장", () => peerAct("연결 설정 저장", () => api("PATCH", `/api/peers/${p.id}`, { model: model.value, effort: effort.value })), "primary"),
-      );
-      if (!p.my_ok) actions.append(button("승인", () => peerAct("승인", () => api("POST", `/api/peers/${p.id}/approve`))));
-      if (p.my_ok && !p.paired) actions.append(button("다시 알리기", () => peerAct("승인 재통지", () => api("POST", `/api/peers/${p.id}/approve`))));
-      if (p.paired) actions.append(button("연결 확인", () => peerAct("연결 확인", () => api("POST", `/api/peers/${p.id}/ping`))));
-      actions.append(
-        button("내 에이전트 편집", () => goSettings("agents")),
-        button(
-          "삭제",
-          () =>
-            peerAct("삭제", async () => {
-              const r = await api("DELETE", `/api/peers/${p.id}`);
-              if (!r.notified) throw new Error("삭제했지만 상대에게 알리지 못했습니다. 상대 목록에는 남아 있습니다.");
-            }),
-          "danger",
-        ),
-      );
-      // 관리 줄(#1k 디자인 ④) = 상대 타일 · 이름 · 부제(이름 · PC · 접속 상태) · "관리"(상세 — 지문 · 주소 · 모델 · effort · 단추).
-      const row = manageItem(
-        `peer${p.id}`,
-        displayName(p),
-        [
-          rowTile(tileColor(p), p.icon),
-          el(
-            "span",
-            { class: "manage-name" },
-            el("strong", { text: displayName(p) }),
-            el("span", { class: "hint", "data-peer-sub": String(p.id), text: peerSub(p) }),
-            p.paired ? "" : el("span", { class: "state-wait", text: peerState(p) }),
-          ),
-        ],
-        kvTable([
-          ["지문", p.fingerprint, "mono"],
-          ["주소", p.addr, "mono"],
-        ]),
-        el("div", { class: "form-grid" }, ...field("모델", model), ...field("effort", effort)),
-        actions,
-      );
-      const mine = convs.filter((c) => c.peer_id === p.id);
-      const tree = foldEl(
-        `settingsconvs:${p.id}`,
-        [`대화 ${mine.length}`],
-        [
-          mine.length
-            ? el("ol", { class: "rows settings-convs" }, ...mine.map((c) => settingsConvRow(c, convLabel(c, state.peerNames), null)))
-            : el("p", { class: "hint", text: "대화 없음" }),
-        ],
-        "peer-fold settings-tree",
-        null,
-        true,
-      );
-      return el("div", { class: "settings-user" }, row, tree);
-    }),
+  const model = el(
+    "select",
+    {},
+    el("option", { value: "", text: `기본값(${defaults.claude_model ?? "sonnet"})` }),
+    ...MODELS.map((m) => el("option", { value: m, text: m })),
   );
+  model.value = p.model ?? "";
+  const effort = el(
+    "select",
+    {},
+    el("option", { value: "", text: `기본값(${defaults.claude_effort ?? "high"})` }),
+    ...EFFORTS.map((e) => el("option", { value: e, text: e })),
+  );
+  effort.value = p.effort ?? "";
+  const actions = el("div", { class: "actions" });
+  actions.append(
+    button("저장", () => peerAct("연결 설정 저장", () => api("PATCH", `/api/peers/${p.id}`, { model: model.value, effort: effort.value })), "primary"),
+  );
+  if (!p.my_ok) actions.append(button("승인", () => peerAct("승인", () => api("POST", `/api/peers/${p.id}/approve`))));
+  if (p.my_ok && !p.paired) actions.append(button("다시 알리기", () => peerAct("승인 재통지", () => api("POST", `/api/peers/${p.id}/approve`))));
+  if (p.paired) actions.append(button("연결 확인", () => peerAct("연결 확인", () => api("POST", `/api/peers/${p.id}/ping`))));
+  actions.append(
+    button("내 에이전트 편집", () => goSettings("agents")),
+    button(
+      "삭제",
+      () =>
+        peerAct("삭제", async () => {
+          const r = await api("DELETE", `/api/peers/${p.id}`);
+          if (!r.notified) throw new Error("삭제했지만 상대에게 알리지 못했습니다. 상대 목록에는 남아 있습니다.");
+        }),
+      "danger",
+    ),
+  );
+  // 관리 줄(#1k 디자인 ④) = 상대 타일 · 이름 · 부제(이름 · PC · 접속 상태) · "관리"(상세 — 지문 · 주소 · 모델 · effort · 단추).
+  const row = manageItem(
+    `peer${p.id}`,
+    displayName(p),
+    [
+      rowTile(tileColor(p), p.icon),
+      el(
+        "span",
+        { class: "manage-name" },
+        el("strong", { text: displayName(p) }),
+        el("span", { class: "hint", "data-peer-sub": String(p.id), text: peerSub(p) }),
+        p.paired ? "" : el("span", { class: "state-wait", text: peerState(p) }),
+      ),
+    ],
+    kvTable([
+      ["지문", p.fingerprint, "mono"],
+      ["주소", p.addr, "mono"],
+    ]),
+    el("div", { class: "form-grid" }, ...field("모델", model), ...field("effort", effort)),
+    actions,
+  );
+  const mine = convs.filter((c) => c.peer_id === p.id);
+  const tree = foldEl(
+    `settingsconvs:${p.id}`,
+    [`대화 ${mine.length}`],
+    [
+      mine.length
+        ? el("ol", { class: "rows settings-convs" }, ...mine.map((c) => settingsConvRow(c, convLabel(c, state.peerNames), null)))
+        : el("p", { class: "hint", text: "대화 없음" }),
+    ],
+    "peer-fold settings-tree",
+    null,
+    true,
+  );
+  return el("section", { class: "peer-section settings-user", "aria-label": displayName(p) }, row, tree);
 }
 
 $("peer_q").addEventListener("input", () => renderPeerList(true));
 $("peer_group_add").addEventListener("click", (ev) =>
   openGroupNew(ev.currentTarget, (g) => {
+    state.gsPick = { kind: "group", id: g.id }; // 오른쪽 칸 = 만든 그룹
     $("peer_msg").textContent = `그룹 ${g.name} 을 만들었습니다`;
   }),
 );
 
-/// 대화 줄 끌어 그룹 절에 놓기(#1w) — 복사(그 그룹에 넣기만 — 원래 자리 그대로, 이미 있으면 그대로). 사용자 목록에 놓으면 할 일 없음.
+/// 대화 줄 끌어 그룹에 놓기(#1w · #1z — 왼쪽 그룹 줄 · 오른쪽 그룹 상세) — 복사(그 그룹에 넣기만 — 원래 자리 그대로, 이미 있으면 그대로). 그 밖에 놓으면 할 일 없음.
 let convDrag = null;
 $("peer_groups").addEventListener("dragstart", (ev) => {
   const row = ev.target.closest?.("[data-conv-row]");
@@ -1368,7 +1436,7 @@ async function loadConvs() {
   renderRail();
   refreshHome();
   renderSideNav(); // 즐겨찾기 수 · 에이전트 대화 안 읽음
-  renderPeerList(); // 설정 연결 목록의 대화 줄(#1w)
+  renderPeerList(); // 설정 그룹설정의 대화 줄(#1w)
   if (route(location.hash).view === "starred") renderStarred();
   if (route(location.hash).view === "agentConvs") renderAgentConvs();
 }
@@ -1404,6 +1472,12 @@ async function toggleStar(c) {
 }
 
 /// 대화방 줄(#1j) — ☆ · 아바타(에이전트 첫 글자, 상대 색) · 제목 · 마지막 글 미리보기 · 시각 · 안 읽음 배지 · 실행 중 · 자동 왕복 칩. 상대 이름은 툴팁.
+/// 발화자 종류 아이콘(#1z — 사람 ↔ 에이전트) — 대화 줄 미리보기 · 메시지 줄 앞(`view.js` `speakerIcon`).
+function speakerEl(author) {
+  const s = speakerIcon(author);
+  return el("span", { class: `speaker ${s.kind}`, title: s.label, "aria-label": s.label, role: "img" }, ico(s.icon));
+}
+
 function convItem({ c, label }, section) {
   const meta = convMeta(c);
   const cls = [state.current?.id === c.id ? "current" : "", meta.unread ? "unread" : ""].filter(Boolean).join(" ");
@@ -1436,6 +1510,7 @@ function convItem({ c, label }, section) {
           "span",
           { class: "sub" },
           meta.running ? el("span", { class: "spin", "aria-hidden": "true" }) : "",
+          !meta.running && c.last ? speakerEl(c.last.author) : "",
           meta.running ? el("span", { class: "st-running", text: meta.state }) : el("span", { class: "room-preview", text: sub }),
           meta.relay ? el("span", { class: "chip", text: meta.relay }) : "",
           meta.tag ? el("span", { class: "chip", text: meta.tag }) : "",
@@ -1926,10 +2001,16 @@ function messageEl(conv, m) {
   meta.push(editedTag(m));
   const acts = messageActions(m, !!convClosed(conv));
   // 말풍선(#1j) — 이 PC 쪽 글은 오른쪽(이름은 "나" 가 아닐 때만), 상대 쪽은 왼쪽에 아바타 · 이름. 방향 라벨은 없다.
+  // 에이전트 글(#1z)은 어느 쪽이든 로봇 아바타 + "에이전트" 칩(말풍선 모양은 `app.css` `.msg.agent`).
+  const agent = m.author === "agent";
   const article = el(
     "article",
     { class: `msg ${m.author} side-${side}`, "data-msg": String(m.id), "data-tone": colorOf(conv.peer_id), tabindex: "0" },
-    side === "theirs" ? el("div", { class: `avatar ${colorOf(conv.peer_id)}`, "aria-hidden": "true", text: who.slice(who.lastIndexOf("/") + 1).slice(0, 1) }) : "",
+    agent
+      ? el("div", { class: "avatar agent-av", "aria-hidden": "true" }, ico("bot"))
+      : side === "theirs"
+        ? el("div", { class: `avatar ${colorOf(conv.peer_id)}`, "aria-hidden": "true", text: who.slice(who.lastIndexOf("/") + 1).slice(0, 1) })
+        : "",
     el(
       "div",
       { class: "msg-body" },
@@ -1937,6 +2018,7 @@ function messageEl(conv, m) {
         "div",
         { class: "msg-meta" },
         side === "theirs" || who !== "나" ? el("strong", { text: who }) : "",
+        agent ? el("span", { class: "tag agent-tag", text: "에이전트" }) : "",
         askTag(m) ? el("span", { class: ["done", "rejected"].includes(m.req_state) ? "tag ask done" : "tag ask", text: askTag(m) }) : "",
         el("span", { text: meta.filter(Boolean).join(" · ") }),
         // 5초마다 바뀌는 경과는 읽어 주지 않는다(대화가 aria-live).
@@ -1978,7 +2060,7 @@ function messageEl(conv, m) {
 }
 
 /// 메시지 작업 — 다시 알리기,
-/// 요청 상태 바꾸기(`req:{상태}` — 받은 요청, 피드백 한 줄 칸을 열고 확인하면 쓴 쪽에 간다).
+/// 요청 상태 바꾸기(`req:{상태}` — 받은 요청, 의견 칸을 열고 확인하면 쓴 쪽에 간다).
 function messageAct(m, key) {
   if (key === "req-again") {
     resendState(m.id, m.req_state, m.req_note);
@@ -2024,7 +2106,7 @@ const TRASH_SVG =
 const PENCIL_SVG =
   '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>';
 
-/// 그림 단추(#1k — 연결 목록 절 머리) — 그림은 고정 문자열(위 상수)만.
+/// 그림 단추(#1k — 그룹설정 절 머리) — 그림은 고정 문자열(위 상수)만.
 function svgButton(svg, label, onClick, cls = "") {
   const b = el("button", { type: "button", class: `icon-btn ${cls}`.trim(), title: label, "aria-label": label, onclick: onClick });
   b.innerHTML = svg;
@@ -2075,7 +2157,7 @@ function messageEls(conv, ms) {
   );
 }
 
-/// 요청 피드백 말풍선(#1v) — 대기가 아닌 요청 바로 아래, 받은 쪽 사람 쪽에 지금 상태(크게) · 메모 · 바뀐 시각. 상태가 바뀌면 다시 그린다(서명에 `req_*`).
+/// 요청 의견 말풍선(#1v · #1z 용어) — 대기가 아닌 요청 바로 아래, 받은 쪽 사람 쪽에 지금 상태(크게) · 의견(줄바꿈 그대로) · 바뀐 시각. 상태가 바뀌면 다시 그린다(서명에 `req_*`).
 function feedbackEl(conv, m) {
   const f = reqFeedback(m);
   if (!f) return "";
@@ -2087,7 +2169,7 @@ function feedbackEl(conv, m) {
     el(
       "div",
       { class: "msg-body" },
-      el("div", { class: "msg-meta" }, f.side === "theirs" ? el("strong", { text: who }) : "", el("span", { text: `요청 피드백 · ${formatTime(f.at)}` })),
+      el("div", { class: "msg-meta" }, f.side === "theirs" ? el("strong", { text: who }) : "", el("span", { text: `요청 의견 · ${formatTime(f.at)}` })),
       el(
         "div",
         { class: "bubble" },
@@ -2108,24 +2190,37 @@ function contextEl(m) {
 }
 
 
-/// 요청 상태 바꾸기 — `box` 끝에 피드백 한 줄 칸 + 확인 · 취소를 연다(이미 열려 있으면 바꾼다). 확인하면 `PATCH` 뒤 새로 고침(대화 · 요청 목록 · 배지).
+/// 요청 상태 바꾸기 — `box` 끝에 의견 칸(3줄 · 글자 수 — #1z) + 취소 · 확인을 연다(이미 열려 있으면 바꾼다). Enter = 확인 · Shift+Enter = 줄바꿈(입력창과 같다).
+/// 확인하면 `PATCH` 뒤 새로 고침(대화 · 요청 목록 · 배지).
 function noteForm(box, id, to, label, onCancel) {
   box.querySelector(".req-note")?.remove();
-  const note = el("input", { maxlength: "200", placeholder: "피드백(선택) · 요청자에게 보입니다", "aria-label": `${label} 피드백` });
+  const note = el("textarea", { rows: "3", maxlength: "200", placeholder: "의견(선택) · 요청자에게 보입니다", "aria-label": `${label} 의견` });
+  const count = el("span", { class: "hint note-count", "aria-live": "off", text: noteCount("") });
   const form = el(
     "form",
     { class: "req-note" },
     note,
-    el("button", { type: "submit", class: "primary", text: label }),
-    el("button", {
-      type: "button",
-      text: "취소",
-      onclick: () => {
-        form.remove();
-        onCancel?.();
-      },
-    }),
+    el(
+      "div",
+      { class: "req-note-bar" },
+      count,
+      el("button", {
+        type: "button",
+        text: "취소",
+        onclick: () => {
+          form.remove();
+          onCancel?.();
+        },
+      }),
+      el("button", { type: "submit", class: "primary", text: label }),
+    ),
   );
+  note.addEventListener("input", () => (count.textContent = noteCount(note.value)));
+  note.addEventListener("keydown", (ev) => {
+    if (!enterSends(ev)) return;
+    ev.preventDefault();
+    form.requestSubmit();
+  });
   form.addEventListener("submit", (ev) => {
     ev.preventDefault();
     act(
@@ -2501,6 +2596,7 @@ $("reply_form").addEventListener("submit", (ev) => {
   const text = $("reply_text").value;
   const reset = () => {
     $("reply_text").value = "";
+    fitComposer();
     ask.value = "query";
   };
   // 요청(#1d) — 실행이 없어 부를 에이전트(멘션)도 없다.
@@ -2566,6 +2662,13 @@ $("reply_text").addEventListener("keydown", (ev) => {
   $("reply_form").requestSubmit();
 });
 $("reply_text").addEventListener("input", updateMention);
+// 입력창 글 칸(#1z) — 한 줄(44px)에서 시작해 글만큼 늘고 200px 에서 멈춘다(그 뒤는 칸 안 스크롤).
+function fitComposer() {
+  const t = $("reply_text");
+  t.style.height = "auto";
+  t.style.height = Math.min(t.scrollHeight, 200) + "px";
+}
+$("reply_text").addEventListener("input", fitComposer);
 // 커서만 옮기면 열린 후보만 다시 거른다 — 닫힌 창은 열지 않는다(이미 쓴 멘션 안으로 옮겨 Enter 로 보낼 때 막지 않게).
 const moveMention = () => {
   if (state.mention) updateMention();
@@ -2659,6 +2762,7 @@ function rowEls(rows, empty, { tile = false } = {}) {
         el(
           "span",
           { class: "meta" },
+          r.author ? speakerEl(r.author) : "",
           el("strong", { text: r.who }),
           tile && r.agent ? el("span", { class: "chip agent-chip", text: r.agent }) : "",
           el("span", { text: formatTime(r.at) }),
@@ -2685,12 +2789,13 @@ function activityEls(rows) {
           "span",
           { class: "meta" },
           el("span", { class: "tag plain", text: r.label }),
+          r.author ? speakerEl(r.author) : "",
           el("strong", { text: r.who }),
           el("span", { text: formatTime(r.at) }),
           el("span", { class: "hint", text: r.title }),
         ),
         r.preview ? el("span", { text: r.preview }) : "",
-        r.note ? el("span", { class: "hint", text: `메모: ${r.note}` }) : "",
+        r.note ? el("span", { class: "hint keep-lines", text: `의견: ${r.note}` }) : "",
       ),
     ),
   );
@@ -2866,8 +2971,8 @@ function reqBoard() {
   return state.folded.has(REQ_BOARD);
 }
 
-/// 요청 보드(#1v) — 열 = 상태(머리 = 이름 · 서버 집계 건수), 카드 = 요청 행 그대로(글자 단추 · 피드백 칸 포함). 받은 요청 카드는 손잡이로 끌어
-/// 다른 열에 놓으면 카드가 그 열로 옮겨진 채 피드백 칸이 열리고, 확인해야 요청자에게 간다(취소면 제자리로).
+/// 요청 보드(#1v) — 열 = 상태(머리 = 이름 · 서버 집계 건수), 카드 = 요청 행 그대로(글자 단추 · 의견 칸 포함). 받은 요청 카드는 손잡이로 끌어
+/// 다른 열에 놓으면 카드가 그 열로 옮겨진 채 의견 칸이 열리고, 확인해야 요청자에게 간다(취소면 제자리로).
 /// 끌기는 포인터 이벤트 — HTML 끌어 놓기(`draggable`)는 브라우저 끌기 확장(링크 · 글 끌어 검색 등)이 가로채 반응한다(사용자 2026-10-19).
 function boardEls(cols) {
   return cols.map((c) => {
@@ -2928,7 +3033,7 @@ function boardGrab(ev, li, r) {
   move(ev);
 }
 
-/// 카드를 놓은 열로 옮기고 그 상태의 피드백 칸을 연다 — 확인하면 바뀌고(새로 고침), 취소면 원래 열 · 자리로 돌아간다.
+/// 카드를 놓은 열로 옮기고 그 상태의 의견 칸을 연다 — 확인하면 바뀌고(새로 고침), 취소면 원래 열 · 자리로 돌아간다.
 function boardDrop(li, r, col) {
   const mv = r.moves.find((m) => m.to === col.dataset.col);
   const bar = li.querySelector(".req-acts");
@@ -2967,7 +3072,7 @@ function reqBoxEl({ box, sum, rows }) {
   return el("li", { class: "fold" }, foldEl(`requests:${box}`, head, body, "peer-fold req-box", null, box === "mine"));
 }
 
-/// 요청 행 — 위 링크(이름 · 상태 · 시각 · 대화 / 본문), 바로 아래 상태 바꾸기 글자 단추(#1q — 피드백 칸도 이 줄에서), 그 아래 피드백 · 알리지 못함.
+/// 요청 행 — 위 링크(이름 · 상태 · 시각 · 대화 / 본문), 바로 아래 상태 바꾸기 글자 단추(#1q — 의견 칸도 이 줄에서), 그 아래 의견 · 알리지 못함.
 function requestEls(rows, box) {
   if (!rows.length) return [el("li", { class: "hint", text: box === "theirs" ? "받은 요청 없음" : "보낸 요청 없음" })];
   return rows.map(requestItem);
@@ -2999,8 +3104,8 @@ function requestItem(r) {
     if (r.archive) bar.append(textButton(r.archive.label, null, () => archiveReq(r.id, r.archive.key === "archive")));
     li.append(bar);
   }
-  // 피드백(받은 쪽이 상태와 함께 남긴 한 줄) — 회색 힌트가 아니라 상태 색 띠의 상자로 읽히게.
-  if (r.note) li.append(el("div", { class: `req-feedback req-${r.stateKey}` }, el("span", { class: "req-feedback-label", text: "피드백" }), el("span", { text: r.note })));
+  // 의견(받은 쪽이 상태와 함께 남긴 글, 여러 줄 — #1z) — 회색 힌트가 아니라 상태 색 띠의 상자로 읽히게.
+  if (r.note) li.append(el("div", { class: `req-feedback req-${r.stateKey}` }, el("span", { class: "req-feedback-label", text: "의견" }), el("span", { text: r.note })));
   if (r.resend) li.append(el("div", { class: "req-notes" }, el("span", { class: "hint", text: "요청자에게 알리지 못함" })));
   return li;
 }
@@ -3357,7 +3462,7 @@ function focusAfterFloat(sel, fallback = "rail_me") {
   (document.querySelector(sel) ?? $(fallback))?.focus();
 }
 
-/// "그룹 +" — 이름 한 칸 → 만들고 그 그룹을 고른다. `after` 가 있으면(#1j — 연결 목록 "+ 그룹 추가" · 상대 "+ 새 그룹에 넣기…") 고르지 않고 그것을
+/// "그룹 +" — 이름 한 칸 → 만들고 그 그룹을 고른다. `after` 가 있으면(#1j — 그룹설정 "+ 그룹 추가" · 상대 "+ 새 그룹에 넣기…") 고르지 않고 그것을
 /// 부른다. 거절 문구(빈 이름 · 40자 넘음 · 같은 이름)는 상자 안에.
 function openGroupNew(anchor, after = null) {
   // 길이는 `groupNameError`(글자 = 코드 포인트, 서버와 같음)로 — HTML `maxlength` 는 UTF-16 단위라 그림 문자 이름을 20자 안팎에서 막는다(라운드 1).
@@ -3400,7 +3505,7 @@ function openGroupNew(anchor, after = null) {
 
 $("rail_group_add").addEventListener("click", (ev) => openGroupNew(ev.currentTarget));
 
-/// 그룹 이름 바꾸기(#1j — 연결 목록 절 머리) — 이름 한 칸, 거절 문구는 상자 안에. 바꾸면 레일 · 연결 목록이 함께.
+/// 그룹 이름 바꾸기(#1j — 그룹설정 절 머리) — 이름 한 칸, 거절 문구는 상자 안에. 바꾸면 레일 · 그룹설정이 함께.
 function openGroupRename(id, anchor) {
   const g = state.groups.find((x) => x.id === id);
   if (!g) return;
@@ -3631,15 +3736,13 @@ function openGroupPicker(anchor) {
 
 // ---- 손으로 놓는 순서(#1i) — 끌어 놓기 · Alt + ↑ / ↓. 같은 묶음(상대 타일 · 그룹 타일 · 같은 절의 대화) 안에서만 ----
 
-let dragging = null; // 끄는 것 `{kind, id, section}` — dragover 에서는 dataTransfer 를 읽을 수 없다
-
 /// 요소 → 끌기 정보(`data-drag` · `data-id` · `data-section`).
 function dragInfo(node) {
   const n = node?.closest?.("[data-drag]");
   return n ? { node: n, kind: n.dataset.drag, id: Number(n.dataset.id), section: n.dataset.section ?? null } : null;
 }
 
-/// 전체 순서(id) — 상대 = 연결 목록 순서(서버 자리 순), 그룹 = 레일 순서, 대화 = 자리 순.
+/// 전체 순서(id) — 상대 = 그룹설정 순서(서버 자리 순), 그룹 = 레일 순서, 대화 = 자리 순.
 function orderOf(kind) {
   if (kind === "peer") return state.peers.map((p) => p.id);
   if (kind === "group") return state.groups.map((g) => g.id);
@@ -3759,45 +3862,70 @@ function convGrab(ev, li) {
   move(ev);
 }
 
-// 레일 타일 끌기(상대 · 그룹 순서)는 HTML 끌어 놓기 그대로(#1x 범위 밖), 대화 줄은 손잡이(`convGrab`).
-for (const box of ["rail"]) {
-  $(box).addEventListener("dragstart", (ev) => {
-    const d = dragInfo(ev.target);
-    if (!d) return;
-    dragging = { kind: d.kind, id: d.id, section: d.section };
-    ev.dataTransfer.effectAllowed = "copyMove"; // 옮기기(move) · 그룹 타일에 넣기(copy)
-    ev.dataTransfer.setData("text/plain", `${d.kind}:${d.id}`);
-    d.node.classList.add("dragging");
-  });
-  $(box).addEventListener("dragend", () => {
-    for (const n of document.querySelectorAll(".dragging")) n.classList.remove("dragging");
-    clearDrop();
-    dragging = null;
-  });
-  $(box).addEventListener("dragover", (ev) => {
-    const t = dragInfo(ev.target);
-    const how = t && t.id !== dragging?.id ? dropKind(dragging, t) : null;
-    clearDrop();
-    if (!how) return; // 놓을 수 없는 곳 — 기본 동작(놓기 없음)
-    ev.preventDefault();
-    ev.dataTransfer.dropEffect = how === "join" ? "copy" : "move";
-    if (how === "join") t.node.classList.add("drop-into");
-    else {
-      const r = t.node.getBoundingClientRect();
-      t.node.classList.add(ev.clientY > r.top + r.height / 2 ? "drop-after" : "drop-before");
+/// 레일 타일 끌기(#1z — 사용자 · 그룹 순서) — 포인터로(HTML 끌어 놓기는 브라우저 끌기 확장이 가로챈다, 대화 줄 · 요청 보드와 같다).
+/// 누른 채 `DRAG_SLOP` 넘게 움직이면 끌기 — 사본이 따라오고 같은 묶음 타일 위 = 앞 · 뒤 표시, 떼면 `moveItem`. 끈 뒤 이어지는 click(타일 고르기)은 먹는다.
+function tileGrab(ev) {
+  if (ev.button !== 0) return;
+  const tile = ev.currentTarget;
+  const d = dragInfo(tile);
+  if (!d) return;
+  tile.setPointerCapture(ev.pointerId);
+  const sx = ev.clientX;
+  const sy = ev.clientY;
+  const box = tile.getBoundingClientRect();
+  const across = getComputedStyle($("rail")).flexDirection === "row"; // 좁은 화면 = 가로 레일
+  let ghost = null;
+  let drop = null;
+  let done = false;
+  const move = (e) => {
+    if (!ghost) {
+      if (!pastSlop(e.clientX - sx, e.clientY - sy)) return;
+      railDragging = true; // 끄는 동안 레일을 다시 그리지 않는다 — 캡처한 타일이 DOM 에서 빠지지 않게(#1z R1)
+      ghost = tile.cloneNode(true);
+      ghost.classList.add("rail-ghost");
+      ghost.style.width = `${box.width}px`;
+      document.body.append(ghost);
+      tile.classList.add("dragging");
     }
-  });
-  $(box).addEventListener("drop", (ev) => {
-    const t = dragInfo(ev.target);
-    const d = dragging;
-    const how = t && t.id !== d?.id ? dropKind(d, t) : null;
+    ghost.style.transform = `translate(${e.clientX - (sx - box.left)}px, ${e.clientY - (sy - box.top)}px)`;
+    const t = dragInfo(document.elementFromPoint(e.clientX, e.clientY));
     clearDrop();
-    if (!how) return;
-    ev.preventDefault();
+    drop = null;
+    if (!t || t.id === d.id || dropKind(d, t) !== "move") return;
     const r = t.node.getBoundingClientRect();
-    moveItem(d.kind, d.id, t.id, ev.clientY > r.top + r.height / 2);
-  });
+    const after = across ? e.clientX > r.left + r.width / 2 : e.clientY > r.top + r.height / 2;
+    t.node.classList.add(after ? "drop-after" : "drop-before");
+    drop = { t, after };
+  };
+  const end = (e) => {
+    if (done) return;
+    done = true;
+    tile.removeEventListener("pointermove", move);
+    tile.removeEventListener("pointerup", end);
+    tile.removeEventListener("pointercancel", end);
+    tile.removeEventListener("lostpointercapture", end);
+    if (!ghost) return; // 끌지 않았다 — 그냥 누름(click 이 타일을 고른다)
+    railDragging = false;
+    ghost.remove();
+    tile.classList.remove("dragging");
+    clearDrop();
+    const eat = (c) => {
+      c.stopImmediatePropagation();
+      c.preventDefault();
+    };
+    tile.addEventListener("click", eat, { capture: true, once: true });
+    setTimeout(() => tile.removeEventListener("click", eat, { capture: true }), 0);
+    if (e.type === "pointerup" && drop) moveItem(d.kind, d.id, drop.t.id, drop.after);
+    else renderRail(); // 끄는 동안 미룬 다시 그리기
+  };
+  tile.addEventListener("pointermove", move);
+  tile.addEventListener("pointerup", end);
+  tile.addEventListener("pointercancel", end);
+  tile.addEventListener("lostpointercapture", end);
 }
+
+// 레일 안 HTML 끌기(그림 · 링크 기본 끌기)는 막는다 — 타일 순서 · 대화 넣기 모두 포인터 끌기(#1z R2).
+$("rail").addEventListener("dragstart", (ev) => ev.preventDefault());
 for (const box of ["rail", "conv_sections", "agent_convs_list"]) {
   // Alt + ↑ / ↓ — 초점이 타일 · 대화 행(손잡이 · 링크 · ⋯)에 있으면 같은 묶음에서 한 칸.
   $(box).addEventListener("keydown", (ev) => {
@@ -4036,7 +4164,7 @@ function refreshFailed(e) {
   $("status_msg").textContent = "새로 고침 실패: " + e.message;
 }
 
-/// 페어링 종류 알림 — 누르면 설정의 연결 목록, 그 밖(메시지 · 자동 왕복)은 내 활동.
+/// 페어링 종류 알림 — 누르면 설정의 그룹설정, 그 밖(메시지 · 자동 왕복)은 내 활동.
 const PAIRING_KINDS = new Set(["pair_request", "auto_paired", "approved"]);
 
 /// 받은 요청 효과음(#1x) — 짧은 두 음(WebAudio, 파일 없음 — 880 Hz → 1320 Hz 각 0.12 초). 브라우저는 사용자 입력 전에는 소리를 막는다(autoplay) — 첫 입력에서 만든다.
@@ -4151,6 +4279,56 @@ $("side_resize").addEventListener("keydown", (ev) => {
   if (!d) return;
   ev.preventDefault();
   saveSideWidth($("sidebar").getBoundingClientRect().width + d);
+});
+
+// ---- 레일 폭(#1z — 손잡이 끌기 · ← → 키) — 끄는 동안 폭이 따라가고 120px 기준으로 아이콘이 바뀐다. 놓으면 크게(72px) · 작게(168px) 중
+// 가까운 쪽으로 맞추고 설정 "타일 크기" 에 저장한다(설정 화면 선택도 같이).
+
+function saveTileSize(size) {
+  applyTileSize(size);
+  $("ui_tile_size").value = size;
+  api("PUT", "/api/settings", { ui_tile_size: size }).catch((e) => {
+    $("status_msg").textContent = "타일 크기 저장 실패: " + e.message;
+  });
+}
+
+// 손잡이에 포인터 캡처 — 끝은 pointerup(저장) · pointercancel · lostpointercapture(되돌림) 어느 쪽이든 한 번만 정리한다(#1z R1 — 취소 뒤 폭이 계속 바뀌지 않게).
+$("rail_resize").addEventListener("pointerdown", (ev) => {
+  if (ev.button !== 0) return;
+  ev.preventDefault(); // 끄는 동안 글자 선택 안 함
+  const h = ev.currentTarget;
+  h.setPointerCapture(ev.pointerId);
+  const start = ev.clientX;
+  const from = $("rail").getBoundingClientRect().width;
+  const before = $("app").classList.contains("tile-small") ? "small" : "normal";
+  let w = from;
+  let done = false;
+  const move = (e) => {
+    w = Math.min(RAIL_W.max, Math.max(RAIL_W.min, from + e.clientX - start));
+    $("app").style.setProperty("--rail-w", w + "px");
+    applyTileSize(railSize(w));
+  };
+  const end = (e) => {
+    if (done) return;
+    done = true;
+    for (const [type, fn] of handlers) h.removeEventListener(type, fn);
+    $("app").style.removeProperty("--rail-w");
+    if (e.type === "pointerup") saveTileSize(railSize(w));
+    else applyTileSize(before);
+  };
+  const handlers = [
+    ["pointermove", move],
+    ["pointerup", end],
+    ["pointercancel", end],
+    ["lostpointercapture", end],
+  ];
+  for (const [type, fn] of handlers) h.addEventListener(type, fn);
+});
+$("rail_resize").addEventListener("keydown", (ev) => {
+  const size = { ArrowLeft: "normal", ArrowRight: "small" }[ev.key];
+  if (!size) return;
+  ev.preventDefault();
+  saveTileSize(size);
 });
 
 // ---- 상단 바 — + 새로 만들기 · 프로필 메뉴 · 알림(종) · 통합 검색 초점, 실행 상세 열고 닫기 ----
@@ -4383,7 +4561,7 @@ $("detail_close").addEventListener("click", () => {
 
 renderTree();
 window.addEventListener("hashchange", render);
-await showSettings(); // 테마 · 기본값을 먼저 — 연결 목록의 "기본값(…)" 문구가 쓴다
+await showSettings(); // 테마 · 기본값을 먼저 — 그룹설정의 "기본값(…)" 문구가 쓴다
 await Promise.all([showStatus(), showMe(), loadPeers(), loadAgents(), loadConvs(), loadGroups()]);
 // 웹UI 를 열 때 페어링된 상대 연결 확인 한 번(#1c).
 pingPeers(state.peers.filter((p) => p.paired).map((p) => p.id));

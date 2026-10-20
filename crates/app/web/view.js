@@ -384,7 +384,7 @@ export function settingsTree() {
       children: [
         { id: "invite_make", label: "초대 생성", icon: "plus", press: "window_btn" },
         { id: "invite_accept", label: "초대 수락", icon: "enter" },
-        { id: "peers", label: "연결 목록", icon: "users" },
+        { id: "peers", label: "그룹설정", icon: "users" },
       ],
     },
     { id: "agents", label: "내 에이전트", icon: "bot" },
@@ -395,7 +395,7 @@ export function settingsTree() {
   ];
 }
 
-// ---- 검색 · 연결 목록의 그룹(#1j) ----
+// ---- 검색 · 그룹설정의 그룹(#1j) ----
 
 /// 검색 — `fields` 값에 부분 일치(대소문자 · 앞뒤 공백 무시), 빈 검색이면 전부(순서 그대로).
 export function searchItems(items, q, fields) {
@@ -403,10 +403,10 @@ export function searchItems(items, q, fields) {
   return needle ? items.filter((it) => fields.some((f) => String(it[f] ?? "").toLowerCase().includes(needle))) : items;
 }
 
-/// 설정 연결 목록의 끝 절 이름(#1w — 사용자 목록: 관리 줄 + 그 사용자와의 대화 트리).
+/// 설정 그룹설정의 끝 절 이름(#1w — 사용자 목록: 관리 줄 + 그 사용자와의 대화 트리).
 export const USER_LIST = "사용자 목록";
 
-/// 설정 연결 목록 절(#1w — 그룹 = 대화만, D37 개정) — 레일 그룹 순서대로 그 그룹 대화 줄(`{id, peer, title, sub}` — `convs` 순서, 비어도 둔다 — 놓을 자리),
+/// 설정 그룹설정 절(#1w — 그룹 = 대화만, D37 개정) — 레일 그룹 순서대로 그 그룹 대화 줄(`{id, peer, title, sub}` — `convs` 순서, 비어도 둔다 — 놓을 자리),
 /// 끝에 "사용자 목록"(줄은 부르는 쪽이 상대마다 그린다).
 export function settingsGroupSections(groups, convs, peerNames) {
   return [
@@ -417,6 +417,43 @@ export function settingsGroupSections(groups, convs, peerNames) {
     })),
     { group: null, title: USER_LIST },
   ];
+}
+
+/// 그룹설정 왼쪽 목록(#1z — 시안 A) — 검색(`q`)에 맞는 그룹 · 사용자와 각 대화 수. 사용자 = 이름 · 별칭 · PC · 지문 또는 그 사용자 대화 제목이 맞으면,
+/// 그룹 = 이름이 맞거나 그 그룹 대화(제목 · 사용자)가 맞으면. 빈 검색이면 전부(순서 그대로). 그룹 `convs` = 오른쪽 상세에 보일 대화 id —
+/// 이름이 맞으면(또는 빈 검색) 그 그룹 대화 전부, 아니면 맞는 대화만(적대적 리뷰 R1 — 이름으로 찾은 그룹의 상세가 비지 않게).
+export function groupSettingsList(groups, peers, convs, q, peerNames) {
+  const needle = (q ?? "").trim().toLowerCase();
+  const hit = (s) => String(s ?? "").toLowerCase().includes(needle);
+  const userHit = (p) => !!p && ["alias", "name", "host", "fingerprint"].some((f) => hit(p[f]));
+  const convHit = (c) => hit(convLabel(c, peerNames).title) || userHit(peers.find((p) => p.id === c.peer_id));
+  const mine = (p) => convs.filter((c) => c.peer_id === p.id);
+  return {
+    groups: groups
+      .filter((g) => !needle || hit(g.name) || inGroup(convs, g).some(convHit))
+      .map((g) => {
+        const all = inGroup(convs, g);
+        const shown = !needle || hit(g.name) ? all : all.filter(convHit);
+        return { id: g.id, name: g.name, icon: g.icon, count: all.length, convs: shown.map((c) => c.id) };
+      }),
+    users: peers.filter((p) => !needle || userHit(p) || mine(p).some(convHit)).map((p) => ({ id: p.id, count: mine(p).length })),
+  };
+}
+
+/// 그룹설정 오른쪽 칸에 보일 항목 — 고른 것(`{kind, id}`)이 목록에 있으면 그대로, 없으면 첫 그룹 → 첫 사용자 → `null`.
+export function groupSettingsPick(pick, list) {
+  const has = (kind, id) => (kind === "group" ? list.groups : list.users).some((x) => x.id === id);
+  if (pick && has(pick.kind, pick.id)) return pick;
+  if (list.groups.length) return { kind: "group", id: list.groups[0].id };
+  if (list.users.length) return { kind: "user", id: list.users[0].id };
+  return null;
+}
+
+/// 끌기 시작 거리(#1z — 레일 타일) — 누른 채 이만큼(px) 움직여야 끌기, 그 미만은 그냥 누름(타일 고르기).
+export const DRAG_SLOP = 5;
+
+export function pastSlop(dx, dy) {
+  return dx * dx + dy * dy >= DRAG_SLOP * DRAG_SLOP;
 }
 
 /// 대화 줄을 그룹 절에 놓기(#1w) — 복사: 그 그룹에 넣기만(원래 자리 — 사용자 목록 · 다른 그룹 — 그대로). 이미 있거나 모르는 그룹이면 `null`.
@@ -454,6 +491,7 @@ export function inboxRows(messages, peerNames, { kind = "" } = {}) {
         at: m.created_at,
         href: `#c/${conv.id}`,
         peer: conv.peer_id,
+        author: m.author,
       };
     });
 }
@@ -816,7 +854,7 @@ export function canDrop(row, to) {
   return row.moves.some((m) => m.to === to);
 }
 
-/// 요청 피드백 말풍선(#1v) — 대기가 아닌 요청 바로 아래 하나: 지금 상태 · 메모 · 바뀐 시각, 방향 = 받은 쪽 사람 쪽(요청 말풍선의 반대). 아니면 `null`.
+/// 요청 의견 말풍선(#1v) — 대기가 아닌 요청 바로 아래 하나: 지금 상태 · 메모 · 바뀐 시각, 방향 = 받은 쪽 사람 쪽(요청 말풍선의 반대). 아니면 `null`.
 export function reqFeedback(m) {
   if (m.author !== "human" || !m.request || (m.req_state ?? "wait") === "wait") return null;
   return {
@@ -1132,7 +1170,7 @@ export function activityRows(items, peerNames) {
                 ? "받은 답 · 실패"
                 : "받은 답";
       const note = a.kind === "my_request" ? (m.req_note ?? "") : "";
-      return { ...row, label, note, who: authorLabel(conv, m, peer), preview: preview(m.text), href: `#c/${conv.id}/m/${m.id}` };
+      return { ...row, label, note, author: m.author, who: authorLabel(conv, m, peer), preview: preview(m.text), href: `#c/${conv.id}/m/${m.id}` };
     });
 }
 
@@ -1168,6 +1206,25 @@ export function insertMarkdown(text, start, end, kind) {
   const listed = lines.map((l, i) => (i > 0 && i === lines.length - 1 && l === "" ? l : "- " + l)).join("\n");
   const out = text.slice(0, head) + listed + text.slice(end);
   return start === end ? { text: out, start: end + 2, end: end + 2 } : { text: out, start: head, end: head + listed.length };
+}
+
+/// 발화자 종류 아이콘(#1z — 사람 ↔ 에이전트 구분) — 대화 목록 미리보기 · 메시지 줄 앞. `icon` = `app.css` `.ico-{이름}`.
+export function speakerIcon(author) {
+  return author === "agent" ? { kind: "agent", icon: "bot", label: "에이전트" } : { kind: "human", icon: "user", label: "사람" };
+}
+
+/// 레일 폭(#1z — 손잡이 끌기) — 끄는 동안 `min` ~ `max`, `split` 이상이면 작은 아이콘, 놓으면 `normal`(크게) · `small`(작게) 폭으로 맞춘다.
+export const RAIL_W = { normal: 72, small: 168, split: 120, min: 64, max: 240 };
+
+export function railSize(w) {
+  return w >= RAIL_W.split ? "small" : "normal";
+}
+
+/// 요청 의견 글자 수(#1z) — 서버(`MAX_REQ_NOTE`)처럼 문자 수로 센다.
+export const NOTE_MAX = 200;
+
+export function noteCount(text) {
+  return `${[...text].length} / ${NOTE_MAX}`;
 }
 
 /// 입력창 Enter = 보내기, Shift+Enter = 줄바꿈. 한글 조합 중(`isComposing` · keyCode 229)의 Enter 는 조합을 끝내는 키라 보내지 않는다.
