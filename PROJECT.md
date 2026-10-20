@@ -36,6 +36,7 @@
     그 스킬 · 사용자 전역 지침, 2026-10-19 — 옛 `codex-review` 세션에 `/codex:adversarial-review` 대행 요청은 폐지). **라운드 상한 2** —
     사용자 전역 지침이 [etc/eval-protocol.md](docs/etc/eval-protocol.md) 의 "최대 3 라운드" 보다 우선한다.
 - **Git 브랜치**: Task 별 `task/NN-이름` 브랜치 → main 으로 merge. rebase 는 사용자 요청 시에만.
+- **squash push**: origin/main 은 릴리스 단위 squash 커밋 이력. 로컬 커밋 뒤 `git commit-tree HEAD^{tree} -p origin/main -m "<메시지>"` 로 만든 커밋을 `git push origin <sha>:refs/heads/main`, 이어서 `git reset --mixed origin/main` 으로 로컬을 맞춘다(2026-10-20 정리 — 이전 로컬 이력은 `backup/pre-reset-1020`).
 - **수동 테스트 시점**: 프로토타입(Phase 1 끝)까지는 함수 테스트 · TDD 만 — 각 Task 의 수동 gate 는 ABANDON 으로 드러내고 프로토타입 인수 Task 에서
   일괄 진행한다(masterPlan D28).
 - **개발 PC 재실행**: `python tools/rebuild_run.py` — Claude Code 세션에서 앱을 띄울 때는 `Start-Process` 대신 이것을 쓴다(세션 환경 변수가 앱 · `claude -p`
