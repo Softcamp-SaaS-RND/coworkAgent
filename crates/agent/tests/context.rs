@@ -315,7 +315,8 @@ fn old_pong_has_no_context() {
             focus: true,
             ctx: false,
             share: false,
-            leave: false
+            leave: false,
+            clear: false
         }
     );
     // 0.4.0 이 보낸 답 — 크기 없음.

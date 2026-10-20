@@ -241,6 +241,13 @@ pub enum Request {
     Leave {
         conv: String,
     },
+    /// 대화 기록 모두 지우기(#1x — 기록 삭제 › 모든 사용자 글 삭제) — 보낸 쪽이 그 대화 글을 비웠다. 받은 쪽도 그 대화 글을 비운다(대화는 남는다).
+    /// 그 대화의 참여 상대가 보낸 것만 받는다(나간 대화 = `left`, 실행 중 = `retry`). 이 종류를 모르는 상대(1.0.1)는 연결을 끊으므로 보내기 전에
+    /// `Pong.clear` 를 본다. 페어링된 상대만. `id` = 이 지우기의 uuid — 받는 쪽은 적용한 `id` 를 남겨 다시 온 같은 지우기를 두 번 적용하지 않는다.
+    Clear {
+        conv: String,
+        id: String,
+    },
 }
 
 /// 공유 대화 글(#1o) — `Post` 필드 관례. `owner` = 대화를 가진 PC(A) 쪽 글, `ok` 거짓 = 실패 글(없음 = 끝난 글), `at` = A 에 남은 시각(유닉스 초).
@@ -292,6 +299,9 @@ pub enum Response {
         /// 대화 나가기(`Request::Leave`, #1w)를 아는가 — 이전 버전은 싣지 않는다(거짓).
         #[serde(default)]
         leave: bool,
+        /// 대화 기록 모두 지우기(`Request::Clear`, #1x)를 아는가 — 이전 버전은 싣지 않는다(거짓).
+        #[serde(default)]
+        clear: bool,
     },
     Agents {
         names: Vec<String>,
@@ -403,7 +413,8 @@ impl Request {
             | Request::ShareNotice { conv, .. }
             | Request::ShareDelete { conv, .. }
             | Request::SharePost { conv, .. }
-            | Request::Leave { conv } => Some(conv),
+            | Request::Leave { conv }
+            | Request::Clear { conv, .. } => Some(conv),
             _ => None,
         }
     }
@@ -434,6 +445,7 @@ impl Request {
             | Request::ShareEnd { conv }
             | Request::ShareNotice { conv, .. }
             | Request::Leave { conv } => is_uuid(conv),
+            Request::Clear { conv, id } => is_uuid(conv) && is_uuid(id),
             Request::ShareDelete { conv, msg } => is_uuid(conv) && is_uuid(msg),
             Request::SharePost { conv, msg } => is_uuid(conv) && is_uuid(&msg.uuid),
             _ => true,

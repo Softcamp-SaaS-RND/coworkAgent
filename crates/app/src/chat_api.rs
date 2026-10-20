@@ -35,6 +35,8 @@ struct NewAgent {
 struct NewConversation {
     peer_id: i64,
     agent: String,
+    /// 첫 글 — 비면(웹UI 세션 생성, #1x) 글 없이 대화만 연다(`via` · `request` 와 함께는 400).
+    #[serde(default)]
     text: String,
     /// `agent` 만(생략 가능) — [`NewMessage::to`] 와 같다(첫 글도 대화 에이전트에게 실행 요청, `human` 은 400).
     #[serde(default)]
@@ -208,8 +210,18 @@ struct MessageQuery {
     /// 요청 상태(#1d) `wait` | `accepted` | `rejected` | `done` — `ask=request` 와 함께만.
     #[serde(default)]
     req: Option<String>,
+    /// 요청 archive(#1y) — `true` = archive 된 것만, 없거나 `false` = archive 제외. `ask=request` 와 함께만.
+    #[serde(default)]
+    archived: Option<bool>,
     #[serde(default)]
     limit: Option<i64>,
+}
+
+/// `POST /api/messages/{id}/archive` — 요청 archive · 해제(#1y, 이 PC 에만).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArchivePatch {
+    archived: bool,
 }
 
 /// 글 목록 기본 · 최대 건수.
@@ -254,6 +266,7 @@ pub fn routes(chat: Arc<Chat>) -> Router {
         .route("/api/agents/{id}", delete(remove_agent).patch(update_agent))
         .route("/api/messages", get(list_across))
         .route("/api/messages/{id}", axum::routing::patch(save_message))
+        .route("/api/messages/{id}/archive", axum::routing::post(archive_message))
         .route("/api/messages/delete", axum::routing::post(delete_messages))
         .route("/api/messages/peers", get(message_peers))
         .route("/api/messages/req_counts", get(req_counts))
@@ -269,6 +282,10 @@ pub fn routes(chat: Arc<Chat>) -> Router {
         .route(
             "/api/conversations/{id}",
             axum::routing::patch(patch_conversation).delete(delete_conversation),
+        )
+        .route(
+            "/api/conversations/{id}/clear",
+            axum::routing::post(clear_conversation),
         )
         .route(
             "/api/conversations/{id}/read",
@@ -409,7 +426,7 @@ fn message_json(m: &Message) -> Value {
         "via": m.via, "model": m.model, "effort": m.effort, "saved": m.saved_at.is_some(),
         "request": m.request, "req_state": m.req_state.map(ReqState::as_str), "req_note": m.req_note, "req_at": m.req_at,
         "agent": m.agent, "refused": m.refused, "edited_at": m.edited_at,
-        "ctx_tokens": m.ctx_tokens, "ctx_op": m.ctx_op, "owner": m.owner,
+        "ctx_tokens": m.ctx_tokens, "ctx_op": m.ctx_op, "owner": m.owner, "archived": m.archived(chat::unix_now()),
     })
 }
 
@@ -657,10 +674,13 @@ async fn list_across(State(chat): State<Arc<Chat>>, Query(q): Query<MessageQuery
     let ask = match (q.ask.as_deref(), req) {
         (None, None) => None,
         (Some("query"), None) => Some(AskFilter::Query),
-        (Some("request"), s) => Some(AskFilter::Request(s)),
+        (Some("request"), s) => Some(AskFilter::Request(s, q.archived.unwrap_or(false))),
         (Some("query") | None, Some(_)) => return bad("req 는 ask=request 와 함께"),
         (Some(_), _) => return bad("ask 는 query 또는 request"),
     };
+    if q.archived.is_some() && !matches!(ask, Some(AskFilter::Request(..))) {
+        return bad("archived 는 ask=request 와 함께");
+    }
     let limit = q.limit.unwrap_or(MESSAGES_DEFAULT);
     if !(1..=MESSAGES_MAX).contains(&limit) {
         return bad(&format!("limit 은 1 ~ {MESSAGES_MAX}"));
@@ -700,7 +720,7 @@ async fn list_across(State(chat): State<Arc<Chat>>, Query(q): Query<MessageQuery
 
 /// 주고받은 메시지 한 쪽(#1q, `side=both`) — 양쪽 글 최신부터 · `before` 커서. 거르기(kind · ask · req · q)는 받지 않는다.
 fn message_page(chat: &Chat, q: &MessageQuery) -> Response {
-    if q.kind.is_some() || q.ask.is_some() || q.req.is_some() || q.q.is_some() {
+    if q.kind.is_some() || q.ask.is_some() || q.req.is_some() || q.q.is_some() || q.archived.is_some() {
         return bad("side=both 는 peer · group · before · limit 만");
     }
     let limit = q.limit.unwrap_or(MESSAGES_DEFAULT);
@@ -716,7 +736,8 @@ fn message_page(chat: &Chat, q: &MessageQuery) -> Response {
         _ => return bad("before 와 before_at 은 함께"),
     };
     let db = chat.db();
-    match chat::messages_page(&db, scope, before, limit).and_then(|ms| Ok((ms, summary_map(&db)?))) {
+    let page = peer_since(&db).and_then(|since| chat::messages_page(&db, scope, before, Some(since), limit));
+    match page.and_then(|ms| Ok((ms, summary_map(&db)?))) {
         Ok((ms, sums)) => Json(ms.iter().map(|m| message_in(m, &sums)).collect::<Vec<_>>()).into_response(),
         Err(e) => db_fail(e),
     }
@@ -733,10 +754,17 @@ async fn req_counts(State(chat): State<Arc<Chat>>, Query(q): Query<MessageQuery>
         return bad("peer 와 group 은 함께 주지 않는다");
     };
     match chat::req_counts(&chat.db(), mine, scope) {
-        Ok(n) => Json(json!({ "wait": n.wait, "accepted": n.accepted, "rejected": n.rejected, "done": n.done, "total": n.total() }))
-            .into_response(),
+        Ok(n) => Json(json!({
+            "wait": n.wait, "accepted": n.accepted, "rejected": n.rejected, "done": n.done, "archived": n.archived, "total": n.total(),
+        }))
+        .into_response(),
         Err(e) => db_fail(e),
     }
+}
+
+/// 주고받은 메시지 보기 기간(#1y — 설정 `ui_peer_weeks`)의 시작 시각.
+fn peer_since(db: &an_core::db::Connection) -> Result<i64, an_core::db::Error> {
+    Ok(chat::unix_now() - an_core::run_opts::peer_weeks(db)? * 7 * 86400)
 }
 
 /// 주고받은 메시지 상대별 요약(#1q) — `[{peer, count, last}]`(`last` = 마지막 메시지 JSON + 대화).
@@ -747,7 +775,7 @@ async fn message_peers(State(chat): State<Arc<Chat>>, Query(q): Query<SavedQuery
     let db = chat.db();
     let rows = (|| {
         let sums = summary_map(&db)?;
-        chat::peer_message_counts(&db, scope)?
+        chat::peer_message_counts(&db, scope, Some(peer_since(&db)?))?
             .into_iter()
             .map(|(peer, count, last)| {
                 let m = chat::message_by_id(&db, last)?;
@@ -796,6 +824,40 @@ async fn start_conversation(
             Ok(None) => return fail(io::Error::new(io::ErrorKind::NotFound, "없는 그룹")),
             Err(e) => return db_fail(e),
         }
+    }
+    // 세션 생성(#1x) — 글 없이 대화만(상대에는 첫 글이 갈 때 생긴다). CLI 는 지금처럼 본문 필수.
+    if req.text.trim().is_empty() {
+        if via.is_some() || req.request {
+            return bad("본문이 비었다");
+        }
+        let relay = req
+            .relay_agent
+            .as_deref()
+            .map(str::trim)
+            .filter(|m| !m.is_empty());
+        let relay = match relay {
+            Some(mine) => match req
+                .relay_cap
+                .map_or_else(|| default_relay_cap(&chat.db()), Ok)
+            {
+                Ok(cap) => Some((mine, cap)),
+                Err(e) => return db_fail(e),
+            },
+            None => None,
+        };
+        let opts = Compose {
+            title: title.as_deref(),
+            group: req.group,
+            ..Compose::default()
+        };
+        return match chat.open_session(req.peer_id, &req.agent, relay, opts) {
+            Ok(c) => (
+                StatusCode::CREATED,
+                Json(json!({ "conversation": conversation_json(&c) })),
+            )
+                .into_response(),
+            Err(e) => fail(e),
+        };
     }
     let started = match req.relay_agent.as_deref().map(str::trim) {
         Some(mine) if !mine.is_empty() && via.is_some() => {
@@ -925,8 +987,9 @@ async fn save_message(
     }
     let mut out = json!({ "id": id });
     if let Some(state) = req.req_state.as_deref() {
-        let Some(state) = ReqState::parse(state).filter(|s| *s != ReqState::Wait) else {
-            return bad("req_state 는 accepted · rejected · done");
+        // 네 상태 어디로든(대기 되돌리기 포함 — 사용자 2026-10-19 "4 상태 자유 이동", #1y 보완).
+        let Some(state) = ReqState::parse(state) else {
+            return bad("req_state 는 wait · accepted · rejected · done");
         };
         match chat
             .set_req_state(id, state, req.note.as_deref().unwrap_or(""), req.saved)
@@ -952,6 +1015,33 @@ async fn save_message(
         }
     }
     Json(out).into_response()
+}
+
+/// 요청 archive · 해제(#1y — 이 PC 에만, 상대에 보내지 않는다) → 메시지 JSON. archive 는 완료 요청만(409).
+async fn archive_message(
+    State(chat): State<Arc<Chat>>,
+    Path(id): Path<i64>,
+    Json(req): Json<ArchivePatch>,
+) -> Response {
+    let db = chat.db();
+    let m = match chat::message_by_id(&db, id) {
+        Ok(Some(m)) => m,
+        Ok(None) => return fail(io::Error::new(io::ErrorKind::NotFound, "없는 메시지")),
+        Err(e) => return db_fail(e),
+    };
+    match chat::set_req_archived(&db, id, req.archived) {
+        Ok(true) => {}
+        Ok(false) if m.request && m.author == Author::Human && req.archived && m.req_state != Some(ReqState::Done) => {
+            return fail(io::Error::new(io::ErrorKind::Unsupported, "완료된 요청만 archive 할 수 있습니다"));
+        }
+        Ok(false) => return bad("요청 글만 archive 한다(공유 사본 제외)"),
+        Err(e) => return db_fail(e),
+    }
+    match chat::message_by_id(&db, id) {
+        Ok(Some(m)) => Json(message_json(&m)).into_response(),
+        Ok(None) => fail(io::Error::new(io::ErrorKind::NotFound, "없는 메시지")),
+        Err(e) => db_fail(e),
+    }
 }
 
 /// 끝난 내 사람 글 여러 개 지우기(#1f) — `{deleted, warning?}`.
@@ -1160,6 +1250,25 @@ async fn leave_conversation(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) 
 /// 대화 삭제(#1w) — 나가기 + 이 PC 의 대화 · 글 · 딸린 항목. 204. 없는 대화 404 · 도는 실행이 있으면 409.
 async fn delete_conversation(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) -> Response {
     match chat.delete_conversation(id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => fail(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct ClearReq {
+    /// 참 = 모든 사용자 글 삭제(상대 PC 도 비운다), 거짓 = 내 글만 삭제(이 PC).
+    #[serde(default)]
+    all: bool,
+}
+
+/// 기록 삭제(#1x) — 204. 공유 사본 · 닫힌 대화에 `all` 400, 실행 중 · 상대 앱이 모름 409, 없는 대화 404.
+async fn clear_conversation(
+    State(chat): State<Arc<Chat>>,
+    Path(id): Path<i64>,
+    Json(req): Json<ClearReq>,
+) -> Response {
+    match chat.clear_conversation(id, req.all).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => fail(e),
     }

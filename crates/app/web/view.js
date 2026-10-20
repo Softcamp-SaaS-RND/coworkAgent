@@ -238,7 +238,7 @@ export function unlinkedReplies(messages) {
 
 /// 화면 위치(해시) — `#c/{id}` 대화(`/m/{글}` = 그 글 위치) · `#s/{id}` 그 대화 상대에게 보낸 글 · `#p/{id}` 상대와 주고받은 글 ·
 /// `#activity` 내 활동 · `#requests` 요청 목록 · `#starred` 즐겨찾기(#1j) · `#saved` 북마크 항목 · `#agents` 에이전트 · `#settings`(`/{절}` = 그 절, 모르는 절은 처음) ·
-/// `#new` 새 대화. 그 밖은 안내 화면.
+/// `#new` 세션 생성(#1x). 그 밖은 안내 화면.
 export function route(hash) {
   const h = (hash ?? "").replace(/^#/, "");
   let m = /^c\/(\d+)(?:\/m\/(\d+))?$/.exec(h);
@@ -496,7 +496,9 @@ export function peerMsgsSig(heads, pages) {
 
 /// 펼친 절 새로 고침(#1q 적대적 평가 R2) — 새로 받은 첫 페이지(`fresh`, 최신순) + 이미 받은 글 중 그 페이지 마지막보다 앞(`(created_at, id)`)의 꼬리.
 /// 첫 페이지가 다 차지 않으면(그 상대 글 전부) 꼬리는 없다 — "더 보기" 로 받은 쪽을 5초 새로 고침이 지우지 않는다.
-export function mergePage(fresh, have, page = PEER_PAGE) {
+export function mergePage(fresh, have, page = PEER_PAGE, since = -Infinity) {
+  // 받아 둔 꼬리도 보기 기간(#1y — `since` 이후에 쓴 글)만 — 시간이 지나 기간 밖이 된 글이 남지 않게.
+  have = have.filter((m) => m.created_at >= since);
   if (fresh.length < page) return fresh;
   const end = fresh.at(-1);
   const older = (m) => m.created_at < end.created_at || (m.created_at === end.created_at && m.id < end.id);
@@ -547,10 +549,13 @@ export function sideNav(tile, unseen = 0, waiting = 0, starred = 0, agentUnread 
   return [top, mid, end].filter((s) => s.length).flatMap((s, i) => (i ? [{ sep: true }, ...s] : s));
 }
 
-/// 상단 바 "+ 새로 만들기" 메뉴 — 각 화면과 그 화면에서 초점을 줄 칸 · 아이콘 · 함께 누를 단추(`press`, #1r). 자동 왕복은 새 대화 화면 안에서(#1l — 메뉴에서 뺌).
+/// 세션 생성 이름(#1x — 사용자 2026-10-20, 옛 이름 새 대화) — 상단 + 메뉴 · 화면 제목 · 사이드바 · 에이전트 줄 단추가 쓴다.
+export const SESSION_NEW = "세션 생성";
+
+/// 상단 바 "+ 새로 만들기" 메뉴 — 각 화면과 그 화면에서 초점을 줄 칸 · 아이콘 · 함께 누를 단추(`press`, #1r). 자동 왕복은 세션 생성 화면 안에서(#1l — 메뉴에서 뺌).
 export function newMenu() {
   return [
-    { label: "새 대화", href: "#new", focus: "chat_peer", icon: "chat" },
+    { label: SESSION_NEW, href: "#new", focus: "chat_peer", icon: "chat" },
     { label: "초대 생성", href: "#settings/invite_make", focus: "window_btn", icon: "plus", press: "window_btn" },
     { label: "초대 수락", href: "#settings/invite_accept", focus: "invite_text", icon: "enter" },
     { label: "에이전트 등록", href: "#settings/agents", focus: "agent_name", icon: "bot" },
@@ -756,8 +761,24 @@ export function requestRows(messages, peerNames) {
         href: `#c/${conv.id}/m/${m.id}`,
         moves: reqMoves(m, !!convClosed(conv)),
         resend: reqResend(m, !!convClosed(conv)),
+        archive: reqArchiveAction(m),
       };
     });
+}
+
+/// 요청 archive 단추(#1y — 이 PC 에만) — 받은 · 보낸 요청 모두: archive 됨 = "archive 해제", 완료 = "archive", 그 밖 `null`.
+export function reqArchiveAction(m) {
+  if (m.author !== "human" || !m.request) return null;
+  if (m.archived) return { key: "unarchive", label: "archive 해제" };
+  return m.req_state === "done" ? { key: "archive", label: "archive" } : null;
+}
+
+/// 주고받은 메시지 보기 기간(#1y) — 1 ~ 12주(서버 `run_opts::PEER_WEEKS_MAX`), 기본 4.
+export const PEER_WEEKS = Array.from({ length: 12 }, (_, i) => i + 1);
+
+/// 기간 고르기 항목 — `{value, label: "{n}주"}`.
+export function peerWeeksOptions() {
+  return PEER_WEEKS.map((n) => ({ value: String(n), label: `${n}주` }));
 }
 
 /// 요청 화면 절 데이터(#1q) — 쪽(`box`)마다 머리 건수 = 서버 집계(`GET /api/messages/req_counts` — 목록 상한과 무관, 적대적 평가 R1), 행 = 서버가 상태로 거른
@@ -769,6 +790,8 @@ export function reqBoxes(boxes, lists, counts, peerNames) {
 /// 요청 개요 절 머리(#1q) — 이름 · 전체 건수 · 상태별 건수(대기 · 수용 · 완료 · 반려 순, 0건 상태는 뺀다).
 export function reqHead(title, sum) {
   const states = ["wait", "accepted", "done", "rejected"].filter((k) => sum[k]).map((k) => ({ key: k, text: `${REQ_STATES[k]} ${sum[k]}` }));
+  // archive 된 완료는 전체 수에 들지 않고 따로(#1y).
+  if (sum.archived) states.push({ key: "archived", text: `archive ${sum.archived}` });
   return { title, count: String(sum.total), states };
 }
 
@@ -927,11 +950,35 @@ export function convClosed(c) {
   return c.peer_left_at != null ? "상대가 나감" : "";
 }
 
-/// 대화 ⋯ 메뉴 끝 항목(#1w — D40) — 나가기 · 삭제(`icon` = `app.css` `.ico-{이름}`). 내가 나간 대화 · 해제된 공유 사본은 삭제만.
+/// 나가기 확인 문구(#1x — 사용자 원문).
+export const LEAVE_CONFIRM = "대화방이 목록에서 삭제됩니다.";
+
+/// 대화 ⋯ 메뉴 끝 항목(#1x — D40 개정) — "기록 삭제" ▸(`sub` — 내 글만 삭제 · 모든 사용자 글 삭제) · "나가기"(확인 뒤 이 PC 목록에서 삭제). 닫힌 대화(나감 · 상대가 나감)는
+/// 내 글만, 공유 사본(관람자 — 읽기 전용)은 나가기만. `icon` = `app.css` `.ico-{이름}`.
 export function convMenuItems(conv) {
-  const del = { key: "delete", label: "삭제", icon: "trash", danger: true };
-  const gone = conv.dir === "shared" ? conv.share?.ended != null : conv.left_at != null;
-  return gone ? [del] : [{ key: "leave", label: "나가기", icon: "exit" }, del];
+  const leave = { key: "leave", label: "나가기", icon: "exit", danger: true, confirm: LEAVE_CONFIRM };
+  if (conv.dir === "shared") return [leave];
+  const sub = [{ key: "clear_mine", label: "내 글만 삭제" }];
+  if (!convClosed(conv)) sub.push({ key: "clear_all", label: "모든 사용자 글 삭제" });
+  return [{ key: "clear", label: "기록 삭제", icon: "trash", sub }, leave];
+}
+
+/// 사이드바 머리 부제(#1x) — '나' = 이름(별칭이면 호스트 더), 상대 = 별칭이면 "{이름} · {호스트}" 아니면 호스트. 지문 · "페어링 됨" · 접속 문구는 없다(접속은 레일 점).
+export function sideSub(kind, info, alias) {
+  if (kind === "me") return [info.name, alias ? info.host : ""].filter(Boolean).join(" · ");
+  return info.alias ? `${info.name} · ${info.host}` : info.host;
+}
+
+/// 세션 생성 화면 상대 칸 처음 값(#1x) — 레일에서 고른 상대가 페어링됐으면 그 id(문자열), 아니면 빈 값("상대 선택").
+export function composeDefaults(railPeer, peers) {
+  return peers.some((p) => p.id === railPeer && p.paired) ? String(railPeer) : "";
+}
+
+/// 서버 알림 → 브라우저 알림(#1x — 받은 요청 B안). 받은 요청 = 같은 tag(앞 알림을 바꾼다) · 소리 없음(효과음은 웹UI) · 누르면 요청 보드, 그 밖은 종류별 tag · 내 활동
+/// (페어링은 호출자가 설정으로). `sound` = 효과음을 낼 알림인가.
+export function requestNotice(n) {
+  if (n.kind === "request") return { title: n.title, body: n.body, tag: "coworkagent-request", href: "#requests", sound: true };
+  return { title: n.title, body: n.body, tag: "coworkagent-" + n.kind, href: "#activity", sound: false };
 }
 
 // ---- 레일 그룹 · 손으로 놓는 순서(#1i) ----
@@ -1168,7 +1215,7 @@ export function lastRun(messages, mine) {
 }
 
 /// 통합 검색 결과(`GET /api/search`) → 묶음(메시지 · 대화 · 사람 · 에이전트 — 빈 묶음 없음). 행 = `{label, sub}` + 가는 곳: `href` · `tile`(그 타일
-/// 선택 — 페어링된 사람) · `chat`(새 대화에 상대 · 에이전트 채움 — 상대 에이전트).
+/// 선택 — 페어링된 사람) · `chat`(세션 생성에 상대 · 에이전트 채움 — 상대 에이전트).
 export function searchGroups(r, peerNames) {
   const groups = [
     {

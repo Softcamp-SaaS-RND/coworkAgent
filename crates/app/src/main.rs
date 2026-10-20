@@ -201,6 +201,12 @@ fn start(
     }
 
     let conn = db::open(&paths.db_file())?;
+    // 지운 만큼 파일을 줄인다(#1y) — 못 해도 앱은 뜬다.
+    match db::vacuum_if_sparse(&conn) {
+        Ok(true) => log::info!("DB 빈 공간 정리(VACUUM)"),
+        Ok(false) => {}
+        Err(e) => log::warn!("DB VACUUM 실패 — 그대로 진행: {e}"),
+    }
     let db_status = format!("ok (스키마 {})", db::user_version(&conn)?);
     let identity = Identity::load_or_create(&paths.identity_file())?;
 

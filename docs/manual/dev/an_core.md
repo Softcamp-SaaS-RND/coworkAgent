@@ -15,7 +15,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   `agent_folder_problem(folder) -> Option<이유>`(데이터 루트를 품음 · 그 안 · 네트워크 경로 — 등록 · 수정 · 실행 직전) · `folder_blocked(folder, roots)`.
 - `owner_only::restrict(dir)`(#1a) — Windows 보호 DACL(토큰 사용자 SID · SYSTEM, `FILE_ALL_ACCESS`, 하위 상속) · Unix 0700.
 - `sync::lock(&Mutex<T>)`(#1a) — 오염된 잠금도 안의 값을 꺼내 계속 쓴다(warn). 원시 `.lock().expect(` 는 쓰지 않는다.
-- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(20)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
+- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(23)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
   `messages` 에 `reply_to` · `turns` · `duration_ms` — 한 트랜잭션, 있는 열은 건너뜀). 더 새 스키마면 오류. 올리기 전 `{db}.v{버전}.bak`
   사본(`db::backup_path`, `VACUUM INTO`) — 이전 실행 파일로 롤백할 때 DB 를 이 사본으로 바꿔 쓴다. → 6 `messages` 에 `mine` ·
   `exec` · `lc`(이전 이력은 방향 · id 로 채움). → 7 `conversations` 에 `relay_agent` · `relay_cap` · `relay_count` · `relay_on` ·
@@ -31,6 +31,8 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   `busy_timeout` 5초(여러 연결이 같은 파일).
   `db::user_version(conn)` · `db::write_tx(conn)`(쓰기 트랜잭션 `BEGIN IMMEDIATE` — 읽고 쓰는 지연 트랜잭션이 다른 연결의 쓰기와 겹쳐 기다리지 않고
   `database is locked` 로 실패하지 않게, 앱의 쓰기 트랜잭션은 모두 이것).
+  `db::vacuum_if_sparse(conn) -> rusqlite::Result<bool>`(#1y — `page_count` · `freelist_count` · `page_size` 로 빈 바이트 ≥ `VACUUM_MIN_FREE`(4 MiB) 이고 빈 페이지 × 4 ≥
+  전체이면 `VACUUM` · 참, 앱 시작 때 한 번).
   `db::Connection` · `db::Error` 재노출. `db::db_err(e: db::Error) -> io::Error`(#1p — `io::Error::other`, agent · app · net 이 `map_err(db_err)` 로
   함께 쓴다. `Error` 는 `rusqlite::Error` 라 `From` 을 구현할 수 없다).
 - `peers` — `Peer { id, spki, name, host, addr, my_ok, their_ok, round, group, model, effort, alias, icon, seen_at, focus }` · `paired()` ·
@@ -56,7 +58,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   `messages_across(mine, scope, author, request, q, limit)`(대화를 가로지른 글 — 범위 `Scope::All` · `Peer(id)` · `Group(id)`(#1i — 넣은 대화
   `group_convs`, #1w 그룹 = 대화만) · 종류 · 사람 글
   종류(`request` — 사람 글만) · 본문 일치를 거른 뒤 최신 `limit` 건) · `saved(scope, conversation, limit)` · `Summary.pos`(손으로 놓은 자리 — 목록 자체는 최근
-  활동순 그대로). 새 대화 `pos = min - 1`(맨 위). `Message` 에 `created_at` · `reply_to` · `turns` · `duration_ms` · `mine`(이 PC 의 글) · `exec`(실행 요청) ·
+  활동순 그대로). 새 대화(세션 생성 포함) `pos = min - 1`(맨 위). `Message` 에 `created_at` · `reply_to` · `turns` · `duration_ms` · `mine`(이 PC 의 글) · `exec`(실행 요청) ·
   `lc`(양쪽 공통 순서 — 램포트 시계, `messages` 는 `(lc, uuid)` 순) · `via`(`Some("cli")` = 사용자 AI 에이전트가 CLI 로 쓴 글, 동작은 사람 글과 같다). `set_via(id, via)`(`VIA_CLI` 만 남기고 그 밖 값은 NULL — 삽입과 같은 트랜잭션에서 부른다). `add_human(…, mine, exec)` · `observe(id, lc)`(받은 글의 순서 — 1 ~ `MAX_LC` 만, 밖이면 무시) ·
   `last_exec_before(conv, &msg)` · `notes_between(conv, after, &before)`(실행 맥락) · 대기열은 실행 요청만(작성자 무관 — 에이전트발 포함).
   작업 화면(이 PC 에만): `set_starred(id, on)` · `marks(id)`(제목 · ★) · `mark_read(id, upto)`(화면이 받은 마지막 글까지 — 뒤로 가지 않음, 그 대화
@@ -73,7 +75,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   보내면 `None`) · `message_by_id` · `agent_session(conv, agent)` · `set_agent_session(conv, agent, session)`.
   #1d: `ReqState`(`Wait` · `Accepted` · `Rejected` · `Done` — `as_str` · `parse` · `can_become`(지금 상태 말고 어디로든 — 되돌리기 포함)) ·
   `Message.req_state` · `req_note` · `req_at` · `set_req_state(id, state, note)`(옮김 검사는 부르는 쪽) · `MAX_REQ_NOTE`(200) ·
-  `clean_req_note`(한 줄 · 제어 문자 없음) · `AskFilter`(`Query` · `Request(Option<ReqState>)` — `messages_across` 의 종류 · 상태 거르기).
+  `clean_req_note`(한 줄 · 제어 문자 없음) · `AskFilter`(`Query` · `Request(Option<ReqState>, bool)` — `messages_across` 의 종류 · 상태 거르기, 둘째 = archive 만(#1y — 거짓 = archive 제외)).
   #1f: `Message.edited_at` · `edit_text(id, text)`(본문 · 편집 시각만 — uuid · `lc` · 요청 상태 · 저장 그대로) · `delete_message(id)`(글 + 그 글의
   `cli_tx` · `relay_events` · 실패 보관 outbox 행, 답은 남는다 · 읽음 · 내 활동 본 표시를 남은 최대 id 로 낮춤 — 지운 id 를 다음 글이 다시 받아도
   안 읽음으로 보이게, 부르는 쪽이 트랜잭션) · `RelayMark::SyncFailed(Option<글 id>)`(`sync_failed` — 편집 실패는
@@ -92,9 +94,10 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   질의가 `every` 초 전) · `asked(id)` · `reached(id)`(닿지 않음 시작을 지움 — 멈춘 뒤면 그대로) · `unreachable(id, stall_after) -> 멈췄나`(처음이면
   시작 시각, `stall_after` 초 지나면 `stalled_at`) · `resume(id)`(멈춤 · 닿지 않음 · 질의 시각을 지우고 다시 판정 — `wait`).
 - `run_opts` — 실행 옵션 · 화면 설정의 검증과 기본값 단일 지점. `DEFAULT_MODEL`(`sonnet`) · `DEFAULT_EFFORT`(`high`) · `EFFORTS` ·
-  설정 키 `MODEL_KEY` · `EFFORT_KEY` · `THEME_KEY` · `SIDE_WIDTH_KEY` · `ME_ALIAS_KEY` · `ME_ICON_KEY` · `MODELS`(`opus` · `sonnet` · `haiku` — #1d) · `valid_model`(목록 안) ·
+  설정 키 `MODEL_KEY` · `EFFORT_KEY` · `THEME_KEY`(`ui_theme` — `THEMES` `light` · `dark`, 없거나 틀리면 `THEMES[0]` = `light` — #1x) · `TILE_SIZE_KEY`(`ui_tile_size`
+  — `TILE_SIZES` `normal` · `small`, #1x) · `SIDE_WIDTH_KEY` · `ME_ALIAS_KEY` · `ME_ICON_KEY` · `MODELS`(`opus` · `sonnet` · `haiku` — #1d) · `valid_model`(목록 안) ·
   `valid_effort` · `clean_group` · `clean_alias` · `clean_title` · `clean_icon`(PNG data URL) · `defaults` · `resolve(conn, peer)`(상대 덮어쓰기 →
-  전역 → 기본값) · `theme` · `side_width` · `me_tile`. 읽기는 `rusqlite::Result` — 없거나 틀린 값만 기본값, DB 오류는 그대로 낸다.
+  전역 → 기본값) · `theme` · `tile_size`(없거나 틀리면 `normal`) · `side_width` · `me_tile`. 읽기는 `rusqlite::Result` — 없거나 틀린 값만 기본값, DB 오류는 그대로 낸다.
 - `log_file::FileLogger::install(path, level)` — `LOG_ROTATE_BYTES`(1 MiB)를 넘게 되는 기록 전에 `.1` 로 회전(1개 보관). 패닉 훅도 단다(#1e) —
   `error` "패닉: {메시지} — {파일}:{줄}" 뒤 기본 훅(stderr).
 - `groups`(#1i — 이 PC 에만): `Group{id, name, icon, pos, convs}`(`convs` = 넣은 대화 — #1w 그룹 = 대화만, 상대 소속 API 없음) ·
@@ -111,11 +114,24 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   스키마 19(#1m, 한 트랜잭션): `messages.ctx_tokens` · `ctx_op` · `ctx_seeds(conversation_id, agent, text)`. `chat::Author::Context` · `set_ctx_tokens` ·
   `add_context` · `finish_context` · `sessions(conv)` · `clear_sessions(conv, keep_seeds)` · `set_ctx_seed` · `ctx_seed` · `drop_ctx_seed`, `pending` 은 구분선
   글 먼저 · 구분선은 내 활동 · 미리보기 · 안 읽음 · 가로지른 글 · 메모 범위에서 뺌.
-  스키마 21(#1w, 한 트랜잭션): `conversations.id` AUTOINCREMENT(스키마 17 방법 — 순번 = 대화 · 딸린 표 `conversation_id` · `outbox.conv_id` 최대) ·
+  스키마 23(#1y, 한 트랜잭션): `messages.req_archived`(NULL = 자동 대상 · 1 = 손으로 archive · 0 = 손으로 해제 — 자동 제외). `chat` — `ARCHIVE_DAYS`(7) ·
+  `archived_sql(alias)`(`{m}.req_state = 'done'` + 손 표시, 없으면 `coalesce(req_at, created_at)` 가 7일 지남 — SQL 쪽) · `Message.req_archived: Option<bool>` + `Message::archived(now)`
+  (같은 규칙 — Rust 쪽, 메시지 JSON) · `unix_now()` · `set_req_archived(id, on) -> 바꿨나`(사람 요청 글 · 공유 사본 아님, `on` 은 완료일 때만) · `set_req_state` 는 상태가 바뀌면
+  `req_archived = NULL` · `req_counts` 의 `done` · `total` 은 archive 제외 + `ReqCounts.archived` · `messages_page(conn, scope, before, since, limit)` ·
+  `peer_message_counts(conn, scope, since)`(`created_at >= since` — 주고받은 메시지 기간). `run_opts` — `PEER_WEEKS_KEY`(`ui_peer_weeks`) · `PEER_WEEKS_DEFAULT`(4) ·
+  `PEER_WEEKS_MAX`(12) · `peer_weeks(conn)`(없거나 1 ~ 12 밖이면 4).
+  스키마 22(#1x 적대적 평가 R1, 한 트랜잭션): `messages.id` AUTOINCREMENT(스키마 21 방법 — 순번 = 글 · 글 번호를 가리키는 `relay_events.message_id` · `outbox.msg_id` ·
+  `cli_tx.message_id` · `read_id` · `activity_seen_msg` · `sent_upto` 최대, `messages_by_conv` 색인 다시) · `gone_msgs(uuid PK, conversation_id)`(`clear_conversation` 이 지운 글 uuid ·
+  `mark_gone` 이 적용한 `Clear` id — `gone` 으로 확인). 스키마 21(#1w, 한 트랜잭션): `conversations.id` AUTOINCREMENT(스키마 17 방법 — 순번 = 대화 · 딸린 표 `conversation_id` · `outbox.conv_id` 최대) ·
   `left_at` · `peer_left_at` · `left_convs(uuid, peer_id, at)` 묘비 · `group_peers` → `group_convs`(그 상대의 지금 대화) 뒤 DROP. `chat` — `Conversation.left_at` ·
   `peer_left_at` · `closed()` · `LEFT`("left") · `left(uuid, peer)`(나간 대화 · 묘비, 사본 아님) · `running(conv)` · `leave(conv)`(대기 글 · 보낸 뒤 기다리는 내 글 →
   `error` + `left`, 자동 왕복 끔, `left_at` 은 처음 값) · `set_peer_left(conv)`(같이 닫고 `peer_left_at`) · `delete_conversation(conv)`(딸린 표 전부 · 끝 알림 행은 떼어 남김 ·
   사본이 아니면 묘비 · 표시 낮추기 `lower_marks` — `delete_message` 와 같이 씀). `outbox::LEAVE` · `share::forget_peer` 가 나가기 행도 지운다.
+  #1x(스키마 그대로 21): `chat::clear_conversation(conv) -> 있었나`(기록 삭제 — 글 · 그 글의 `cli_tx` · `relay_events`(대화 · 글) · 그 글의 outbox 행 · `agent_sessions` ·
+  `ctx_seeds` 를 지우고 `session = NULL` · `relay_on = 0` · `relay_count = 0`, `lower_marks`. 대화 행 · 제목 · 그룹 · 즐겨찾기 · 공유(`shares`) · 자동 왕복 설정은 남긴다 ·
+  묘비 없음 · 부르는 쪽 트랜잭션, 없는 대화면 거짓 — 북마크 · 내 활동 · 요청 항목은 글 행과 함께 사라진다) · `busy(conv)`(실행 중 · 대기 글 — 기록 삭제를 막는다:
+  대기열이 지운 글을 찾지 않게) · `empty(conv)`(글 0 — 세션 생성으로 연 대화의 첫 글) · `waiting_requests(limit) -> (Vec<(상대 id, 본문)>, 대기 수)`(받은 요청 중
+  대기 · 상태 없음, 최신부터 — 받은 요청 알림 본문). `outbox::CLEAR`(`clear` — 상대 앞 `Clear`, `conv_id` 없이 적어 다음 비우기가 지우지 않게).
   스키마 20(#1o, 한 트랜잭션): `shares(conversation_id, peer_id, sent_upto, created_at)` · `conversations.share_other` · `share_dir` · `share_ended` ·
   `watchers` · `messages.owner`, `MINE_BY_DIR` `'shared' → 0`. `share` 모듈 — `MAX_WATCHERS`(5) · `watchers` · `add` · `remove` · `set_sent` · `forget_peer`(페어링
   해제 — `peers::remove` · `remove_spki` 가 부름) · `own_by_uuid` · `copy` · `open_copy` · `upsert`(사본 글 — mine 0 · exec 0 · request 0, 이 사본 것만 덮어씀) ·

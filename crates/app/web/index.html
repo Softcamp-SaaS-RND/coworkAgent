@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko" data-theme="dark">
+<html lang="ko" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -140,9 +140,11 @@
             <option value="rejected">반려</option>
             <option value="done">완료</option>
           </select>
+          <span><input type="checkbox" id="req_archive"><label for="req_archive">archive 항목 보기</label></span>
         </div>
         <ol id="req_list" class="rows"></ol>
         <div id="req_board" class="req-board" hidden></div>
+        <ol id="req_archive_list" class="rows" hidden></ol>
       </section>
 
       <section id="starred" class="view" hidden>
@@ -185,6 +187,7 @@
           <div class="head-title">
             <strong><span class="ico ico-swap" aria-hidden="true"></span><span id="peer_title"></span></strong>
           </div>
+          <label class="head-pick">기간 <select id="ui_peer_weeks" data-num></select></label>
         </header>
         <ol id="peer_list" class="rows"></ol>
       </section>
@@ -239,7 +242,6 @@
                 <label><input type="radio" name="ask" value="query" checked><span>질의</span></label>
                 <label><input type="radio" name="ask" value="request"><span>요청</span></label>
               </div>
-              <span id="ask_hint" class="hint" hidden>실행하지 않고 상대의 요청 목록에 올립니다</span>
               <span class="hint kbd-hint"><kbd>Enter</kbd> 보내기 · <kbd>Shift+Enter</kbd> 줄바꿈</span>
               <button type="submit" class="primary">보내기</button>
             </div>
@@ -250,7 +252,7 @@
       </section>
 
       <section id="new" class="view pad" hidden>
-        <h1>새 대화</h1>
+        <h1>세션 생성</h1>
         <form id="chat_form" class="grid">
           <label for="chat_peer"><span class="ico ico-user" aria-hidden="true"></span>상대</label>
           <select id="chat_peer"></select>
@@ -262,14 +264,7 @@
           <input id="chat_relay_cap" type="number" min="1" max="50" step="1" value="10" required disabled hidden>
           <label for="chat_title"><span class="ico ico-title" aria-hidden="true"></span>제목</label>
           <input id="chat_title" maxlength="100" placeholder="비우면 첫 메시지 앞부분" autocomplete="off">
-          <label for="chat_text"><span class="ico ico-chat" aria-hidden="true"></span>메시지</label>
-          <div class="field"><textarea id="chat_text" rows="4" placeholder="메시지 입력"></textarea></div>
-          <span id="chat_ask_label" class="label"><span class="ico ico-inbox" aria-hidden="true"></span>메시지 종류</span>
-          <div class="ask-kind" role="radiogroup" aria-labelledby="chat_ask_label">
-            <label><input type="radio" name="ask" value="query" checked><span>질의</span></label>
-            <label><input type="radio" name="ask" value="request"><span>요청</span></label>
-          </div>
-          <button type="submit" class="primary">보내기</button>
+          <button type="submit" class="primary">생성</button>
         </form>
         <p id="chat_msg" role="status"></p>
       </section>
@@ -360,6 +355,11 @@
                 <option value="peers_first">사용자 → 그룹</option>
                 <option value="groups_first">그룹 → 사용자</option>
               </select>
+              <label for="ui_tile_size">타일 크기</label>
+              <select id="ui_tile_size">
+                <option value="normal">보통</option>
+                <option value="small">작게 — 작은 아이콘 + 이름 한 줄</option>
+              </select>
             </div>
           </section>
 
@@ -380,9 +380,11 @@
               <input type="checkbox" id="notify_pair">
               <label for="notify_request">받은 요청</label>
               <input type="checkbox" id="notify_request">
+              <label for="notify_sound">효과음</label>
+              <input type="checkbox" id="notify_sound" title="받은 요청 알림에 짧은 소리 — 집중 중에는 내지 않습니다">
               <label for="notify_reply">받은 답</label>
               <input type="checkbox" id="notify_reply">
-              <span class="label-row"><label for="notify_relay">자동 왕복</label><span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_relay">?</button><span id="tip_relay" class="tip up" role="tooltip"><span class="tip-line">자동 왕복 — 새 대화에서 '내 응답 에이전트' 를 고르면 상대 에이전트의 답에 내 에이전트가 이어 답하기를 최대 응답 횟수까지 자동으로 주고받습니다.</span><span class="tip-line">• 시작과 끝 — 왕복이 시작할 때와 끝날 때(상한 도달 · 실패 · 상대가 멈춤 등)만 알림</span><span class="tip-line">• 메시지마다 — 시작 · 끝에 더해 상대 에이전트의 답이 올 때마다 알림</span><span class="tip-line">• 알리지 않음 — 자동 왕복 알림 없음</span></span></span></span>
+              <span class="label-row"><label for="notify_relay">자동 왕복</label><span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_relay">?</button><span id="tip_relay" class="tip up" role="tooltip"><span class="tip-line">자동 왕복 — 세션 생성에서 '내 응답 에이전트' 를 고르면 상대 에이전트의 답에 내 에이전트가 이어 답하기를 최대 응답 횟수까지 자동으로 주고받습니다.</span><span class="tip-line">• 시작과 끝 — 왕복이 시작할 때와 끝날 때(상한 도달 · 실패 · 상대가 멈춤 등)만 알림</span><span class="tip-line">• 메시지마다 — 시작 · 끝에 더해 상대 에이전트의 답이 올 때마다 알림</span><span class="tip-line">• 알리지 않음 — 자동 왕복 알림 없음</span></span></span></span>
               <select id="notify_relay">
                 <option value="start_end">시작과 끝</option>
                 <option value="every">메시지마다</option>

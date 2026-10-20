@@ -94,6 +94,8 @@ pub enum MessageKind {
     AskState,
     /// 내 대화의 관람자 수가 바뀌었다(#1o — 상대가 그 대화를 공유했다).
     Share,
+    /// 상대가 그 대화 기록을 모두 지웠다(#1x — 이 PC 쪽도 비웠다).
+    Clear,
 }
 
 type EventSink = Box<dyn Fn(PeerEvent) + Send + Sync>;
@@ -510,6 +512,7 @@ impl Node {
                 | Request::ShareEnd { .. }
                 | Request::ShareNotice { .. }
                 | Request::Leave { .. }
+                | Request::Clear { .. }
         ) {
             let peer = peers::by_spki(&self.db(), spki).map_err(db_err)?;
             let resp = match (peer, self.requests.get()) {
@@ -632,6 +635,7 @@ impl Node {
                         ctx: true,
                         share: true,
                         leave: true,
+                        clear: true,
                     }
                 } else {
                     Response::error("not_paired")
@@ -654,7 +658,8 @@ impl Node {
             | Request::ShareDelete { .. }
             | Request::ShareEnd { .. }
             | Request::ShareNotice { .. }
-            | Request::Leave { .. } => Response::error("bad_request"),
+            | Request::Leave { .. }
+            | Request::Clear { .. } => Response::error("bad_request"),
         };
         Ok((resp, event))
     }
@@ -877,16 +882,21 @@ impl Node {
 
     /// 상대가 `Request::Share*` 를 아는가(#1o) — [`knows_context`](Self::knows_context) 와 같다.
     pub async fn knows_share(&self, id: i64) -> io::Result<bool> {
-        self.pong(id).await.map(|(_, _, share, _)| share)
+        self.pong(id).await.map(|(_, _, share, ..)| share)
     }
 
     /// 상대가 `Request::Leave` 를 아는가(#1w) — [`knows_context`](Self::knows_context) 와 같다.
     pub async fn knows_leave(&self, id: i64) -> io::Result<bool> {
-        self.pong(id).await.map(|(.., leave)| leave)
+        self.pong(id).await.map(|(.., leave, _)| leave)
     }
 
-    /// (집중, 컨텍스트를 앎, 공유 대화를 앎, 나가기를 앎).
-    async fn pong(&self, id: i64) -> io::Result<(bool, bool, bool, bool)> {
+    /// 상대가 `Request::Clear` 를 아는가(#1x) — [`knows_context`](Self::knows_context) 와 같다.
+    pub async fn knows_clear(&self, id: i64) -> io::Result<bool> {
+        self.pong(id).await.map(|(.., clear)| clear)
+    }
+
+    /// (집중, 컨텍스트를 앎, 공유 대화를 앎, 나가기를 앎, 기록 지우기를 앎).
+    async fn pong(&self, id: i64) -> io::Result<(bool, bool, bool, bool, bool)> {
         let peer = self.peer(id)?;
         match self
             .send(
@@ -902,11 +912,12 @@ impl Node {
                     ctx,
                     share,
                     leave,
+                    clear,
                 },
                 _,
             ) => {
                 peers::set_presence(&self.db(), id, focus).map_err(db_err)?;
-                Ok((focus, ctx, share, leave))
+                Ok((focus, ctx, share, leave, clear))
             }
             (other, _) => Err(refused(other)),
         }

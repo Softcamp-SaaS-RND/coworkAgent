@@ -439,8 +439,11 @@ async fn outbox_lists_my_messages_to_peer() {
 #[tokio::test(flavor = "multi_thread")]
 async fn theme_setting_persists() {
     let a = side("th").await;
-    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
-    assert_eq!(s["ui_theme"], "dark", "기본은 다크");
+    let (code, s) = a
+        .call("PUT", "/api/settings", json!({ "ui_theme": "dark" }))
+        .await;
+    assert_eq!(code, 200, "{s}");
+    assert_eq!(s["ui_theme"], "dark");
     let (code, s) = a
         .call("PUT", "/api/settings", json!({ "ui_theme": "light" }))
         .await;
@@ -1911,5 +1914,327 @@ async fn peer_pages_summary_and_cursor() {
     ] {
         let (code, r) = a.call("GET", bad, Value::Null).await;
         assert_eq!(code, 400, "{bad} → {r}");
+    }
+}
+
+/// 기본 테마(#1x) — 저장된 값이 없으면 라이트.
+#[tokio::test(flavor = "multi_thread")]
+async fn theme_default_light() {
+    let a = side("th-def").await;
+    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
+    assert_eq!(s["ui_theme"], "light", "기본은 라이트");
+}
+
+/// 레일 타일 크기(#1x) — 기본 보통, 바꾸면 남고, 틀린 값은 400.
+#[tokio::test(flavor = "multi_thread")]
+async fn tile_size_setting_persists() {
+    let a = side("ts").await;
+    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
+    assert_eq!(s["ui_tile_size"], "normal");
+    let (code, s) = a
+        .call("PUT", "/api/settings", json!({ "ui_tile_size": "small" }))
+        .await;
+    assert_eq!((code, &s["ui_tile_size"]), (200, &json!("small")), "{s}");
+    let (code, _) = a
+        .call("PUT", "/api/settings", json!({ "ui_tile_size": "huge" }))
+        .await;
+    assert_eq!(code, 400);
+    let (port, h) = web(&a.paths, a.node.clone(), a.chat.clone()).await;
+    let (_, raw) = common::send_body(port, "GET", "/api/settings", &h, "").await;
+    let s: Value = serde_json::from_str(raw.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(s["ui_tile_size"], "small", "다시 열어도 남는다");
+}
+
+/// 받은 요청 효과음(#1x) — 기본 켜짐, 끄면 남는다.
+#[tokio::test(flavor = "multi_thread")]
+async fn notify_sound_setting() {
+    let a = side("ns").await;
+    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
+    assert_eq!(s["notify_sound"], true);
+    let (code, s) = a
+        .call("PUT", "/api/settings", json!({ "notify_sound": false }))
+        .await;
+    assert_eq!((code, &s["notify_sound"]), (200, &json!(false)), "{s}");
+    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
+    assert_eq!(s["notify_sound"], false);
+}
+
+/// 받은 요청 알림 글(#1x — B안) — 제목 "받은 요청 {n}", 본문 최근 줄(최대 3) + "외 n건", 미리보기 꺼짐이면 이름만.
+#[test]
+fn request_notice_text() {
+    let rows: Vec<(String, String)> = [("팀원 A", "로그인 문구\n둘째 줄"), ("팀원 B", "빌드 경고"), ("팀원 C", "API 표")]
+        .iter()
+        .map(|(n, t)| (n.to_string(), t.to_string()))
+        .collect();
+    let n = notify::request_notice(&rows[..2], 2, true);
+    assert_eq!((n.kind, n.title.as_str()), ("request", "받은 요청 2"));
+    assert_eq!(n.body, "팀원 A · 로그인 문구\n팀원 B · 빌드 경고");
+    let n = notify::request_notice(&rows, 5, true);
+    assert_eq!(n.title, "받은 요청 5");
+    assert_eq!(n.body.lines().count(), 4);
+    assert_eq!(n.body.lines().last(), Some("외 2건"));
+    let n = notify::request_notice(&rows[..1], 1, false);
+    assert_eq!(n.body, "팀원 A", "미리보기 꺼짐 — 이름만");
+}
+
+/// 세션 생성(#1x) — 빈 본문이면 글 없이 대화만(201), 요청 · CLI 와 함께 빈 본문은 400, 자동 왕복 설정은 대화에 붙는다.
+#[tokio::test(flavor = "multi_thread")]
+async fn create_session_without_text() {
+    let (a, b) = (side("cs-a").await, side("cs-b").await);
+    let (pb, _) = pair(&a, &b).await;
+    agents::add(&b.db(), "review", ".", "").unwrap();
+    agents::add(&a.db(), "mine", ".", "").unwrap();
+    let (code, r) = a
+        .call(
+            "POST",
+            "/api/conversations",
+            json!({ "peer_id": pb, "agent": "review", "title": "주제" }),
+        )
+        .await;
+    assert_eq!(code, 201, "{r}");
+    let conv = r["conversation"]["id"].as_i64().unwrap();
+    assert!(r.get("message").is_none_or(Value::is_null), "{r}");
+    assert!(chat::messages(&a.db(), conv).unwrap().is_empty());
+    for bad in [
+        json!({ "peer_id": pb, "agent": "review", "text": " ", "request": true }),
+        json!({ "peer_id": pb, "agent": "review", "via": "cli" }),
+    ] {
+        let (code, r) = a.call("POST", "/api/conversations", bad).await;
+        assert_eq!(code, 400, "{r}");
+    }
+    let (code, r) = a
+        .call(
+            "POST",
+            "/api/conversations",
+            json!({ "peer_id": pb, "agent": "review", "relay_agent": "mine", "relay_cap": 3 }),
+        )
+        .await;
+    assert_eq!(code, 201, "{r}");
+    let id = r["conversation"]["id"].as_i64().unwrap();
+    let c = chat::by_id(&a.db(), id).unwrap().unwrap();
+    assert_eq!(c.relay.map(|x| (x.agent, x.cap)), Some(("mine".into(), 3)));
+}
+
+/// 기록 삭제 경로(#1x) — 204 · 없는 대화 404 · 이전 대화는 남는다.
+#[tokio::test(flavor = "multi_thread")]
+async fn clear_route() {
+    let (a, b) = (side("cr-a").await, side("cr-b").await);
+    let (pb, _) = pair(&a, &b).await;
+    agents::add(&b.db(), "review", ".", "").unwrap();
+    let conv = ask(&a, pb, "질문").await;
+    let path = format!("/api/conversations/{conv}/clear");
+    let (code, r) = a.call("POST", &path, json!({ "all": false })).await;
+    assert_eq!(code, 204, "{r}");
+    assert!(chat::messages(&a.db(), conv).unwrap().is_empty());
+    assert!(chat::by_id(&a.db(), conv).unwrap().is_some(), "대화는 남는다");
+    let (code, _) = a
+        .call("POST", "/api/conversations/9999/clear", json!({ "all": true }))
+        .await;
+    assert_eq!(code, 404);
+    let (code, r) = a.call("POST", &path, json!({ "all": true })).await;
+    assert_eq!(code, 204, "{r}");
+}
+
+/// 주고받은 메시지 보기 기간(#1y) — 기본 4주, 1 ~ 12 저장, 밖은 400, 다시 열어도 남는다.
+#[tokio::test(flavor = "multi_thread")]
+async fn peer_weeks_setting_persists() {
+    let a = side("pw").await;
+    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
+    assert_eq!(s["ui_peer_weeks"], 4, "기본 4주");
+    for w in [1, 12] {
+        let (code, s) = a.call("PUT", "/api/settings", json!({ "ui_peer_weeks": w })).await;
+        assert_eq!((code, &s["ui_peer_weeks"]), (200, &json!(w)), "{s}");
+    }
+    for w in [0, 13] {
+        let (code, r) = a.call("PUT", "/api/settings", json!({ "ui_peer_weeks": w })).await;
+        assert_eq!(code, 400, "{w} → {r}");
+    }
+    let (port, h) = web(&a.paths, a.node.clone(), a.chat.clone()).await;
+    let (_, raw) = common::send_body(port, "GET", "/api/settings", &h, "").await;
+    let s: Value = serde_json::from_str(raw.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(s["ui_peer_weeks"], 12, "다시 열어도 남는다");
+}
+
+/// 주고받은 메시지(#1y) — 고른 기간 밖 글은 목록 · 상대별 요약(건수 · 마지막)에 없다, 기간을 늘리면 보인다.
+#[tokio::test(flavor = "multi_thread")]
+async fn peer_messages_within_weeks() {
+    let (a, b) = (side("pww-a").await, side("pww-b").await);
+    let (pb, _) = pair(&a, &b).await;
+    agents::add(&b.db(), "review", ".", "").unwrap();
+    let old = ask(&a, pb, "옛 질문").await;
+    ask(&a, pb, "새 질문").await;
+    a.db()
+        .execute("UPDATE messages SET created_at = unixepoch() - 35 * 86400 WHERE conversation_id = ?1", [old])
+        .unwrap();
+    let view = || async {
+        let (_, sum) = a.call("GET", "/api/messages/peers", Value::Null).await;
+        let (_, page) = a.call("GET", &format!("/api/messages?side=both&peer={pb}"), Value::Null).await;
+        let page: Vec<String> = texts(&page).into_iter().map(String::from).collect();
+        (sum[0]["count"].clone(), sum[0]["last"]["text"].clone(), page)
+    };
+    let (n, last, page) = view().await;
+    assert_eq!((n, last), (json!(2), json!("답: 새 질문")));
+    assert!(!page.iter().any(|t| t.contains("옛 질문")), "{page:?}");
+    a.call("PUT", "/api/settings", json!({ "ui_peer_weeks": 8 })).await;
+    let (n, _, page) = view().await;
+    assert_eq!(n, json!(4));
+    assert!(page.iter().any(|t| t == "옛 질문"), "{page:?}");
+}
+
+/// 받은 쪽 요청 하나를 완료로 — (b 쪽 글 id, a 쪽 글 id).
+async fn done_request(a: &Side, b: &Side, pb: i64, text: &str) -> (i64, i64) {
+    if agents::by_name(&b.db(), "review").unwrap().is_none() {
+        agents::add(&b.db(), "review", ".", "").unwrap();
+    }
+    let conv = send_request(a, b, pb, text).await;
+    let id_of = |s: &Side| -> i64 {
+        s.db()
+            .query_row("SELECT id FROM messages WHERE text = ?1", [text], |r| r.get(0))
+            .unwrap()
+    };
+    let b_id = id_of(b);
+    let (code, r) = b.call("PATCH", &format!("/api/messages/{b_id}"), json!({ "req_state": "done" })).await;
+    assert_eq!(code, 200, "{r}");
+    let a_id = id_of(a);
+    let until = Instant::now() + Duration::from_secs(5);
+    while chat::message_by_id(&a.db(), a_id).unwrap().unwrap().req_state != Some(chat::ReqState::Done) {
+        assert!(Instant::now() < until, "완료가 요청자({conv})에 닿기를 기다렸다");
+        tokio::time::sleep(Duration::from_millis(30)).await;
+    }
+    (b_id, a_id)
+}
+
+fn age_req(s: &Side, id: i64, days: i64) {
+    s.db()
+        .execute("UPDATE messages SET req_at = unixepoch() - ?2 * 86400 WHERE id = ?1", [id, days])
+        .unwrap();
+}
+
+async fn requests(s: &Side, side: &str, archived: bool) -> Vec<String> {
+    let q = if archived { "&archived=true" } else { "" };
+    let (code, r) = s.call("GET", &format!("/api/messages?side={side}&ask=request{q}"), Value::Null).await;
+    assert_eq!(code, 200, "{r}");
+    texts(&r).into_iter().map(String::from).collect()
+}
+
+async fn counts(s: &Side, side: &str) -> Value {
+    s.call("GET", &format!("/api/messages/req_counts?side={side}"), Value::Null).await.1
+}
+
+/// 요청 archive(#1y) — 완료 7일 뒤 자동: 기본 목록 · 완료 수에서 빠지고 `archived=true` 에만, 6일 전은 그대로.
+#[tokio::test(flavor = "multi_thread")]
+async fn request_archive_auto() {
+    let (a, b) = (side("ra-a").await, side("ra-b").await);
+    let (pb, _) = pair(&a, &b).await;
+    let (old, _) = done_request(&a, &b, pb, "옛 요청").await;
+    let (new, _) = done_request(&a, &b, pb, "새 요청").await;
+    age_req(&b, old, 8);
+    age_req(&b, new, 6);
+    assert_eq!(requests(&b, "theirs", false).await, ["새 요청"]);
+    assert_eq!(requests(&b, "theirs", true).await, ["옛 요청"]);
+    let n = counts(&b, "theirs").await;
+    assert_eq!((&n["done"], &n["archived"], &n["total"]), (&json!(1), &json!(1), &json!(1)), "{n}");
+    let (_, ms) = b.call("GET", "/api/messages?side=theirs&ask=request&archived=true", Value::Null).await;
+    assert_eq!(ms[0]["archived"], true, "{ms}");
+}
+
+/// 요청 archive(#1y) — 7일 전이라도 손으로, 완료 아니면 409, 해제하면 다시 보이고 7일이 지나도 자동으로 가지 않는다.
+#[tokio::test(flavor = "multi_thread")]
+async fn request_archive_manual() {
+    let (a, b) = (side("rm-a").await, side("rm-b").await);
+    let (pb, _) = pair(&a, &b).await;
+    let (done, _) = done_request(&a, &b, pb, "끝난 요청").await;
+    send_request(&a, &b, pb, "대기 요청").await;
+    let waiting: i64 = b
+        .db()
+        .query_row("SELECT id FROM messages WHERE text = ?1", ["대기 요청"], |r| r.get(0))
+        .unwrap();
+    let archive = |id: i64, on: bool| {
+        let b = &b;
+        async move { b.call("POST", &format!("/api/messages/{id}/archive"), json!({ "archived": on })).await }
+    };
+    let (code, r) = archive(done, true).await;
+    assert_eq!((code, &r["archived"]), (200, &json!(true)), "{r}");
+    assert_eq!(requests(&b, "theirs", true).await, ["끝난 요청"]);
+    let (code, r) = archive(waiting, true).await;
+    assert_eq!(code, 409, "{r}");
+    let (code, r) = archive(done, false).await;
+    assert_eq!((code, &r["archived"]), (200, &json!(false)), "{r}");
+    age_req(&b, done, 30);
+    assert!(
+        requests(&b, "theirs", false).await.contains(&"끝난 요청".to_string()),
+        "해제한 요청은 자동 archive 에서 빠진다"
+    );
+    let (code, _) = archive(999_999, true).await;
+    assert_eq!(code, 404);
+}
+
+/// 요청 archive(#1y) — archive 된 요청이 완료가 아니게 되면 목록에, 다시 완료되면 7일 셈을 새로.
+#[tokio::test(flavor = "multi_thread")]
+async fn request_archive_state_change() {
+    let (a, b) = (side("rs-a").await, side("rs-b").await);
+    let (pb, _) = pair(&a, &b).await;
+    let (id, _) = done_request(&a, &b, pb, "되돌린 요청").await;
+    b.call("POST", &format!("/api/messages/{id}/archive"), json!({ "archived": true })).await;
+    let (code, r) = b.call("PATCH", &format!("/api/messages/{id}"), json!({ "req_state": "accepted" })).await;
+    assert_eq!(code, 200, "{r}");
+    assert_eq!(requests(&b, "theirs", false).await, ["되돌린 요청"]);
+    b.call("PATCH", &format!("/api/messages/{id}"), json!({ "req_state": "done" })).await;
+    assert_eq!(requests(&b, "theirs", false).await, ["되돌린 요청"], "다시 완료 — 7일 셈을 새로");
+    assert!(requests(&b, "theirs", true).await.is_empty());
+}
+
+/// 요청 archive(#1y) — 이 PC 에만: 받은 쪽이 archive 해도 요청자의 목록 · 상태 · 수는 그대로, 보낼 것(outbox)도 없다. 보낸 쪽도 제 목록에서 archive.
+#[tokio::test(flavor = "multi_thread")]
+async fn request_archive_local_only() {
+    let (a, b) = (side("rl-a").await, side("rl-b").await);
+    let (pb, _) = pair(&a, &b).await;
+    let (b_id, a_id) = done_request(&a, &b, pb, "공유 안 함").await;
+    let outbox = |s: &Side| -> i64 { s.db().query_row("SELECT count(*) FROM outbox", [], |r| r.get(0)).unwrap() };
+    let before = outbox(&b);
+    b.call("POST", &format!("/api/messages/{b_id}/archive"), json!({ "archived": true })).await;
+    assert_eq!(outbox(&b), before, "보낼 것 없음");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(requests(&a, "mine", false).await, ["공유 안 함"]);
+    let n = counts(&a, "mine").await;
+    assert_eq!((&n["done"], &n["archived"]), (&json!(1), &json!(0)), "{n}");
+    let (code, r) = a.call("POST", &format!("/api/messages/{a_id}/archive"), json!({ "archived": true })).await;
+    assert_eq!((code, &r["archived"]), (200, &json!(true)), "{r}");
+    assert_eq!(requests(&a, "mine", true).await, ["공유 안 함"]);
+    assert_eq!(requests(&b, "theirs", true).await, ["공유 안 함"]);
+}
+
+/// 요청 archive(#1y) — `archived` 는 `ask=request` 와 함께만(`side=both` · 질의 · 없음 400).
+#[tokio::test(flavor = "multi_thread")]
+async fn request_archive_params() {
+    let a = side("rp").await;
+    for bad in [
+        "/api/messages?side=theirs&archived=true",
+        "/api/messages?side=theirs&ask=query&archived=true",
+        "/api/messages?side=both&archived=true",
+    ] {
+        let (code, r) = a.call("GET", bad, Value::Null).await;
+        assert_eq!(code, 400, "{bad} → {r}");
+    }
+    let (code, _) = a
+        .call("POST", "/api/messages/1/archive", json!({ "archived": true, "x": 1 }))
+        .await;
+    assert!(code == 400 || code == 422, "{code}");
+}
+
+/// 받은 요청을 대기로 되돌리기(#1y 보완 — 2026-10-19 "4 상태 자유 이동") — 서버도 받고 요청자에 간다.
+#[tokio::test(flavor = "multi_thread")]
+async fn req_state_back_to_wait() {
+    let (a, b) = (side("rw-a").await, side("rw-b").await);
+    let (pb, _) = pair(&a, &b).await;
+    let (b_id, a_id) = done_request(&a, &b, pb, "다시 대기").await;
+    let (code, r) = b
+        .call("PATCH", &format!("/api/messages/{b_id}"), json!({ "req_state": "wait" }))
+        .await;
+    assert_eq!((code, &r["req_state"]), (200, &json!("wait")), "{r}");
+    let until = Instant::now() + Duration::from_secs(5);
+    while chat::message_by_id(&a.db(), a_id).unwrap().unwrap().req_state != Some(chat::ReqState::Wait) {
+        assert!(Instant::now() < until, "대기가 요청자에 닿기를 기다렸다");
+        tokio::time::sleep(Duration::from_millis(30)).await;
     }
 }

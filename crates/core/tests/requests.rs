@@ -157,13 +157,13 @@ fn list_filters_by_kind_and_state() {
         .map(|m| m.text)
         .collect::<Vec<_>>()
     };
-    assert_eq!(texts(AskFilter::Request(None)), ["요청 둘", "요청 하나"]);
-    assert_eq!(texts(AskFilter::Request(Some(ReqState::Wait))), ["요청 둘"]);
+    assert_eq!(texts(AskFilter::Request(None, false)), ["요청 둘", "요청 하나"]);
+    assert_eq!(texts(AskFilter::Request(Some(ReqState::Wait), false)), ["요청 둘"]);
     assert_eq!(
-        texts(AskFilter::Request(Some(ReqState::Accepted))),
+        texts(AskFilter::Request(Some(ReqState::Accepted), false)),
         ["요청 하나"]
     );
-    assert!(texts(AskFilter::Request(Some(ReqState::Done))).is_empty());
+    assert!(texts(AskFilter::Request(Some(ReqState::Done), false)).is_empty());
     assert_eq!(texts(AskFilter::Query), ["질의"]);
     let m = chat::message_by_id(&conn, r1).unwrap().unwrap();
     assert_eq!(
@@ -180,6 +180,7 @@ fn list_filters_by_kind_and_state() {
 }
 
 /// 요청 상태별 건수는 범위 전체(#1q 적대적 평가 R1) — 한 쪽 목록(최대 500)을 넘는 요청도 세고, 상태로 거르면 오래된 대기 요청도 나온다.
+/// 완료는 방금 완료(`req_at` 지금 — 7일 지난 완료는 archive 로 따로 센다, #1y).
 #[test]
 fn req_counts_beyond_page() {
     use an_core::chat::{self, AskFilter, ReqState};
@@ -190,8 +191,8 @@ fn req_counts_beyond_page() {
          INSERT INTO messages (uuid, conversation_id, author, text, state, created_at, mine, request, req_state)
            VALUES ('old-wait', 1, 'human', '오래된 대기', 'done', 1, 0, 1, 'wait');
          WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 501)
-         INSERT INTO messages (uuid, conversation_id, author, text, state, created_at, mine, request, req_state)
-           SELECT 'done-' || i, 1, 'human', '완료 ' || i, 'done', 100 + i, 0, 1, 'done' FROM n;
+         INSERT INTO messages (uuid, conversation_id, author, text, state, created_at, mine, request, req_state, req_at)
+           SELECT 'done-' || i, 1, 'human', '완료 ' || i, 'done', 100 + i, 0, 1, 'done', unixepoch() FROM n;
          INSERT INTO messages (uuid, conversation_id, author, text, state, created_at, mine, request, req_state)
            VALUES ('mine-acc', 2, 'human', '내 요청', 'done', 5, 1, 1, 'accepted'),
                   ('query', 1, 'human', '질의', 'done', 6, 0, 0, NULL);",
@@ -200,18 +201,18 @@ fn req_counts_beyond_page() {
     let c = |mine| chat::req_counts(&conn, mine, chat::Scope::All).unwrap();
     assert_eq!(
         c(false),
-        chat::ReqCounts { wait: 1, accepted: 0, rejected: 0, done: 501 },
+        chat::ReqCounts { wait: 1, accepted: 0, rejected: 0, done: 501, archived: 0 },
         "질의는 세지 않는다"
     );
     assert_eq!(c(false).total(), 502);
-    assert_eq!(c(true), chat::ReqCounts { wait: 0, accepted: 1, rejected: 0, done: 0 });
+    assert_eq!(c(true), chat::ReqCounts { wait: 0, accepted: 1, rejected: 0, done: 0, archived: 0 });
     assert_eq!(chat::req_counts(&conn, false, chat::Scope::Peer(9)).unwrap().total(), 0);
     let waits = chat::messages_across(
         &conn,
         Some(false),
         chat::Scope::All,
         None,
-        Some(AskFilter::Request(Some(ReqState::Wait))),
+        Some(AskFilter::Request(Some(ReqState::Wait), false)),
         None,
         500,
     )

@@ -77,7 +77,8 @@ pub fn clean_req_note(s: &str) -> Result<Option<String>, String> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AskFilter {
     Query,
-    Request(Option<ReqState>),
+    /// 요청 — 상태 거르기, 둘째 = 참이면 archive 된 것만 · 거짓이면 archive 제외(#1y).
+    Request(Option<ReqState>, bool),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,6 +162,36 @@ pub struct Message {
     pub ctx_op: Option<String>,
     /// 공유 사본(#1o)의 글 — 대화를 가진 PC 쪽 글이면 참(그 밖 대화는 거짓).
     pub owner: bool,
+    /// 요청 archive 손 표시(#1y) — `None` = 자동(완료 [`ARCHIVE_DAYS`] 일 뒤) · 참 = 손으로 archive · 거짓 = 손으로 해제.
+    pub req_archived: Option<bool>,
+}
+
+/// 완료 요청이 archive 되기까지 날 수(#1y).
+pub const ARCHIVE_DAYS: i64 = 7;
+
+impl Message {
+    /// archive 된 요청인가(#1y) — 완료이고 손으로 archive 했거나 · 손 표시 없이 완료 뒤 [`ARCHIVE_DAYS`] 일 지남. [`archived_sql`] 과 같은 규칙.
+    pub fn archived(&self, now: i64) -> bool {
+        self.req_state == Some(ReqState::Done)
+            && match self.req_archived {
+                Some(on) => on,
+                None => self.req_at.unwrap_or(self.created_at) <= now - ARCHIVE_DAYS * 86400,
+            }
+    }
+}
+
+/// 지금 시각(유닉스 초) — [`Message::archived`] 에 넘긴다.
+pub fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
+}
+
+/// [`Message::archived`] 의 SQL 식 — `m` = `messages` 표 별칭.
+pub fn archived_sql(m: &str) -> String {
+    format!(
+        "({m}.req_state = 'done' AND coalesce({m}.req_archived, coalesce({m}.req_at, {m}.created_at) <= unixepoch() - {ARCHIVE_DAYS} * 86400))"
+    )
 }
 
 /// 대화 목록 한 줄.
@@ -287,9 +318,9 @@ fn conv_row(r: &Row) -> rusqlite::Result<Conversation> {
     })
 }
 
-const MSG_COLS: &str = "id, uuid, conversation_id, author, text, state, created_at, reply_to, turns, duration_ms, mine, exec, lc, via, saved_at, model, effort, request, req_state, req_note, req_at, agent, refused, edited_at, ctx_tokens, ctx_op, owner";
+const MSG_COLS: &str = "id, uuid, conversation_id, author, text, state, created_at, reply_to, turns, duration_ms, mine, exec, lc, via, saved_at, model, effort, request, req_state, req_note, req_at, agent, refused, edited_at, ctx_tokens, ctx_op, owner, req_archived";
 /// `MSG_COLS` 열 수 — 그 뒤에 붙는 열의 위치.
-const MSG_N: usize = 27;
+const MSG_N: usize = 28;
 
 /// 열 목록에 표 별칭을 붙인다(`id, uuid` → `m.id, m.uuid`).
 fn prefixed(cols: &str, alias: &str) -> String {
@@ -346,6 +377,7 @@ fn msg_row(r: &Row) -> rusqlite::Result<Message> {
         ctx_tokens: r.get(24)?,
         ctx_op: r.get(25)?,
         owner: r.get::<_, Option<bool>>(26)?.unwrap_or(false),
+        req_archived: r.get(27)?,
         state: state_of(&state).ok_or_else(|| bad(5, &state))?,
     })
 }
@@ -539,6 +571,38 @@ pub fn running(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
     )
 }
 
+/// 기록 삭제로 지운 글 · 적용한 `Clear` 의 uuid 인가(#1x — 받은 글 · 지우기의 중복 확인).
+pub fn gone(conn: &Connection, uuid: &str) -> rusqlite::Result<bool> {
+    conn.prepare("SELECT 1 FROM gone_msgs WHERE uuid = ?1")?.exists([uuid])
+}
+
+/// 적용한 `Clear` 를 남긴다(#1x) — 같은 지우기가 다시 와도 두 번 지우지 않는다.
+pub fn mark_gone(conn: &Connection, uuid: &str, conversation_id: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO gone_msgs (uuid, conversation_id) VALUES (?1, ?2)",
+        params![uuid, conversation_id],
+    )
+    .map(drop)
+}
+
+/// 글이 하나도 없는 대화인가(#1x — 세션 생성으로 연 대화의 첫 글).
+pub fn empty(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT NOT EXISTS (SELECT 1 FROM messages WHERE conversation_id = ?1)",
+        [id],
+        |r| r.get(0),
+    )
+}
+
+/// 실행 중이거나 실행을 기다리는 글이 있는가(#1x — 기록 삭제를 막는다: 대기열이 지운 글을 찾지 않게).
+pub fn busy(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = ?1 AND state IN ('running', 'queued'))",
+        [id],
+        |r| r.get(0),
+    )
+}
+
 /// 끝나지 않은 글을 닫는다(#1w) — 실행 대기(`queued`) · 보낸 뒤 상대를 기다리는 내 글(`sent`)은 실패 + [`LEFT`], 자동 왕복은 끈다.
 fn close_pending(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     conn.execute(
@@ -582,6 +646,11 @@ pub fn delete_conversation(conn: &Connection, id: i64) -> rusqlite::Result<bool>
          WHERE conv_id = ?1 AND kind = ?2 AND json_extract(frame, '$.type') = 'share_end'",
         params![id, crate::outbox::SHARE],
     )?;
+    // 기다리는 기록 지우기(#1x)도 — 지우기를 고른 뒤 나가도 상대 쪽은 비워지게.
+    conn.execute(
+        "UPDATE outbox SET conv_id = NULL WHERE conv_id = ?1 AND kind = ?2",
+        params![id, crate::outbox::CLEAR],
+    )?;
     for sql in [
         "DELETE FROM cli_tx WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ?1)",
         "DELETE FROM relay_events WHERE conversation_id = ?1
@@ -592,6 +661,7 @@ pub fn delete_conversation(conn: &Connection, id: i64) -> rusqlite::Result<bool>
         "DELETE FROM ctx_seeds WHERE conversation_id = ?1",
         "DELETE FROM group_convs WHERE conversation_id = ?1",
         "DELETE FROM shares WHERE conversation_id = ?1",
+        "DELETE FROM gone_msgs WHERE conversation_id = ?1",
         "DELETE FROM messages WHERE conversation_id = ?1",
     ] {
         conn.execute(sql, [id])?;
@@ -599,6 +669,33 @@ pub fn delete_conversation(conn: &Connection, id: i64) -> rusqlite::Result<bool>
     let gone = conn.execute("DELETE FROM conversations WHERE id = ?1", [id])? == 1;
     lower_marks(conn)?;
     Ok(gone)
+}
+
+/// 대화 기록을 이 PC 에서 비운다(#1x — 기록 삭제) — 글 · 실행 기록 · 그 글의 보낼 행 · 에이전트 세션 기록 · 요약 · CLI 트랜잭션. 대화 행 · 제목 · 그룹 ·
+/// 즐겨찾기 · 공유 · 자동 왕복 설정은 남는다(대화는 이어 쓴다). 묘비 없음. 없는 대화면 거짓.
+pub fn clear_conversation(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
+    if by_id(conn, id)?.is_none() {
+        return Ok(false);
+    }
+    // 지운 글의 uuid 는 남긴다 — 늦게 다시 온 같은 글이 기록을 되살리거나 다시 실행되지 않게(적대적 평가 R1).
+    conn.execute(
+        "INSERT OR IGNORE INTO gone_msgs (uuid, conversation_id) SELECT uuid, conversation_id FROM messages WHERE conversation_id = ?1",
+        [id],
+    )?;
+    for sql in [
+        "DELETE FROM cli_tx WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ?1)",
+        "DELETE FROM relay_events WHERE conversation_id = ?1
+           OR message_id IN (SELECT id FROM messages WHERE conversation_id = ?1)",
+        "DELETE FROM outbox WHERE msg_id IN (SELECT id FROM messages WHERE conversation_id = ?1)",
+        "DELETE FROM agent_sessions WHERE conversation_id = ?1",
+        "DELETE FROM ctx_seeds WHERE conversation_id = ?1",
+        "UPDATE conversations SET session = NULL, relay_on = 0, relay_count = 0 WHERE id = ?1",
+        "DELETE FROM messages WHERE conversation_id = ?1",
+    ] {
+        conn.execute(sql, [id])?;
+    }
+    lower_marks(conn)?;
+    Ok(true)
 }
 
 /// 목록 범위(#1i) — 전부 · 한 상대의 대화 · 한 그룹(이 PC 의 그룹 소속 — 넣은 대화, #1w 그룹 = 대화만)의 대화.
@@ -1014,10 +1111,23 @@ pub fn set_req_state(
     note: Option<&str>,
 ) -> rusqlite::Result<()> {
     conn.execute(
-        "UPDATE messages SET req_state = ?2, req_note = ?3, req_at = unixepoch() WHERE id = ?1",
+        // 상태가 바뀌면 archive 손 표시를 지운다(#1y — 완료가 아니면 목록에, 다시 완료되면 7일 셈을 새로).
+        "UPDATE messages SET req_archived = CASE WHEN req_state IS ?2 THEN req_archived END,
+           req_state = ?2, req_note = ?3, req_at = unixepoch() WHERE id = ?1",
         params![id, state.as_str(), note],
     )
     .map(drop)
+}
+
+/// 요청 archive 손 표시(#1y — 이 PC 에만) — 사람 요청 글(공유 사본 아님)만, archive(`on`)는 완료일 때만. 바꿨으면 참.
+pub fn set_req_archived(conn: &Connection, id: i64, on: bool) -> rusqlite::Result<bool> {
+    conn.execute(
+        "UPDATE messages SET req_archived = ?2 WHERE id = ?1 AND author = 'human' AND coalesce(request, 0) = 1
+           AND (NOT ?2 OR req_state = 'done')
+           AND (SELECT dir FROM conversations c WHERE c.id = messages.conversation_id) <> 'shared'",
+        params![id, on],
+    )
+    .map(|n| n > 0)
 }
 
 /// 로컬 id 로 메시지.
@@ -1348,10 +1458,10 @@ pub fn messages_across(
 ) -> rusqlite::Result<Vec<Message>> {
     let cols = prefixed(MSG_COLS, "m");
     let like = q.map(like_pattern);
-    let (request, req_state) = match ask {
-        None => (None, None),
-        Some(AskFilter::Query) => (Some(false), None),
-        Some(AskFilter::Request(s)) => (Some(true), s.map(ReqState::as_str)),
+    let (request, req_state, archived) = match ask {
+        None => (None, None, None),
+        Some(AskFilter::Query) => (Some(false), None, None),
+        Some(AskFilter::Request(s, a)) => (Some(true), s.map(ReqState::as_str), Some(a)),
     };
     let (peer, group) = scope.ids();
     conn.prepare(&format!(
@@ -1359,8 +1469,10 @@ pub fn messages_across(
          WHERE (?1 IS NULL OR m.mine = ?1) AND {} AND (?3 IS NULL OR m.author = ?3) AND m.author <> 'context'
            AND (?4 IS NULL OR (m.author = 'human' AND coalesce(m.request, 0) = ?4 AND c.dir <> 'shared'))
            AND (?5 IS NULL OR m.text LIKE ?5 ESCAPE '\\') AND (?7 IS NULL OR m.req_state = ?7)
+           AND (?9 IS NULL OR {} = ?9)
          ORDER BY m.created_at DESC, m.id DESC LIMIT ?6",
-        Scope::sql(2, 8)
+        Scope::sql(2, 8),
+        archived_sql("m")
     ))?
     .query_map(
         params![
@@ -1371,7 +1483,8 @@ pub fn messages_across(
             like,
             limit,
             req_state,
-            group
+            group,
+            archived
         ],
         msg_row,
     )?
@@ -1384,7 +1497,10 @@ pub struct ReqCounts {
     pub wait: i64,
     pub accepted: i64,
     pub rejected: i64,
+    /// archive 되지 않은 완료(#1y).
     pub done: i64,
+    /// archive 된 완료(#1y) — [`ReqCounts::total`] 에 들지 않는다.
+    pub archived: i64,
 }
 
 impl ReqCounts {
@@ -1398,14 +1514,20 @@ pub fn req_counts(conn: &Connection, mine: bool, scope: Scope) -> rusqlite::Resu
     let (peer, group) = scope.ids();
     let mut out = ReqCounts::default();
     let mut stmt = conn.prepare(&format!(
-        "SELECT coalesce(m.req_state, 'wait'), count(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id
+        "SELECT CASE WHEN {} THEN 'archived' ELSE coalesce(m.req_state, 'wait') END, count(*)
+         FROM messages m JOIN conversations c ON c.id = m.conversation_id
          WHERE m.mine = ?3 AND m.author = 'human' AND coalesce(m.request, 0) = 1 AND c.dir <> 'shared' AND {}
          GROUP BY 1",
+        archived_sql("m"),
         Scope::sql(1, 2)
     ))?;
     let rows = stmt.query_map(params![peer, group, mine], |r| Ok((r.get::<_, String>(0)?, r.get(1)?)))?;
     for row in rows {
         let (state, n) = row?;
+        if state == "archived" {
+            out.archived = n;
+            continue;
+        }
         match ReqState::parse(&state) {
             Some(ReqState::Wait) => out.wait = n,
             Some(ReqState::Accepted) => out.accepted = n,
@@ -1417,12 +1539,30 @@ pub fn req_counts(conn: &Connection, mine: bool, scope: Scope) -> rusqlite::Resu
     Ok(out)
 }
 
+/// 받은 요청 중 대기(상태 없음 포함)인 것 — 최신부터 `limit` 건(상대 id · 본문)과 대기 전체 수(#1x — 받은 요청 알림 본문).
+pub fn waiting_requests(conn: &Connection, limit: i64) -> rusqlite::Result<(Vec<(i64, String)>, i64)> {
+    let total = req_counts(conn, false, Scope::All)?.wait;
+    let rows = conn
+        .prepare(
+            "SELECT c.peer_id, m.text FROM messages m JOIN conversations c ON c.id = m.conversation_id
+             WHERE m.mine = 0 AND m.author = 'human' AND coalesce(m.request, 0) = 1 AND c.dir <> 'shared'
+               AND coalesce(m.req_state, 'wait') = 'wait'
+             ORDER BY m.created_at DESC, m.id DESC LIMIT ?1",
+        )?
+        .query_map([limit], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok((rows, total))
+}
+
 /// 주고받은 메시지 한 쪽(#1q) — 양쪽 글(context 글 제외)을 `(created_at, id)` 최신부터 `limit` 건, `before` = 그 `(created_at, id)` 보다 앞의 것만
 /// (복합 커서 — 공유 사본은 상대 시각을 남겨 id 순과 다를 수 있다, 적대적 평가 R2).
+///
+/// `since` = 그 시각 이후(이상)에 쓴 글만(#1y — 보기 기간).
 pub fn messages_page(
     conn: &Connection,
     scope: Scope,
     before: Option<(i64, i64)>,
+    since: Option<i64>,
     limit: i64,
 ) -> rusqlite::Result<Vec<Message>> {
     let cols = prefixed(MSG_COLS, "m");
@@ -1431,26 +1571,27 @@ pub fn messages_page(
     conn.prepare(&format!(
         "SELECT {cols} FROM messages m JOIN conversations c ON c.id = m.conversation_id
          WHERE m.author <> 'context' AND {} AND (?3 IS NULL OR m.created_at < ?3 OR (m.created_at = ?3 AND m.id < ?4))
+           AND (?6 IS NULL OR m.created_at >= ?6)
          ORDER BY m.created_at DESC, m.id DESC LIMIT ?5",
         Scope::sql(1, 2)
     ))?
-    .query_map(params![peer, group, at, id, limit], msg_row)?
+    .query_map(params![peer, group, at, id, limit, since], msg_row)?
     .collect()
 }
 
-/// 주고받은 메시지 상대별 요약(#1q) — (상대 id, 메시지 수, 마지막 메시지 id — [`messages_page`] 와 같은 `(created_at, id)` 순), 모집단도 같다.
-pub fn peer_message_counts(conn: &Connection, scope: Scope) -> rusqlite::Result<Vec<(i64, i64, i64)>> {
+/// 주고받은 메시지 상대별 요약(#1q) — (상대 id, 메시지 수, 마지막 메시지 id — [`messages_page`] 와 같은 `(created_at, id)` 순), 모집단도 같다(`since` 포함).
+pub fn peer_message_counts(conn: &Connection, scope: Scope, since: Option<i64>) -> rusqlite::Result<Vec<(i64, i64, i64)>> {
     let (peer, group) = scope.ids();
     conn.prepare(&format!(
         "SELECT peer_id, n, id FROM (
            SELECT c.peer_id, m.id, count(*) OVER (PARTITION BY c.peer_id) AS n,
              row_number() OVER (PARTITION BY c.peer_id ORDER BY m.created_at DESC, m.id DESC) AS rn
            FROM messages m JOIN conversations c ON c.id = m.conversation_id
-           WHERE m.author <> 'context' AND {})
+           WHERE m.author <> 'context' AND {} AND (?3 IS NULL OR m.created_at >= ?3))
          WHERE rn = 1 ORDER BY peer_id",
         Scope::sql(1, 2)
     ))?
-    .query_map(params![peer, group], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+    .query_map(params![peer, group, since], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
     .collect()
 }
 

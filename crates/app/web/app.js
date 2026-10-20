@@ -31,6 +31,11 @@ import {
   convCopy,
   convClosed,
   convMenuItems,
+  LEAVE_CONFIRM,
+  SESSION_NEW,
+  sideSub,
+  composeDefaults,
+  requestNotice,
   inboxRows,
   peerSummaryRows,
   pageMore,
@@ -81,6 +86,7 @@ import {
   requestRows,
   reqBoxes,
   reqHead,
+  peerWeeksOptions,
   REQ_BTN,
   mentionQuery,
   mentionTarget,
@@ -336,7 +342,12 @@ async function showMe() {
 }
 
 function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = theme === "dark" ? "dark" : "light";
+}
+
+/// 레일 타일 크기(#1x) — 작게 = 작은 아이콘 + 오른쪽 이름 한 줄(레일이 넓어진다, `app.css` `#app.tile-small`).
+function applyTileSize(size) {
+  $("app").classList.toggle("tile-small", size === "small");
 }
 
 /// 레일 타일 순서(#1l) — 상대 묶음(상대 타일 · +)과 그룹 묶음(그룹 타일 · 그룹 +)의 앞뒤. DOM 을 옮겨 Tab 순서도 화면과 같다(CSS `order` 는 어긋남).
@@ -580,13 +591,13 @@ function renderSideHead() {
     $("side_name").textContent = g.name;
     $("side_sub").textContent = `그룹 · 대화 ${inGroup(state.convs, g).length} · 이 PC 에만`;
   } else if (p) {
+    // 접속 상태는 레일 점(#1x) — 부제에 "페어링 됨" · 접속 문구를 쓰지 않는다.
     $("side_name").textContent = displayName(p);
-    $("side_sub").textContent = [p.alias ? `${p.name} · ${p.host}` : p.host, peerState(p), p.paired ? presence(p).text : ""].filter(Boolean).join(" · ");
+    $("side_sub").textContent = sideSub("peer", p);
   } else if (state.me) {
     const alias = state.settings.me_alias;
-    const fp = "지문 " + state.me.fingerprint.split(" ").slice(0, 2).join("·");
     $("side_name").textContent = alias || "나 · " + state.me.host;
-    $("side_sub").textContent = [state.me.name, alias ? state.me.host : "", fp].filter(Boolean).join(" · ");
+    $("side_sub").textContent = sideSub("me", state.me, alias);
   }
 }
 
@@ -652,14 +663,14 @@ async function loadPeerAgents(id) {
   if (route(location.hash).view === "agents") renderAgentsView();
 }
 
-/// 새 대화 화면에 상대 · 에이전트를 채워서 연다(사이드바 · 검색 결과의 상대 에이전트).
+/// 세션 생성 화면에 상대 · 에이전트를 채워서 연다(사이드바 · 검색 결과의 상대 에이전트).
 async function newChat(peer, agent) {
   if (!state.peers.some((p) => p.id === peer && p.paired)) {
     $("status_msg").textContent = "페어링되지 않은 상대 · 연결 목록에서 승인하세요";
     go("#settings/peers");
     return;
   }
-  state.focusAfter = "chat_text";
+  state.focusAfter = "chat_title";
   go("#new");
   $("chat_peer").value = String(peer);
   await loadChatAgents(agent);
@@ -1255,7 +1266,7 @@ async function loadAgents() {
     $("agent_msg").textContent = "에이전트 목록 오류: " + e.message;
     return;
   }
-  // 새 대화의 "내 응답 에이전트" 후보.
+  // 세션 생성의 "내 응답 에이전트" 후보.
   const relaySel = $("chat_relay_agent");
   const keep = relaySel.value;
   relaySel.replaceChildren(
@@ -1399,11 +1410,18 @@ function convItem({ c, label }, section) {
   const sub = roomPreview(c, state.peerNames.get(c.peer_id)) || meta.agent;
   return el(
     "li",
-    { class: cls || null, "data-conv": String(c.id), "data-drag": "conv", "data-id": String(c.id), "data-section": section, draggable: "true" },
-    starButton(c, label.title),
+    { class: cls || null, "data-conv": String(c.id), "data-drag": "conv", "data-id": String(c.id), "data-section": section },
+    // 손잡이 끌기(#1x) — 즐겨찾기 ☆ 는 대화 머리에서. 줄 링크는 HTML 끌기를 막는다(브라우저 끌기 확장).
+    el("button", {
+      type: "button",
+      class: "drag-handle",
+      title: "끌어서 옮기기 · 그룹 타일에 놓으면 그룹에",
+      "aria-label": `${label.title} 옮기기`,
+      onpointerdown: (ev) => convGrab(ev, ev.currentTarget.parentElement),
+    }, ico("grip")),
     el(
       "a",
-      { href: `#c/${c.id}`, title: label.sub },
+      { href: `#c/${c.id}`, title: label.sub, draggable: "false" },
       el("span", { class: `room-av ${colorOf(c.peer_id)}`, "aria-hidden": "true", text: c.agent.slice(0, 1) }),
       el(
         "span",
@@ -1449,8 +1467,8 @@ function renderConvList() {
     el("a", {
       href: "#new",
       class: "side-add",
-      title: "새 대화",
-      "aria-label": "새 대화",
+      title: SESSION_NEW,
+      "aria-label": SESSION_NEW,
       text: "+",
       onclick:
         peer == null
@@ -1620,7 +1638,7 @@ function renderHome() {
               ),
             );
           })
-        : [el("li", { class: "hint" }, "대화 없음 ", p?.paired ? button("새 대화", () => newChat(g.peer), "small") : "")];
+        : [el("li", { class: "hint" }, "대화 없음 ", p?.paired ? button(SESSION_NEW, () => newChat(g.peer), "small") : "")];
       return el("li", { class: "fold" }, foldEl(`home:${g.peer}`, head, [el("ol", { class: "rows" }, ...rows)]));
     }),
   );
@@ -1769,6 +1787,7 @@ async function render() {
   if (r.view === "saved") await loadSaved();
   if (r.view === "agents") loadAgentsView();
   if (r.view === "agentConvs") renderAgentConvs();
+  if (r.view === "new") openCompose();
   if (r.view === "peer") await loadPeerMessages(r.id);
   // 초대 수락 칸 — 트리 · 새로 만들기 "초대 수락" · 레일 + 로 오면 펼치고, 다른 설정 항목 · 다른 화면으로 가면 접는다(#1r).
   showAccept(r.view === "settings" && r.focus === "invite_accept");
@@ -1878,7 +1897,6 @@ function showConversation(conv) {
   // 멘션 — 내가 연 대화(자동 왕복 아님)만. 후보 = 상대 PC 에이전트(타일을 고를 때와 같은 목록 — 없거나 못 받았으면 이때 다시 묻는다).
   const names = state.peerAgents.get(conv.peer_id);
   if (conv.dir === "out" && !conv.relay_agent && (!state.peerAgents.has(conv.peer_id) || names === null)) loadPeerAgents(conv.peer_id);
-  renderAskHint();
   closeMention();
   if (state.msgsOf !== conv.id) $("conv_relay").hidden = $("conv_relay_btn").hidden = true;
   // 공유 대화(#1o) · 닫힌 대화(#1w — 나감 · 상대가 나감) — 보기만: 입력창 · 컨텍스트 단추 없음.
@@ -2323,39 +2341,11 @@ function removeObserver(conv, id, name) {
 }
 
 $("share_add_btn").addEventListener("click", addObserver);
-// 나가기 확인(한 번) — 받은 내용은 읽기 전용으로 남는다.
+// 공유 대화 나가기 — ⋯ "나가기" 와 같다(#1x — 확인 뒤 공유를 끝내고 사본을 이 PC 목록에서 삭제).
 $("share_leave_btn").addEventListener("click", (ev) => {
   const conv = state.current;
   if (!conv) return;
-  openFloat(ev.currentTarget, "dialog", "공유 대화 나가기", [
-    el(
-      "div",
-      { class: "float-form" },
-      el("strong", { text: "공유 대화 나가기" }),
-      el("p", { class: "hint", text: "더 받지 않습니다. 받은 내용은 읽기 전용으로 남습니다." }),
-      el(
-        "div",
-        { class: "actions" },
-        button("취소", () => closeFloat(true)),
-        button(
-          "나가기",
-          () => {
-            closeFloat(false);
-            act(
-              "나가기",
-              async () => {
-                await api("POST", `/api/conversations/${conv.id}/leave`);
-                return "공유 대화에서 나갔습니다";
-              },
-              "status_msg",
-              loadConvs,
-            );
-          },
-          "danger",
-        ),
-      ),
-    ),
-  ]);
+  openFloat(ev.currentTarget, "dialog", "대화 나가기", [convEndForm(conv, "leave")]);
 });
 
 for (const id of ["conv_relay_btn", "detail_relay_btn"]) $(id).addEventListener("click", () => switchRelay($(id).dataset.on === "true"));
@@ -2512,7 +2502,6 @@ $("reply_form").addEventListener("submit", (ev) => {
   const reset = () => {
     $("reply_text").value = "";
     ask.value = "query";
-    renderAskHint();
   };
   // 요청(#1d) — 실행이 없어 부를 에이전트(멘션)도 없다.
   if (ask.value === "request") {
@@ -2588,12 +2577,6 @@ $("reply_text").addEventListener("keyup", (ev) => {
 $("reply_text").addEventListener("blur", closeMention);
 // 목록을 눌러도(스크롤바 포함) 입력창 초점을 뺏지 않는다 — 항목은 click 으로 넣는다.
 $("mention_box").addEventListener("mousedown", (ev) => ev.preventDefault());
-
-/// 멘션 힌트 — 후보(상대 PC 에이전트 목록)를 받은 대화 · 질의에서만 보인다. 요청을 고르면 요청 안내.
-function renderAskHint() {
-  $("ask_hint").hidden = $("reply_form").elements.ask.value !== "request";
-}
-for (const r of $("reply_form").elements.ask) r.addEventListener("change", renderAskHint);
 
 /// 멘션 후보 — 열린 대화가 내가 연 대화(자동 왕복 아님)이고 상대 에이전트 목록을 받았으면 그 이름들, 아니면 `null`.
 function mentionNames() {
@@ -2811,6 +2794,7 @@ async function loadCounts() {
 async function loadRequests(open = false) {
   if (open) {
     $("req_state").value = "";
+    $("req_archive").checked = false; // archive 항목은 들어올 때마다 숨김(#1y)
     state.reqBox = reqBoard() ? "theirs" : null; // 보드는 탭 한 쪽만(#1v) — 개요는 목록
   }
   const box = state.reqBox;
@@ -2824,12 +2808,14 @@ async function loadRequests(open = false) {
   const scope = scopeQuery(state.railPeer, state.railGroup);
   const st = board ? "" : $("req_state").value;
   const side = (b) => `side=${b}${scope ? `&${scope}` : ""}`;
+  const archived = $("req_archive").checked;
   const ticket = latest.next();
-  let lists, counts;
+  let lists, counts, olds;
   try {
-    [lists, counts] = await Promise.all([
+    [lists, counts, olds] = await Promise.all([
       Promise.all(boxes.map((b) => api("GET", `/api/messages?${side(b)}&ask=request&limit=500${st ? `&req=${st}` : ""}`))),
       Promise.all(boxes.map((b) => api("GET", `/api/messages/req_counts?${side(b)}`))),
+      archived ? Promise.all(boxes.map((b) => api("GET", `/api/messages?${side(b)}&ask=request&archived=true&limit=500`))) : null,
     ]);
   } catch (e) {
     $("status_msg").textContent = "요청 목록 오류: " + e.message;
@@ -2837,6 +2823,7 @@ async function loadRequests(open = false) {
   }
   if (!latest.is(ticket)) return;
   const data = reqBoxes(boxes, lists, counts, state.peerNames);
+  renderReqArchive(boxes, olds);
   $("req_list").hidden = board;
   $("req_board").hidden = !board;
   if (board) {
@@ -2846,6 +2833,30 @@ async function loadRequests(open = false) {
   }
   if (!needsRender($("req_list"), JSON.stringify([box, st, state.railPeer, state.railGroup, data]), open)) return;
   $("req_list").replaceChildren(...(box ? grouped(`requests:${box}`, data[0].rows, (rs) => requestEls(rs, box)) : data.map(reqBoxEl)));
+}
+
+/// archive 된 요청(#1y) — "archive 항목 보기" 일 때만, 목록 · 보드 아래 따로 된 절(쪽마다, 처음 펼침).
+function renderReqArchive(boxes, olds) {
+  const list = $("req_archive_list");
+  list.hidden = !olds;
+  if (!olds) return list.replaceChildren();
+  list.replaceChildren(
+    ...boxes.map((box, i) => {
+      const rows = requestRows(olds[i], state.peerNames);
+      const head = [el("strong", { text: `archive — ${box === "theirs" ? "받은 요청" : "보낸 요청"}` }), el("span", { class: "stat", text: String(rows.length) })];
+      const body = [el("ol", { class: "rows" }, ...(rows.length ? rows.map(requestItem) : [el("li", { class: "hint", text: "없음" })]))];
+      return el("li", { class: "fold" }, foldEl(`reqarchive:${box}`, head, body, "peer-fold req-box"));
+    }),
+  );
+}
+
+/// 요청 archive · 해제(#1y — 이 PC 에만).
+function archiveReq(id, on) {
+  act("archive", async () => {
+    await api("POST", `/api/messages/${id}/archive`, { archived: on });
+    await loadRequests();
+    return on ? "archive 로 옮김" : "archive 해제";
+  });
 }
 
 /// 요청 보기(#1v — D39 ①) — 보드면 참. 이 PC 에 남긴다.
@@ -2981,10 +2992,11 @@ function requestItem(r) {
       el("span", { text: r.preview }),
     ),
   );
-  if (r.moves.length || r.resend) {
+  if (r.moves.length || r.resend || r.archive) {
     const bar = el("div", { class: "req-acts" });
     for (const mv of r.moves) bar.append(textButton(mv.label, REQ_BTN[mv.to], () => noteForm(bar, r.id, mv.to, mv.label)));
     if (r.resend) bar.append(textButton("다시 알리기", null, () => resendState(r.id, r.stateKey, r.note)));
+    if (r.archive) bar.append(textButton(r.archive.label, null, () => archiveReq(r.id, r.archive.key === "archive")));
     li.append(bar);
   }
   // 피드백(받은 쪽이 상태와 함께 남긴 한 줄) — 회색 힌트가 아니라 상태 색 띠의 상자로 읽히게.
@@ -3006,6 +3018,7 @@ for (const b of ["theirs", "mine"])
     loadRequests();
   });
 $("req_state").addEventListener("input", () => loadRequests());
+$("req_archive").addEventListener("change", () => loadRequests());
 
 /// 북마크 항목 — 고른 타일 범위, 북마크한 순 최신부터, 누르면 그 글로.
 async function loadSaved() {
@@ -3051,7 +3064,7 @@ function renderAgentsView() {
     const names = state.peerAgents.get(x.id);
     if (names === undefined) return [el("li", { class: "hint", text: `${displayName(x)} · 불러오는 중 …` })];
     if (names === null) return [el("li", { class: "hint", text: `${displayName(x)} · 목록을 받지 못했습니다` })];
-    // 줄 오른쪽 "새 대화" 단추(#1o) — 줄을 눌러도 같다.
+    // 줄 오른쪽 "세션 생성" 단추(#1o) — 줄을 눌러도 같다.
     return names.map((n) => {
       const li = row(n, null, {
         href: "#new",
@@ -3061,7 +3074,7 @@ function renderAgentsView() {
         },
       });
       li.classList.add("has-edit");
-      li.append(el("button", { type: "button", class: "small agent-new", "aria-label": `새 대화 · ${n}`, text: "새 대화", onclick: () => newChat(x.id, n) }));
+      li.append(el("button", { type: "button", class: "small agent-new", "aria-label": `${SESSION_NEW} · ${n}`, text: SESSION_NEW, onclick: () => newChat(x.id, n) }));
       return li;
     });
   };
@@ -3113,7 +3126,13 @@ async function loadPeerMessages() {
   const ticket = latest.next();
   let sums;
   try {
-    sums = await api("GET", "/api/messages/peers");
+    // 기간은 다른 창에서 바뀌었을 수 있다 — 서버가 거른 기준(설정)을 함께 다시 읽어 받아 둔 꼬리에도 같은 기간을(#1y 적대적 평가 R2).
+    let s;
+    [sums, s] = await Promise.all([api("GET", "/api/messages/peers"), api("GET", "/api/settings")]);
+    if (s.ui_peer_weeks !== undefined && s.ui_peer_weeks !== state.settings.ui_peer_weeks) {
+      state.settings.ui_peer_weeks = s.ui_peer_weeks;
+      $("ui_peer_weeks").value = String(s.ui_peer_weeks);
+    }
   } catch (e) {
     $("status_msg").textContent = "주고받은 메시지 오류: " + e.message;
     return;
@@ -3134,7 +3153,7 @@ function loadPeerPage(peer, more = false) {
     try {
       const ms = await api("GET", `/api/messages?side=both&peer=${peer}${q}`);
       const now = state.peerPages.get(peer) ?? [];
-      state.peerPages.set(peer, more ? [...now, ...ms.filter((m) => !now.some((x) => x.id === m.id))] : mergePage(ms, now));
+      state.peerPages.set(peer, more ? [...now, ...ms.filter((m) => !now.some((x) => x.id === m.id))] : mergePage(ms, now, PEER_PAGE, peerSince()));
     } catch (e) {
       $("status_msg").textContent = "주고받은 메시지 오류: " + e.message;
     }
@@ -3142,6 +3161,11 @@ function loadPeerPage(peer, more = false) {
   const next = (state.peerLoads.get(peer) ?? Promise.resolve()).then(run);
   state.peerLoads.set(peer, next);
   return next;
+}
+
+/// 주고받은 메시지 보기 기간의 시작(#1y — 서버 `peer_since` 와 같은 셈, 유닉스 초).
+function peerSince() {
+  return Math.floor(Date.now() / 1000) - (Number(state.settings.ui_peer_weeks) || 4) * 7 * 86400;
 }
 
 function renderPeerMessages() {
@@ -3211,7 +3235,7 @@ function markRow(r) {
   });
 }
 
-// ---- 새 대화 ----
+// ---- 세션 생성 ----
 
 function fillPeerSelects() {
   // 고르는 중인 칸을 5초마다 다시 만들지 않게 — 그리는 값(상대 · 페어링 · 이름)이 같으면 둔다.
@@ -3227,7 +3251,7 @@ function fillPeerSelects() {
 }
 
 const agentsAsk = new Latest();
-/// 새 대화의 상대 에이전트 — 고른 상대 PC 에 묻는다. `want` 가 그 목록에 있으면 그것을 고른다.
+/// 세션 생성의 상대 에이전트 — 고른 상대 PC 에 묻는다. `want` 가 그 목록에 있으면 그것을 고른다.
 async function loadChatAgents(want) {
   const id = $("chat_peer").value;
   const sel = $("chat_agent");
@@ -3247,7 +3271,7 @@ async function loadChatAgents(want) {
 }
 $("chat_peer").addEventListener("change", () => loadChatAgents());
 
-/// 새 대화 '최대 응답 횟수'(#1r) — '내 응답 에이전트' 를 고를 때만 보이는 하위 줄. 숨긴 동안은 `disabled` 라 폼 검사에서 빠진다
+/// 세션 생성 '최대 응답 횟수'(#1r) — '내 응답 에이전트' 를 고를 때만 보이는 하위 줄. 숨긴 동안은 `disabled` 라 폼 검사에서 빠진다
 /// (숨긴 칸의 범위 밖 값이 보내기를 소리 없이 막지 않게 — 적대적 평가 R1), 보일 때는 `required` · 1 ~ 50 정수를 브라우저가 검사한다.
 function syncRelayCap() {
   const off = !$("chat_relay_agent").value;
@@ -3255,22 +3279,25 @@ function syncRelayCap() {
 }
 $("chat_relay_agent").addEventListener("change", syncRelayCap);
 
+/// 세션 생성 화면을 열 때(#1x) — 상대 칸이 비었으면 레일에서 고른 상대로 채우고 그 에이전트 목록을 읽는다.
+function openCompose() {
+  if ($("chat_peer").value) return;
+  const want = composeDefaults(state.railPeer, state.peers);
+  if (!want) return;
+  $("chat_peer").value = want;
+  loadChatAgents();
+}
+
+// 세션 생성(#1x) — 글 없이 대화방만 만들고 그 대화방으로(첫 글은 대화방 입력창에서, 질의 · 요청도 거기서).
 $("chat_form").addEventListener("submit", (ev) => {
   ev.preventDefault();
-  const ask = $("chat_form").elements.ask;
   const body = {
     peer_id: Number($("chat_peer").value),
     agent: $("chat_agent").value,
-    text: $("chat_text").value,
     title: $("chat_title").value,
-    request: ask.value === "request",
   };
-  if (!body.text.trim()) {
-    $("chat_msg").textContent = "내용이 비어 보내지 않았습니다";
-    return;
-  }
-  if (body.request && $("chat_relay_agent").value) {
-    $("chat_msg").textContent = "요청으로는 내 응답 에이전트를 쓸 수 없습니다";
+  if (!body.peer_id || !body.agent) {
+    $("chat_msg").textContent = "상대와 상대 에이전트를 고르세요";
     return;
   }
   if ($("chat_relay_agent").value) {
@@ -3280,16 +3307,15 @@ $("chat_form").addEventListener("submit", (ev) => {
   // 그룹을 고른 채 만든 대화는 그 그룹에(#1i).
   if (state.railGroup != null) body.group = state.railGroup;
   act(
-    "보내기",
+    "생성",
     async () => {
       const r = await api("POST", "/api/conversations", body);
-      $("chat_text").value = "";
       $("chat_title").value = "";
-      ask.value = "query";
       if (body.group != null) await loadGroups();
       await loadConvs();
+      state.focusAfter = "reply_text";
       location.hash = `#c/${r.conversation.id}`;
-      return r.warning ?? "보냈습니다";
+      return "대화를 만들었습니다 — 메시지를 입력하세요";
     },
     "chat_msg",
   );
@@ -3459,66 +3485,105 @@ function openConvMenu(convId, anchor) {
           },
         }, ico("minus"), el("span", { text: "그룹에서 빼기" })),
       );
-    // 나가기 · 삭제(#1w — D40) — 확인 한 번.
+    // 기록 삭제 ▸ · 나가기(#1x — D40 개정) — 확인 한 번. 하위 메뉴는 그 자리에서 펼친다(→ 펼침 · ← 접음).
     const conv = state.convs.find((c) => c.id === convId) ?? (state.current?.id === convId ? state.current : null);
     if (conv) {
       out.push(el("hr", { class: "menu-sep" }));
-      for (const it of convMenuItems(conv))
-        out.push(
-          el("button", {
+      const confirm = (key) => {
+        $("float").replaceChildren(convEndForm(conv, key));
+        $("float").setAttribute("role", "dialog");
+        $("float").querySelector("button")?.focus();
+      };
+      for (const it of convMenuItems(conv)) {
+        if (!it.sub) {
+          out.push(
+            el("button", { type: "button", role: "menuitem", class: it.danger ? "danger-text" : null, onclick: () => confirm(it.key) }, ico(it.icon), el("span", { text: it.label })),
+          );
+          continue;
+        }
+        const subs = it.sub.map((x) => el("button", { type: "button", role: "menuitem", class: "menu-sub danger-text", hidden: true, onclick: () => confirm(x.key) }, el("span", { text: x.label })));
+        const toggle = (open) => {
+          head.setAttribute("aria-expanded", String(open));
+          for (const b of subs) b.hidden = !open;
+          // 펼쳐 길어진 상자가 화면 아래로 넘치면 위로 올린다(`openFloat` 와 같은 여백).
+          const box = $("float").getBoundingClientRect();
+          if (box.bottom > window.innerHeight - 8) $("float").style.top = Math.max(8, window.innerHeight - box.height - 8) + "px";
+          if (open) subs[0].focus();
+        };
+        const head = el(
+          "button",
+          {
             type: "button",
             role: "menuitem",
-            class: it.danger ? "danger-text" : null,
-            onclick: () => {
-              $("float").replaceChildren(convEndForm(conv, it.key));
-              $("float").setAttribute("role", "dialog");
-              $("float").querySelector("button")?.focus();
+            "aria-haspopup": "menu",
+            "aria-expanded": "false",
+            onclick: () => toggle(head.getAttribute("aria-expanded") !== "true"),
+            onkeydown: (ev) => {
+              if (ev.key === "ArrowRight") toggle(true);
             },
-          }, ico(it.icon), el("span", { text: it.label })),
+          },
+          ico(it.icon),
+          el("span", { text: it.label }),
+          el("span", { class: "kbd", "aria-hidden": "true", text: "▸" }),
         );
+        for (const b of subs)
+          b.addEventListener("keydown", (ev) => {
+            if (ev.key !== "ArrowLeft") return;
+            toggle(false);
+            head.focus();
+          });
+        out.push(head, ...subs);
+      }
     }
     return out;
   };
   openFloat(anchor, "menu", "대화 메뉴", items());
 }
 
-/// 대화 나가기 · 삭제 확인(#1w — 공유 사본 나가기 문구 꼴). 지운 대화가 열려 있었으면 '개요'로.
+/// 확인 문구(#1x) — 나가기 · 기록 삭제 둘(내 글만 · 모든 사용자). `[머리, 안내, 단추]`.
+const END_TEXT = {
+  leave: ["대화 나가기", LEAVE_CONFIRM, "나가기"],
+  clear_mine: ["기록 삭제 · 내 글만", "이 PC 의 대화 기록을 지웁니다. 대화는 남습니다.", "삭제"],
+  clear_all: ["기록 삭제 · 모든 사용자", "나와 상대 PC 의 대화 기록을 모두 지웁니다. 대화는 남습니다.", "삭제"],
+};
+
+/// 나가기 · 기록 삭제 확인(#1x). 나가기 = 나가며 이 PC 목록 · 글 삭제(`DELETE` — 지금 삭제), 기록 삭제 = 글만(`POST …/clear`). 지운 대화가 열려 있었으면 '개요'로.
 function convEndForm(conv, key) {
-  const leave = key === "leave";
+  const [head, hint, label] = END_TEXT[key];
   const title = convLabel(conv, state.peerNames).title;
-  const hint = leave
-    ? "더 받지 않습니다. 이력은 읽기 전용으로 남습니다."
-    : "이 PC 에서 대화 · 글을 지웁니다. 상대 PC 기록은 남습니다.";
   return el(
     "div",
     { class: "float-form" },
-    el("strong", { text: `${leave ? "대화 나가기" : "대화 삭제"} · ${title}` }),
+    el("strong", { text: `${head} · ${title}` }),
     el("p", { class: "hint", text: hint }),
     el(
       "div",
       { class: "actions" },
       button("취소", () => closeFloat(true)),
       button(
-        leave ? "나가기" : "삭제",
+        label,
         () => {
           closeFloat(false);
           act(
-            leave ? "나가기" : "삭제",
+            label,
             async () => {
-              if (leave) await api("POST", `/api/conversations/${conv.id}/leave`);
-              else await api("DELETE", `/api/conversations/${conv.id}`);
-              if (!leave && state.current?.id === conv.id) {
-                state.current = null;
-                go("#");
+              if (key === "leave") {
+                await api("DELETE", `/api/conversations/${conv.id}`);
+                if (state.current?.id === conv.id) {
+                  state.current = null;
+                  go("#");
+                }
+                await loadGroups();
+                return "대화에서 나갔습니다";
               }
-              await loadGroups();
-              return leave ? "대화에서 나갔습니다" : "대화를 지웠습니다";
+              await api("POST", `/api/conversations/${conv.id}/clear`, { all: key === "clear_all" });
+              return key === "clear_all" ? "모든 사용자의 대화 기록을 지웠습니다" : "이 PC 의 대화 기록을 지웠습니다";
             },
             "status_msg",
             refresh,
           );
         },
-        leave ? null : "danger",
+        "danger",
       ),
     ),
   );
@@ -3639,7 +3704,63 @@ function clearDrop() {
   for (const n of document.querySelectorAll(".drop-before, .drop-after, .drop-into")) n.classList.remove("drop-before", "drop-after", "drop-into");
 }
 
-for (const box of ["rail", "conv_sections", "agent_convs_list"]) {
+/// 대화 줄을 그룹 타일에 넣는다(복사 — 원래 자리 그대로) · 안내.
+function joinGroup(groupId, convId) {
+  const g = state.groups.find((x) => x.id === groupId);
+  const already = g?.convs.includes(convId);
+  changeGroup(groupId, [convId], []).then((ok) => {
+    if (ok) $("status_msg").textContent = already ? `이미 그룹 ${g.name} 에 있습니다` : `그룹 ${g?.name ?? ""} 에 넣었습니다`;
+  });
+}
+
+/// 대화 줄 끌기(포인터, #1x) — 손잡이를 누른 채 움직이면 줄 사본이 따라오고, 같은 절 줄 위 = 앞 · 뒤 표시, 그룹 타일 위 = 넣기 표시. 떼면 `moveItem` · `joinGroup`.
+/// HTML 끌어 놓기(`draggable`)는 브라우저 끌기 확장이 가로챈다(요청 보드와 같다 — 사용자 2026-10-19).
+function convGrab(ev, li) {
+  if (ev.button !== 0) return;
+  ev.preventDefault();
+  const grip = ev.currentTarget;
+  grip.setPointerCapture(ev.pointerId);
+  const d = dragInfo(li);
+  const box = li.getBoundingClientRect();
+  const dx = ev.clientX - box.left;
+  const dy = ev.clientY - box.top;
+  const ghost = li.cloneNode(true);
+  ghost.classList.add("board-ghost");
+  ghost.style.width = `${box.width}px`;
+  document.body.append(ghost);
+  li.classList.add("dragging");
+  let drop = null;
+  const move = (e) => {
+    ghost.style.transform = `translate(${e.clientX - dx}px, ${e.clientY - dy}px)`;
+    const t = dragInfo(document.elementFromPoint(e.clientX, e.clientY));
+    const how = t && t.node !== li ? dropKind(d, t) : null;
+    clearDrop();
+    drop = null;
+    if (!how) return;
+    const r = t.node.getBoundingClientRect();
+    const after = e.clientY > r.top + r.height / 2;
+    t.node.classList.add(how === "join" ? "drop-into" : after ? "drop-after" : "drop-before");
+    drop = { how, t, after };
+  };
+  const end = (e) => {
+    grip.removeEventListener("pointermove", move);
+    grip.removeEventListener("pointerup", end);
+    grip.removeEventListener("pointercancel", end);
+    ghost.remove();
+    li.classList.remove("dragging");
+    clearDrop();
+    if (e.type !== "pointerup" || !drop) return;
+    if (drop.how === "join") joinGroup(drop.t.id, d.id);
+    else moveItem(d.kind, d.id, drop.t.id, drop.after);
+  };
+  grip.addEventListener("pointermove", move);
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+  move(ev);
+}
+
+// 레일 타일 끌기(상대 · 그룹 순서)는 HTML 끌어 놓기 그대로(#1x 범위 밖), 대화 줄은 손잡이(`convGrab`).
+for (const box of ["rail"]) {
   $(box).addEventListener("dragstart", (ev) => {
     const d = dragInfo(ev.target);
     if (!d) return;
@@ -3673,18 +3794,12 @@ for (const box of ["rail", "conv_sections", "agent_convs_list"]) {
     clearDrop();
     if (!how) return;
     ev.preventDefault();
-    if (how === "join") {
-      const g = state.groups.find((x) => x.id === t.id);
-      const already = g?.convs.includes(d.id);
-      changeGroup(t.id, [d.id], []).then((ok) => {
-        if (ok) $("status_msg").textContent = already ? `이미 그룹 ${g.name} 에 있습니다` : `그룹 ${g?.name ?? ""} 에 넣었습니다`;
-      });
-      return;
-    }
     const r = t.node.getBoundingClientRect();
     moveItem(d.kind, d.id, t.id, ev.clientY > r.top + r.height / 2);
   });
-  // Alt + ↑ / ↓ — 초점이 타일 · 대화 행(링크 · ⋯ · ☆)에 있으면 같은 묶음에서 한 칸.
+}
+for (const box of ["rail", "conv_sections", "agent_convs_list"]) {
+  // Alt + ↑ / ↓ — 초점이 타일 · 대화 행(손잡이 · 링크 · ⋯)에 있으면 같은 묶음에서 한 칸.
   $(box).addEventListener("keydown", (ev) => {
     if (!ev.altKey || (ev.key !== "ArrowUp" && ev.key !== "ArrowDown")) return;
     const d = dragInfo(ev.target);
@@ -3755,6 +3870,9 @@ const PREFS = [
   "claude_effort",
   "ui_theme",
   "ui_rail_order",
+  "ui_tile_size",
+  "ui_peer_weeks",
+  "notify_sound",
   "autostart",
   "auto_compact",
 ];
@@ -3769,28 +3887,34 @@ function fillPrefs(s) {
   }
   if (s.ui_theme !== undefined) applyTheme(s.ui_theme);
   if (s.ui_rail_order !== undefined) applyRailOrder(s.ui_rail_order);
+  if (s.ui_tile_size !== undefined) applyTileSize(s.ui_tile_size);
   if (s.notify_paused !== undefined || s.focus !== undefined) $("bell").classList.toggle("paused", s.notify_paused === true || s.focus === true);
   if (s.me_alias !== undefined || s.me_icon !== undefined) {
     renderRail();
     renderSideHead();
   }
   if (s.me_alias !== undefined || s.me_icon !== undefined || s.focus !== undefined) renderAvatar();
-  // 새 대화의 상한 칸 처음 값.
+  // 세션 생성의 상한 칸 처음 값.
   if (s.relay_cap_default !== undefined) $("chat_relay_cap").value = String(s.relay_cap_default);
 }
 
 $("claude_effort").replaceChildren(...EFFORTS.map((e) => el("option", { value: e, text: e })));
+$("ui_peer_weeks").replaceChildren(...peerWeeksOptions().map((o) => el("option", { value: o.value, text: o.label })));
 $("claude_model").replaceChildren(...MODELS.map((m) => el("option", { value: m, text: m })));
 
 for (const key of PREFS) {
   const input = $(key);
   input.addEventListener("change", () => {
-    const value = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value.trim();
+    const value = input.type === "checkbox" ? input.checked : input.type === "number" || "num" in input.dataset ? Number(input.value) : input.value.trim();
     input.disabled = true;
     act("설정", async () => {
       try {
         fillPrefs(await api("PUT", "/api/settings", { [key]: value }));
         if (key === "claude_model" || key === "claude_effort") renderPeerList(); // 상대별 칸의 "기본값(…)" 문구
+        if (key === "ui_peer_weeks") {
+          state.peerPages.clear(); // 받은 꼬리에 기간 밖 글이 남지 않게(#1y)
+          loadPeerMessages();
+        }
         return "설정 저장";
       } catch (e) {
         // 저장이 실패하면 서버 값으로 되돌린다 — 화면과 실제 설정이 어긋나지 않게.
@@ -3915,6 +4039,28 @@ function refreshFailed(e) {
 /// 페어링 종류 알림 — 누르면 설정의 연결 목록, 그 밖(메시지 · 자동 왕복)은 내 활동.
 const PAIRING_KINDS = new Set(["pair_request", "auto_paired", "approved"]);
 
+/// 받은 요청 효과음(#1x) — 짧은 두 음(WebAudio, 파일 없음 — 880 Hz → 1320 Hz 각 0.12 초). 브라우저는 사용자 입력 전에는 소리를 막는다(autoplay) — 첫 입력에서 만든다.
+let audio = null;
+for (const type of ["pointerdown", "keydown"])
+  addEventListener(type, () => (audio ??= new AudioContext()), { once: true, capture: true });
+
+function chime() {
+  if (!audio) return;
+  audio.resume?.();
+  const t = audio.currentTime;
+  [880, 1320].forEach((hz, i) => {
+    const at = t + i * 0.12;
+    const o = audio.createOscillator();
+    const g = audio.createGain();
+    o.frequency.value = hz;
+    g.gain.setValueAtTime(0.15, at);
+    g.gain.exponentialRampToValueAtTime(0.001, at + 0.12);
+    o.connect(g).connect(audio.destination);
+    o.start(at);
+    o.stop(at + 0.12);
+  });
+}
+
 /// 서버 → 웹UI 알림 스트림. 붙는 순간 트레이 "새 요청" 이 지워진다. 원격 이름은 텍스트로만(브라우저 알림 본문도 텍스트).
 function listen() {
   const es = new EventSource(`/api/events?t=${encodeURIComponent(token)}`);
@@ -3929,18 +4075,25 @@ function listen() {
     }
     $("status_msg").textContent = `${n.title} — ${n.body.split("\n")[0]}`;
     // 다시 읽기는 변경 신호(`change`)가 맡는다 — 알림은 설정에 따라 오지 않을 수 있다.
+    // 받은 요청(#1x — B안) = 같은 tag 한 장(앞 알림을 바꾼다) · 누르면 요청 보드 · 효과음은 웹UI(OS 기본음 대신 — 알림은 무음).
+    const nn = requestNotice(n);
     if ($("notify_inbound").checked && "Notification" in window && Notification.permission === "granted") {
-      const shown = new Notification(n.title, { body: n.body, tag: "coworkagent-" + n.kind });
+      const shown = new Notification(nn.title, { body: nn.body, tag: nn.tag, silent: nn.sound });
       shown.onclick = () => {
         window.focus();
         if (PAIRING_KINDS.has(n.kind)) {
           go("#settings/peers");
-        } else {
-          pickRail(null); // 내 활동 전부
-          go("#activity");
+          return;
         }
+        pickRail(null); // 내 활동 · 요청 전부
+        if (nn.href === "#requests") {
+          setFolded(REQ_BOARD, true);
+          state.reqBox ??= "theirs";
+        }
+        go(nn.href);
       };
     }
+    if (nn.sound && state.settings.notify_sound !== false && !state.settings.focus) chime();
   };
   // 변경 신호 — 알림 설정 · 집중과 무관하게 온다(D39 ②). 읽지 못하면 전체.
   es.addEventListener("change", (ev) => {
@@ -4190,7 +4343,7 @@ async function runSearch() {
   );
 }
 
-/// 검색 결과로 — 메시지 = 그 글 위치, 대화 = 그 대화, 사람 = 그 타일, 상대 에이전트 = 새 대화 채움, 내 에이전트 = 설정.
+/// 검색 결과로 — 메시지 = 그 글 위치, 대화 = 그 대화, 사람 = 그 타일, 상대 에이전트 = 세션 생성 채움, 내 에이전트 = 설정.
 function searchGo(row) {
   closeSearch();
   if (row.tile != null) pickTile(row.tile);

@@ -81,6 +81,8 @@ const SHARE: &str = outbox::SHARE;
 const SHARE_NOTICE: &str = outbox::SHARE_NOTICE;
 /// 대화 나가기(#1w) — 상대 앞 `Leave`. 보내기 전에 상대가 이 종류를 아는지 본다 · 포기하지 않는다.
 const LEAVE: &str = outbox::LEAVE;
+/// 모든 사용자 글 삭제(#1x) — 상대 앞 `Clear`. 나가기와 같게 `conv_id` 없이 · 보내기 전에 상대가 아는지 본다 · 포기하지 않는다.
+const CLEAR: &str = outbox::CLEAR;
 
 /// 공유 사본(#1o)에 쓰려 했다.
 const READ_ONLY: &str = "공유 대화는 읽기 전용";
@@ -88,6 +90,12 @@ const READ_ONLY: &str = "공유 대화는 읽기 전용";
 const CLOSED: &str = "나간 대화는 읽기 전용";
 /// 도는 실행이 있는 대화를 나가려 했다(#1w — 실행 중단 기능은 없다).
 const LEAVE_BUSY: &str = "실행이 끝난 뒤 나갈 수 있습니다";
+/// 기록 삭제(#1x) — 실행 중 · 대기 글이 있으면 막는다.
+const CLEAR_BUSY: &str = "실행이 끝난 뒤 지울 수 있습니다";
+/// 모든 사용자 글 삭제(#1x 적대적 평가 R2) — 상대에게 보내는 중인 글이 있으면 막는다.
+const CLEAR_SENDING: &str = "보내는 중인 글이 있습니다 — 잠시 뒤 다시 지우세요";
+/// 모든 사용자 글 삭제(#1x) — 상대 앱이 `Clear` 를 모른다(이전 버전).
+pub const CLEAR_UNKNOWN: &str = "상대 앱이 이 기능을 모릅니다";
 
 /// 컨텍스트 요청 거절 코드(#1m) — 상대가 이 기능을 모른다(0.4.0 이하) · 요약 실행 실패.
 pub const CTX_UNSUPPORTED: &str = "unsupported";
@@ -842,8 +850,8 @@ impl Chat {
             if it.kind == CTX_DONE {
                 continue;
             }
-            // 나가기(#1w)도 — 돌아오면 줄이 보낸다(상대 대화가 읽기 전용이 되게).
-            if it.kind == LEAVE {
+            // 나가기(#1w) · 기록 지우기(#1x)도 — 돌아오면 줄이 보낸다(상대 대화가 읽기 전용이 · 비워지게).
+            if it.kind == LEAVE || it.kind == CLEAR {
                 continue;
             }
             // 공유 프레임(#1o) — 관람자에 한도만큼 닿지 않으면 그 관람을 끝낸다(행을 지우고 관람자에서 뺀다 — 꺼진 관람자 몫이 끝없이 쌓이지 않게,
@@ -1014,6 +1022,23 @@ impl Chat {
                 Err(e) => return self.backoff(item.id, &e),
             }
         }
+        // 기록 지우기(#1x) — 그 사이 이전 버전이 된 상대에는 보내지 않는다(상대 쪽은 그대로 — 로그).
+        if item.kind == CLEAR {
+            match self.node.knows_clear(item.peer_id).await {
+                Ok(true) => {}
+                Ok(false) => {
+                    // 내 활동에 "반영하지 못함 — 기록 삭제" 로 남긴다(`acked` 의 반영 실패 기록, 적대적 평가 R1).
+                    log::warn!("상대 {} 는 기록 지우기를 모른다 — 보내지 않는다(상대 쪽 기록은 그대로)", item.peer_id);
+                    let _ = self.acked(item.id, &Response::error("unsupported"));
+                    return;
+                }
+                Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                    let _ = self.acked(item.id, &Response::error("not_paired"));
+                    return;
+                }
+                Err(e) => return self.backoff(item.id, &e),
+            }
+        }
         // 빠진 관람자(#1o) — 빼기 · 나가기 · 포기 뒤 남은(보내던 중 · 다시 보낼) 공유 글은 보내지 않고 지운다. 빼기 표시(`ShareEnd`)는 보낸다
         // (적대적 평가 라운드 1) — 능력 확인(Ping) 뒤, 보내기 바로 앞에서(라운드 2). ponytail: 확인 ~ 보내기 사이(ms)에 빠지면 그 한 글은 간다 — 막으려면
         // 관람자별 잠금으로 빼기와 줄 세우거나 프레임에 공유 세대를 싣는다.
@@ -1041,7 +1066,7 @@ impl Chat {
             let item = outbox::get(&tx, id).map_err(db_err)?;
             let sync = item
                 .as_ref()
-                .is_some_and(|it| matches!(it.kind.as_str(), outbox::EDIT | outbox::DELETE));
+                .is_some_and(|it| matches!(it.kind.as_str(), outbox::EDIT | outbox::DELETE | CLEAR));
             if sync && !matches!(resp, Response::Ok) {
                 Self::note_sync_failed(&tx, item.as_ref().expect("위에서 확인"))?;
             }
@@ -1415,11 +1440,77 @@ impl Chat {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, MENTION_ONLY));
         }
         let opts = Compose { mention, ..opts };
+        // 세션 생성(#1x)으로 연 자동 왕복 대화의 첫 글 — 자동 왕복을 연다(`start_relay_with` 와 같은 길).
+        if conversation.is_some()
+            && let Some(relay) = conv.relay.clone()
+            && chat::empty(&self.db(), conv.id).map_err(db_err)?
+        {
+            if opts.request {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    REQUEST_NO_RELAY,
+                ));
+            }
+            let opts = Compose {
+                via: None,
+                mention: None,
+                ..opts
+            };
+            return self
+                .send_human(conv, &peer, text, Some(relay.agent), opts)
+                .await;
+        }
         // 사람이 쓰면 자동 왕복은 멈춘다(D24 — 사람 입력 대기).
         if conversation.is_some() {
             let _ = chat::relay_on(&self.db(), conv.id, false, false);
         }
         self.send_human(conv, &peer, text, None, opts).await
+    }
+
+    /// 세션 생성(#1x) — 글 없이 이 PC 에 대화만 연다(상대에는 첫 글이 갈 때 생긴다). `relay` = (내 에이전트, 상한) — 있으면 첫 글부터 자동 왕복.
+    /// 제목 · 그룹은 대화와 한 트랜잭션.
+    pub fn open_session(
+        &self,
+        peer_id: i64,
+        agent: &str,
+        relay: Option<(&str, i64)>,
+        opts: Compose<'_>,
+    ) -> io::Result<Conversation> {
+        if agent.trim().is_empty() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "상대 에이전트를 고른다"));
+        }
+        if let Some((_, cap)) = relay
+            && !(1..=MAX_RELAY_CAP).contains(&cap)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("자동 왕복 상한은 1 ~ {MAX_RELAY_CAP}"),
+            ));
+        }
+        self.paired_peer(peer_id)?;
+        let db = self.db();
+        if let Some((mine, _)) = relay
+            && agents::by_name(&db, mine).map_err(db_err)?.is_none()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("내 에이전트 {mine} 가 없다"),
+            ));
+        }
+        let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+        let c = chat::open_conversation(&tx, &new_uuid(), peer_id, agent, Dir::Out).map_err(db_err)?;
+        if let Some((mine, cap)) = relay {
+            chat::set_relay(&tx, c.id, mine, cap).map_err(db_err)?;
+        }
+        chat::set_title(&tx, c.id, opts.title).map_err(db_err)?;
+        if let Some(g) = opts.group
+            && !an_core::groups::join(&tx, g, c.id).map_err(db_err)?
+        {
+            return Err(no_group());
+        }
+        let c = chat::by_id(&tx, c.id).map_err(db_err)?.unwrap_or(c);
+        tx.commit().map_err(db_err)?;
+        Ok(c)
     }
 
     /// 두 에이전트 자동 왕복 대화를 연다(D24) — `my_agent` 는 이 PC 프로필, 상한 1 ~ 50 왕복. `title` = 이 PC 에서 붙이는 제목.
@@ -1834,6 +1925,7 @@ impl Chat {
             Request::ShareEnd { conv } => self.inbound_share_end(peer, conv),
             Request::ShareNotice { conv, n } => self.inbound_share_notice(peer, conv, n),
             Request::Leave { conv } => self.inbound_leave(peer, conv),
+            Request::Clear { conv, id } => self.inbound_clear(peer, conv, id),
             reply @ Request::Reply { .. } => self.inbound_reply(peer, reply),
             post @ Request::Post { .. } => self.inbound_post(peer, post),
             _ => Ok(Response::error("bad_request")),
@@ -1933,6 +2025,10 @@ impl Chat {
             if by_agent.is_some() && c.relay_blocked {
                 return Ok(Response::error(STOPPED));
             }
+            // 기록 삭제로 지운 글이 늦게 다시 왔다(#1x) — 되살리거나 다시 실행하지 않는다.
+            if chat::gone(&db, &msg).map_err(db_err)? {
+                return Ok(Response::Ok);
+            }
             if let Some(old) = chat::message_by_uuid(&db, &msg).map_err(db_err)? {
                 // 자동 왕복 재개 — 상한에서 기록만 받은 상대 에이전트 글을 같은 uuid 로 실행 요청으로. 그 밖은 재전송(한 번만 실행).
                 let promote = by_agent.is_some()
@@ -2014,8 +2110,10 @@ impl Chat {
             let Some(c) = chat::find_open(&db, &conv, peer.id).map_err(db_err)? else {
                 return Ok(Response::error("unknown"));
             };
-            if chat::message_by_uuid(&db, &msg).map_err(db_err)?.is_some() {
-                return Ok(Response::Ok); // 같은 글 재전송
+            if chat::message_by_uuid(&db, &msg).map_err(db_err)?.is_some()
+                || chat::gone(&db, &msg).map_err(db_err)?
+            {
+                return Ok(Response::Ok); // 같은 글 재전송 · 기록 삭제로 지운 글(#1x)
             }
             match author.as_str() {
                 "human" => {
@@ -2140,7 +2238,8 @@ impl Chat {
             | MessageKind::RelayStep
             | MessageKind::Ask
             | MessageKind::AskState
-            | MessageKind::Share => None,
+            | MessageKind::Share
+            | MessageKind::Clear => None,
         };
         if let Some(mark) = mark
             && let Err(e) = chat::add_relay_event(&self.db(), conversation_id, mark, &preview)
@@ -2486,13 +2585,19 @@ impl Chat {
     /// 상대 반영 실패(#1f) — 편집 · 삭제 반영 행의 대화에 내 활동 기록(`sync_failed`, 사유 "편집 — {미리보기}" · "삭제"). `conn` 은 행을 정리하는
     /// 트랜잭션 — 기록과 행 정리가 함께 남거나 함께 없다.
     fn note_sync_failed(conn: &Connection, item: &outbox::Item) -> io::Result<()> {
-        let conv = item
-            .conv_id
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "반영 행에 대화가 없다"))?;
+        // 나가며 떼어 낸 기록 지우기(#1x)는 대화가 없다 — 남길 자리가 없다.
+        let Some(conv) = item.conv_id else {
+            return if item.kind == CLEAR {
+                Ok(())
+            } else {
+                Err(io::Error::new(io::ErrorKind::InvalidData, "반영 행에 대화가 없다"))
+            };
+        };
         // 편집 실패는 그 글에 잇는다 — 나중에 글을 지우면 본문 미리보기도 함께 사라진다(완전 삭제, 적대적 평가 라운드 2). 삭제 실패는 본문이 없고
         // 글 id 도 이미 없다.
         let (what, message) = match serde_json::from_str::<Request>(&item.frame) {
             Ok(Request::Edit { text, .. }) => (format!("편집 — {}", preview(&text)), item.msg_id),
+            Ok(Request::Clear { .. }) => ("기록 삭제".to_string(), None),
             _ => ("삭제".to_string(), None),
         };
         chat::add_relay_event(conn, conv, chat::RelayMark::SyncFailed(message), &what)
@@ -2605,7 +2710,9 @@ impl Chat {
             if c.dir != Dir::In || c.agent != agent {
                 return Ok(Response::error("bad_request"));
             }
-            if chat::message_by_uuid(&db, msg).map_err(db_err)?.is_some() {
+            if chat::message_by_uuid(&db, msg).map_err(db_err)?.is_some()
+                || chat::gone(&db, msg).map_err(db_err)?
+            {
                 return Ok(Response::Ok);
             }
             let tx = an_core::db::write_tx(&db).map_err(db_err)?;
@@ -2815,8 +2922,10 @@ impl Chat {
             else {
                 return Ok(Response::error("unknown"));
             };
-            if chat::message_by_uuid(&db, &msg).map_err(db_err)?.is_some() {
-                return Ok(Response::Ok); // 같은 답 재전송
+            if chat::message_by_uuid(&db, &msg).map_err(db_err)?.is_some()
+                || chat::gone(&db, &msg).map_err(db_err)?
+            {
+                return Ok(Response::Ok); // 같은 답 재전송 · 기록 삭제로 지운 답(#1x)
             }
             // 요청 없이 온 답 · 이미 답이 온 메시지에 또 온 답은 받지 않는다.
             let asked = chat::message_by_uuid(&db, &reply_to)
@@ -3930,27 +4039,11 @@ impl Chat {
         }
         {
             let db = self.db();
-            let title = chat::summaries(&db)
-                .map_err(db_err)?
-                .into_iter()
-                .find(|s| s.conversation.id == conv.id)
-                .map(|s| s.title)
-                .unwrap_or_default();
-            let other = an_core::peers::by_id(&db, conv.peer_id)
-                .map_err(db_err)?
-                .map(|p| p.name)
-                .unwrap_or_default();
+            let head = Self::share_head(&db, &conv)?;
             let tx = an_core::db::write_tx(&db).map_err(db_err)?;
             // Ping 하는 사이 다른 창이 넣었을 수 있다 — 트랜잭션 안에서 다시.
             Self::share_room(&tx, conv.id, peer_id)?;
             share::add(&tx, conv.id, peer_id).map_err(db_err)?;
-            let head = Request::Share {
-                conv: conv.uuid.clone(),
-                title,
-                agent: conv.agent.clone(),
-                owner_dir: conv.dir.as_str().into(),
-                other,
-            };
             Self::stage_share(&tx, &conv, peer_id, &head)?;
             // 이력도 같은 트랜잭션 — 머리만 가고 글이 빠진 채로 꺼지지 않게.
             Self::fan_share_in(&tx, conv.id)?;
@@ -3959,6 +4052,27 @@ impl Chat {
         self.kick(peer_id);
         self.notice_watchers(&conv);
         Ok(())
+    }
+
+    /// 공유 머리(`Share`) — 이 PC 의 대화 제목 · 원 상대 이름. 관람자 사본은 이것을 받으면 글을 비우고 다시 받는다(#1o · #1x 기록 삭제).
+    fn share_head(conn: &Connection, conv: &Conversation) -> io::Result<Request> {
+        let title = chat::summaries(conn)
+            .map_err(db_err)?
+            .into_iter()
+            .find(|s| s.conversation.id == conv.id)
+            .map(|s| s.title)
+            .unwrap_or_default();
+        let other = an_core::peers::by_id(conn, conv.peer_id)
+            .map_err(db_err)?
+            .map(|p| p.name)
+            .unwrap_or_default();
+        Ok(Request::Share {
+            conv: conv.uuid.clone(),
+            title,
+            agent: conv.agent.clone(),
+            owner_dir: conv.dir.as_str().into(),
+            other,
+        })
     }
 
     /// 관람자 자리 — 이미 관람자 · 상한이면 거절.
@@ -4046,9 +4160,10 @@ impl Chat {
                 Self::stage_share(&tx, &conv, w.peer_id, &end)?;
                 woken.push(w.peer_id);
             }
+            // 기다리는 기록 지우기(#1x)는 남긴다 — 지운 뒤 나가도 상대 쪽은 비워지게.
             tx.execute(
-                "DELETE FROM outbox WHERE conv_id = ?1 AND peer_id = ?2 AND state = 'pending'",
-                (conv.id, conv.peer_id),
+                "DELETE FROM outbox WHERE conv_id = ?1 AND peer_id = ?2 AND state = 'pending' AND kind <> ?3",
+                (conv.id, conv.peer_id, CLEAR),
             )
             .map_err(db_err)?;
             let frame = serde_json::to_string(&Request::Leave {
@@ -4086,6 +4201,112 @@ impl Chat {
         }
         chat::delete_conversation(&tx, conversation_id).map_err(db_err)?;
         tx.commit().map_err(db_err)
+    }
+
+    /// 대화 기록을 지운다(#1x — 기록 삭제) — 이 PC 의 그 대화 글 · 실행 · 세션 기록을 비우고 대화는 남긴다(`chat::clear_conversation`). `all` = 모든 사용자 글
+    /// 삭제 — 상대 PC 에 `Clear`(그쪽도 비운다), 관람자 사본은 머리(`Share`)를 다시 보내 비운다. 거절: 공유 사본(`READ_ONLY`) · 실행 중 · 대기 글(Busy) ·
+    /// `all` 인데 닫힌 대화(`CLOSED`) · `all` 인데 상대 앱이 모름(Unsupported — 아무것도 지우지 않는다). 상대에 닿지 않으면 이 PC 를 비우고 `Clear` 는 줄이 나중에 보낸다.
+    pub async fn clear_conversation(&self, conversation_id: i64, all: bool) -> io::Result<()> {
+        let conv = self.conversation(conversation_id)?;
+        if conv.dir == Dir::Shared {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, READ_ONLY));
+        }
+        if all {
+            if conv.closed() {
+                return Err(io::Error::new(io::ErrorKind::InvalidInput, CLOSED));
+            }
+            self.paired_peer(conv.peer_id)?;
+            match self.node.knows_clear(conv.peer_id).await {
+                Ok(true) => {}
+                Ok(false) => {
+                    return Err(io::Error::new(io::ErrorKind::Unsupported, CLEAR_UNKNOWN));
+                }
+                Err(e) if e.kind() == io::ErrorKind::PermissionDenied => return Err(e),
+                // 꺼져 있다 — 이 PC 를 비우고 줄이 나중에 보낸다(그때 모르면 버리고 내 활동에 남긴다).
+                Err(_) => {}
+            }
+        }
+        let woken = {
+            let db = self.db();
+            let head = Self::share_head(&db, &conv)?;
+            let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+            if chat::busy(&tx, conv.id).map_err(db_err)? {
+                return Err(io::Error::new(io::ErrorKind::ResourceBusy, CLEAR_BUSY));
+            }
+            // 상대에게 보내는 중인 글이 있으면 막는다 — 이미 떠난 옛 글이 지우기보다 늦게 닿아 상대 쪽에 되살아나지 않게(적대적 평가 R2).
+            if all && outbox::sending(&tx, conv.id, conv.peer_id).map_err(db_err)? {
+                return Err(io::Error::new(io::ErrorKind::ResourceBusy, CLEAR_SENDING));
+            }
+            chat::clear_conversation(&tx, conv.id).map_err(db_err)?;
+            let mut woken = Vec::new();
+            if all {
+                let frame = serde_json::to_string(&Request::Clear {
+                    conv: conv.uuid.clone(),
+                    id: new_uuid(),
+                })
+                .map_err(io::Error::other)?;
+                // 그 대화의 줄에(`conv_id`) — 뒤에 쓴 글이 지우기보다 먼저 닿지 않게(`dispatch` 의 `has_before`, 적대적 평가 R1). 나가기 · 삭제는 이 행을 떼어 남긴다.
+                outbox::add(&tx, conv.peer_id, Some(conv.id), None, CLEAR, &frame, None, "pending")
+                    .map_err(db_err)?;
+                woken.push(conv.peer_id);
+                woken.extend(Self::reshare(&tx, &conv, &head)?);
+            }
+            tx.commit().map_err(db_err)?;
+            woken
+        };
+        for p in woken {
+            self.kick(p);
+        }
+        Ok(())
+    }
+
+    /// 관람자 사본을 비운다(#1x) — 기다리는 그 대화 공유 글(`SharePost` · `ShareDelete`)을 버리고 관람자마다 머리(`Share`)를 다시 넣는다. 깨울 관람자.
+    fn reshare(conn: &Connection, conv: &Conversation, head: &Request) -> io::Result<Vec<i64>> {
+        conn.execute(
+            "DELETE FROM outbox WHERE conv_id = ?1 AND kind = ?2
+               AND json_extract(frame, '$.type') IN ('share_post', 'share_delete')",
+            (conv.id, SHARE),
+        )
+        .map_err(db_err)?;
+        let mut woken = Vec::new();
+        for w in share::watchers(conn, conv.id).map_err(db_err)? {
+            Self::stage_share(conn, conv, w.peer_id, head)?;
+            woken.push(w.peer_id);
+        }
+        Ok(woken)
+    }
+
+    /// 상대가 그 대화 기록을 모두 지웠다(#1x — 받은 `Clear`) — 그 상대 소유 대화(`find_own`)의 글을 비우고 관람자 사본도 비운다, 알림. 닫힌 대화는 `handle`
+    /// 이 먼저 `left` 로 거절한다. 실행 중 · 대기 글이 있으면 `retry`(보낸 쪽 줄이 다시 보낸다 — 실행이 끝난 뒤 비운다).
+    fn inbound_clear(&self, peer: &Peer, conv: String, id: String) -> io::Result<Response> {
+        let (c, woken) = {
+            let db = self.db();
+            let Some(c) = chat::find_own(&db, &conv, peer.id).map_err(db_err)? else {
+                return Ok(Response::error("unknown"));
+            };
+            if c.dir == Dir::Shared {
+                return Ok(Response::error("unknown"));
+            }
+            let head = Self::share_head(&db, &c)?;
+            let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+            // 이미 적용한 지우기(응답이 사라져 다시 왔다) — 그 사이 쓴 글을 지우지 않는다.
+            if chat::gone(&tx, &id).map_err(db_err)? {
+                return Ok(Response::Ok);
+            }
+            if chat::busy(&tx, c.id).map_err(db_err)? {
+                return Ok(Response::error(RETRY));
+            }
+            chat::clear_conversation(&tx, c.id).map_err(db_err)?;
+            chat::mark_gone(&tx, &id, c.id).map_err(db_err)?;
+            let woken = Self::reshare(&tx, &c, &head)?;
+            tx.commit().map_err(db_err)?;
+            (c, woken)
+        };
+        for p in woken {
+            self.kick(p);
+        }
+        self.notify(c.id, peer, c.agent.clone(), MessageKind::Clear, String::new());
+        Ok(Response::Ok)
     }
 
     /// 상대가 나갔다(#1w) — 그 상대 소유 대화를 읽기 전용으로(대기 글 취소 · 답을 기다리던 내 글 닫기 · 자동 왕복 끔). 없는 대화면 `Ok`(이미 지웠다).

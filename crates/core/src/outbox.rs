@@ -121,6 +121,12 @@ pub fn has_before(
 }
 
 /// 그 상대에 닿지 않고 있나 — 다시 보내기를 기다리는 행(시도 1번 이상)이 있다.
+/// 그 대화에서 그 상대에게 지금 보내는 중(`inflight`)인 행이 있는가(#1x 적대적 평가 R2 — 이미 떠난 옛 글을 기록 지우기가 앞지르지 않게).
+pub fn sending(conn: &Connection, conv_id: i64, peer_id: i64) -> rusqlite::Result<bool> {
+    conn.prepare("SELECT 1 FROM outbox WHERE conv_id = ?1 AND peer_id = ?2 AND state = 'inflight'")?
+        .exists([conv_id, peer_id])
+}
+
 pub fn failing(conn: &Connection, peer_id: i64) -> rusqlite::Result<bool> {
     conn.prepare("SELECT 1 FROM outbox WHERE peer_id = ?1 AND state = 'pending' AND tries > 0")?
         .exists([peer_id])
@@ -226,6 +232,9 @@ pub const SHARE_NOTICE: &str = "share_notice";
 
 /// 대화 나가기(#1w) — 상대 앞 `Leave`. 대화를 지워도 남게 `conv_id` 없이 넣고(uuid 는 프레임에), 포기하지 않는다.
 pub const LEAVE: &str = "leave";
+
+/// 대화 기록 모두 지우기(#1x) — 상대 앞 `Clear`. [`LEAVE`] 와 같게 `conv_id` 없이 · 포기하지 않는다.
+pub const CLEAR: &str = "clear";
 
 /// 그 글을 실어 나르는 가장 최근 행(보관 상태 표시 · 편집 가능 판정) — 편집 · 삭제 반영 행([`EDIT`] · [`DELETE`])은 뺀다.
 pub fn for_message(conn: &Connection, msg_id: i64) -> rusqlite::Result<Option<Item>> {

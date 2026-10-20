@@ -2,7 +2,7 @@ use rusqlite::OptionalExtension;
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 21;
+pub const SCHEMA_VERSION: i64 = 23;
 
 /// DB 오류를 `io::Error` 로 — 상위 크레이트가 `map_err(db_err)` 로 쓴다(`Error` 는 rusqlite 것이라 `From` 을 구현할 수 없다).
 pub fn db_err(e: Error) -> std::io::Error {
@@ -561,7 +561,85 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.execute_batch("PRAGMA user_version = 21;")?;
         tx.commit()?;
     }
+    // 22(#1x 적대적 평가 R1) — 기록 삭제로 지운 글 · 받아 적용한 `Clear` 의 uuid. 같은 uuid 로 늦게 다시 온 글이 기록을 되살리거나 다시 실행되지 않고,
+    // 같은 `Clear` 를 두 번 적용하지 않는다(그 사이 새 글을 지우지 않게).
+    // 글 번호도 다시 쓰지 않는다 — 기록 삭제가 대화의 글을 통째로 지운 뒤 새 글이 지운 번호를 받으면 대화 작업(`wake` — 꺼낸 글 번호 집합)이
+    // 새 글을 이미 꺼낸 글로 보고 실행하지 않는다(스키마 21 `conversations` 와 같은 방법).
+    if v < 22 {
+        let tx = conn.unchecked_transaction()?;
+        let sql: String = tx.query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'messages'",
+            [],
+            |r| r.get(0),
+        )?;
+        if !sql.contains("AUTOINCREMENT") {
+            let new = sql
+                .replacen("CREATE TABLE \"messages\"", "CREATE TABLE messages", 1)
+                .replacen("CREATE TABLE messages", "CREATE TABLE messages_new", 1)
+                .replacen(
+                    "id INTEGER PRIMARY KEY",
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT",
+                    1,
+                );
+            if !new.contains("CREATE TABLE messages_new") || !new.contains("AUTOINCREMENT") {
+                return Err(rusqlite::Error::InvalidParameterName(format!(
+                    "스키마 22 — messages 정의를 알 수 없다: {sql}"
+                )));
+            }
+            tx.execute_batch(&format!(
+                "{new};
+                 INSERT INTO messages_new SELECT * FROM messages;
+                 DROP TABLE messages;
+                 ALTER TABLE messages_new RENAME TO messages;
+                 CREATE INDEX IF NOT EXISTS messages_by_conv ON messages(conversation_id);"
+            ))?;
+        }
+        // 순번 시작 = 지금 글 · 글 번호를 가리키는 가장 큰 값(지운 글의 남은 흔적도 다시 쓰지 않는다).
+        tx.execute("DELETE FROM sqlite_sequence WHERE name = 'messages'", [])?;
+        tx.execute(
+            "INSERT INTO sqlite_sequence (name, seq) VALUES ('messages', max(
+               (SELECT coalesce(max(id), 0) FROM messages),
+               (SELECT coalesce(max(message_id), 0) FROM relay_events),
+               (SELECT coalesce(max(msg_id), 0) FROM outbox),
+               (SELECT coalesce(max(message_id), 0) FROM cli_tx),
+               (SELECT coalesce(max(read_id), 0) FROM conversations),
+               (SELECT coalesce(max(activity_seen_msg), 0) FROM peers),
+               (SELECT coalesce(max(sent_upto), 0) FROM shares)))",
+            [],
+        )?;
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS gone_msgs (
+               uuid TEXT PRIMARY KEY,
+               conversation_id INTEGER NOT NULL
+             );
+             PRAGMA user_version = 22;",
+        )?;
+        tx.commit()?;
+    }
+    // 23(#1y): 요청 archive 손 표시 — NULL = 자동(완료 7일 뒤) · 1 = 손으로 archive · 0 = 손으로 해제(자동 제외).
+    if v < 23 {
+        let tx = conn.unchecked_transaction()?;
+        if !has_column(&tx, "messages", "req_archived")? {
+            tx.execute_batch("ALTER TABLE messages ADD COLUMN req_archived INTEGER;")?;
+        }
+        tx.execute_batch("PRAGMA user_version = 23;")?;
+        tx.commit()?;
+    }
     Ok(conn)
+}
+
+/// [`vacuum_if_sparse`] 가 VACUUM 하는 빈 바이트 하한(#1y — 작은 DB 는 하지 않는다).
+pub const VACUUM_MIN_FREE: i64 = 4 * 1024 * 1024;
+
+/// 빈 페이지가 [`VACUUM_MIN_FREE`] 이상이고 전체의 1/4 이상이면 `VACUUM` 하고 참(#1y — 지운 만큼 파일을 줄인다). 시작 때 한 번.
+pub fn vacuum_if_sparse(conn: &Connection) -> rusqlite::Result<bool> {
+    let pragma = |name: &str| conn.query_row(&format!("PRAGMA {name}"), [], |r| r.get::<_, i64>(0));
+    let (pages, free, size) = (pragma("page_count")?, pragma("freelist_count")?, pragma("page_size")?);
+    if free * size < VACUUM_MIN_FREE || free * 4 < pages {
+        return Ok(false);
+    }
+    conn.execute_batch("VACUUM")?;
+    Ok(true)
 }
 
 /// 방향으로 정한 "이 PC 의 글" — 보낸 대화(`out`)의 사람 글 · 받은 대화(`in`)의 에이전트 답 · 공유 사본(`shared`, #1o)은 없음. `messages` 행

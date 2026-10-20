@@ -157,7 +157,7 @@ async fn history_and_followups_reach_viewer() {
     t.a.chat.delete_messages(&[memo.id], true).await.unwrap();
     common::eventually(|| copy_texts(&t.c, &conv.uuid).len() == 4).await;
     assert_eq!(copy_texts(&t.c, &conv.uuid), texts(&t.a, conv.id));
-    // 맨 끝 글을 지운 뒤 새 글 — SQLite 가 같은 id 를 다시 줘도 관람자에게 간다(보낸 커서를 낮춘다).
+    // 맨 끝 글을 지운 뒤 새 글 — 관람자에게 간다. 글 번호는 다시 쓰지 않는다(#1x 스키마 22 — 전에는 같은 id 를 다시 받아 보낸 커서를 낮췄다).
     let (_, last, _) = t.a.chat.post(conv.id, "끝 글", false).await.unwrap();
     common::eventually(|| copy_texts(&t.c, &conv.uuid).len() == 5).await;
     common::eventually(|| {
@@ -169,7 +169,7 @@ async fn history_and_followups_reach_viewer() {
     t.a.chat.delete_messages(&[last.id], true).await.unwrap();
     common::eventually(|| copy_texts(&t.c, &conv.uuid).len() == 4).await;
     let (_, again, _) = t.a.chat.post(conv.id, "다시 쓴 글", false).await.unwrap();
-    assert_eq!(again.id, last.id, "같은 id 를 다시 받는다(시험 전제)");
+    assert!(again.id > last.id, "지운 번호를 다시 쓰지 않는다(스키마 22)");
     common::eventually(|| copy_texts(&t.c, &conv.uuid).contains(&"다시 쓴 글".to_string())).await;
 
     // 사본에는 실행이 없고 내 활동에 들지 않는다. 쓰기 · 컨텍스트 · 자동 왕복 · 다시 공유는 막힌다(읽기 전용).

@@ -27,6 +27,11 @@ import {
   searchItems,
   josa,
   USER_LIST,
+  SESSION_NEW,
+  LEAVE_CONFIRM,
+  sideSub,
+  composeDefaults,
+  requestNotice,
   settingsGroupSections,
   convCopy,
   convMenuItems,
@@ -86,6 +91,9 @@ import {
   requestRows,
   reqBoxes,
   reqHead,
+  reqArchiveAction,
+  peerWeeksOptions,
+  PEER_WEEKS,
   REQ_BTN,
   peerGroups,
   peerSummary,
@@ -692,9 +700,9 @@ test("icons_defined — app.js ico(이름) · index.html ico-이름 으로 쓴 �
   for (const name of used) assert.ok(css.includes(`.ico-${name} {`), `app.css .ico-${name}`);
 });
 
-test("new_menu — 네 항목이 각 화면으로, 초점 칸까지(자동 왕복은 새 대화 화면 안 — #1l)", () => {
+test("new_menu — 네 항목이 각 화면으로, 초점 칸까지(자동 왕복은 세션 생성 화면 안 — #1l)", () => {
   const items = newMenu();
-  assert.deepEqual(items.map((i) => i.label), ["새 대화", "초대 생성", "초대 수락", "에이전트 등록"]);
+  assert.deepEqual(items.map((i) => i.label), ["세션 생성", "초대 생성", "초대 수락", "에이전트 등록"]);
   assert.deepEqual(items.map((i) => route(i.href)), [
     { view: "new" },
     { view: "settings", focus: "invite_make" },
@@ -1845,16 +1853,15 @@ test("ui_polish_invite_press — 설정 트리 · 새로 만들기의 '초대 �
   assert.deepEqual(newMenu().filter((i) => i.press).map((i) => [i.label, i.press]), [["초대 생성", "window_btn"]]);
 });
 
-test("ui_polish_new_chat — 새 대화 폼: '자동 왕복' 없음 · 내 응답 에이전트 · 최대 응답 횟수(처음 숨김) · 라벨마다 아이콘(#1r)", () => {
+test("ui_polish_new_chat — 세션 생성 폼: '자동 왕복' 없음 · 내 응답 에이전트 · 최대 응답 횟수(처음 숨김) · 라벨마다 아이콘(#1r · #1x)", () => {
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
   const form = html.slice(html.indexOf('<form id="chat_form"'), html.indexOf("</form>", html.indexOf('<form id="chat_form"')));
-  assert.ok(!form.includes("자동 왕복"), "새 대화에 자동 왕복 낱말 없음");
+  assert.ok(!form.includes("자동 왕복"), "세션 생성에 자동 왕복 낱말 없음");
   assert.ok(form.includes(">내 응답 에이전트</label>") && form.includes(">최대 응답 횟수</label>"));
   assert.match(form, /<label for="chat_relay_cap" id="chat_relay_cap_label" class="sub-label" hidden>/);
   assert.match(form, /<input id="chat_relay_cap" type="number" min="1" max="50" step="1" value="10" required disabled hidden>/, "숨긴 동안 disabled — 폼 검사에서 빠진다");
   const labels = [...form.matchAll(/<label for="\w+"[^>]*>(.*?)<\/label>/g)].map((m) => m[1]);
-  labels.push(form.match(/<span id="chat_ask_label" class="label">(.*?<\/span>[^<]*)<\/span>/)[1]);
-  assert.equal(labels.length, 7, "상대 · 상대 에이전트 · 내 응답 에이전트 · 최대 응답 횟수 · 제목 · 메시지 · 메시지 종류");
+  assert.equal(labels.length, 5, "상대 · 상대 에이전트 · 내 응답 에이전트 · 최대 응답 횟수 · 제목(#1x — 메시지 · 메시지 종류 없음)");
   for (const l of labels) assert.match(l, /^<span class="ico ico-[a-z-]+" aria-hidden="true"><\/span>\S/, l);
 });
 
@@ -2081,19 +2088,72 @@ test("composer_a — 입력창: 질의 / 요청 라디오 2개 · 안내 문구 
   assert.ok(!app.includes('$("reply_text").placeholder'), "대화를 열 때 placeholder 를 덮어쓰지 않는다(적대적 평가 R2)");
 });
 
-test("conv_menu_items — 대화 ⋯ 메뉴 끝: 나가기 · 삭제(#1w), 내가 나간 대화 · 해제된 공유 사본은 삭제만, 아이콘은 app.css 에", () => {
-  const keys = (c) => convMenuItems(c).map((i) => i.key);
+test("conv_menu_items_1x — 대화 ⋯ 끝: 기록 삭제 ▸(내 글만 · 모든 사용자) · 나가기(확인 = 목록에서 삭제), 닫힌 대화는 내 글만, 관람자는 나가기만", () => {
+  const leave = { key: "leave", label: "나가기", icon: "exit", danger: true, confirm: "대화방이 목록에서 삭제됩니다." };
+  assert.equal(LEAVE_CONFIRM, "대화방이 목록에서 삭제됩니다.");
   assert.deepEqual(convMenuItems({ dir: "out" }), [
-    { key: "leave", label: "나가기", icon: "exit" },
-    { key: "delete", label: "삭제", icon: "trash", danger: true },
+    { key: "clear", label: "기록 삭제", icon: "trash", sub: [{ key: "clear_mine", label: "내 글만 삭제" }, { key: "clear_all", label: "모든 사용자 글 삭제" }] },
+    leave,
   ]);
-  assert.deepEqual(keys({ dir: "in", left_at: null, peer_left_at: null }), ["leave", "delete"]);
-  assert.deepEqual(keys({ dir: "in", peer_left_at: 5 }), ["leave", "delete"], "상대가 나간 대화 — 나도 나가거나 지운다");
-  assert.deepEqual(keys({ dir: "out", left_at: 5 }), ["delete"], "나간 대화");
-  assert.deepEqual(keys({ dir: "shared", share: { ended: null } }), ["leave", "delete"], "공유 사본");
-  assert.deepEqual(keys({ dir: "shared", share: { ended: 9 } }), ["delete"], "해제된 공유 사본");
+  const subs = (c) => convMenuItems(c)[0].sub?.map((x) => x.key);
+  assert.deepEqual(subs({ dir: "in", left_at: null, peer_left_at: null }), ["clear_mine", "clear_all"], "에이전트 대화도 같다");
+  assert.deepEqual(subs({ dir: "in", peer_left_at: 5 }), ["clear_mine"], "상대가 나간 대화 — 내 글만");
+  assert.deepEqual(subs({ dir: "out", left_at: 5 }), ["clear_mine"], "1.0.x 에서 내가 나간 대화 — 내 글만");
+  assert.deepEqual(convMenuItems({ dir: "out", left_at: 5 }).map((i) => i.key), ["clear", "leave"]);
+  assert.deepEqual(convMenuItems({ dir: "shared", share: { ended: null } }), [leave], "관람자 — 나가기만");
+  assert.deepEqual(convMenuItems({ dir: "shared", share: { ended: 9 } }), [leave], "해제된 사본도 나가기로 목록에서 삭제");
+  const all = [{ dir: "out" }, { dir: "in", peer_left_at: 1 }, { dir: "shared", share: {} }].flatMap((c) => convMenuItems(c).flatMap((i) => [i.label, ...(i.sub ?? []).map((x) => x.label)]));
+  for (const gone of ["삭제", "이력유지", "이력삭제", "대화 유지", "대화 제거", "대화방 종료"]) assert.ok(!all.includes(gone), gone);
   const css = readFileSync(new URL("./app.css", import.meta.url), "utf8");
   for (const i of convMenuItems({ dir: "out" })) assert.ok(css.includes(`.ico-${i.icon} {`), `app.css .ico-${i.icon}`);
+});
+
+test("side_sub — 사이드바 머리 부제: 나 = 이름(별칭이면 호스트), 상대 = 호스트(별칭이면 이름 · 호스트), 지문 · 페어링 됨 · 접속 문구 없음(#1x)", () => {
+  const me = { name: "tskim", host: "DEV-01", fingerprint: "06A7 9531 1111" };
+  assert.equal(sideSub("me", me, ""), "tskim");
+  assert.equal(sideSub("me", me, "나의 PC"), "tskim · DEV-01");
+  const peer = { name: "kim", host: "DEV-02", paired: true, seen_at: Math.floor(Date.now() / 1000) };
+  assert.equal(sideSub("peer", peer), "DEV-02");
+  assert.equal(sideSub("peer", { ...peer, alias: "팀원 A" }), "kim · DEV-02");
+  for (const t of [sideSub("me", me, "x"), sideSub("peer", peer), sideSub("peer", { ...peer, alias: "a" })])
+    for (const bad of ["지문", "06A7", "페어링 됨", "방금 통신", "통신"]) assert.ok(!t.includes(bad), `${t} ∌ ${bad}`);
+});
+
+test("compose_defaults — 세션 생성 상대 칸 처음 값 = 레일에서 고른 페어링된 상대(#1x), 나 · 그룹 · 미페어링은 빈 값", () => {
+  const peers = [{ id: 3, paired: true }, { id: 4, paired: false }];
+  assert.equal(composeDefaults(3, peers), "3");
+  assert.equal(composeDefaults(4, peers), "", "페어링 안 됨");
+  assert.equal(composeDefaults(null, peers), "", "나");
+  assert.equal(composeDefaults(9, peers), "", "없는 상대");
+});
+
+test("request_notice — 받은 요청은 한 tag(앞 알림을 바꿈) · 요청 보드 · 효과음, 그 밖은 종류별 tag · 내 활동 · 소리 없음(#1x B안)", () => {
+  assert.deepEqual(requestNotice({ kind: "request", title: "받은 요청 3", body: "팀원 A · 문구\n외 2건" }), {
+    title: "받은 요청 3",
+    body: "팀원 A · 문구\n외 2건",
+    tag: "coworkagent-request",
+    href: "#requests",
+    sound: true,
+  });
+  const m = requestNotice({ kind: "message", title: "메시지 — review", body: "x" });
+  assert.deepEqual([m.tag, m.href, m.sound], ["coworkagent-message", "#activity", false]);
+});
+
+test("session_label — '새 대화' 라벨이 화면 원문에 없고 '세션 생성' 이다(#1x — 사용자 2026-10-20)", () => {
+  assert.equal(SESSION_NEW, "세션 생성");
+  assert.equal(newMenu()[0].label, SESSION_NEW);
+  for (const f of ["./index.html", "./app.js", "./view.js"]) {
+    const src = readFileSync(new URL(f, import.meta.url), "utf8");
+    const hits = [...src.matchAll(/["'`>][^"'`<\n]*새 대화/g)].map((m) => m[0]);
+    assert.deepEqual(hits, [], f);
+  }
+  const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+  assert.ok(html.includes("<h1>세션 생성</h1>"));
+  const form = html.slice(html.indexOf('<form id="chat_form"'), html.indexOf("</form>", html.indexOf('<form id="chat_form"')));
+  assert.ok(!form.includes("메시지 종류") && !form.includes("chat_text"), "세션 생성에 메시지 · 메시지 종류 없음(대화방 입력창의 질의 | 요청은 그대로)");
+  assert.ok(!html.includes("실행하지 않고 상대의 요청 목록에 올립니다"), "요청 안내 없음");
+  assert.match(html, /<form id="chat_form"[\s\S]*?<button type="submit" class="primary">생성<\/button>/);
+  assert.match(html, /<html lang="ko" data-theme="light">/, "기본 테마 라이트");
 });
 
 test("conv_closed — 닫힌 대화 문구(나감 · 상대가 나감 · 공유 해제됨) = 대화 줄 태그, 열린 대화는 빈 글자", () => {
@@ -2157,4 +2217,49 @@ test("conv_copy — 대화 줄을 그룹 절에 놓으면 복사(넣기만 · �
   assert.equal(convCopy(5, 9, groups), null, "모르는 그룹");
   assert.equal(convCopy(5, null, groups), null, "사용자 목록에 놓기");
   assert.deepEqual(groups[0].convs, [5], "원래 그룹은 그대로");
+});
+
+test("screen_settings_1x — 설정 '타일 크기'(보통 · 작게) · 알림 '효과음' 칸, 작은 타일 CSS(넓은 화면 · 레일 폭 토큰)", () => {
+  const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+  const sel = html.slice(html.indexOf('<select id="ui_tile_size">'), html.indexOf("</select>", html.indexOf('<select id="ui_tile_size">')));
+  assert.deepEqual([...sel.matchAll(/<option value="(\w+)">/g)].map((m) => m[1]), ["normal", "small"]);
+  assert.ok(html.includes('<label for="ui_tile_size">타일 크기</label>'));
+  assert.match(html, /<label for="notify_sound">효과음<\/label>\s*<input type="checkbox" id="notify_sound"/);
+  const css = readFileSync(new URL("./app.css", import.meta.url), "utf8");
+  assert.ok(css.includes("--rail-w-small:"), "레일 폭 토큰");
+  assert.match(css, /@media \(min-width: 721px\) \{\s*#app\.tile-small \{ grid-template-columns: var\(--rail-w-small\)/);
+});
+
+test("peer_weeks_options — 주고받은 메시지 기간 1 ~ 12주(#1y, 서버 PEER_WEEKS_MAX 와 같다)", () => {
+  assert.deepEqual(PEER_WEEKS, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  const o = peerWeeksOptions();
+  assert.equal(o.length, 12);
+  assert.deepEqual([o[0], o[3], o[11]], [{ value: "1", label: "1주" }, { value: "4", label: "4주" }, { value: "12", label: "12주" }]);
+});
+
+test("req_head_archive — archive 된 완료는 전체 수 밖 · 머리 끝에 따로(#1y)", () => {
+  const h = reqHead("받은 요청", { total: 2, wait: 1, accepted: 0, done: 1, rejected: 0, archived: 3 });
+  assert.equal(h.count, "2");
+  assert.deepEqual(h.states.map((x) => x.text), ["대기 1", "완료 1", "archive 3"]);
+  assert.deepEqual(reqHead("받은 요청", { total: 1, wait: 1, archived: 0 }).states.map((x) => x.key), ["wait"], "0 이면 없음");
+});
+
+test("req_archive_action — 완료 = archive · archive 됨 = 해제 · 그 밖(대기 · 질의 · 답) 없음, 받은 · 보낸 요청 모두(#1y)", () => {
+  const req = (o) => ({ author: "human", request: true, mine: false, ...o });
+  assert.deepEqual(reqArchiveAction(req({ req_state: "done" })), { key: "archive", label: "archive" });
+  assert.deepEqual(reqArchiveAction(req({ req_state: "done", mine: true })), { key: "archive", label: "archive" });
+  assert.deepEqual(reqArchiveAction(req({ req_state: "done", archived: true })), { key: "unarchive", label: "archive 해제" });
+  for (const m of [req({ req_state: "wait" }), req({ req_state: "rejected" }), { author: "human", request: false }, { author: "agent", request: false }])
+    assert.equal(reqArchiveAction(m), null, JSON.stringify(m));
+  const conv = { id: 9, peer_id: 2, agent: "review", dir: "in" };
+  const [r] = requestRows([{ id: 3, author: "human", mine: false, request: true, req_state: "done", created_at: 1, text: "x", conversation: conv }], new Map());
+  assert.equal(r.archive.key, "archive", "요청 행에 붙는다");
+});
+
+test("merge_page_since — 받아 둔 꼬리도 보기 기간 안만(#1y 적대적 평가 R1 — 시간이 지나 기간 밖이 된 글이 남지 않게)", () => {
+  const m = (id, at) => ({ id, created_at: at });
+  const fresh = [m(30, 300), m(29, 290)];
+  const have = [m(30, 300), m(29, 290), m(28, 280), m(27, 100)];
+  assert.deepEqual(mergePage(fresh, have, 2, 200).map((x) => x.id), [30, 29, 28], "기간 밖 27 은 빠진다");
+  assert.deepEqual(mergePage(fresh, have, 2).map((x) => x.id), [30, 29, 28, 27], "기간 없으면 그대로");
 });

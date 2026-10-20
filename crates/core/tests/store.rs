@@ -1059,19 +1059,19 @@ fn peer_pages_order() {
         edited: false,
     };
     assert!(an_core::share::upsert(&c, copy.id, &post).unwrap());
-    let page = |before| chat::messages_page(&c, chat::Scope::All, before, 10).unwrap();
+    let page = |before| chat::messages_page(&c, chat::Scope::All, before, None, 10).unwrap();
     assert_eq!(
         page(None).iter().map(|m| m.text.as_str()).collect::<Vec<_>>(),
         ["셋", "둘", "첫", "옛 사본 글"]
     );
-    let (_, n, last) = chat::peer_message_counts(&c, chat::Scope::All).unwrap()[0];
+    let (_, n, last) = chat::peer_message_counts(&c, chat::Scope::All, None).unwrap()[0];
     assert_eq!(n, 4);
     assert_eq!(chat::message_by_id(&c, last).unwrap().unwrap().text, "셋", "마지막 메시지 = 가장 최근 시각");
     // 한 건씩 넘기기.
     let mut seen = Vec::new();
     let mut cur = None;
     loop {
-        let one = chat::messages_page(&c, chat::Scope::All, cur, 1).unwrap();
+        let one = chat::messages_page(&c, chat::Scope::All, cur, None, 1).unwrap();
         let Some(m) = one.first() else { break };
         seen.push(m.text.clone());
         cur = Some((m.created_at, m.id));
@@ -1207,4 +1207,119 @@ fn schema21_conversations_autoincrement() {
     assert!(chat::delete_conversation(&c, n.id).unwrap());
     let m = chat::open_conversation(&c, "c-next", 2, "a", chat::Dir::Out).unwrap();
     assert_eq!(m.id, 11);
+}
+
+/// 스키마 22(#1x 적대적 평가 R1) — 글 번호 AUTOINCREMENT(기록 삭제 뒤 지운 번호를 새 글이 받지 않는다) · 지운 글 uuid 표 `gone_msgs`.
+#[test]
+fn schema22_messages_autoincrement() {
+    let p = std::env::temp_dir().join(format!("an-core-store-s22-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&p);
+    let _ = std::fs::remove_file(db::backup_path(&p, 21));
+    {
+        // 스키마 21 이 남긴 파일 — `messages` 에 AUTOINCREMENT 가 없고 `gone_msgs` 가 없다. 글 1 · 5, 지운 글 7 의 기록이 남았다.
+        let c = db::open(&p).unwrap();
+        let sql: String = c
+            .query_row("SELECT sql FROM sqlite_master WHERE name = 'messages'", [], |r| r.get(0))
+            .unwrap();
+        c.execute_batch(&format!(
+            "{}; DROP TABLE messages; ALTER TABLE messages_old RENAME TO messages;
+             CREATE INDEX IF NOT EXISTS messages_by_conv ON messages(conversation_id);
+             DELETE FROM sqlite_sequence WHERE name = 'messages';
+             DROP TABLE gone_msgs;
+             PRAGMA user_version = 21;",
+            sql.replace("CREATE TABLE \"messages\"", "CREATE TABLE messages_old")
+                .replace("CREATE TABLE messages ", "CREATE TABLE messages_old ")
+                .replace(" AUTOINCREMENT", "")
+        ))
+        .unwrap();
+        c.execute_batch(
+            "INSERT INTO conversations (id, uuid, peer_id, agent, dir, created_at) VALUES (1, 'c1', 2, 'a', 'out', 10);
+             INSERT INTO messages (id, uuid, conversation_id, author, text, state, created_at) VALUES
+               (1, 'm1', 1, 'human', '하나', 'done', 30), (5, 'm5', 1, 'agent', '답', 'done', 40);
+             INSERT INTO relay_events (conversation_id, kind, created_at, message_id) VALUES (1, 'start', 50, 7);",
+        )
+        .unwrap();
+    }
+    let c = db::open(&p).unwrap();
+    assert_eq!(db::user_version(&c).unwrap(), db::SCHEMA_VERSION);
+    assert!(db::backup_path(&p, 21).exists(), "올리기 전 사본");
+    let s: String = c
+        .query_row("SELECT sql FROM sqlite_master WHERE name = 'messages'", [], |r| r.get(0))
+        .unwrap();
+    assert!(s.contains("AUTOINCREMENT"), "{s}");
+    let idx: i64 = c
+        .query_row("SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'messages_by_conv'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(idx, 1, "색인 다시 만듦");
+    assert_eq!(chat::messages(&c, 1).unwrap().len(), 2, "글 그대로");
+    // 남은 기록이 가리키는 7 까지 다시 쓰지 않는다 · 비운 뒤에도 더 큰 번호 · 지운 uuid 는 남는다.
+    let m = chat::add_message(&c, 1, "m-new", chat::Author::Human, "새 글", chat::State::Done).unwrap();
+    assert_eq!(m.id, 8);
+    assert!(chat::clear_conversation(&c, 1).unwrap());
+    assert!(chat::gone(&c, "m5").unwrap() && chat::gone(&c, "m-new").unwrap());
+    let n = chat::add_message(&c, 1, "m-next", chat::Author::Human, "다음", chat::State::Done).unwrap();
+    assert_eq!(n.id, 9);
+    assert!(!chat::gone(&c, "m-next").unwrap());
+}
+
+/// #1y — 스키마 22 → 23: `messages.req_archived` 열이 생기고 글 · 요청 상태는 그대로.
+#[test]
+fn schema23_req_archived() {
+    let p = std::env::temp_dir().join(format!("an-core-store-s23-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&p);
+    let _ = std::fs::remove_file(db::backup_path(&p, 22));
+    {
+        let c = db::open(&p).unwrap();
+        c.execute_batch(
+            "ALTER TABLE messages DROP COLUMN req_archived; PRAGMA user_version = 22;
+             INSERT INTO conversations (id, uuid, peer_id, agent, dir, created_at) VALUES (1, 'c1', 2, 'a', 'in', 10);
+             INSERT INTO messages (uuid, conversation_id, author, text, state, created_at, request, req_state, req_at)
+               VALUES ('m1', 1, 'human', '요청', 'done', 30, 1, 'done', 40);",
+        )
+        .unwrap();
+    }
+    let c = db::open(&p).unwrap();
+    assert_eq!(db::user_version(&c).unwrap(), 23);
+    assert!(db::backup_path(&p, 22).exists(), "올리기 전 사본");
+    let m = &chat::messages(&c, 1).unwrap()[0];
+    assert_eq!((m.req_state, m.req_at, m.req_archived), (Some(chat::ReqState::Done), Some(40), None));
+    assert!(m.archived(40 + 7 * 86400), "손 표시 없음 = 완료 7일 뒤 자동");
+    assert!(!m.archived(40 + 7 * 86400 - 1));
+}
+
+/// #1y — 빈 페이지가 4 MiB 이상 · 1/4 이상이면 VACUUM 하고 파일이 준다.
+#[test]
+fn vacuum_sparse() {
+    let p = std::env::temp_dir().join(format!("an-core-store-vac-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&p);
+    let c = db::open(&p).unwrap();
+    c.execute_batch(
+        "CREATE TABLE junk (b BLOB);
+         WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 800)
+         INSERT INTO junk SELECT randomblob(8192) FROM n;
+         DELETE FROM junk;",
+    )
+    .unwrap();
+    let free = |c: &db::Connection| c.query_row("PRAGMA freelist_count", [], |r| r.get::<_, i64>(0)).unwrap();
+    assert!(free(&c) > 0);
+    let before = std::fs::metadata(&p).unwrap().len();
+    assert!(db::vacuum_if_sparse(&c).unwrap());
+    assert_eq!(free(&c), 0);
+    assert!(std::fs::metadata(&p).unwrap().len() < before);
+    assert!(!db::vacuum_if_sparse(&c).unwrap(), "다시 하면 할 것 없음");
+}
+
+/// #1y — 지운 것이 작으면(4 MiB 미만) VACUUM 하지 않는다.
+#[test]
+fn vacuum_small_skip() {
+    let c = conn("vac-small");
+    c.execute_batch(
+        "CREATE TABLE junk (b BLOB);
+         WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 50)
+         INSERT INTO junk SELECT randomblob(8192) FROM n;
+         DELETE FROM junk;",
+    )
+    .unwrap();
+    assert!(c.query_row("PRAGMA freelist_count", [], |r| r.get::<_, i64>(0)).unwrap() > 0);
+    assert!(!db::vacuum_if_sparse(&c).unwrap());
 }

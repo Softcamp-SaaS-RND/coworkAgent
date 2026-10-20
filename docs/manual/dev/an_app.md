@@ -55,7 +55,7 @@
   #18: 새 대화 · 이어 쓰기 본문 `request?`(요청 — 기본 질의), 이어 쓰기 `agent?`(멘션 — 보낸 대화 · 자동 왕복 아님, 대화 에이전트면 멘션 아님, 받은
   대화 · 자동 왕복 · 빈 이름 400) · `GET /api/messages` 의 `ask=query|request`(사람 글만, 그 밖 400) · 메시지 JSON 에 `request` · `agent` · `refused` ·
   설정 `focus`(`GET/PUT /api/settings` — 켜면 알림도 멈춘다).
-  #1d: `PATCH /api/messages/{id} {saved?, req_state?, note?}`(하나 이상 — 없으면 400, `req_state` = `accepted` · `rejected` · `done` 받은 요청만 ·
+  #1d: `PATCH /api/messages/{id} {saved?, req_state?, note?}`(하나 이상 — 없으면 400, `req_state` = `wait`(#1y) · `accepted` · `rejected` · `done` 받은 요청만 ·
   `note` 는 `req_state` 와 함께만, 둘 다면 한 트랜잭션, 응답은 준 항목만 `{id, saved?, req_state?, req_note?, warning?}`) · 메시지 JSON 에
   `req_state` · `req_note` · `req_at` · `GET /api/messages` 의 `req=wait|accepted|rejected|done`(`ask=request` 와 함께만) · `GET /api/activity` 종류는
   `all` · `human` · `agent` · `relay` · `failed` 만(#1q 에서 바뀜 — 아래) · 요청 · 멘션 · CLI 함께면 400 · 모델은 `opus` · `sonnet` · `haiku` 만(설정 · 상대별).
@@ -77,6 +77,20 @@
   ?peer=|group=` → `[{peer, count, last}]`(주고받은 메시지 상대별 요약, context 글 제외). `GET /api/messages/req_counts?side=theirs|mine&peer=|group=` →
   `{wait, accepted, rejected, done, total}`(요청 개요 머리 — 범위 전체, 목록 상한과 무관 · `core::chat::req_counts`). 요청 화면 상태 거르기는 서버(`req=`). CLI `coworkAgent /?` · `-h` · `--help`(첫 인자) → 표준 출력에 `cli::help()`
   (소개 + `USAGE` + 출력 형식 · 종료 코드 · 연동 예) · 0, 앱 불필요.
+  #1x 세션 생성 · 기록 삭제: `POST /api/conversations` 의 `text` 는 생략 가능(`#[serde(default)]`) — 비었고 `via` 없음 = 세션 생성(`Chat::open_session` — 글 없는
+  대화, 201 `{conversation}` · `message` 없음, `relay_agent?` · `relay_cap?`(없으면 `relay_cap_default`) · `title?` · `group?` 은 대화에 붙는다), 빈 본문 + `via` · `request` 는
+  400 "본문이 비었다"(CLI 는 본문 필수). 상대 PC 는 첫 이어 쓰기 글이 갈 때 대화를 받는다 — 자동 왕복 설정이 있는 빈 대화의 첫 글은 자동 왕복 시작(요청이면 400).
+  `POST /api/conversations/{id}/clear {all?}`(기록 삭제 — `Chat::clear_conversation`, `all` 기본 거짓 = 내 글만) → 204 · 공유 사본 400 · 닫힌 대화에 `all` 400 ·
+  실행 중 · 대기 글 409 "실행이 끝난 뒤 지울 수 있습니다" · 상대 앱이 모름 409 "상대 앱이 이 기능을 모릅니다"(아무것도 안 지움) · 페어링 아님 403 · 없는 대화 404.
+  프레임 `Clear{conv, id}` · `Pong.clear` 는 [an_net](an_net.md). 웹UI 나가기 = `DELETE /api/conversations/{id}` 만(`POST .../leave` 는 CLI · API 호환).
+  웹 — `view.js` `SESSION_NEW` · `convMenuItems(conv)`(`sub` — 기록 삭제 › 내 글만 · 모든 사용자, `LEAVE_CONFIRM`) · `sideSub` · `composeDefaults` · `requestNotice`,
+  `app.js` `openCompose` · `chat_form`(생성 → `#c/{id}`) · `openConvMenu` 하위 메뉴 · `convEndForm`(`END_TEXT`) · `convGrab` · `applyTileSize` · `chime`.
+  #1y 기간 · archive: `GET /api/messages?side=both` · `GET /api/messages/peers` 는 설정 `ui_peer_weeks` 기간 안 글만(`peer_since` = 지금 − 주 × 7일 →
+  `chat::messages_page` · `peer_message_counts` 의 `since`, 질의 인자 없음). `GET /api/messages` 의 `archived=true|false`(`ask=request` 와 함께만 — 없이 400
+  "archived 는 ask=request 와 함께", `side=both` 와 함께 400; 없거나 거짓 = archive 제외 · 참 = archive 만). `POST /api/messages/{id}/archive {archived}` → 200 메시지 JSON
+  (`chat::set_req_archived` — 없는 메시지 404 · 요청 글 아님 · 공유 사본 400 · 완료 아닌데 `true` 409 "완료된 요청만 archive 할 수 있습니다", 이 PC 에만 — 프레임 · outbox 없음).
+  메시지 JSON 에 `archived`(`Message::archived(unix_now())`), `req_counts` 응답에 `archived`(`done` · `total` 은 archive 제외). 웹 — `view.js` `reqArchiveAction` ·
+  `PEER_WEEKS` · `peerWeeksOptions` · `reqHead`(`archive n`), `app.js` `renderReqArchive` · `archiveReq`.
 - guard 순서(#1a): Host(`127.0.0.1:{port}`) 403 → Origin(있으면 일치) 403 → 정적 자산(`server::PUBLIC` GET — 토큰 없이, 진입 `/?t=` 는 틀리면
   401) → `Authorization: Bearer` 만(쿠키 읽지 않음 · `/api/events` 만 `?t=` 도) 401. 모든 응답(401 · 403 포함)에 `server::CSP` · `X-Frame-Options:
   DENY` · `X-Content-Type-Options: nosniff` · `Referrer-Policy: no-referrer`, `GET /` 는 `Cache-Control: no-store`. 웹UI 는 `view::entryToken` 으로
@@ -88,9 +102,13 @@
   `clear()` · `set_enabled`(끄면 건수 0) · `prefs()` · `update(&SettingsPatch)`(검증 → 한 트랜잭션, 틀리면 `InvalidInput` · 아무것도 안
   바꿈) · `relay_cap_default()` · `run_defaults()` · `screen()`(설정 DB 읽기 오류는 `Err` — 기본값으로 감추지 않는다) · `subscribe()` · `pending()`. `Prefs` = `notify_pair` · `notify_request` · `notify_reply`(기본 켬) ·
   `notify_relay`(`start_end` 기본 · `every` · `off`) · `notify_preview`(기본 켬 — 끄면 본문 = 이름 · PC 만, 끝 사유는 보임) · `notify_paused`(기본 끔 —
-  켜 있는 동안 알림 · 트레이 표시 · 이벤트를 버린다, 건수 그대로).
+  켜 있는 동안 알림 · 트레이 표시 · 이벤트를 버린다, 건수 그대로) · `notify_sound`(#1x — 기본 켬, 웹UI 받은 요청 효과음 — 서버는 저장 · 읽기만).
+  받은 요청(`MessageKind::Ask`, #1x — B안)은 kind `request` 묶음 알림 `request_notice(rows, total, preview_on)`: 제목 "받은 요청 {대기 수}", 본문 =
+  `an_core::chat::waiting_requests` 최근 `REQUEST_LINES`(3) 줄 `{표시 이름} · {첫 줄 앞 40자}`(미리보기 끄면 이름만) + 넘으면 "외 {n}건"(`Notifier::waiting` — 상태 잠금을 놓고
+  읽는다, 못 읽거나 대기 0 이면 보통 알림 "요청 받음 — {에이전트}"). `MessageKind::Clear`(#1x — 상대가 모든 사용자 글 삭제) = kind `message` "대화 기록 삭제 — {에이전트}" ·
+  본문 "{이름} · {호스트}\n{이름} 이(가) 대화 기록을 모두 지웠습니다"(미리보기와 무관, `notify_request` 축).
   `notify::routes` — `GET/PUT /api/settings`(PUT 은 준 항목만 · 모르는 항목 · 틀린 값 400, `relay_cap_default` 1 ~ 50, `claude_model` ·
-  `claude_effort`(실행 기본값 `sonnet` · `high`) · `ui_theme`(`dark` 기본 · `light`) · `ui_side_width`(200 ~ 560) · `ui_folded`(접은 절 열쇠 목록 — `{화면}:{상대 id | me}` 300개까지, #1g) · `me_alias` · `me_icon`(빈 = 지움),
+  `claude_effort`(실행 기본값 `sonnet` · `high`) · `ui_theme`(`light` 기본 — #1x · `dark`) · `ui_tile_size`(#1x — `normal` 기본 · `small`, 틀린 값 400 "ui_tile_size 는 normal · small", `an_core::run_opts::TILE_SIZE_KEY`) · `ui_peer_weeks`(#1y — 정수 1 ~ 12, 기본 4, 틀린 값 400 "ui_peer_weeks 는 1 ~ 12", `an_core::run_opts::PEER_WEEKS_KEY`) · `ui_side_width`(200 ~ 560) · `ui_folded`(접은 절 열쇠 목록 — `{화면}:{상대 id | me}` 300개까지, #1g) · `me_alias` · `me_icon`(빈 = 지움),
   설정 DB 읽기 오류는 500) ·
   `GET /api/events`(SSE, 상태 변경 없음 — 알림 `message` + 변경 신호 `event: change` `{res: [{kind, id?}]}`, 변경 신호는 `Notifier::on_event` 가 켜짐 · 세부 설정 앞에서 늘 보내고
   뒤처지면 빈 `res` 하나 — `notify::next_change`, D39 ②) · `POST /api/seen`(지움). 상한 없는 자동 왕복 새 대화는 `relay_cap_default`.
@@ -138,6 +156,7 @@
   다시 띄우지 않음 · `GaveUp(사유)` = 창 안 3번 · 띄우기 실패) · `Crashes::record(at) -> bool` · `spawn_app(n)`(이 실행 파일 · 인자 없음 · `ENV = n` →
   종료 코드, 코드 3 인데 사유 파일을 그 자식(PID)이 쓰지 않았으면 -1 — MSVC `abort()` 는 다시 띄운다) · `restarts()`. #1n: `PARENT_ENV`(`COWORKAGENT_PARENT` — 트레이 없는 모드 · 부모 PID, 감시가 자식에 물려준다) · `parent()` ·
   `acquire(paths) -> Option<InstanceLock>`(`supervisor.lock` + `supervisor.pid`, 못 잡으면 `None`).
+- `main.rs`(#1y): 첫 `db::open` 뒤 `db::vacuum_if_sparse`(오류 = `warn` · 계속, `?` 아님).
 - `autostart`(#1e, S7 · D13) — `sync(on)`(이 OS 의 실제 자리: Windows `RUN_KEY` 값 `VALUE_NAME` = `"exe"`, macOS `~/Library/LaunchAgents/{LABEL}.plist` —
   같으면 쓰지 않음 · 끄면 지움 · 없어도 성공) · `launch_agent_plist(exe)`(`RunAtLoad` · `KeepAlive` 없음 · 경로 XML 이스케이프) · Windows
   `registered(key)` · `register(key, exe) -> 바뀜` · `unregister(key)`(키 경로 인자 — 시험은 시험 키). 설정 `autostart`(`GET/PUT /api/settings`, 없으면
@@ -148,7 +167,7 @@
 - 시작 실패는 두 OS 모두 트레이 오류 모드(+ stderr). 시작 시 `Chat::attach` · `Chat::recover`(남은 대화 대기열 · 남은 outbox) · 피어 수신 뒤
   `Node::announce`(시작 알림 — 주기 접속 확인은 없다, #1c).
 
-- 웹UI(`web/`, 빌드 없는 ES 모듈 — D10): 시안 v4(Nocturne) 5영역(상단 바 · 레일 · 사이드바 · 대화 · 세부정보) + 설정 + 새 대화, 화면은 해시로만
+- 웹UI(`web/`, 빌드 없는 ES 모듈 — D10): 시안 v4(Nocturne) 5영역(상단 바 · 레일 · 사이드바 · 대화 · 세부정보) + 설정 + 세션 생성(#1x — 옛 "새 대화"), 화면은 해시로만
   바뀐다(`#c/{id}`(`/m/{글}`) 대화 · `#p` 주고받은 메시지('나' 만) · `#activity` 내 활동 · `#starred` 즐겨찾기(#1j) · `#saved` 북마크 · `#agents`
   에이전트 · `#settings/{절}` · `#me` · `#new`, 옛 `#inbox` · `#t/` 는 첫 화면, 옛 `#s/{id}`(보낸 메시지 — #1j 에서 없앰)는 `#c/{id}`, 옛 `#p/{id}` 는 그 상대를 고르고 `#`). 색 · 글꼴 크기는 `app.css` 첫 `:root` 토큰만(다크 값은 `--dark-*` 토큰을
   `:root[data-theme="dark"]` 가 가리킨다). 상단 바 통합 검색(Ctrl K) · "+ 새로 만들기" · 알림(내 활동) · 프로필 단추(#1j — 아이콘 또는 사람 모양 + 표시 이름 한 번 `.avatar-name` 12em 말줄임 · `title` 전체,
@@ -156,7 +175,7 @@
   닿지 못함, 닿으면 0 · `netResult` · `appOffline`) · 프로필 메뉴 `view.profileMenu(paused, focus, offline)`(머리 "상태" · `menuitemradio`
   받기 가능 / 집중 · 앱과 연결 끊김 자동 표시 | 프로필 편집 · 알림 일시 중지 · 설정 — 집중 칩 없음),
   레일 타일 A안(#1j — `tileFace(icon, group)` 사람 `PERSON_SVG` · 사람 + 그림자 `GROUP_SVG`, 그림이 있으면 그림 · 아래 이름 `.tile-name` 11px 말줄임, 레일 72px —
-  #1h `tileText` 글자 · 겹친 카드 대체), 사이드바 내비 · 대화 목록(#1j — 줄 = ☆ `starButton`(`PATCH starred`) · 아바타 · 제목 · `view.roomPreview`
+  #1h `tileText` 글자 · 겹친 카드 대체), 사이드바 내비 · 대화 목록(#1j — 줄 = ☆ `starButton`(`PATCH starred` — #1x 부터 줄에는 손잡이 `convGrab`, ☆ 는 대화 머리 `star_btn` 만) · 아바타 · 제목 · `view.roomPreview`
   "말한 이: 본문" · 시각 · 안 읽음, ★ 절 없음), 말풍선(#1j — `view.bubbleSide`(`mine` 오른쪽 · 그 밖 왼쪽 + 아바타 · 이름 · 시각) · 날짜 구분선
   `view.dayBreaks` · `dayLabel`(오늘 · 어제 · M.D) · 최대 폭 대화 칸의 90% · 방향 라벨 없음) · 우상단 아이콘 북마크(`bookmarkButton` — 넣기 · 빼기 `aria-pressed`,
   열쇠 `save`) · 복사(늘 보임 — #1f) · 말풍선 아래 작은 단추 `view.messageActions`(요청 상태 · 다시 알리기 — 북마크 없음, 다시 보내기는 #1k 에서 없앰 — 입력창에서 다시 쓴다) · 대화 머리 "대화 보기 / 원문 보기"
@@ -172,7 +191,7 @@
   서버 거르기 `group=`), 그룹인 채 `#activity` · `#agents` 는 '나' 로(`view.groupLeaves`). 접힘 열쇠는 '나' 와 같은 화면 열쇠. 떠 있는 상자 `#float`(화면 기준 —
   "+ 그룹" · 대화 ⋯ "그룹" 체크 · "그룹에서 빼기" · "대화 추가" · 타일 메뉴 "타일 편집" · "이미지 지우기"("이미지를 지웠습니다") · "위로 옮기기 · 아래로 옮기기"(#1j `stepMove` — Alt + ↑ / ↓ 와 같음, 끝이면 꺼짐) ·
   "그룹 삭제"(상자 안 확인)) — 레일 우클릭 · 메뉴 키 ·
-  사이드 머리 ⋯. 순서 = 손으로 놓은 자리(`view.sortByPos` — 대화 · 상대 · 그룹 모두): 끌어 놓기(HTML 기본 드래그, `view.dropKind` — 같은 종류 · 대화는 같은
+  사이드 머리 ⋯. 순서 = 손으로 놓은 자리(`view.sortByPos` — 대화 · 상대 · 그룹 모두): 끌어 놓기(HTML 기본 드래그 — #1x 부터 레일 타일만, 대화 줄은 손잡이 포인터 끌기 `convGrab`, `view.dropKind` — 같은 종류 · 대화는 같은
   절, 대화 → 그룹 타일 = 넣기) · Alt + ↑ / ↓(`view.stepTarget`, `#order_live` 알림 `movedText`) → 전체 순서에 끼워(`view.moveInOrder`) `PUT /api/order`. 레일 · 대화 목록은 다시 그려도 초점 항목을 되돌린다(`keepFocus` — #1j, 누른 뒤 바로 Alt + ↑ / ↓).
   설정(#1j): "페어링" 카드(초대 생성 · 초대 수락 같은 `primary` 단추, "주소 · 코드로 직접 추가" 없음 — 서버 경로는 남음) · 내 정보 · 연결 상세(`kvTable`)에 "읽기 전용"
   없음 · 연결 목록 카드 = `view.settingsGroupSections`(#1w — 그룹 절 = 대화 줄 · "그룹에서 빼기" + 끝 `USER_LIST` "사용자 목록" = 관리 줄 + 대화 트리, 대화 줄 끌기 =
@@ -185,7 +204,7 @@
   `svgButton(svg, label, onClick, cls)`(`PENCIL_SVG` 이름 바꾸기 · `TRASH_SVG` 삭제) · 연결 줄 = 타일 · 이름 · 부제(이름 · PC · 접속 상태) ·
   "관리"(지문 · 주소 · 모델 · effort · 단추 — #1w 부터 연결 줄은 끌지 않는다) · 내 에이전트 줄 = 타일 · 이름 · 폴더 · "관리", 머리 `agent_new_btn` "에이전트 등록"
   (1l 에서 `showAgentNew(on)` 보이기 · 숨기기로 바뀜). 에이전트 화면(#1k): 머리 안내문 없음 · 내 에이전트 줄 오른쪽 ✎(`aria-label` "{이름} 편집") · 줄 누르기 =
-  `editAgent(id)`(`state.open` 에 넣고 `goSettings("agents", "agent{id}_manage")` — 상세 펼침 · "관리" 초점), 상대 에이전트 = 새 대화. 주고받은 메시지(#1k):
+  `editAgent(id)`(`state.open` 에 넣고 `goSettings("agents", "agent{id}_manage")` — 상세 펼침 · "관리" 초점), 상대 에이전트 = 세션 생성. 주고받은 메시지(#1k):
   머리 안내문 없음 · `rowEls(rows, empty, {tile: true})`(주고받은 메시지만 — 왼쪽 상대 타일 `.row-tile` · 이름 옆 에이전트 칩 `.agent-chip`) ·
   `view.inboxRows` 줄 `agent`(보낸 대화 = 상대 에이전트 · 받은 대화 = "내 {에이전트}").
   타일 색 = `view.colorOf(id)`. 아이콘 그림은 data URL 로 읽는다(CSP `img-src` 가 `blob:` 을 막는다). 타일을 누르면 사이드바에 그 타일 대화
@@ -196,7 +215,7 @@
   웹UI 를 열 때 페어링된 상대 모두 · 레일 타일을 고를 때 그 상대 ping(`pingPeers` — 서버가 60초로 거른다).
   아이콘 · 설정 정리(#1l): 아이콘 한 벌 = `app.css` `.ico`(16px 하나 · `currentColor` 를 SVG 모양 `mask` 로) + `.ico-{이름}`(data URI), HTML ·
   JS 는 `<span class="ico ico-{이름}">` · `ico(name)` 만 — 사이드바(`view.sideNav` 항목 `icon`) · 화면 머리 제목(동적 제목은 안쪽 `span` 이 id) · 설정 트리
-  (`view.settingsTree` `icon`) · 타일 ⋯ · 대화 ⋯ · 상대 그룹 체크 · "+ 새로 만들기"(`view.newMenu` `icon`, "자동 왕복 대화" 없음 — 새 대화 화면 안). 말풍선
+  (`view.settingsTree` `icon`) · 타일 ⋯ · 대화 ⋯ · 상대 그룹 체크 · "+ 새로 만들기"(`view.newMenu` `icon`, "자동 왕복 대화" 없음 — 세션 생성 화면 안). 말풍선
   색 = `--surface` 바탕 + `::before` 색 층(내 글 `--accent` · 상대 글 `article[data-tone=colorOf(peer_id)]` → `--tone`, 불투명도 `--bubble-mine-alpha` · `--bubble-theirs-alpha` — Safari 15 때문에 `color-mix` 아님) · 옆 띠 없음(#1p). 설정 한 열(`.settings-cols`
   없앰 — 페어링 → 연결 목록 → 내 에이전트 → 실행 → 화면 → 시작 → 알림) · 카드 안내 = 제목 옆 `.help-wrap`(`button.help` + `.tip[role=tooltip]`,
   `aria-describedby`, `:hover` · `:focus` 에 뜸) · 내 정보 = `<dialog id="me_dialog">`(프로필 `profileMenu` 열쇠 `me` → `showModal`, 트리 · `#me` 경로

@@ -40,6 +40,18 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
   (나가기 뒤 `chat::delete_conversation`) · `inbound_leave`(그 상대 대화에 `set_peer_left`, 없으면 `Ok`). `handle` 앞 — 나간 대화 · 묘비로 온 요청은 `Leave` · `ShareEnd`
   말고 `left`. `deliver` 의 `leave` 는 `knows_leave` 거짓이면 버림 · 포기 없음. 나간 대화 쓰기 = `InvalidInput` "나간 대화는 읽기 전용"(`writable` — 이력 정리 · 공유 넣기 ·
   자동 왕복도). `record` — 지운 대화면 답을 버리고 나간 대화면 이력에만, `process` — 줄을 서는 동안 취소된 대기 글은 실행하지 않는다. `refused()` `left` = "상대가 대화를 나갔습니다".
+  세션 생성 · 기록 삭제(#1x — D40 개정, 웹UI 나가기 = `delete_conversation`): `open_session(peer_id, agent, relay: Option<(내 에이전트, 상한)>, Compose) -> Conversation`
+  (보내지 않는다 — 상대 에이전트 빈 이름 · 상한 1 ~ `MAX_RELAY_CAP` 밖 · 없는 내 에이전트는 `InvalidInput`, 페어링 확인 뒤 한 트랜잭션 `open_conversation(Out)` + `set_relay` +
+  `set_title` + 그룹 넣기. 상대 PC 는 첫 글이 갈 때 `inbound_message` 가 대화를 연다). `send_with(Some(conv))` — 보낸 대화가 글 0(`chat::empty`) + 자동 왕복 설정이면
+  첫 글은 `send_human(.., Some(내 에이전트))`(자동 왕복 시작 — `start_relay_with` 와 같은 길, `via` · 멘션은 버림, 요청이면 `InvalidInput` `REQUEST_NO_RELAY`), 그 밖은
+  지금처럼 사람이 쓰면 자동 왕복 끔. `clear_conversation(conv, all)`(async) — 사본 `READ_ONLY` · `all` 인데 닫힌 대화 `CLOSED` · `all` 이면 먼저 `knows_clear`
+  (거짓 = `Unsupported` `CLEAR_UNKNOWN` "상대 앱이 이 기능을 모릅니다" — 아무것도 안 지움, 페어링 아님 = 그 오류, 그 밖 전송 오류 = 진행 — 줄이 나중에 보낸다) →
+  한 트랜잭션: `chat::busy` 면 `ResourceBusy` `CLEAR_BUSY` "실행이 끝난 뒤 지울 수 있습니다" · `all` 인데 그 상대에게 보내는 중(`outbox::sending`)이면 `CLEAR_SENDING`(적대적 평가 R2) · `chat::clear_conversation` · `all` 이면 `Clear{conv, id}` 를 그 대화 줄(`conv_id` — 뒤에 쓴 글보다 먼저 가게) outbox(kind
+  `clear`, `conv_id` 없이) + `reshare`(그 대화의 기다리는 `share_post` · `share_delete` 행을 버리고 관람자마다 머리 `Share` 를 다시 — 사본은 같은 uuid 머리를 받으면
+  글을 비운다, 새 프레임 없음) → `kick`. `share_head(conn, conv)` = 공유 머리(제목 · 원 상대 이름 — `share_add` 와 같이 씀). 받기 `inbound_clear(peer, conv)` — `find_own`
+  없음 · 사본이면 `unknown`(닫힌 대화는 `handle` 앞이 `left`), `busy` 면 `retry`(보낸 쪽 `backoff` 재시도 — 실행이 끝난 뒤 비움), 아니면 비움 · `reshare` · 알림
+  `MessageKind::Clear`. `deliver` 의 `clear` — 보내기 전 `knows_clear`: 거짓이면 행을 버리고 warn 로그(그 사이 이전 버전이 된 상대 — 상대 쪽 기록은 그대로),
+  페어링 아님이면 `not_paired` 로 정리, 전송 오류는 `backoff`. 24시간 포기 대상 아님(`leave` 와 같게).
   받은 요청은 다시 넘기지 않는다. 자동 압축 = `process` 뒤 창 사용량 ≥ `settings::AUTO_COMPACT_AT`(800k) · `settings::auto_compact`. 새 세션 첫 실행에
   `ctx_seeds` 요약을 `<대화 요약>` 으로 붙이고(`execute`) 세션을 남기면 지운다(`record`).
 - 실행 문(#1b, D24 개정) — `gate::Gate`(FIFO): `enter(id) -> (Ticket, Option<앞 사람 수>)` · `Ticket::ready()` · 티켓 drop = 자리 놓기(실패 ·

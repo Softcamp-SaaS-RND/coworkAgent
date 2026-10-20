@@ -190,7 +190,7 @@ async fn delete_mine_only_here() {
         Some(true),
         chat::Scope::All,
         None,
-        Some(AskFilter::Request(None)),
+        Some(AskFilter::Request(None, false)),
         None,
         50,
     )
@@ -223,7 +223,7 @@ async fn delete_mirrored_leaves_peer_request_list() {
             Some(false),
             chat::Scope::All,
             None,
-            Some(AskFilter::Request(None)),
+            Some(AskFilter::Request(None, false)),
             None,
             50,
         )
@@ -647,7 +647,7 @@ async fn reused_id_after_delete_stays_unread() {
     db.execute("UPDATE peers SET activity_seen_msg = ?1", [r.id])
         .unwrap();
     a.chat.delete_messages(&[r.id], false).await.unwrap();
-    // B 가 쓴 글이 A 에 온다 — 지운 id 를 다시 받는다.
+    // B 가 쓴 글이 A 에 온다 — 지운 id 보다 큰 번호(스키마 22 — 번호를 다시 쓰지 않는다), 안 읽음 · 새 활동으로 보인다.
     let bc = chat::list(&common::db(&b)).unwrap().remove(0);
     let (_, bm, _) = b
         .chat

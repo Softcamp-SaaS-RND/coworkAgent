@@ -277,7 +277,8 @@ async fn share_frames_ids_checked() {
             focus: false,
             ctx: true,
             share: false,
-            leave: false
+            leave: false,
+            clear: false
         }
     );
 }

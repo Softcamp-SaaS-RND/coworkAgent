@@ -11,12 +11,19 @@ pub const MODELS: [&str; 3] = ["opus", "sonnet", "haiku"];
 pub const EFFORTS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 pub const MODEL_KEY: &str = "claude_model";
 pub const EFFORT_KEY: &str = "claude_effort";
-/// 화면 테마 — `dark`(기본) · `light`.
+/// 화면 테마 — `light`(기본, #1x) · `dark`.
 pub const THEME_KEY: &str = "ui_theme";
 pub const THEMES: [&str; 2] = ["light", "dark"];
 /// 레일 타일 순서(#1l) — `peers_first`(기본, 상대 → 그룹) · `groups_first`.
 pub const RAIL_ORDER_KEY: &str = "ui_rail_order";
 pub const RAIL_ORDERS: [&str; 2] = ["peers_first", "groups_first"];
+/// 레일 타일 크기(#1x) — `normal`(기본, 아이콘 + 아래 이름) · `small`(작은 아이콘 + 오른쪽 이름 한 줄).
+pub const TILE_SIZE_KEY: &str = "ui_tile_size";
+/// 주고받은 메시지 보기 기간(주, #1y) — 1 ~ [`PEER_WEEKS_MAX`], 없으면 [`PEER_WEEKS_DEFAULT`].
+pub const PEER_WEEKS_KEY: &str = "ui_peer_weeks";
+pub const PEER_WEEKS_DEFAULT: i64 = 4;
+pub const PEER_WEEKS_MAX: i64 = 12;
+pub const TILE_SIZES: [&str; 2] = ["normal", "small"];
 /// 그룹 이름 · 표시 이름(별칭) 최대 글자 수.
 pub const MAX_GROUP_CHARS: usize = 32;
 pub const MAX_ALIAS_CHARS: usize = 32;
@@ -108,11 +115,26 @@ pub fn resolve(conn: &Connection, peer: Option<&Peer>) -> rusqlite::Result<(Stri
     ))
 }
 
-/// 화면 테마 — 없거나 틀리면 `dark`.
+/// 화면 테마 — 없거나 틀리면 `light`(#1x).
 pub fn theme(conn: &Connection) -> rusqlite::Result<String> {
     Ok(settings::get(conn, THEME_KEY)?
         .filter(|t| THEMES.contains(&t.as_str()))
-        .unwrap_or_else(|| "dark".into()))
+        .unwrap_or_else(|| THEMES[0].into()))
+}
+
+/// 레일 타일 크기 — 없거나 틀리면 `normal`.
+pub fn tile_size(conn: &Connection) -> rusqlite::Result<String> {
+    Ok(settings::get(conn, TILE_SIZE_KEY)?
+        .filter(|t| TILE_SIZES.contains(&t.as_str()))
+        .unwrap_or_else(|| TILE_SIZES[0].into()))
+}
+
+/// 주고받은 메시지 보기 기간(주) — 없거나 1 ~ 12 밖이면 4.
+pub fn peer_weeks(conn: &Connection) -> rusqlite::Result<i64> {
+    Ok(settings::get(conn, PEER_WEEKS_KEY)?
+        .and_then(|v| v.parse().ok())
+        .filter(|w| (1..=PEER_WEEKS_MAX).contains(w))
+        .unwrap_or(PEER_WEEKS_DEFAULT))
 }
 
 /// 레일 타일 순서 — 없거나 틀리면 `peers_first`.

@@ -96,6 +96,8 @@ pub struct Prefs {
     pub notify_relay: String,
     /// 끄면 알림 본문에 글 앞부분을 넣지 않는다.
     pub notify_preview: bool,
+    /// 받은 요청 알림 효과음(#1x, 기본 켜짐) — 웹UI 가 낸다(집중 중에는 알림 자체가 없다).
+    pub notify_sound: bool,
     /// 알림 일시 중지(기본 꺼짐) — 켜 있는 동안 브라우저 알림 · 트레이 표시 · 이벤트를 내지 않는다. `notify_inbound` 와 별개라 풀면 그 설정대로.
     pub notify_paused: bool,
     /// 집중(기본 꺼짐, 설정 키 `focus`) — 상대의 새 실행 요청 거부와 함께 알림도 멈춘다. 일시 중지 값은 바꾸지 않는다.
@@ -117,6 +119,7 @@ impl Prefs {
             notify_reply: flag("notify_reply")?,
             notify_relay: relay,
             notify_preview: flag("notify_preview")?,
+            notify_sound: flag("notify_sound")?,
             notify_paused: settings::get(db, "notify_paused")
                 .map_err(db_err)?
                 .as_deref()
@@ -139,7 +142,8 @@ impl Prefs {
                 MessageKind::Request
                 | MessageKind::Ask
                 | MessageKind::AskState
-                | MessageKind::Share => self.notify_request,
+                | MessageKind::Share
+                | MessageKind::Clear => self.notify_request,
                 MessageKind::Reply => self.notify_reply,
                 MessageKind::RelayStart | MessageKind::RelayEnd => self.notify_relay != "off",
                 MessageKind::RelayStep => self.notify_relay == "every",
@@ -282,6 +286,19 @@ impl Notifier {
         {
             return Err(invalid("ui_rail_order 는 peers_first · groups_first"));
         }
+        if patch
+            .ui_tile_size
+            .as_deref()
+            .is_some_and(|t| !run_opts::TILE_SIZES.contains(&t))
+        {
+            return Err(invalid("ui_tile_size 는 normal · small"));
+        }
+        if patch
+            .ui_peer_weeks
+            .is_some_and(|w| !(1..=run_opts::PEER_WEEKS_MAX).contains(&w))
+        {
+            return Err(invalid("ui_peer_weeks 는 1 ~ 12"));
+        }
         if let Some(w) = patch.ui_side_width
             && !run_opts::SIDE_WIDTHS.contains(&w)
         {
@@ -323,6 +340,9 @@ impl Notifier {
         if let Some(w) = patch.ui_side_width {
             writes.push((run_opts::SIDE_WIDTH_KEY, w.to_string()));
         }
+        if let Some(w) = patch.ui_peer_weeks {
+            writes.push((run_opts::PEER_WEEKS_KEY, w.to_string()));
+        }
         if let Some(f) = folded {
             writes.push((run_opts::FOLDED_KEY, f));
         }
@@ -331,6 +351,7 @@ impl Notifier {
             (run_opts::EFFORT_KEY, &patch.claude_effort),
             (run_opts::THEME_KEY, &patch.ui_theme),
             (run_opts::RAIL_ORDER_KEY, &patch.ui_rail_order),
+            (run_opts::TILE_SIZE_KEY, &patch.ui_tile_size),
         ] {
             if let Some(v) = v {
                 writes.push((key, v.clone()));
@@ -341,6 +362,7 @@ impl Notifier {
             ("notify_request", patch.notify_request),
             ("notify_reply", patch.notify_reply),
             ("notify_preview", patch.notify_preview),
+            ("notify_sound", patch.notify_sound),
             ("notify_paused", patch.notify_paused),
             (settings::FOCUS_KEY, patch.focus),
             (settings::AUTO_COMPACT_KEY, patch.auto_compact),
@@ -427,7 +449,36 @@ impl Notifier {
         Ok((model, effort, run_opts::theme(&db).map_err(db_err)?))
     }
 
-    /// 레일 타일 순서(#1l).
+    /// 레일 타일 크기(#1x) — `normal` · `small`.
+    pub fn tile_size(&self) -> io::Result<String> {
+        run_opts::tile_size(&an_core::sync::lock(&self.db)).map_err(db_err)
+    }
+
+    /// 주고받은 메시지 보기 기간(주, #1y) — 1 ~ 12.
+    pub fn peer_weeks(&self) -> io::Result<i64> {
+        run_opts::peer_weeks(&an_core::sync::lock(&self.db)).map_err(db_err)
+    }
+
+    /// 받은 요청 알림 본문 재료(#1x) — 최근 대기 요청(상대 표시 이름 · 본문) 최대 [`REQUEST_LINES`] 건과 대기 전체 수. 못 읽으면 `None`(보통 알림으로).
+    fn waiting(&self) -> Option<(Vec<(String, String)>, i64)> {
+        let db = an_core::sync::lock(&self.db);
+        let (rows, total) = an_core::chat::waiting_requests(&db, REQUEST_LINES as i64)
+            .map_err(|e| log::warn!("받은 요청 읽기 실패: {e}"))
+            .ok()?;
+        let named = rows
+            .into_iter()
+            .map(|(peer, text)| {
+                let name = an_core::peers::by_id(&db, peer)
+                    .ok()
+                    .flatten()
+                    .map(|p| p.alias.unwrap_or(p.name))
+                    .unwrap_or_default();
+                (name, text)
+            })
+            .collect();
+        Some((named, total))
+    }
+
     pub fn rail_order(&self) -> io::Result<String> {
         run_opts::rail_order(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
@@ -461,9 +512,20 @@ impl Notifier {
         if !st.enabled || !st.prefs.allows(e) {
             return;
         }
+        let preview_on = st.prefs.notify_preview;
         st.pending += 1;
         (self.attention)(st.pending);
-        let _ = self.tx.send(notice_with(e, st.prefs.notify_preview));
+        drop(st);
+        // 받은 요청(#1x — B안) — 대기 요청 묶음 한 장. 상태 잠금을 놓고 읽는다(DB 잠금과 겹치지 않게).
+        let ask = matches!(e, PeerEvent::Message { kind: MessageKind::Ask, .. })
+            .then(|| self.waiting())
+            .flatten()
+            .filter(|(_, total)| *total > 0);
+        let notice = match ask {
+            Some((rows, total)) => request_notice(&rows, total, preview_on),
+            None => notice_with(e, preview_on),
+        };
+        let _ = self.tx.send(notice);
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<Notice> {
@@ -484,6 +546,35 @@ impl Notifier {
     /// 아직 보지 않은 알림 수.
     pub fn pending(&self) -> usize {
         self.status().pending
+    }
+}
+
+/// 받은 요청 알림 본문 줄 수(#1x — B안).
+pub const REQUEST_LINES: usize = 3;
+
+/// 받은 요청 알림(#1x — B안) — 종류 `request`, 제목 "받은 요청 {대기 수}", 본문 = 최근 대기 요청 줄(최대 [`REQUEST_LINES`] — 미리보기 켜짐
+/// `{이름} · {첫 줄 앞부분}`, 꺼짐 `{이름}`) + 넘으면 "외 {n}건". 웹UI 는 같은 tag 로 앞 알림을 바꾼다.
+pub fn request_notice(rows: &[(String, String)], total: i64, preview_on: bool) -> Notice {
+    let mut lines: Vec<String> = rows
+        .iter()
+        .take(REQUEST_LINES)
+        .map(|(name, text)| {
+            let first: String = text.lines().next().unwrap_or("").chars().take(40).collect();
+            if preview_on && !first.is_empty() {
+                format!("{name} · {first}")
+            } else {
+                name.clone()
+            }
+        })
+        .collect();
+    let rest = total - lines.len() as i64;
+    if rest > 0 {
+        lines.push(format!("외 {rest}건"));
+    }
+    Notice {
+        kind: "request",
+        title: format!("받은 요청 {total}"),
+        body: lines.join("\n"),
     }
 }
 
@@ -534,6 +625,14 @@ pub fn notice_with(e: &PeerEvent, preview_on: bool) -> Notice {
                 MessageKind::AskState => ("message", format!("요청 상태 — {agent}")),
                 // 상대가 내 대화를 공유했다(#1o) — 본문 = "관람자 n"(이름 없음).
                 MessageKind::Share => ("message", format!("관람자 — {agent}")),
+                // 상대가 대화 기록을 모두 지웠다(#1x) — 본문 = 사유(미리보기와 무관).
+                MessageKind::Clear => {
+                    return Notice {
+                        kind: "message",
+                        title: format!("대화 기록 삭제 — {agent}"),
+                        body: format!("{name} · {host}\n{name} 이(가) 대화 기록을 모두 지웠습니다"),
+                    };
+                }
             };
             // 끝 알림의 본문은 이 PC 가 만든 멈춘 사유라 미리보기 설정과 무관하게 보인다.
             let body = if preview_on || *kind == MessageKind::RelayEnd {
@@ -575,6 +674,8 @@ pub struct SettingsPatch {
     pub notify_reply: Option<bool>,
     pub notify_relay: Option<String>,
     pub notify_preview: Option<bool>,
+    /// 받은 요청 알림 효과음(#1x).
+    pub notify_sound: Option<bool>,
     /// 알림 일시 중지(이 PC 에만).
     pub notify_paused: Option<bool>,
     /// 집중(이 PC 에만) — 상대의 새 실행 요청 거부 + 알림 멈춤.
@@ -587,6 +688,10 @@ pub struct SettingsPatch {
     pub ui_theme: Option<String>,
     /// 레일 타일 순서(#1l) — `peers_first` · `groups_first`.
     pub ui_rail_order: Option<String>,
+    /// 레일 타일 크기(#1x) — `normal` · `small`.
+    pub ui_tile_size: Option<String>,
+    /// 주고받은 메시지 보기 기간(주, #1y) — 1 ~ 12.
+    pub ui_peer_weeks: Option<i64>,
     /// 사이드바(대화 목록) 폭(px, [`run_opts::SIDE_WIDTHS`]).
     pub ui_side_width: Option<i64>,
     /// 접은 절 열쇠 목록(#1g, [`run_opts::clean_folded`]) — 통째로 바꾼다.
@@ -618,6 +723,8 @@ fn settings_json(n: &Notifier) -> io::Result<serde_json::Value> {
     v["claude_effort"] = json!(effort);
     v["ui_theme"] = json!(theme);
     v["ui_rail_order"] = json!(n.rail_order()?);
+    v["ui_tile_size"] = json!(n.tile_size()?);
+    v["ui_peer_weeks"] = json!(n.peer_weeks()?);
     let (side, alias, icon) = n.screen()?;
     v["ui_side_width"] = json!(side);
     v["me_alias"] = json!(alias);
