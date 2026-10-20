@@ -23,7 +23,7 @@ pub const TILE_SIZE_KEY: &str = "ui_tile_size";
 pub const PEER_WEEKS_KEY: &str = "ui_peer_weeks";
 pub const PEER_WEEKS_DEFAULT: i64 = 4;
 pub const PEER_WEEKS_MAX: i64 = 12;
-pub const TILE_SIZES: [&str; 2] = ["normal", "small"];
+pub const TILE_SIZES: [&str; 2] = ["small", "normal"];
 /// 그룹 이름 · 표시 이름(별칭) 최대 글자 수.
 pub const MAX_GROUP_CHARS: usize = 32;
 pub const MAX_ALIAS_CHARS: usize = 32;
@@ -122,7 +122,7 @@ pub fn theme(conn: &Connection) -> rusqlite::Result<String> {
         .unwrap_or_else(|| THEMES[0].into()))
 }
 
-/// 레일 타일 크기 — 없거나 틀리면 `normal`.
+/// 레일 타일 크기 — 없거나 틀리면 `small`.
 pub fn tile_size(conn: &Connection) -> rusqlite::Result<String> {
     Ok(settings::get(conn, TILE_SIZE_KEY)?
         .filter(|t| TILE_SIZES.contains(&t.as_str()))

@@ -95,9 +95,9 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   시작 시각, `stall_after` 초 지나면 `stalled_at`) · `resume(id)`(멈춤 · 닿지 않음 · 질의 시각을 지우고 다시 판정 — `wait`).
 - `run_opts` — 실행 옵션 · 화면 설정의 검증과 기본값 단일 지점. `DEFAULT_MODEL`(`sonnet`) · `DEFAULT_EFFORT`(`high`) · `EFFORTS` ·
   설정 키 `MODEL_KEY` · `EFFORT_KEY` · `THEME_KEY`(`ui_theme` — `THEMES` `light` · `dark`, 없거나 틀리면 `THEMES[0]` = `light` — #1x) · `TILE_SIZE_KEY`(`ui_tile_size`
-  — `TILE_SIZES` `normal` · `small`, #1x) · `SIDE_WIDTH_KEY` · `ME_ALIAS_KEY` · `ME_ICON_KEY` · `MODELS`(`opus` · `sonnet` · `haiku` — #1d) · `valid_model`(목록 안) ·
+  — `TILE_SIZES` `small` · `normal`, #1x) · `SIDE_WIDTH_KEY` · `ME_ALIAS_KEY` · `ME_ICON_KEY` · `MODELS`(`opus` · `sonnet` · `haiku` — #1d) · `valid_model`(목록 안) ·
   `valid_effort` · `clean_group` · `clean_alias` · `clean_title` · `clean_icon`(PNG data URL) · `defaults` · `resolve(conn, peer)`(상대 덮어쓰기 →
-  전역 → 기본값) · `theme` · `tile_size`(없거나 틀리면 `normal`) · `side_width` · `me_tile`. 읽기는 `rusqlite::Result` — 없거나 틀린 값만 기본값, DB 오류는 그대로 낸다.
+  전역 → 기본값) · `theme` · `tile_size`(없거나 틀리면 `small`) · `side_width` · `me_tile`. 읽기는 `rusqlite::Result` — 없거나 틀린 값만 기본값, DB 오류는 그대로 낸다.
 - `log_file::FileLogger::install(path, level)` — `LOG_ROTATE_BYTES`(1 MiB)를 넘게 되는 기록 전에 `.1` 로 회전(1개 보관). 패닉 훅도 단다(#1e) —
   `error` "패닉: {메시지} — {파일}:{줄}" 뒤 기본 훅(stderr).
 - `groups`(#1i — 이 PC 에만): `Group{id, name, icon, pos, convs}`(`convs` = 넣은 대화 — #1w 그룹 = 대화만, 상대 소속 API 없음) ·

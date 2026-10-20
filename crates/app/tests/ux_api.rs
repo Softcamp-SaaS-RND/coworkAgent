@@ -1925,16 +1925,16 @@ async fn theme_default_light() {
     assert_eq!(s["ui_theme"], "light", "기본은 라이트");
 }
 
-/// 레일 타일 크기(#1x) — 기본 보통, 바꾸면 남고, 틀린 값은 400.
+/// 레일 타일 크기(#1x) — 기본 작게, 바꾸면 남고, 틀린 값은 400.
 #[tokio::test(flavor = "multi_thread")]
 async fn tile_size_setting_persists() {
     let a = side("ts").await;
     let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
-    assert_eq!(s["ui_tile_size"], "normal");
+    assert_eq!(s["ui_tile_size"], "small");
     let (code, s) = a
-        .call("PUT", "/api/settings", json!({ "ui_tile_size": "small" }))
+        .call("PUT", "/api/settings", json!({ "ui_tile_size": "normal" }))
         .await;
-    assert_eq!((code, &s["ui_tile_size"]), (200, &json!("small")), "{s}");
+    assert_eq!((code, &s["ui_tile_size"]), (200, &json!("normal")), "{s}");
     let (code, _) = a
         .call("PUT", "/api/settings", json!({ "ui_tile_size": "huge" }))
         .await;
@@ -1942,7 +1942,7 @@ async fn tile_size_setting_persists() {
     let (port, h) = web(&a.paths, a.node.clone(), a.chat.clone()).await;
     let (_, raw) = common::send_body(port, "GET", "/api/settings", &h, "").await;
     let s: Value = serde_json::from_str(raw.split("\r\n\r\n").nth(1).unwrap()).unwrap();
-    assert_eq!(s["ui_tile_size"], "small", "다시 열어도 남는다");
+    assert_eq!(s["ui_tile_size"], "normal", "다시 열어도 남는다");
 }
 
 /// 받은 요청 효과음(#1x) — 기본 켜짐, 끄면 남는다.

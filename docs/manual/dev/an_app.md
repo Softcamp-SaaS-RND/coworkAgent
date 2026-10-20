@@ -108,7 +108,7 @@
   읽는다, 못 읽거나 대기 0 이면 보통 알림 "요청 받음 — {에이전트}"). `MessageKind::Clear`(#1x — 상대가 모든 사용자 글 삭제) = kind `message` "대화 기록 삭제 — {에이전트}" ·
   본문 "{이름} · {호스트}\n{이름} 이(가) 대화 기록을 모두 지웠습니다"(미리보기와 무관, `notify_request` 축).
   `notify::routes` — `GET/PUT /api/settings`(PUT 은 준 항목만 · 모르는 항목 · 틀린 값 400, `relay_cap_default` 1 ~ 50, `claude_model` ·
-  `claude_effort`(실행 기본값 `sonnet` · `high`) · `ui_theme`(`light` 기본 — #1x · `dark`) · `ui_tile_size`(#1x — `normal` 기본 · `small`, 틀린 값 400 "ui_tile_size 는 normal · small", `an_core::run_opts::TILE_SIZE_KEY`) · `ui_peer_weeks`(#1y — 정수 1 ~ 12, 기본 4, 틀린 값 400 "ui_peer_weeks 는 1 ~ 12", `an_core::run_opts::PEER_WEEKS_KEY`) · `ui_side_width`(200 ~ 560) · `ui_folded`(접은 절 열쇠 목록 — `{화면}:{상대 id | me}` 300개까지, #1g) · `me_alias` · `me_icon`(빈 = 지움),
+  `claude_effort`(실행 기본값 `sonnet` · `high`) · `ui_theme`(`light` 기본 — #1x · `dark`) · `ui_tile_size`(#1x — `small` 기본 · `normal`, 틀린 값 400 "ui_tile_size 는 normal · small", `an_core::run_opts::TILE_SIZE_KEY`) · `ui_peer_weeks`(#1y — 정수 1 ~ 12, 기본 4, 틀린 값 400 "ui_peer_weeks 는 1 ~ 12", `an_core::run_opts::PEER_WEEKS_KEY`) · `ui_side_width`(200 ~ 560) · `ui_folded`(접은 절 열쇠 목록 — `{화면}:{상대 id | me}` 300개까지, #1g) · `me_alias` · `me_icon`(빈 = 지움),
   설정 DB 읽기 오류는 500) ·
   `GET /api/events`(SSE, 상태 변경 없음 — 알림 `message` + 변경 신호 `event: change` `{res: [{kind, id?}]}`, 변경 신호는 `Notifier::on_event` 가 켜짐 · 세부 설정 앞에서 늘 보내고
   뒤처지면 빈 `res` 하나 — `notify::next_change`, D39 ②) · `POST /api/seen`(지움). 상한 없는 자동 왕복 새 대화는 `relay_cap_default`.

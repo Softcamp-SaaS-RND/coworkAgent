@@ -7,22 +7,22 @@
      WEAK 줄은 기계가 매 실행 다시 단다 — 약한 gate 를 셀 수 있게 하는 표시이며
      판정에는 영향이 없다. -->
 
-측정 커밋: 33576f88770ae3f96fe0683460e17da788263376
+측정 커밋: e4bedcd1ffb2d3f1be7396001595881146393ec5
 
 - [x] E1: A9 — 워크스페이스 테스트 전부 통과
   CHECK: cargo test --workspace
   EXPECT: /test result: ok\. [1-9][0-9]* passed; 0 failed/
-  EVIDENCE: test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+  EVIDENCE: test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
 - [x] E2: A9 — 경고 0
   CHECK: cargo clippy --workspace --all-targets -- -D warnings
   EXPECT: Finished
-  EVIDENCE: Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.31s
+  EVIDENCE: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.23s
 
 - [x] E3: A9 — 화면 로직 node 테스트 · 실패 0 · 150 이상
   CHECK: node --test --test-reporter=tap "crates/app/web/*.test.mjs"
   EXPECT: /# pass (15[0-9]|1[6-9][0-9])\s+# fail 0/
-  EVIDENCE: # skipped 0 / # todo 0 / # duration_ms 171.3567
+  EVIDENCE: # skipped 0 / # todo 0 / # duration_ms 170.5119
 
 - [x] E4: A1 — 주고받은 메시지 기간 설정 · 거르기
   CHECK: cargo test -p coworkagent-app --test ux_api -- peer_weeks_setting_persists peer_messages_within_weeks
@@ -32,41 +32,42 @@
 - [x] E5: A2·A3·A4 — 요청 archive 자동 · 손 · 상태 바뀜 · 이 PC 만 · 인자 · 대기 되돌리기 보완
   CHECK: cargo test -p coworkagent-app --test ux_api -- request_archive_ req_state_back_to_wait
   EXPECT: /test result: ok\. 6 passed; 0 failed/
-  EVIDENCE: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.60s
+  EVIDENCE: test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.59s
 
 - [x] E6: A5 — 스키마 23 · VACUUM 조건 · 시작 실패 없음(`?` 아님)
   CHECK: cargo test -p an-core --test store -- schema23_req_archived vacuum_ && python -c "import pathlib,re;m=pathlib.Path('crates/app/src/main.rs').read_text(encoding='utf-8');print('vacuum_q=%d vacuum=%d'%(len(re.findall(r'vacuum_if_sparse\([^)]*\)\?',m)),min(m.count('vacuum_if_sparse'),1)))"
   EXPECT: vacuum_q=0 vacuum=1
   EVIDENCE: vacuum_q=0 vacuum=1
 
-- [x] E7: A6·A7 — 업데이트 받기 · 실행 파일 꼴 · 교체 · 건너뛰기(로컬 HTTP)
-  CHECK: cargo test -p coworkagent-app --test update update_
-  EXPECT: /test result: ok\. [6-9] passed; 0 failed/
-  EVIDENCE: test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 2.07s
+- [x] E7: A6·A8 — 자동 업데이트 · 서명 관리 코드 없음(업데이터 · 시험 · 서명 도구 · `ureq` · `ring` 의존 · 감시 연결 · 추적되는 키 파일)
+  CHECK: python -c "import pathlib,subprocess;e=lambda f:pathlib.Path(f).exists();c=pathlib.Path('crates/app/Cargo.toml').read_text(encoding='utf-8');m=pathlib.Path('crates/app/src/main.rs').read_text(encoding='utf-8');f=subprocess.run(['git','ls-files'],capture_output=True,text=True).stdout.split();print('update=%d test=%d sign=%d ureq=%d ring=%d hook=%d keys=%d'%(e('crates/app/src/update.rs'),e('crates/app/tests/update.rs'),e('crates/app/src/bin/sign-release.rs'),'ureq' in c,'ring' in c,'update::' in m,sum(x.endswith(('.key','.sig')) for x in f)))"
+  EXPECT: update=0 test=0 sign=0 ureq=0 ring=0 hook=0 keys=0
+  EVIDENCE: update=0 test=0 sign=0 ureq=0 ring=0 hook=0 keys=0
 
-- [x] E8: A8 — 릴리스 절차 문서(`--latest`) · 서명 관리 없음(서명 도구 · 공개키 · `ring` 의존 · 추적되는 키 파일)
-  CHECK: python -c "import pathlib,subprocess;u=pathlib.Path('crates/app/src/update.rs').read_text(encoding='utf-8');c=pathlib.Path('crates/app/Cargo.toml').read_text(encoding='utf-8');g=pathlib.Path('docs/manual/dev/developer-guide.md').read_text(encoding='utf-8');f=subprocess.run(['git','ls-files'],capture_output=True,text=True).stdout.split();print('bin=%d key=%d ring=%d tracked_keys=%d doc_sign=%d doc_latest=%d'%(pathlib.Path('crates/app/src/bin/sign-release.rs').exists(),'PUBLIC_KEY' in u or 'ED25519' in u,'ring' in c,sum(x.endswith(('.key','.sig')) for x in f),g.count('sign-release'),min(g.count('--latest'),1)))"
-  EXPECT: bin=0 key=0 ring=0 tracked_keys=0 doc_sign=0 doc_latest=1
-  EVIDENCE: bin=0 key=0 ring=0 tracked_keys=0 doc_sign=0 doc_latest=1
+- [x] E8: A7 — 릴리스 절차(사전 배포) 문서 · 사용자 문서에 자동 업데이트 없음
+  CHECK: python -c "import pathlib;g=pathlib.Path('docs/manual/dev/developer-guide.md').read_text(encoding='utf-8');u=''.join(pathlib.Path(f).read_text(encoding='utf-8') for f in ['README.md','docs/manual/user/user-guide.md']);print('release=%d pre=%d user_update=%d'%(min(g.count('### 2.4 릴리스'),1),min(g.count('--prerelease'),1),u.count('자동 업데이트')))"
+  EXPECT: release=1 pre=1 user_update=0
+  EVIDENCE: release=1 pre=1 user_update=0
 
 - [x] E9: A1·A3 — 화면 로직: 기간 고르기 · archive 머리 수 · archive 단추
   CHECK: node --test --test-reporter=tap --test-name-pattern="peer_weeks_options|req_head_archive|req_archive_action" crates/app/web/view.test.mjs
   EXPECT: /# pass [3-9]\s+# fail 0/
-  EVIDENCE: # skipped 0 / # todo 0 / # duration_ms 68.68
+  EVIDENCE: # skipped 0 / # todo 0 / # duration_ms 68.2299
 
-- [ ] E10: A9 — 문서 규약 · 의존 경계 · 화면 문구 표
+- [x] E10: A9 — 문서 규약 · 의존 경계 · 화면 문구 표
   CHECK: python tools/check_ddd_docs.py && python tools/check_crates.py && cargo test -p coworkagent-app --test ux_literals
   EXPECT: crates=4 edges=6 violations=0
-  EVIDENCE: FAIL(rc=1) - STATE.md:14 dead link -> docs/tasks/1y.data-update/work/stage2.md / - STATE.md:14 dead link -> docs/tasks/1y.data-update/work/stage3.md / - docs/archive/1y.data-update/eval.md: 측정 커밋 73466642 이후 코드가
+  EVIDENCE: crates=4 edges=6 violations=0
 
 - [x] E11: A3·A1 — 실화면(이 PC, CDP): 주고받은 메시지 기간 고르기 → 목록 다시 · 요청 "archive 항목 보기" → 따로 된 절 · archive / archive 해제 단추.
   EVIDENCE: 2026-10-20 CDP(떼어 놓은 디버그 인스턴스 · 요청 3) — weeks n=12 value=4 · 8 고름 → PUT /api/settings · GET /api/messages/peers · 저장 8 / head "2 | 대기 1 | 완료 1 | archive 1" · 체크 끔 · 목록 숨김 / 체크 → "archive — 받은 요청" 절 "오래전 끝난 요청"[archive 해제] / "archive" 누름 → "archive 로 옮김" · 절로 / 다시 들어오면 끔 (work/stage3.md)
 
-- [ ] E12: A6 — 실화면: 업데이터가 든 정식 릴리스(v1.1.0)를 손으로 설치한 PC 가 다음 정식 릴리스를 실행 때 받아 바꾸고 새 버전으로 뜬다(두 릴리스 필요 — 프로토타입 인수 Task(D28)로 이월).
-  EVIDENCE: pending
+- [x] E12: A8 — 1.1.0 사전 배포 등록 · 자산 SHA-256 = 빌드한 실행 파일(수동 — `gh release view`).
+  EVIDENCE: 2026-10-20 `gh release view v1.1.0` — isPrerelease true · coworkAgent.exe 11244544 sha256:82b6a46a…150349 = 로컬 빌드(`sha256sum`) 같음 · 파일 버전 1.1.0 · pe_imports vcruntime=0 · 태그 v1.1.0 = 스쿼시 5fc7a22
 
 
 WEAK: E11 CHECK 없음 — 수동 gate(사람이 적은 EVIDENCE 로 판정)
+WEAK: E12 CHECK 없음 — 수동 gate(사람이 적은 EVIDENCE 로 판정)
 
 ## 적대적 평가 — 라운드 1/2
 

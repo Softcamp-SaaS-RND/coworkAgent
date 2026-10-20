@@ -2075,14 +2075,15 @@ test("req_feedback — 대기 · 질의 · 답은 없음, 수용 · 반려 · �
   assert.deepEqual(reqFeedback(req({ mine: false, req_state: "rejected" })), { key: "rejected", state: "반려", note: "", at: 10, side: "mine" }, "받은 요청 → 내 쪽(오른쪽)");
 });
 
-test("composer_a — 입력창: 질의 / 요청 라디오 2개 · 안내 문구 없음 · placeholder '메시지 입력' · 최대 폭 860px, 편집 모드 없음(#1v)", () => {
+test("composer_a — 입력창: 질의 / 요청 라디오 2개 · 안내 문구 없음 · placeholder '메시지 입력' · 창 폭에 맞춰 늘어남(최대 폭 없음), 편집 모드 없음(#1v)", () => {
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
   const css = readFileSync(new URL("./app.css", import.meta.url), "utf8");
   const form = html.split('<form id="reply_form"')[1].split("</form>")[0];
   assert.equal(form.match(/name="ask"/g)?.length, 2);
   assert.ok(!html.includes("mention_hint") && !html.includes("에이전트 부르기"), "안내 문구 없음");
   assert.ok(form.includes('id="reply_text" rows="3" placeholder="메시지 입력"'));
-  assert.match(css.split(".composer {")[1].split("}")[0], /max-width: 860px/);
+  assert.doesNotMatch(css.split(".composer {")[1].split("}")[0], /max-width/, "입력창은 창 폭에 맞춰 늘어난다");
+  assert.match(css, /#messages \{ gap: var\(--sp-4\); padding-bottom: var\(--sp-4\); \}/, "말풍선 ↔ 입력창 간격 16px");
   for (const id of ['id="edit_btn"', "edit_bar", "scope_dialog"]) assert.ok(!html.includes(id), id);
   const app = readFileSync(new URL("./app.js", import.meta.url), "utf8");
   assert.ok(!app.includes('$("reply_text").placeholder'), "대화를 열 때 placeholder 를 덮어쓰지 않는다(적대적 평가 R2)");
