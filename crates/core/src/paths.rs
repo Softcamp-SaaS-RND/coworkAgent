@@ -56,6 +56,14 @@ impl Paths {
     pub fn instance_pid_file(&self) -> PathBuf {
         self.root.join("instance.pid")
     }
+    /// 감시 프로세스가 남긴 자동 업데이트 결과 한 줄(#1y — 감시는 로거를 쓰지 않는다, 앱이 시작 때 로그에 옮기고 지운다).
+    pub fn update_note_file(&self) -> PathBuf {
+        self.root.join("update.txt")
+    }
+    /// 뜨지 못해 되돌린 업데이트 태그(#1y) — 그 태그는 다시 받지 않는다.
+    pub fn update_skip_file(&self) -> PathBuf {
+        self.root.join("update-skip.txt")
+    }
     /// 감시 프로세스 단일 잠금(#1n) — 동시에 여러 번 실행해도 감시는 하나.
     pub fn supervisor_lock_file(&self) -> PathBuf {
         self.root.join("supervisor.lock")

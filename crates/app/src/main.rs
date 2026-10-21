@@ -6,7 +6,7 @@ use an_agent::runner::{find_claude, run_claude};
 use an_app::notify::{self, Notifier};
 use an_app::server::{self, Quit, Status};
 use an_app::tray::{Attention, Tray, read_start_error, write_start_error};
-use an_app::{autostart, browser, chat_api, cli, handoff, peers_api, proc, watchdog};
+use an_app::{autostart, browser, chat_api, cli, handoff, peers_api, proc, update, watchdog};
 use an_core::db;
 use an_core::instance::{Acquired, InstanceInfo, InstanceLock, write_pid};
 use an_core::log_file::FileLogger;
@@ -136,7 +136,7 @@ fn supervise(parent: Option<u32>) -> i32 {
         return fail_unlocked("사용자 데이터 경로를 찾지 못했다");
     };
     let paths = Paths::under(root);
-    let _lock = match watchdog::acquire(&paths) {
+    let lock = match watchdog::acquire(&paths) {
         Ok(Some(lock)) => lock,
         Ok(None) if headless => return 0,
         Ok(None) => {
@@ -147,7 +147,61 @@ fn supervise(parent: Option<u32>) -> i32 {
         }
         Err(e) => return fail_unlocked(&format!("감시 잠금을 잡지 못했다: {e}")),
     };
-    match watchdog::supervise(watchdog::spawn_app, watchdog::RESTART_DELAY) {
+    // 자동 업데이트(#1y · #30) — 트레이 모드 · 릴리스 빌드만(트레이 없는 모드는 부른 쪽의 준비 확인이 끊긴다, plan 해석 2). 바꿨으면 잠금을 놓고 새 exe 로 다시.
+    let updater = (!headless && !cfg!(debug_assertions)).then_some(()).and(update::ASSET).zip(std::env::current_exe().ok());
+    // 결과 한 줄을 덧붙인다 — 바꾼 감시의 `Updated` 를 새 감시의 `UpToDate` 가 덮지 않게(적대적 평가 R1). 앱 `start` 가 줄마다 로그로 옮기고 지운다.
+    let note = |line: String| {
+        use std::io::Write;
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(paths.update_note_file())
+            .and_then(|mut f| f.write_all(line.as_bytes()));
+    };
+    // 새 버전이 뜨지 못하면 지난 버전으로 — 그 태그는 다시 받지 않게 남기고 되돌린 exe 를 띄운다(감시 잠금은 부르는 쪽이 먼저 놓는다).
+    let roll_back = |exe: &std::path::Path, tag: &str| -> i32 {
+        let _ = std::fs::write(paths.update_skip_file(), tag);
+        let back = update::rollback(exe).and_then(|done| {
+            note(format!("RolledBack({tag:?}, {done})\n"));
+            std::process::Command::new(exe).spawn()
+        });
+        match back {
+            Ok(_) => 0,
+            Err(e) => fail_unlocked(&format!("새 버전({tag})이 뜨지 못했고 지난 버전으로 되돌리지 못했다: {e}")),
+        }
+    };
+    if let Some((asset, exe)) = &updater {
+        update::clean(exe);
+        let skip = std::fs::read_to_string(paths.update_skip_file()).ok();
+        let outcome = update::check(update::RELEASES, asset, env!("CARGO_PKG_VERSION"), skip.as_deref().map(str::trim), exe, update::verify);
+        note(format!("{outcome:?}\n"));
+        if let update::Outcome::Updated(tag) = outcome {
+            // 새 감시가 잠금을 잡게 먼저 놓는다(적대적 평가 R2). 새 감시가 앱을 띄우기 전에 실패로 끝나면(로더 · 시작 전 오류) 그 감시는 되돌리지
+            // 못하므로 여기서 [`NEW_SUPERVISOR_GRACE`] 동안 지켜보다 되돌린다 — 그 뒤의 실패(앱 시작 실패 · 거듭 죽음)는 새 감시가 되돌린다.
+            drop(lock);
+            let Ok(mut child) = std::process::Command::new(exe).spawn() else {
+                return roll_back(exe, &tag);
+            };
+            let until = std::time::Instant::now() + NEW_SUPERVISOR_GRACE;
+            while std::time::Instant::now() < until {
+                match child.try_wait() {
+                    Ok(Some(st)) if !st.success() && update::pending(exe) => return roll_back(exe, &tag),
+                    Ok(Some(_)) | Err(_) => return 0,
+                    Ok(None) => std::thread::sleep(Duration::from_millis(200)),
+                }
+            }
+            return 0;
+        }
+    }
+    let outcome = watchdog::supervise(watchdog::spawn_app, watchdog::RESTART_DELAY);
+    if let (Some((_, exe)), watchdog::Outcome::StartFailed | watchdog::Outcome::GaveUp(_)) = (&updater, &outcome)
+        && update::pending(exe)
+    {
+        drop(lock);
+        return roll_back(exe, &format!("v{}", env!("CARGO_PKG_VERSION")));
+    }
+    let _lock = lock;
+    match outcome {
         watchdog::Outcome::Done => 0,
         watchdog::Outcome::StartFailed => {
             fail(&read_start_error().unwrap_or_else(|| "앱 시작 실패".into()))
@@ -155,6 +209,9 @@ fn supervise(parent: Option<u32>) -> i32 {
         watchdog::Outcome::GaveUp(why) => fail(&why),
     }
 }
+
+/// 자동 업데이트(#1y) 뒤 지난 감시가 새 감시를 지켜보는 시간 — 그 안에 실패로 끝나면 되돌린다.
+const NEW_SUPERVISOR_GRACE: Duration = Duration::from_secs(15);
 
 /// 시작이 끝난 주 인스턴스 — 트레이에 넘길 것.
 struct App {
@@ -185,6 +242,13 @@ fn start(
     }
     paths.ensure()?;
     FileLogger::install(&paths.log_file(), log::LevelFilter::Info)?;
+    // 감시가 남긴 자동 업데이트 결과(#1y · #30 — 바꾼 감시 · 새 감시가 한 줄씩).
+    if let Ok(note) = std::fs::read_to_string(paths.update_note_file()) {
+        for line in note.lines().filter(|l| !l.trim().is_empty()) {
+            log::info!("자동 업데이트: {} (지금 {})", line.trim(), env!("CARGO_PKG_VERSION"));
+        }
+        let _ = std::fs::remove_file(paths.update_note_file());
+    }
     if restarts > 0 {
         log::info!("감시 프로세스가 다시 띄움({restarts}번째)");
     }
@@ -292,6 +356,10 @@ fn start(
     });
     InstanceInfo { port, token }.write(&paths.instance_file())?;
     log::info!("시작 — 127.0.0.1:{port}");
+    // 업데이트한 새 버전이 처음 준비됨(#1y) — 되돌릴 지난 버전을 지운다.
+    if let Ok(exe) = std::env::current_exe() {
+        update::settled(&exe);
+    }
 
     let info_file = paths.instance_file();
     let pid_file = paths.instance_pid_file();

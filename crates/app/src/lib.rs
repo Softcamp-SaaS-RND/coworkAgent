@@ -11,4 +11,5 @@ pub mod peers_api;
 pub mod proc;
 pub mod server;
 pub mod tray;
+pub mod update;
 pub mod watchdog;

@@ -21,7 +21,7 @@
 | 항목 | 내용 |
 |---|---|
 | OS | Windows 10/11 x64 · macOS 12 이상(Apple Silicon · Intel 공용 universal — 1.0.0 부터, 실사용 확인 전 사전 배포) |
-| 설치 | 없다 — 실행 파일 하나. Windows 는 `coworkAgent.exe`, macOS 는 `coworkAgent-macos.zip` 을 풀어 나온 `coworkAgent`. [GitHub 릴리스](https://github.com/tskimS/coworkAgent/releases)에서 받는다(사전 배포 · 코드 서명 없음 — Windows 는 SmartScreen 경고가 뜰 수 있고, macOS 는 처음 한 번 막히면 터미널에서 `xattr -d com.apple.quarantine coworkAgent` 로 격리 표시를 지운다). 직접 빌드는 [개발자 가이드](../dev/developer-guide.md) "빌드 · 실행" |
+| 설치 | 없다 — 실행 파일 하나. Windows 는 `coworkAgent.exe`, macOS 는 `coworkAgent-macos.zip` 을 풀어 나온 `coworkAgent`. [GitHub 릴리스](https://github.com/Softcamp-SaaS-RND/coworkAgent/releases)에서 받는다(Windows exe 는 회사 인증서(SOFTCAMP CO.,LTD.) 코드 서명. macOS 는 사전 배포 · 코드 서명 없음 — 처음 한 번 막히면 터미널에서 `xattr -d com.apple.quarantine coworkAgent` 로 격리 표시를 지운다). 직접 빌드는 [개발자 가이드](../dev/developer-guide.md) "빌드 · 실행" |
 | 네트워크 | 상대 PC 와 같은 LAN. 앱의 수신 포트(기본 TCP 47100 — 프로필 → 사용자 정보 "수신 주소")를 방화벽이 막으면 사내망 쪽만 허용(인터넷 쪽으로 열지 않는다) |
 | Claude Code | **답하는 PC**(에이전트를 등록한 PC)에 Claude Code 2.1.267 이상 설치 · 로그인, 그리고 Claude 모델 서비스로 가는 인터넷 연결. 낮으면 `claude update`. 묻기만 하는 PC 는 없어도 된다(자동 왕복으로 내 에이전트를 돌릴 때는 필요) |
 
@@ -40,6 +40,10 @@
 - 로그인 직후처럼 작업 표시줄 알림 영역이 아직 준비되지 않아 트레이 아이콘을 만들지 못하면 1 · 2 · 4 · 8 · 15 · 30초 뒤(모두 1분) 다시 만든다 —
   끝내 못 만들면 사유 파일(아래)을 열고 끝난다.
 - 다른 도구의 메뉴(14.1 `start` · `open`)로 띄운 앱은 **트레이 아이콘이 없다** — 화면은 그 도구의 메뉴나 `coworkAgent.exe` 다시 실행으로 연다.
+- **자동 업데이트**(Windows) — 트레이로 실행할 때(로그인 자동 실행 포함) GitHub 의 정식 릴리스를 확인한다. 새 버전이면 **묻지 않고** 받아
+  실행 파일을 바꾸고 새 버전으로 다시 뜬다(옛 파일 `coworkAgent.exe.old` 는 다음 시작에 지워진다). 받기 실패 · 실행 파일이 아님 · 회사 인증서 서명이 아님 · 네트워크 없음이면 바꾸지 않고 지금 버전으로 뜬다.
+  사전 배포(Pre-release)는 대상이 아니고, 다른 도구의 메뉴(14.1)로 띄울 때는 확인하지 않는다. 처음 업데이터가 든 버전(v1.2.0)은 손으로 설치한다.
+  결과는 로그(15장 `logs\`)의 "자동 업데이트:" 줄. 프록시가 필요한 사내망은 환경 변수 `HTTPS_PROXY` 만 본다(Windows 프록시 설정은 보지 않는다).
 - 시작에 실패하면 **붉은 트레이 아이콘**이 뜨고 툴팁에 사유가 보인다. "오류 보기" 를 누르면 사유 파일
   (임시 폴더의 `coworkAgent-start-error.txt`)이 열린다.
 - 알림을 켜 두었다면 새 요청이 올 때 트레이 아이콘에 **주황 점**, 툴팁 "coworkAgent — 새 요청 N건". 웹UI 를 열면 지워진다.
@@ -494,6 +498,7 @@ coworkAgent stop                  # 앱을 끄고, 다 끝날 때까지 기다�
 | 로그인해도 앱이 켜지지 않는다 | 설정 → 시작 → "로그인할 때 자동 실행" 이 꺼져 있다 · 실행 파일을 옮긴 뒤 한 번도 실행하지 않았다(실행하면 새 경로로 고친다) |
 | 붉은 트레이 아이콘 "앱이 60초 안에 3번 비정상 종료" | 로그(`logs\coworkAgent.log`)의 "패닉: …" 줄 · 직전 오류를 확인하고 다시 실행 |
 | 새 버전을 실행했는데 화면이 그대로다 | 옛 버전이 아직 떠 있다 — 트레이 "종료" 뒤 새 버전 실행 |
+| 새 버전이 나왔는데 자동 업데이트되지 않는다 | 로그(`logs\coworkAgent.log`)의 "자동 업데이트:" 줄 — 받기 · 확인 실패(프록시가 필요한 사내망은 환경 변수 `HTTPS_PROXY`) · 받은 파일이 실행 파일이 아님 · 서명 확인 실패 · 사전 배포(대상 아님) · 다른 도구의 메뉴로 띄움(확인 안 함). 지금 버전은 그대로 쓸 수 있다 — 릴리스에서 손으로 받아 바꿔도 된다 |
 | 붉은 트레이 아이콘 | 시작 실패 — "오류 보기" 의 사유(옛 앱(agentNetwork)이 켜져 있음 · 데이터 폴더 권한 · "DB 스키마 N 가 이 실행 파일(M)보다 새롭다" 등) |
 | 초대 수락이 실패한다 | 5분 지남 · 이미 쓴 초대 · 방화벽 · 다른 네트워크 — 상대에게 새 초대를 받는다 |
 | 답이 "실행 실패: 받는 PC 의 Claude Code 버전이 낮다" | 답하는 PC 에서 `claude update` |

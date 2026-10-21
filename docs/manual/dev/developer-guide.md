@@ -91,18 +91,38 @@ python tools/check_crates.py
 - 데이터 루트는 OS 사용자마다 하나(`%LOCALAPPDATA%\coworkAgent`)이고 경로를 바꾸는 스위치가 없다 — 한 OS 사용자 계정에 주 인스턴스는
   하나뿐이다. 테스트는 임시 루트(`Paths::under`)를 쓴다.
 
-### 2.4 릴리스
+### 2.4 릴리스 · 자동 업데이트
 
-개발 PC(Windows)에서 손 빌드 사전 배포(D36 — 코드 서명 · 릴리스 파이프라인 · 자동 업데이트는 TODO):
+#30 · D36 개정 — 개발 PC(Windows)에서 회사 인증서로 서명한 정식 릴리스를 만든다(배포처 `https://github.com/Softcamp-SaaS-RND/coworkAgent/releases`):
 
 ```text
-1) crates/*/Cargo.toml 의 version 을 올린다(태그 v{X.Y.Z} 와 같은 값)
+1) crates/*/Cargo.toml 의 version 을 올린다(태그 v{X.Y.Z} 와 같은 값) → squash push(origin/main 에 그 코드)
 2) cargo build --release -p coworkagent-app
-3) gh release create v{X.Y.Z} target/release/coworkAgent.exe --prerelease
+3) target/release/coworkAgent.exe 에 회사 인증서(SOFTCAMP CO.,LTD.) Authenticode 서명 — 그 자리에 서명한 파일을 둔다
+4) 서명 · 버전 확인 — Get-AuthenticodeSignature = Valid · 서명자 CN = SOFTCAMP CO.,LTD. · 파일 속성 버전 = X.Y.Z
+5) gh release create v{X.Y.Z} target/release/coworkAgent.exe -R Softcamp-SaaS-RND/coworkAgent --target <origin/main 전체 SHA> --latest
 ```
 
-- 자동 업데이트는 없다 — #1y 에서 GitHub 릴리스 자동 업데이트를 만들었다가 사용자 지시(2026-10-20 "git release 에 신규파일 등록 시 자동 배포되는 기능은 삭제")로
-  걷어냈다. 새 버전은 릴리스에서 손으로 받아 바꾼다.
+- **서명 확인**(#30) — 업데이터는 받은 파일을 `{exe}.new` 로 쓴 뒤 `update::authenticode`(WinVerifyTrust · 신뢰 루트 · 코드 서명 용도 · 인증서 폐기 확인)가
+  통과하고 서명 인증서 이름(CN)이 `update::SIGNER`(`SOFTCAMP CO.,LTD.`)이며, 서명이 덮는 버전 리소스가 `ProductName` = `coworkAgent`(`update::PRODUCT`) · 파일 버전 = 태그일 때만
+  바꾼다(`update::verify` — 적대적 평가 R1: 회사 서명된 옛 버전 · 다른 제품을 높은 태그에 붙여 내려 깔기 차단) — 서명 없는 · 고친 · 다른 회사 서명 · 태그와 버전이 다른 exe 는
+  `Skipped`(저장소를 빼앗겨도 깔리지 않는다). 그래서 릴리스 태그는 exe 속성 버전과 같아야 한다.
+  그 앞에 이 PC 의 실행 파일 꼴(PE · 같은 아키텍처 — `is_native_pe`)도 본다. 서명하지 않은 exe 를 정식으로 올리면 어느 PC 도 바꾸지 않는다(로그 "서명 확인 실패")
+- **정식 릴리스만** — `--latest`. `--prerelease` 로 올리면 자동 업데이트 대상이 아니다(`releases/latest` 가 가리키지 않는다). 태그는 `vX.Y.Z` 꼴만(`v1.0.0-macos` 같은
+  꼬리 태그는 무시), macOS 자산(`coworkAgent-macos.zip`)은 자동 업데이트하지 않는다(`update::ASSET` = Windows 만). 처음 업데이터가 든 버전(v1.2.0)은 손으로 설치한다(1.1.1 이하엔 업데이터 없음).
+- **확인**(감시 프로세스 — 3.1): `GET {RELEASES}/latest`(넘겨주기 따라가지 않음) → 302 `Location` `…/tag/vX.Y.Z` 의 태그(API 아님 — 사내 공용 IP 의 API 횟수 제한,
+  정식 없음 = `…/releases` → 지금이 최신). 지금 버전보다 엄격히 클 때만(`newer`) `…/download/{tag}/coworkAgent.exe` 받기 → `is_native_pe` → `.new` 쓰기 → `verify`(서명 · 제품 · 버전) → `swap`.
+- **받기** = `ureq`(rustls · `platform-verifier` — OS 인증서 저장소라 사내 TLS 검사 뒤에서도). 시간 제한 연결 5초 · `latest` 10초 · 받기 120초,
+  크기 상한 64 MiB(`MAX_ASSET`). 프록시는 `HTTPS_PROXY` 등 환경 변수만(Windows 시스템 프록시 · PAC 안 봄 — 확인 실패 = 지금 버전). 꺼진 네트워크면 시작이 연결 제한만큼 늦을 수 있다.
+- **교체** = (확인한) `{exe}.new` → exe → `.old` 이름 바꾸기 → `.new` → exe(실패면 `.old` 를 되돌림 · 되돌리기도 실패하면 둘 다 알림). 결과 `Outcome`(`Updated` ·
+  `UpToDate` · `Skipped(사유)`) — 어떤 실패든 바꾸지 않고 지금 버전으로 뜬다, 로그 "자동 업데이트: …"(7.1 `update.txt`). 두 이름 바꾸기 사이(마이크로초)에 전원이 꺼지면
+  exe 자리가 빈다 — 실행 중 이미지는 한 번에 바꿀 수 없어 남는 위험, 그때는 `coworkAgent.exe.old` 를 `coworkAgent.exe` 로 손으로 바꾼다.
+- **되돌리기**(적대적 평가 R1) — 교체 뒤 새 exe 를 띄우지 못하거나, 새 버전 앱이 시작 실패(코드 3) · 60초 안 3번 죽음이고 `.old` 가 남아 있으면(아직 한 번도 준비되지
+  않음) 감시가 `rollback`(지금 exe → `.bad` · `.old` → 제자리) 뒤 지난 버전을 띄운다. 교체한 감시는 잠금을 먼저 놓고 새 감시를 띄운 뒤 15초 동안 지켜보다
+  (`NEW_SUPERVISOR_GRACE`, R2) 새 감시가 앱을 띄우기 전에 실패로 끝나면 직접 되돌린다. 그 태그는 `update-skip.txt` 에 남겨 다시 받지 않는다(다음 태그는 받는다).
+  새 버전 앱이 준비되면(`instance.json` 쓴 뒤) `settled` 가 `.old` 를 지운다 — 지난 감시가 아직 `.old` 이미지로 떠 있어 못 지우면 1초마다 다시(최대 60번, 적대적 평가 R2). 다음 시작의 `clean` 은 `.new` · `.bad` 만 지운다.
+- **시험**: `crates/app/tests/update.rs`(로컬 HTTP — `update_*` · 확인은 주입, `authenticode_rejects_unsigned` = 서명 · 버전 리소스 없는 시험 exe), `real_github_latest` ·
+  `real_signed_release`(실제 배포처의 최신 정식 exe 를 받아 서명 · 제품 · 버전 통과 · 다른 서명자 이름 · 다른 제품 이름 · 더 높은 태그 · 한 바이트 고친 사본 실패)는 `#[ignore]` — 릴리스 뒤 `-- --ignored` 로 손으로.
 
 ## 3. 프로세스
 
@@ -110,7 +130,7 @@ python tools/check_crates.py
 
 | 프로세스 | 언제 생기나 | 수명 · 개수 | 하는 일 |
 |---|---|---|---|
-| `coworkAgent.exe`(인자 없음 · 환경 변수 `COWORKAGENT_SUPERVISED` 없음) — **감시 프로세스**(#1e) | 사용자 · 로그인 자동 실행 · `start` · `open`(8.10) | OS 사용자당 1개(`supervisor.lock`, #1n), 자식이 끝날 때까지 | 같은 실행 파일을 자식(주 인스턴스 또는 보조 실행)으로 띄워 기다린다. 자식이 0 으로 끝나면 함께 끝, 시작 실패 코드 3(`START_FAILED`)이면 다시 띄우지 않음, 그 밖 1초 뒤 다시(변수 = 다시 띄운 횟수) — 60초 안 3번이면 멈춤. 시작 실패 · 멈춤 = 트레이 모드는 오류 트레이(잠금 안 — 하나), 트레이 없는 모드는 사유 파일 · 코드 3. 잠금을 못 잡으면 이미 떠 있는 것 — 트레이 없는 모드 요청은 0, 인자 없는 실행은 화면 넘기기(실패 = 사유 파일 열기 · 1). 로거 · DB 없음 · 자식을 Job 에 넣지 않음 |
+| `coworkAgent.exe`(인자 없음 · 환경 변수 `COWORKAGENT_SUPERVISED` 없음) — **감시 프로세스**(#1e) | 사용자 · 로그인 자동 실행 · `start` · `open`(8.10) | OS 사용자당 1개(`supervisor.lock`, #1n), 자식이 끝날 때까지 | 같은 실행 파일을 자식(주 인스턴스 또는 보조 실행)으로 띄워 기다린다. 자식이 0 으로 끝나면 함께 끝, 시작 실패 코드 3(`START_FAILED`)이면 다시 띄우지 않음, 그 밖 1초 뒤 다시(변수 = 다시 띄운 횟수) — 60초 안 3번이면 멈춤. 시작 실패 · 멈춤 = 트레이 모드는 오류 트레이(잠금 안 — 하나), 트레이 없는 모드는 사유 파일 · 코드 3. 잠금을 못 잡으면 이미 떠 있는 것 — 트레이 없는 모드 요청은 0, 인자 없는 실행은 화면 넘기기(실패 = 사유 파일 열기 · 1). 로거 · DB 없음 · 자식을 Job 에 넣지 않음. 자동 업데이트(#1y · #30 — 2.4): 트레이 모드 · 릴리스 빌드 · Windows 만 — 잠금 뒤 · 자식 전에 `update::clean` → `update::check`(확인 `update::verify`), 결과 한 줄을 `update.txt` 에 덧붙임(바꾼 감시 · 새 감시 둘 다 — 앱 `start` 가 줄마다 로그로 옮기고 지움), `Updated` 면 잠금을 놓고 새 exe 를 인자 없이 띄우고 0 |
 | `coworkAgent.exe`(인자 없음 · 감시의 자식) — **주 인스턴스** | 감시 프로세스가 띄움 | OS 사용자당 1개(`instance.lock`), 트레이 "종료" · `/api/quit` · (트레이 없는 모드) 부모 끝까지 | 트레이 · 로컬 웹 서버 · 피어 노드 · 대화 엔진 · 실행기를 모두 담는다. 시작만으로는 브라우저를 열지 않는다(트레이 "열기"). 감시가 `COWORKAGENT_PARENT` 를 물려주면 트레이 없는 모드(8.10). 시작 실패는 사유 파일 + 코드 3(오류 트레이는 감시가) |
 | `coworkAgent.exe`(인자 없음) — 보조 실행 | 주 인스턴스가 이미 있을 때 다시 실행 | 보통 수 초(최악 약 53초) | `instance.json` 을 읽어 `POST /api/open`(브라우저 열기)을 넘기고 끝 — 300 ms 간격 최대 10번, 요청당 5초 |
 | `coworkAgent.exe <명령>` — CLI | 사용자 · 사용자 AI 에이전트가 `peers` · `ask` · `wait` · `status` · `history`, 부모 도구가 `start` · `open` · `stop`(8.10 — 감시를 떼어 띄운다) | 명령 하나(`ask` · `wait` 는 앱의 트랜잭션 판정 — 답 · 실패 · 멈춤까지, 안전판 24시간 — 8.7) | 트레이 · 잠금 · 로거 없이 주 인스턴스의 로컬 API 를 부르고 종료 코드로 끝 |
@@ -185,10 +205,11 @@ flowchart TB
 ### 4.1 시작 · 종료 순서 (`crates/app/src/main.rs`)
 
 1. 인자가 있으면 CLI(`cli::main`)로 끝낸다 — 주 인스턴스가 되지 않는다.
-   `COWORKAGENT_SUPERVISED` 가 없으면 감시 프로세스(`supervisor.lock` → `watchdog::supervise(spawn_app)`)로 돌고 끝낸다(3.1) — 아래는 그 자식.
+   `COWORKAGENT_SUPERVISED` 가 없으면 감시 프로세스(`supervisor.lock` → 트레이 모드 · 릴리스 빌드 · Windows 면 자동 업데이트 확인(#1y — 2.4) →
+   `watchdog::supervise(spawn_app)`)로 돌고 끝낸다(3.1) — 아래는 그 자식.
 2. 트레이 객체를 만든다(메인 스레드). 트레이 없는 모드(`COWORKAGENT_PARENT`)면 만들지 않고 종료 채널(`mpsc`)을 둔다 — 부모가 이미 없으면 여기서 끝.
 3. 데이터 루트(D15) → 개명 전 `agentNetwork` 데이터 이어받기 → 폴더 · `logs` 만들기 → 파일 로거(패닉 훅 포함 — "패닉: 메시지 — 파일:줄").
-   감시가 다시 띄운 자식이면 "감시 프로세스가 다시 띄움(n번째)".
+   감시가 남긴 `update.txt` 는 "자동 업데이트: …" 로그 줄로 옮기고 지운다(#1y). 감시가 다시 띄운 자식이면 "감시 프로세스가 다시 띄움(n번째)".
 4. `instance.lock` 잠금 — 못 잡으면 보조 실행(핸드오프 후 종료). 잡으면 `instance.pid`.
 5. DB 열기(스키마 올리기 · 올리기 전 `.v{N}.bak`) → 빈 공간 정리(#1y — `db::vacuum_if_sparse`: 빈 페이지 ≥ 4 MiB(`VACUUM_MIN_FREE`) 이고 ≥ 전체의 1/4 이면
    `VACUUM`, 실패는 `warn` 하고 계속) → 신원 키 읽기 · 없으면 생성.
@@ -404,6 +425,8 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 ├── instance.json                       실행 중에만 — {"port":…, "token":"…"}(핸드오프 · CLI)
 ├── instance.pid · supervisor.pid       앱 · 감시의 PID — stop 의 강제 종료용(그 잠금이 잡혀 있을 때만 믿는다)
 ├── supervisor.lock                     감시 프로세스 잠금(#1n)
+├── update.txt                          감시가 남긴 자동 업데이트 결과 한 줄(#1y) — 앱 시작이 로그로 옮기고 지운다
+├── update-skip.txt                     뜨지 못해 되돌린 업데이트 태그(#1y) — 그 태그는 다시 받지 않는다
 └── logs\coworkAgent.log(.1)            1 MiB 회전, 1개 보관
 ```
 
@@ -888,13 +911,14 @@ sequenceDiagram
 | 원격 글 → `claude` | 수신 PC 작업 개입 · 비밀 읽기 · 틀 위장 | 표준 입력만 · 늘 구분자 틀(6.5) · 가드 프롬프트(D31) · 읽기 전용 도구 · `--restricted`(작업 폴더 밖 Read · Grep · Glob · junction 거부, 프로젝트 · 사용자 설정의 훅 · 스킬 미적용 — 2.1.296 실측) · 데이터 폴더를 품는 에이전트 폴더 거부(등록 · 수정 · 실행 직전) · 30분 상한 |
 | 실패 → 상대 | 경로 · 계정 · 버전 노출 | 상대에게는 정해진 실패 문구만(6.6), 원인은 내 쪽 글 · 로그 |
 | 처리경과 → 상대 | 도구 입력 · 파일 경로 · 모델 글 노출 | 단계 요약은 턴 · 도구 이름별 횟수 · 초만(`count_step` 은 입력 · 내용을 읽지 않음), 받은 쪽은 이름을 `clean_name` · 24자 · 16개로(8.2) |
+| 자동 업데이트(#1y · #30) | 바꿔치기한 실행 파일 · 낮은 버전으로 되돌리기 | 정식 릴리스(`releases/latest`) · 엄격히 큰 버전만 · 이 PC 의 실행 파일 꼴(PE · 같은 아키텍처)만 · 회사 인증서 Authenticode 서명(유효 · 서명자 CN `SOFTCAMP CO.,LTD.`) · 버전 리소스(제품 `coworkAgent` · 파일 버전 = 태그)만 · 뜨지 못하면 지난 버전으로 되돌림 · HTTPS(OS 인증서 저장소) |
 | 실행 파일 | DLL 심기 | 정적 C 런타임(`+crt-static`) · DependentLoadFlags 0x800 · `SetDefaultDllDirectories(System32)` |
 | 자격 증명 | 토큰 수집 · 중개 | coworkAgent 는 Claude 자격 증명을 읽거나 저장하지 않는다 — `claude` 가 그 PC 의 로그인을 스스로 쓴다 |
 | 답 생성 → 모델 서비스 | (막지 않음) | `claude -p` 가 질문 · 맥락 · 도구가 읽은 파일 내용을 그 PC 의 Claude 모델 서비스로 보낸다 — 사내망 밖 전송, 보존 · 처리는 그 PC 의 Claude 계정 정책 |
 
 남는 위험: 에이전트 폴더에서 읽을 수 있는 것은 답으로 상대에게 나갈 수 있다 · 원격 요청이 수신 PC 의 Max 사용량을 상한 없이 쓴다
 (D24 개정) · 초대 메시지가 새면 5분 창 안에서 제3자가 등록된다(D8 개정) · 수신 포트를 인터넷에 열면 사내망 밖에서도 붙는다(LAN 검사 없음) ·
-답을 만들 때 질문 · 읽은 파일 내용이 Claude 모델 서비스(사내망 밖)로 나간다.
+답을 만들 때 질문 · 읽은 파일 내용이 Claude 모델 서비스(사내망 밖)로 나간다 · 회사 코드 서명 인증서(개인키)를 빼앗기면 그것으로 서명해 정식 릴리스에 올린 실행 파일이 모든 PC 에 묻지 않고 설치된다(#30 — 서명자 이름만 본다).
 
 쉬운 말 풀이 · 코드 근거 · 실측 · 확인 필요 항목: [외부 공격 노출 검토](../../overview/security-review.md).
 

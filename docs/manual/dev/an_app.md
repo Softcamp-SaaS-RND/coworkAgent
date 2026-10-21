@@ -156,7 +156,19 @@
   다시 띄우지 않음 · `GaveUp(사유)` = 창 안 3번 · 띄우기 실패) · `Crashes::record(at) -> bool` · `spawn_app(n)`(이 실행 파일 · 인자 없음 · `ENV = n` →
   종료 코드, 코드 3 인데 사유 파일을 그 자식(PID)이 쓰지 않았으면 -1 — MSVC `abort()` 는 다시 띄운다) · `restarts()`. #1n: `PARENT_ENV`(`COWORKAGENT_PARENT` — 트레이 없는 모드 · 부모 PID, 감시가 자식에 물려준다) · `parent()` ·
   `acquire(paths) -> Option<InstanceLock>`(`supervisor.lock` + `supervisor.pid`, 못 잡으면 `None`).
-- `main.rs`(#1y): 첫 `db::open` 뒤 `db::vacuum_if_sparse`(오류 = `warn` · 계속, `?` 아님).
+- `update`(#1y · #30 — S6 · D12 · D36 개정, 절차는 [개발자 가이드](developer-guide.md) 2.4) — `RELEASES`(`https://github.com/Softcamp-SaaS-RND/coworkAgent/releases`) · `SIGNER`(`"SOFTCAMP CO.,LTD."`) · `PRODUCT`(`"coworkAgent"`) ·
+  `ASSET`(Windows `Some("coworkAgent.exe")` · 그 밖 `None` = 확인 안 함) · `MAX_ASSET`(64 MiB) ·
+  `check(base, asset, current, skip, exe, trusted: Fn(&Path, tag)) -> Outcome`(`Updated(tag)` · `UpToDate` · `Skipped(사유)` — 받기 · `is_native_pe`(PE · 같은 아키텍처) · `.new` 쓰기 · `trusted(.new, tag)`(실패면 `.new` 지움) · 교체, `skip` = 되돌린 태그, 실패는 전부 `Skipped`) ·
+  `authenticode(path, signer)`(Windows `WinVerifyTrust` — `WINTRUST_ACTION_GENERIC_VERIFY_V2` · 폐기 확인 `WTD_REVOKE_WHOLECHAIN`(루트 제외) · 서명자 인증서 `CERT_NAME_SIMPLE_DISPLAY_TYPE` = `signer`, 그 밖 OS 는 `Unsupported`) ·
+  `identity(path, product, tag)`(버전 리소스 `\StringFileInfo\041204B0\ProductName` = `product` · `VS_FIXEDFILEINFO` 파일 버전 앞 셋 = 태그) · `verify(path, tag)` = `authenticode(SIGNER)` → `identity(PRODUCT)`(R1) ·
+  `latest_tag(base)`(`{base}/latest` 넘겨주기 0 · 302 `Location` `…/tag/vX.Y.Z` 만, 아니면 `None`) · `newer(tag, current)`(정수 셋 · 엄격히 큼, 꼴이 틀리면 거짓) ·
+  `swap(exe)`(받아 둔 `.new` — exe 를 `.old` 로 → `.new` 를 제자리,
+  실패면 되돌림) · `rollback(exe)`(지금 → `.bad` · `.old` → 제자리) · `pending`(`.old` 있음) · `settled`(`.old` 지움 — 앱 준비 뒤, 실행 중 이미지라 못 지우면 스레드가 1초마다 최대 60번 · R2) · `clean(exe)`(`.new` · `.bad` 지움). HTTP = `ureq`(rustls · `platform-verifier`), 시간 제한 연결 5초 · `latest` 10초 · 받기 120초.
+  `main.rs` `supervise`: 감시 잠금 뒤 · `watchdog::supervise` 전 — 트레이 모드(부모 없음) · 릴리스 빌드 · `ASSET` 있음이면 `clean` → `check(RELEASES, asset,
+  CARGO_PKG_VERSION, update-skip.txt, current_exe, verify)` → `{outcome:?}` 를 `Paths::update_note_file()`(`update.txt`)에 덧붙임(R1 — 새 감시의 `UpToDate` 가 `Updated` 를 덮지 않게), `Updated` 면 새 exe 를 인자 없이 띄우고 0(못 띄우면 되돌림).
+  자식 결과가 시작 실패 · `GaveUp` 이고 `pending` 이면 태그를 `update_skip_file` 에 · `rollback` · 잠금을 놓고 지난 exe 를 띄운다(R1). 앱 `start` 는 `instance.json` 뒤 `settled`.
+  `start` 는 로거 뒤 `update.txt` 를 줄마다 `log::info!("자동 업데이트: …")` 로 옮기고 지운다 · 첫 `db::open` 뒤 `db::vacuum_if_sparse`(오류 = `warn` · 계속, `?` 아님).
+  의존 `ureq` 3.4(`default-features = false`, `rustls` · `platform-verifier`) · `windows-sys` 기능 `Win32_Security_WinTrust` · `Win32_Security_Cryptography`(+ `_Catalog` · `_Sip`) · `Win32_Storage_FileSystem`. 시험 `tests/update.rs`(로컬 HTTP, `real_github_latest` · `real_signed_release` 는 `#[ignore]`).
 - `autostart`(#1e, S7 · D13) — `sync(on)`(이 OS 의 실제 자리: Windows `RUN_KEY` 값 `VALUE_NAME` = `"exe"`, macOS `~/Library/LaunchAgents/{LABEL}.plist` —
   같으면 쓰지 않음 · 끄면 지움 · 없어도 성공) · `launch_agent_plist(exe)`(`RunAtLoad` · `KeepAlive` 없음 · 경로 XML 이스케이프) · Windows
   `registered(key)` · `register(key, exe) -> 바뀜` · `unregister(key)`(키 경로 인자 — 시험은 시험 키). 설정 `autostart`(`GET/PUT /api/settings`, 없으면

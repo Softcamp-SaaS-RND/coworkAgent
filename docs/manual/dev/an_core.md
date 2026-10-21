@@ -10,7 +10,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
 
 - `paths::Paths` — `legacy_root()` · `adopt_legacy(legacy)`(개명 전 이름 `LEGACY_APP_DIR` 의 데이터를 첫 실행 때 이어받음 — 옛 `instance.lock` 을 잡고 항목별로 옮김 · 옛 DB · 로그는 새 이름, 옛 앱 실행 중 · 두 루트 모두 데이터면 오류로 시작 멈춤, 다시 불러도 안전) · `default_root()`(Windows `%LOCALAPPDATA%\coworkAgent` · macOS `~/Library/Application Support/coworkAgent`) ·
   `under(root)` · `db_file` · `log_dir` · `log_file` · `lock_file` · `instance_file` · `identity_file` · `ensure()` · `restrict()`(#1a — 루트를 소유자
-  전용으로, 주 인스턴스가 잠금 뒤 매 시작) · `instance_pid_file` · `supervisor_lock_file` · `supervisor_pid_file`(#1n). 경로 API 는 루트를 인자로 받는다 —
+  전용으로, 주 인스턴스가 잠금 뒤 매 시작) · `instance_pid_file` · `supervisor_lock_file` · `supervisor_pid_file`(#1n) · `update_skip_file`(#1y — `update-skip.txt`, 되돌린 태그) · `update_note_file`(#1y — `update.txt`, 감시가 남긴 자동 업데이트 결과). 경로 API 는 루트를 인자로 받는다 —
   환경 변수 스위치는 디버그 빌드의 `DATA_DIR_ENV`(`COWORKAGENT_DATA_DIR` — `default_root` 를 바꾸고 `legacy_root` 는 없음, 시험 전용) 하나뿐. `paths::protected_roots()` ·
   `agent_folder_problem(folder) -> Option<이유>`(데이터 루트를 품음 · 그 안 · 네트워크 경로 — 등록 · 수정 · 실행 직전) · `folder_blocked(folder, roots)`.
 - `owner_only::restrict(dir)`(#1a) — Windows 보호 DACL(토큰 사용자 SID · SYSTEM, `FILE_ALL_ACCESS`, 하위 상속) · Unix 0700.

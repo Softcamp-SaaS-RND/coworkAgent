@@ -129,6 +129,8 @@
 
 - **실행 구조 · 자동 시작**(S7 · D13 · #1e · #1n): 인자 없는 실행 = 감시 프로세스 + 앱 자식(비정상 종료면 다시 띄움), 감시 · 앱은 OS 사용자당 하나, 인자
   있는 실행(CLI)은 감시를 거치지 않는다 — 개발자 가이드 3.1.
+- **자동 업데이트**(S6 · D12 · D36 개정 · #1y · #30): 트레이 모드 감시가 앱을 띄우기 전 GitHub 정식 릴리스(`Softcamp-SaaS-RND/coworkAgent` `releases/latest`)를 보고, 새 버전이면
+  받아 회사 인증서 Authenticode 서명(서명자 `SOFTCAMP CO.,LTD.`)을 확인한 뒤 묻지 않고 바꿔 다시 뜬다 — 실패면 지금 버전, Windows 만. 릴리스 절차는 개발자 가이드 2.4.
 - **시작 실패**: 트레이 오류 모드(사유 파일 = 임시 폴더 `coworkAgent-start-error.txt`) — 개발자 가이드 3.1.
 - **실행 파라미터**: D14 literal 이 계약 — 다른 툴이 부르므로 바꾸면 호환이 깨진다(변경은 사용자 승인).
 - **AI 에이전트용 CLI**(D14 보강 · #15 `say` 삭제): `coworkAgent peers` · `ask` · `history` — 떠 있는 주 인스턴스의 로컬 API 를 `instance.json` 토큰으로
