@@ -28,7 +28,7 @@
   - 인터뷰 — `grill-me`. 의존 그래프 — `cargo tree`(크레이트 간).
   - 구조 탐색 — `graphify`: 코드 · 문서를 만들기 전에 그래프로 기존 구조 · 호출 관계를 본다. `graphify-out/` 은 로컬 캐시(`.gitignore` — 리포에
     커밋하지 않고, 오래됐으면 다시 만든다). **Task 종결 시**(archive 이동 뒤) 최소 코드 변경분(AST — LLM 비용 없음)은 갱신한다(그래프가 없으면
-    생략) — 문서까지 다시 뽑는 `/graphify --update` 는 문서 변경이 쌓였을 때. 대상 제외는 `.graphifyignore`(git 밖 복사본 `arapaima/` · 디자인 작업 폴더 —
+    생략) — 문서까지 다시 뽑는 `/graphify --update` 는 문서 변경이 쌓였을 때. 대상 제외는 `.graphifyignore`(디자인 작업 폴더 —
     같은 내용이 두 벌 들어가지 않게). 그래프가 못 답하는 질의만 grep · 파일 읽기로 보충한다.
   - TDD · stage 리뷰 · 완료 증거 — `superpowers:test-driven-development` · `superpowers:requesting-code-review` ·
     `superpowers:verification-before-completion`.
@@ -37,6 +37,8 @@
     사용자 전역 지침이 [etc/eval-protocol.md](docs/etc/eval-protocol.md) 의 "최대 3 라운드" 보다 우선한다.
 - **Git 브랜치**: Task 별 `task/NN-이름` 브랜치 → main 으로 merge. rebase 는 사용자 요청 시에만.
 - **squash push**: origin/main 은 릴리스 단위 squash 커밋 이력. 로컬 커밋 뒤 `git commit-tree HEAD^{tree} -p origin/main -m "<메시지>"` 로 만든 커밋을 `git push origin <sha>:refs/heads/main`, 이어서 `git reset --mixed origin/main` 으로 로컬을 맞춘다(2026-10-20 정리 — 이전 로컬 이력은 `backup/pre-reset-1020`).
+  squash 라 Task 브랜치는 main 의 조상이 되지 않는다(`git branch -d` 거절) — **종결 push 뒤** `git rev-parse task/<키>^{tree} origin/main^{tree}` 가 같으면
+  `git branch -D task/<키>` 로 지운다(트리가 다르면 남기고 사유를 STATE 에 적는다).
 - **수동 테스트 시점**: 프로토타입(Phase 1 끝)까지는 함수 테스트 · TDD 만 — 각 Task 의 수동 gate 는 ABANDON 으로 드러내고 프로토타입 인수 Task 에서
   일괄 진행한다(masterPlan D28).
 - **개발 PC 재실행**: `python tools/rebuild_run.py` — Claude Code 세션에서 앱을 띄울 때는 `Start-Process` 대신 이것을 쓴다(세션 환경 변수가 앱 · `claude -p`

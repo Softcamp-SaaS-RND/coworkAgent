@@ -17,7 +17,7 @@
   페어링된 상대만, `Reply` 실행 정보는 없으면 `None`. `Reply` · `Post` 의 `model?` · `effort?` — 답을 실행한 값, 받은 쪽은 `run_opts` 글자 규칙에 맞는
   것만 남긴다 · D32 이전 버전 대비 없음. #18: `Message` · `Post` 의 `request?`(사람 글 종류 — 요청), `Message.mention?`(멘션 — 부른 받는 PC 에이전트,
   `agent` 는 늘 대화 에이전트), `ReqState{conv, msg, state, note?}`(#1d — `Done` 대체) — 받은 요청의 상태(`wait` · `accepted` · `rejected` ·
-  `done`) · 한 줄 메모를 쓴 쪽에, 페어링된 상대만. #1f: `Edit{conv, msg, text}` · `Delete{conv, msg}` — 쓴 쪽 사람이 자기 사람 글을 고쳤다 ·
+  `done`) · 의견(여러 줄 — 줄바꿈은 U+2028 로 실어 보냄, #1z)을 쓴 쪽에, 페어링된 상대만. #1f: `Edit{conv, msg, text}` · `Delete{conv, msg}` — 쓴 쪽 사람이 자기 사람 글을 고쳤다 ·
   지웠다(이력 정리 — 받는 쪽은 그 상대가 쓴 사람 글에만, 실행 · 알림 없음), 페어링된 상대만 · `ids_ok` 로 uuid 꼴 검사 · D32 이전 버전 대비 없음. #1b: `Progress{conv, msg, state, ahead}` — 받는 쪽이 상대 실행 요청의
   차례(`queued` · `running`)를 보낸 쪽에, 페어링된 상대만 · `Ping.port` — 보낸 쪽 피어 수신 포트, 0 = 주소 바꾸지 않음. #1c: `Progress.detail?` —
   `StepDetail{turns, tools: BTreeMap<이름, 횟수>, secs}` 실행 중 단계 요약(턴 · 도구 이름별 횟수 · 경과 초만 — 입력 · 경로 · 모델 글 없음),

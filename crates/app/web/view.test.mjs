@@ -139,7 +139,10 @@ import {
   railSize,
   noteCount,
   groupSettingsList,
-  groupSettingsPick,
+  railSlot,
+  peerLeaves,
+  tileUnread,
+  avatarKind,
   DRAG_SLOP,
   pastSlop,
 } from "./view.js";
@@ -545,7 +548,7 @@ test("display_name — 이 PC 에서 부르는 이름 = 표시 이름(없거나 
   assert.equal(displayName({ name: "user-b", alias: "" }), "user-b", "빈 표시 이름 = 원래 이름");
 });
 
-test("side_nav — '나' 메뉴 세 절(개요 | 내 활동 · 요청 · 주고받은 메시지 | 즐겨찾기 · 북마크 · 에이전트 › 등록된 에이전트 · 에이전트 대화), 상대 타일 두 절(#1j · #1v)", () => {
+test("side_nav — '나' 메뉴 세 절(개요 | 내 활동 · 요청 · 주고받은 메시지 | 즐겨찾기 · 북마크 · 에이전트 › 등록된 에이전트 · 에이전트 응답), 상대 타일 두 절(#1j · #1v · #1z-2)", () => {
   const show = (xs) => xs.map((n) => (n.sep ? "|" : [n.label, n.href ?? null, n.count ?? 0]));
   assert.deepEqual(show(sideNav(null, 3, 2, 4)), [
     ["개요", "#", 0],
@@ -558,7 +561,7 @@ test("side_nav — '나' 메뉴 세 절(개요 | 내 활동 · 요청 · 주고�
     ["북마크", "#saved", 0],
     ["에이전트", null, 0],
     ["등록된 에이전트", "#agents", 0],
-    ["에이전트 대화", "#agents/convs", 0],
+    ["에이전트 응답", "#agents/convs", 0],
   ]);
   const peer = sideNav(2, 5, 1);
   assert.deepEqual(show(peer), [
@@ -568,10 +571,9 @@ test("side_nav — '나' 메뉴 세 절(개요 | 내 활동 · 요청 · 주고�
     ["북마크", "#saved", 0],
     ["에이전트", null, 0],
     ["등록된 에이전트", "#agents", 0],
-    ["에이전트 대화", "#agents/convs", 0],
   ]);
   assert.deepEqual(sideNav(2)[0].count, 0, "대기 수 기본 0");
-  assert.deepEqual(peer.filter((n) => !n.sep && n.href).map((n) => route(n.href).view), ["requests", "starred", "saved", "agents", "agentConvs"]);
+  assert.deepEqual(peer.filter((n) => !n.sep && n.href).map((n) => route(n.href).view), ["requests", "starred", "saved", "agents"]);
   assert.ok(!sideNav(2)[0].sep && !sideNav(2).at(-1).sep, "구분선은 절 사이에만 — 머리 · 끝에 없다");
   assert.deepEqual(route("#p/2"), { view: "peer", id: 2 }, "옛 주소 — 화면은 그 상대 개요로 넘긴다");
   assert.deepEqual(route("#p"), { view: "peer", id: null }, "'나' 주고받은 메시지 = 전부");
@@ -1245,7 +1247,7 @@ test("side_nav_sections — 어느 타일이든 구분선은 절 사이에만(�
     assert.ok(!xs[0].sep && !xs.at(-1).sep, String(tile));
     assert.ok(xs.every((n, i) => !(n.sep && xs[i + 1]?.sep)), String(tile));
     assert.ok(!xs.some((n) => n.label === "대화" || n.label === "저장된 항목"), String(tile));
-    assert.equal(xs.at(-1).label === "에이전트 대화" || xs.at(-1).label === "북마크", true, "하단 = 사용자가 모은 · 등록한 것");
+    assert.equal(["에이전트 응답", "등록된 에이전트", "북마크"].includes(xs.at(-1).label), true, "하단 = 사용자가 모은 · 등록한 것");
   }
 });
 
@@ -2038,24 +2040,27 @@ test("conv_list_mine_sections — 에이전트 대화뿐인 상대 절 · 검색
   assert.equal(visibleConvRows(convRows(inOnly, splitNames, null), { id: 1 }).length, 2, "그룹 타일은 그대로");
 });
 
-test("side_nav_agents — 에이전트 머리(링크 없음) + 하위 둘(등록된 에이전트 · 에이전트 대화 = 안 읽음 수), 그룹 타일엔 없음", () => {
-  for (const tile of [null, 3]) {
+test("side_nav_agents — 에이전트 머리(링크 없음) + 하위(등록된 에이전트 · '나' 에만 에이전트 응답 = 안 읽음 수), 그룹 타일엔 없음(#1z-2)", () => {
+  const tail = (tile) => {
     const xs = sideNav(tile, 0, 0, 0, 4);
-    const i = xs.findIndex((n) => n.head);
-    assert.deepEqual(
-      xs.slice(i).map((n) => [n.label, n.href ?? null, !!n.sub, n.count ?? 0]),
-      [
-        ["에이전트", null, false, 0],
-        ["등록된 에이전트", "#agents", true, 0],
-        ["에이전트 대화", "#agents/convs", true, 4],
-      ],
-      String(tile),
-    );
-  }
+    return xs.slice(xs.findIndex((n) => n.head)).map((n) => [n.label, n.href ?? null, !!n.sub, n.count ?? 0]);
+  };
+  assert.deepEqual(tail(null), [
+    ["에이전트", null, false, 0],
+    ["등록된 에이전트", "#agents", true, 0],
+    ["에이전트 응답", "#agents/convs", true, 4],
+  ]);
+  assert.deepEqual(tail(3), [
+    ["에이전트", null, false, 0],
+    ["등록된 에이전트", "#agents", true, 0],
+  ], "상대 타일 — 에이전트 응답 없음");
   assert.ok(!sideNav("group", 0, 0, 0, 4).some((n) => n.head || n.sub), "그룹 타일엔 없음");
+  assert.ok(![null, 3, "group"].some((tile) => sideNav(tile, 0, 0, 0, 4).some((n) => n.label === "에이전트 대화")), "옛 이름 없음");
   assert.deepEqual(route("#agents/convs"), { view: "agentConvs" });
   assert.deepEqual(route("#agents"), { view: "agents" });
   assert.ok(groupLeaves("agentConvs"), "그룹 타일에서 열면 '나' 로");
+  assert.ok(peerLeaves("agentConvs"), "상대 타일에서 열면 '나' 로");
+  assert.ok(!peerLeaves("agents") && !peerLeaves("home") && !peerLeaves("requests"), "등록된 에이전트 · 개요 · 요청은 상대 타일에 그대로");
 });
 
 test("agent_convs_sections — 상대가 연 대화(in)만, 요청한 상대별 절(레일 순서), 상대 타일 = 그 상대만", () => {
@@ -2295,6 +2300,7 @@ test("inbox_rows_author — 메시지 줄에 발화자(#1z): 주고받은 메시
     names,
   );
   assert.deepEqual(rows.map((r) => r.author), ["agent", "human"]);
+  assert.deepEqual(rows.map((r) => r.mine), [false, true], "주고받은 메시지 아바타(#1z-2) — 내 사람 글 구분");
   const act = activityRows([{ kind: "message", at: 1, conversation: conv, message: { id: 1, author: "agent", text: "답" } }], names);
   assert.equal(act[0].author, "agent");
 });
@@ -2348,16 +2354,6 @@ test("group_settings_list — 그룹설정 목록(#1z 시안 A): 대화 수 · �
   assert.deepEqual(shown("ab12"), [[7, [10]]], "지문 — 그 사용자 대화만");
 });
 
-test("group_settings_pick — 고른 항목이 사라지면 첫 그룹 → 첫 사용자 → null", () => {
-  const list = { groups: [{ id: 7 }, { id: 8 }], users: [{ id: 1 }] };
-  assert.deepEqual(groupSettingsPick({ kind: "user", id: 1 }, list), { kind: "user", id: 1 });
-  assert.deepEqual(groupSettingsPick({ kind: "group", id: 8 }, list), { kind: "group", id: 8 });
-  assert.deepEqual(groupSettingsPick({ kind: "group", id: 1 }, list), { kind: "group", id: 7 }, "같은 id 라도 종류가 다르면 없음");
-  assert.deepEqual(groupSettingsPick(null, list), { kind: "group", id: 7 });
-  assert.deepEqual(groupSettingsPick({ kind: "group", id: 9 }, { groups: [], users: [{ id: 3 }] }), { kind: "user", id: 3 });
-  assert.equal(groupSettingsPick(null, { groups: [], users: [] }), null);
-});
-
 test("past_slop — 레일 타일 끌기 시작(#1z): 5px 미만 = 누름, 5px 이상 = 끌기", () => {
   assert.equal(DRAG_SLOP, 5);
   assert.equal(pastSlop(0, 0), false);
@@ -2367,4 +2363,37 @@ test("past_slop — 레일 타일 끌기 시작(#1z): 5px 미만 = 누름, 5px �
   assert.equal(pastSlop(0, -5), true);
   assert.equal(pastSlop(3, 4), true, "대각 정확히 5px");
   assert.equal(pastSlop(6, 0), true);
+});
+
+// ---- #1z-2 화면 다듬기 ----
+
+test("rail_slot — 레일 타일 놓을 자리(#1z-2): 가장 가까운 타일 · 가운데 넘으면 뒤, 틈 · 양 끝 밖도", () => {
+  const c = [100, 172, 244]; // 타일 가운데(보통 크기 72px 간격)
+  assert.equal(railSlot([], 50), null, "타일 없음");
+  assert.deepEqual(railSlot(c, 100), { index: 0, after: false }, "가운데 정확히 = 앞");
+  assert.deepEqual(railSlot(c, 101), { index: 0, after: true }, "가운데 1px 지나면 뒤");
+  assert.deepEqual(railSlot(c, 99), { index: 0, after: false });
+  assert.deepEqual(railSlot(c, 132), { index: 0, after: true }, "타일 아래 이름 · 틈(첫 타일 쪽)");
+  assert.deepEqual(railSlot(c, 140), { index: 1, after: false }, "틈(둘째 타일 쪽)");
+  assert.deepEqual(railSlot(c, 136), { index: 0, after: true }, "정확히 한가운데 틈 = 앞 타일(먼저 찾은 쪽)");
+  assert.deepEqual(railSlot(c, 10), { index: 0, after: false }, "첫 타일 위 밖 = 맨 앞");
+  assert.deepEqual(railSlot(c, 900), { index: 2, after: true }, "마지막 타일 아래 밖 = 맨 뒤");
+});
+
+test("tile_unread — 상대 타일 배지(#1z-2): 에이전트 대화(in) 안 읽음은 빼고 센다", () => {
+  const convs = [
+    { peer_id: 1, dir: "out", unread: 2 },
+    { peer_id: 1, dir: "in", unread: 5 },
+    { peer_id: 2, dir: "in", unread: 3 },
+    { peer_id: 2, dir: "shared", unread: 1 },
+  ];
+  assert.deepEqual([...tileUnread(convs)], [[1, 2], [2, 1]]);
+  assert.deepEqual([...unreadByPeer(convs)], [[1, 7], [2, 4]], "전체 합은 그대로");
+});
+
+test("avatar_kind — 주고받은 메시지 아바타(#1z-2): 에이전트 · 나 · 상대", () => {
+  assert.equal(avatarKind("agent", true), "agent");
+  assert.equal(avatarKind("agent", false), "agent");
+  assert.equal(avatarKind("human", true), "me");
+  assert.equal(avatarKind("human", false), "peer");
 });

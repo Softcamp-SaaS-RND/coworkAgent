@@ -7,7 +7,7 @@
      WEAK 줄은 기계가 매 실행 다시 단다 — 약한 gate 를 셀 수 있게 하는 표시이며
      판정에는 영향이 없다. -->
 
-측정 커밋: 8d5322bc202fae0be087f53d9aef614422f17f5b
+측정 커밋: 0f98ba112db025ba693243de339b07553bb1946b
 
 - [x] E1: A10 — 워크스페이스 테스트 전부 통과
   CHECK: cargo test --workspace
@@ -17,12 +17,12 @@
 - [x] E2: A10 — clippy 경고 0
   CHECK: cargo clippy --workspace --all-targets -- -D warnings
   EXPECT: Finished
-  EVIDENCE: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.23s
+  EVIDENCE: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.22s
 
 - [x] E3: A10 — 웹UI 화면 로직 시험 전부(지금 151 + 새 시험)
   CHECK: node --test --test-reporter=tap "crates/app/web/*.test.mjs"
   EXPECT: /# pass (15[5-9]|1[6-9][0-9])\s+# fail 0/
-  EVIDENCE: # skipped 0 / # todo 0 / # duration_ms 161.1594
+  EVIDENCE: # skipped 0 / # todo 0 / # duration_ms 149.9117
 
 - [x] E4: A8 — 의견 여러 줄 · 거부 · 호환 형태(core)
   CHECK: cargo test -p an-core --test requests note_
@@ -32,12 +32,12 @@
 - [x] E5: A8 — 의견 줄바꿈이 요청자에게 그대로 간다 · 거부 규칙(agent)
   CHECK: cargo test -p an-agent --test requests -- receiver_moves_state_with_note note_lines_reach_requester
   EXPECT: /test result: ok\. 2 passed; 0 failed/
-  EVIDENCE: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.29s
+  EVIDENCE: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.30s
 
 - [x] E6: A3·A4·A7·A9 — 발화자 아이콘 · 행 author · 레일 경계 · 글자 수(node)
   CHECK: node --test --test-reporter=tap --test-name-pattern="speaker_icon|inbox_rows_author|rail_size|note_count" crates/app/web/view.test.mjs
   EXPECT: /# pass 4\s+# fail 0/
-  EVIDENCE: # skipped 0 / # todo 0 / # duration_ms 65.1014
+  EVIDENCE: # skipped 0 / # todo 0 / # duration_ms 64.1496
 
 - [x] E7: A1·A2·A5·A9 — 말풍선 · 아이콘 · 입력창 · 레일 손잡이 코드 실재
   CHECK: python -c "import pathlib;c=pathlib.Path('crates/app/web/app.css').read_text(encoding='utf-8');j=pathlib.Path('crates/app/web/app.js').read_text(encoding='utf-8');h=pathlib.Path('crates/app/web/index.html').read_text(encoding='utf-8');print('recv=%d agentb=%d av=%d chip=%d margin=%d minh=%d maxh=%d handle=%d drag=%d'%(c.count('.msg.side-theirs:not(.agent) .bubble { background: var(--recv-bg)'),c.count('.msg.agent .bubble { background: var(--surface); border: 1.5px solid var(--agent)'),j.count('class: \x22avatar agent-av\x22'),j.count('text: \x22에이전트\x22'),(c.count('--chat-gutter: max(48px, 8%);')==1)*c.count('var(--chat-gutter)'),c.count('min-height: 44px; max-height: 200px'),j.count('200) + \x22px\x22'),h.count('id=\x22rail_resize\x22'),j.count('saveTileSize(railSize(')))"
@@ -62,7 +62,7 @@
 - [x] E12: A11·A13 — 끌기 시작 경계 · 그룹설정 목록 · 고른 항목(node)
   CHECK: node --test --test-reporter=tap --test-name-pattern="past_slop|group_settings_list|group_settings_pick" crates/app/web/view.test.mjs
   EXPECT: /# pass 3\s+# fail 0/
-  EVIDENCE: # skipped 0 / # todo 0 / # duration_ms 63.2124
+  EVIDENCE: # skipped 0 / # todo 0 / # duration_ms 66.9942
 
 - [x] E13: A11 — 레일 타일 포인터 끌기 실재 · HTML 끌기 없음
   CHECK: python -c "import pathlib;j=pathlib.Path('crates/app/web/app.js').read_text(encoding='utf-8');r=j[j.index('function renderRail'):j.index('function renderRail')+6000];print('grab=%d fn=%d slop=%d move=%d eat=%d html5=%d rail_dnd=%d'%(r.count('onpointerdown: tileGrab'),j.count('function tileGrab(ev)'),j.count('pastSlop(e.clientX - sx, e.clientY - sy)'),j[j.index('function tileGrab(ev)'):j.index('function tileGrab(ev)')+3000].count('moveItem(d.kind, d.id, drop.t.id, drop.after)'),j.count('tile.addEventListener(\x22click\x22, eat'),r.count('draggable'),j.count('$(box).addEventListener(\x22dragstart\x22')))"
@@ -169,5 +169,5 @@ raw JSON: 보관 `scratchpad/review_1z_r2.json`.
 
 | 지적 | 판단 | 사유 |
 |---|---|---|
-| R1 폭 손잡이 취소 · R1 타일 끌기 중 다시 그리기 · R2 그림 기본 끌기 — "취소 · 캡처 상실 · click 억제 · 새 메시지 도착 중 끌기를 브라우저 시험으로 검증하라" | 사실(시험 공백) | 코드는 고쳤으나 웹UI 시험은 DOM 없는 `view.js` 순수 함수뿐이라 이벤트 경로 자동 시험이 없다 — E11 실 화면 확인으로 대신(사용자 앱 재실행 확인 대기). DOM 시험 도입(jsdom · Playwright)은 별도 판단 |
-| R2 "seen_at 고정 상태 74→75초 경계 · focus 전환을 검증하라"(그룹설정 접속 점) | 사실(시험 공백) | 경계 판정 `presence` 는 기존 시험이 덮고, 이번 수정은 점을 다시 만드는 DOM 경로라 자동 시험 없음 — E11 |
+| R1 폭 손잡이 취소 · R1 타일 끌기 중 다시 그리기 · R2 그림 기본 끌기 — "취소 · 캡처 상실 · click 억제 · 새 메시지 도착 중 끌기를 브라우저 시험으로 검증하라" | 사실(시험 공백) | 코드는 고쳤으나 웹UI 시험은 DOM 없는 `view.js` 순수 함수뿐이라 이벤트 경로 자동 시험이 없다. E11 실 화면은 정상 경로(폭 끌기 · 저장 · 타일 순서 바꾸기)만 확인 — pointercancel · 캡처 상실 · 끄는 중 다시 그리기 · 그림 타일 끌기는 실행하지 않았다. DOM 시험 도입(jsdom · Playwright — 새 의존)은 하지 않기로(사용자 2026-10-21 "기록만하고 종료") |
+| R2 "seen_at 고정 상태 74→75초 경계 · focus 전환을 검증하라"(그룹설정 접속 점) | 사실(시험 공백) | 경계 판정 `presence` 는 기존 시험이 덮고, 이번 수정은 점을 다시 만드는 DOM 경로라 자동 시험 없음 — E11 에서도 75초 경계는 기다려 보지 않았다. 사용자 2026-10-21 "기록만하고 종료" |

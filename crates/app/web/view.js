@@ -440,20 +440,20 @@ export function groupSettingsList(groups, peers, convs, q, peerNames) {
   };
 }
 
-/// 그룹설정 오른쪽 칸에 보일 항목 — 고른 것(`{kind, id}`)이 목록에 있으면 그대로, 없으면 첫 그룹 → 첫 사용자 → `null`.
-export function groupSettingsPick(pick, list) {
-  const has = (kind, id) => (kind === "group" ? list.groups : list.users).some((x) => x.id === id);
-  if (pick && has(pick.kind, pick.id)) return pick;
-  if (list.groups.length) return { kind: "group", id: list.groups[0].id };
-  if (list.users.length) return { kind: "user", id: list.users[0].id };
-  return null;
-}
-
 /// 끌기 시작 거리(#1z — 레일 타일) — 누른 채 이만큼(px) 움직여야 끌기, 그 미만은 그냥 누름(타일 고르기).
 export const DRAG_SLOP = 5;
 
 export function pastSlop(dx, dy) {
   return dx * dx + dy * dy >= DRAG_SLOP * DRAG_SLOP;
+}
+
+/// 레일 타일을 놓을 자리(#1z-2) — 같은 묶음 타일 가운데(`centers`, 보이는 순서 · 세로 레일 = Y, 가로 레일 = X)에서 포인터(`pos`)와 가장 가까운 타일과
+/// 그 앞 / 뒤(가운데를 넘으면 뒤). 틈 · 타일 아래 이름 · 양 끝 밖에 놓아도 자리가 정해진다 — 놓는 점 아래 요소만 보면 거기서는 아무 일이 없었다. 타일이 없으면 `null`.
+export function railSlot(centers, pos) {
+  if (!centers.length) return null;
+  let i = 0;
+  for (let k = 1; k < centers.length; k++) if (Math.abs(centers[k] - pos) < Math.abs(centers[i] - pos)) i = k;
+  return { index: i, after: pos > centers[i] };
 }
 
 /// 대화 줄을 그룹 절에 놓기(#1w) — 복사: 그 그룹에 넣기만(원래 자리 — 사용자 목록 · 다른 그룹 — 그대로). 이미 있거나 모르는 그룹이면 `null`.
@@ -492,6 +492,7 @@ export function inboxRows(messages, peerNames, { kind = "" } = {}) {
         href: `#c/${conv.id}`,
         peer: conv.peer_id,
         author: m.author,
+        mine: m.mine === true,
       };
     });
 }
@@ -561,7 +562,7 @@ export function preview(text) {
 /// 그룹 타일(`tile` = `"group"`, #1i) = 개요(그룹 요약) · 요청 · 북마크 항목 · 주고받은 글 4개 — 내 활동('나' 에만) · 에이전트(대화 단위 아님) 없음.
 /// 세 절(#1h) — 상단 개요 / 중단 내 활동 · 요청 · 주고받은 글 / 하단 북마크 항목 · 에이전트(사용자가 모은 · 등록한 것), 절 사이 `{ sep: true }`
 /// (빈 절은 건너뛴다). 내 활동은 안 본 수(`count`), 요청은 받은 요청 중 대기 수(`waiting`).
-/// '에이전트'(#1v) = 링크 없는 머리(`head`) + 들여쓴 하위(`sub`) 둘 — 등록된 에이전트 · 에이전트 대화(상대가 연 대화, 수 = 안 읽음 `agentUnread`).
+/// '에이전트'(#1v) = 링크 없는 머리(`head`) + 들여쓴 하위(`sub`) — 등록된 에이전트 · 에이전트 응답(#1z-2 — '나' 에만, 상대가 연 대화, 수 = 안 읽음 `agentUnread`).
 export function sideNav(tile, unseen = 0, waiting = 0, starred = 0, agentUnread = 0) {
   const me = tile == null;
   const group = tile === "group";
@@ -581,7 +582,8 @@ export function sideNav(tile, unseen = 0, waiting = 0, starred = 0, agentUnread 
       : [
           { label: "에이전트", icon: "bot", head: true },
           { label: "등록된 에이전트", href: "#agents", icon: "bot", sub: true },
-          { label: "에이전트 대화", href: "#agents/convs", icon: "chat", sub: true, count: agentUnread },
+          // 에이전트 응답(#1z-2 — 옛 "에이전트 대화") = 내 에이전트가 어느 사용자에게 답했는지 — '나' 에만.
+          ...(me ? [{ label: "에이전트 응답", href: "#agents/convs", icon: "chat", sub: true, count: agentUnread }] : []),
         ]),
   ];
   return [top, mid, end].filter((s) => s.length).flatMap((s, i) => (i ? [{ sep: true }, ...s] : s));
@@ -1063,6 +1065,11 @@ export function groupLeaves(view) {
   return view === "activity" || view === "agents" || view === "agentConvs" || view === "peer";
 }
 
+/// 상대 타일을 고른 채 열 수 없는 화면(#1z-2) — 에이전트 응답('나' 에만).
+export function peerLeaves(view) {
+  return view === "agentConvs";
+}
+
 /// 그룹의 안 읽음 합(레일 배지).
 export function groupUnread(convs, group) {
   return inGroup(convs, group).reduce((n, c) => n + (c.unread ?? 0), 0);
@@ -1128,6 +1135,11 @@ export function unreadByPeer(convs) {
   const sums = new Map();
   for (const c of convs) if (c.unread > 0) sums.set(c.peer_id, (sums.get(c.peer_id) ?? 0) + c.unread);
   return sums;
+}
+
+/// 상대 타일 배지(#1z-2) — 그 타일에서 보이는 대화의 안 읽음만. 에이전트 대화(`dir = "in"`)는 '나' 의 '에이전트 응답' 이 센다(상대 타일에는 그 메뉴가 없다).
+export function tileUnread(convs) {
+  return unreadByPeer(convs.filter((c) => c.dir !== "in"));
 }
 
 /// 내 활동 거르기 탭(#1q) — `kind` = `GET /api/activity?kind=`, `icon` = `.ico-{이름}`(#1r).
@@ -1211,6 +1223,11 @@ export function insertMarkdown(text, start, end, kind) {
 /// 발화자 종류 아이콘(#1z — 사람 ↔ 에이전트 구분) — 대화 목록 미리보기 · 메시지 줄 앞. `icon` = `app.css` `.ico-{이름}`.
 export function speakerIcon(author) {
   return author === "agent" ? { kind: "agent", icon: "bot", label: "에이전트" } : { kind: "human", icon: "user", label: "사람" };
+}
+
+/// 주고받은 메시지 줄 아바타(#1z-2 — 시안 `Peer`) — 에이전트 · 나(내 사람 글) · 상대(상대 사람 글), 아이콘 · 메타의 "사람" 은 `speakerIcon` 과 같다.
+export function avatarKind(author, mine) {
+  return author === "agent" ? "agent" : mine ? "me" : "peer";
 }
 
 /// 레일 폭(#1z — 손잡이 끌기) — 끄는 동안 `min` ~ `max`, `split` 이상이면 작은 아이콘, 놓으면 `normal`(크게) · `small`(작게) 폭으로 맞춘다.

@@ -447,7 +447,7 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
 
 | 양쪽(전달에 성공한 프레임으로) | 이 PC 에만 |
 |---|---|
-| 사람 글 · 에이전트 답 본문, 순서(`lc`), 질의 · 요청, 요청 상태 · 메모, 멘션 이름, 출처(`via`), 답의 실행 정보(턴 · 시간 · model · effort), "상대 창에도" 를 고른 편집 · 삭제(#1f) | 대화 제목 · ★ · 저장 · 읽음 · 내 활동 본 표시 · 타일 표시 이름 · 아이콘 · 그룹 · 상대별 model · effort · 알림 설정 · 집중 · 접속 상태 · **Claude 세션 ID** |
+| 사람 글 · 에이전트 답 본문, 순서(`lc`), 질의 · 요청, 요청 상태 · 의견, 멘션 이름, 출처(`via`), 답의 실행 정보(턴 · 시간 · model · effort), "상대 창에도" 를 고른 편집 · 삭제(#1f) | 대화 제목 · ★ · 저장 · 읽음 · 내 활동 본 표시 · 타일 표시 이름 · 아이콘 · 그룹 · 상대별 model · effort · 알림 설정 · 집중 · 접속 상태 · **Claude 세션 ID** |
 
 답이 상대에 닿지 않으면 실행한 PC 의 outbox 가 다시 보낸다. 상대가 답을 거절했거나 24시간 닿지 않아 포기한 답만 실행한 PC 에
 `undelivered`(화면 "답 미전달")로 남는다 — 그때는 두 DB 가 달라진 채로 남는다(6.6). 보내는 중인 글 · 실패 보관(`outbox`) · CLI 트랜잭션
@@ -635,9 +635,9 @@ sequenceDiagram
   A->>B: Message(request = true) — outbox, 내 글 exec = false
   B->>B: 집중 판정 앞에서 inbound_ask — 실행 · 대기열 없이 req_state = wait
   B-->>A: Ok → A 글 done(답 없음)
-  UB->>B: '요청' 화면 · 수용(메모)
+  UB->>B: '요청' 화면 · 수용(의견)
   B->>B: 대화 차례 안에서 can_become 확인 · req_state · req_note · 보내기 행 한 트랜잭션
-  B->>A: ReqState(conv · msg · accepted · 메모) — outbox, 바뀔 때마다 한 행
+  B->>A: ReqState(conv · msg · accepted · 의견) — outbox, 바뀔 때마다 한 행
   A->>A: 그 대화의 내 요청 사람 글이면 반영(그 밖 unknown) · 알림 AskState
   A-->>B: Ok (닿지 않으면 B 의 outbox 가 바뀐 순서대로 다시 보낸다 — 경고 없음)
 ```
@@ -647,8 +647,8 @@ sequenceDiagram
 - 받은 대화(B 가 요청자)에서는 미러 `Post{exec: false, request: true}` 로 같은 규칙.
 - **질의 · 요청 목록**(S1 개정 · #18 → #1d): 사람 글마다 종류(기본 질의 · 요청) — 프레임 `request` 로 양쪽 이력에. **요청은 실행하지 않는다** —
   받는 쪽은 집중과 무관하게 `req_state = wait` 로 기록만(대기열 · 실행 없음), 멘션 · CLI · 자동 왕복과 함께 쓰지 않는다. 받은 쪽 사람만 대기 ·
-  수용 · 반려 · 완료 사이 어디로든(한 줄 메모 200자)으로 바꾸고 상태 · 보내기 행을 한 트랜잭션으로 적어 `ReqState` 프레임으로 쓴 쪽에 보낸다(쓴 쪽은 그 상대
-  대화의 자기 요청 사람 글에만 — 그 밖 `unknown`, 같은 상태 · 메모 재전송은 그대로 `Ok`). 오래 닿지 않아 포기 · 요청자 거절이면 그 글 `refused` →
+  수용 · 반려 · 완료 사이 어디로든(의견 — 여러 줄 200자, 보낼 때 줄바꿈 → U+2028 · 받을 때 되돌림 — 이전 버전 호환, #1z)으로 바꾸고 상태 · 보내기 행을 한 트랜잭션으로 적어 `ReqState` 프레임으로 쓴 쪽에 보낸다(쓴 쪽은 그 상대
+  대화의 자기 요청 사람 글에만 — 그 밖 `unknown`, 같은 상태 · 의견 재전송은 그대로 `Ok`). 오래 닿지 않아 포기 · 요청자 거절이면 그 글 `refused` →
   "다시 알리기"(같은 상태 재전송). 모아 보기 = 왼쪽 메뉴 '요청'(받은 · 보낸 · 상태 거르기 · 대기 수 배지) · 세부정보 '요청'.
 - `PATCH /api/messages/{id}` 의 `req_state` 는 `wait` 도 받는다(#1y — 받은 요청을 대기로 되돌리기, 웹UI "↺ 대기" · 보드가 내던 옮김을 서버가 400 으로 막던 결함).
 - **요청 archive**(#1y — 이 PC 에만, 프레임 · outbox 없음): archive = 완료(`req_state = 'done'`) + (손 표시 1 | 손 표시 없음 · `coalesce(req_at, created_at)` 가
