@@ -254,7 +254,7 @@
 - **S2** 트레이 상주 실행 — 인자 없는 실행은 감시 프로세스 + 앱(D13).
 - **S3** 대화/작업 이력은 SQLite — 사용자 경로(D15). 범위 · 이어서 작업은 D19, 내 사람 글 편집 · 삭제는 D34.
 - **S4** 트레이 메뉴 "열기" · "종료". 웹UI 는 Slack 형 5영역(D26):
-  - 통합 검색(메시지 · 대화 · 사람 · 에이전트) · 내 활동(받은 요청 · 내 요청 · 받은 답 · 실패 — #1q) · ★ 즐겨찾기 · 북마크 ·
+  - 통합 검색(메시지 · 대화 · 사람 · 에이전트) · 내 활동(받은 요청 · 내 요청 · 받은 답 · 실패 — #1q, 종류 색 칩 · 같은 색 탭 — #1z-3 시안 A) · ★ 즐겨찾기 · 북마크 ·
     입력창 서식 · "+ 새로 만들기"(#1x — "세션 생성" = 상대 · 에이전트 · 내 응답 에이전트만 고르고 글 없이 대화를 만든다, 첫 글은 그 대화방 입력창 · 자동 왕복은 첫 글부터, 상대 칸 =
     레일에서 고른 상대. 자동 왕복은 세션 생성 화면 안에서 — #1r 칸 이름 "내 응답 에이전트" + 고를 때만 하위 줄 "최대 응답 횟수", 기능 이름
     "자동 왕복" 은 설정 · 세부정보에 그대로 · 설정 알림 '?' 가 둘을 잇는다) · 프로필 메뉴. ★ · 북마크 · 읽음 · 내 활동 본 표시는 이 PC 에만.
@@ -298,7 +298,7 @@ Task 상태는 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`).
 Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 1b.inbound-capacity · 1c.durable-messaging · 1d.request-list ·
 1e.autostart-watchdog · 1f.message-edit · 1g.rail-scope · 1h.stabilization · 1i.rail-group · 1j.messenger-ui · 1k.ui-polish ·
 1l.ui-icons · 1m.context-compact · 1n.cli-start-stop · 1o.chat-list-split · 1p.project-tidy · 1q.request-overview · 1r.ui-polish ·
-1s.fold-line-readme · 1t.notion-ux · 1u.scoped-refresh · 1v.notion-design · 1w.conv-leave · 1x.session-ui · 1y.data-update · 1z.chat-look · 1z-2.ui-refine. 남음:
+1s.fold-line-readme · 1t.notion-ux · 1u.scoped-refresh · 1v.notion-design · 1w.conv-leave · 1x.session-ui · 1y.data-update · 1z.chat-look · 1z-2.ui-refine · 1z-3.activity-color. 남음:
 - 후보(착수 전): 통계 메뉴(사이드바 상단 — 보여줄 숫자 미정 · 서버 집계 API 필요).
 - 후보(착수 전): outbox 정산 순서 점검 — 기존 종류(`req_state` 거절 등)도 "행을 지운 뒤 정산" 순서라 원자성 보강이 필요한지 판단(1f 평가의 범위 밖 관찰).
 - 후보(착수 전): 요청 보드 보기 설정(D39 ① · 1t U2 — U1 은 #1v 종결) — 보드의 그룹 · 정렬 · 거르기(이 PC 에만, 지금 보기 기억은 `ui_folded` 열쇠를 빌려 씀 → 전용 설정 키). 닿는 D·S: D35 · D39.
@@ -353,5 +353,7 @@ Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 
   S1 보강(의견 여러 줄 · U+2028 호환) · D35 보강(레일 손잡이 끌기로 타일 크기 · 타일 순서 포인터 끌기 · "보통" → "크게") · D37 · D8 · S4 개정(설정 "연결 목록" → "그룹설정" 목록 + 상세) — 사용자 승인, 종결 목록에 1z
 - 2026-10-21 · Task #1z-2 · D35 개정(에이전트 응답 = 옛 에이전트 대화, '나' 에만 · 상대 타일 배지 · 대화 줄 한 줄 · 레일 "+ 사용자" · 레일 놓는 자리 = 가장 가까운 타일 · 개요 아이콘) ·
   D37 개정(그룹설정 시안 B — 카드 격자 + 사용자 표 · 포인터 넣기) · S4 개정(주고받은 메시지 줄 시안 Peer) — 사용자 승인, 종결 목록에 1z-2
+- 2026-10-21 · Task #1z-3 · S4 보강(내 활동 종류 색 — 시안 A: 줄 이름표 칩 · 같은 색 거르기 탭, 받은 요청 주황 · 내 요청 파랑 · 받은 답 청록 · 실패 빨강) ·
+  등록된 에이전트 줄 오른쪽 여백 24px — 사용자 결정(시안 A), 종결 목록에 1z-3
 - 2026-10-19 · 1.0.0 배포 · D25 보강(보유한 Mac 의 macOS universal 실행 파일을 사전 배포에 첨부, 확인 · 서명은 Phase 4) — 사용자 지시(버전 1.0.0 · Mac 빌드 = 보유한 Mac)
 - 2026-10-19 · S1 개정(요청 상태 = 네 상태 사이 어디로든 — 되돌리기 포함) · S4 보강(요청 보드 손잡이 포인터 끌기 · 놓은 열로 옮김 · 요청 화면 "메모" → "피드백") — 사용자 지시(Task 밖 수정)

@@ -2803,7 +2803,7 @@ function activityEls(rows) {
         el(
           "span",
           { class: "meta" },
-          el("span", { class: "tag plain", text: r.label }),
+          el("span", { class: `tag act-${r.tone}`, text: r.label }),
           r.author ? speakerEl(r.author) : "",
           el("strong", { text: r.who }),
           el("span", { text: formatTime(r.at) }),

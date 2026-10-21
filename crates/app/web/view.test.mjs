@@ -845,6 +845,10 @@ test("activity_rows — 받은 요청 · 받은 답 · 내 요청 · 실패(#1q)
     ],
   );
   assert.ok(rows.every((r) => r.title === "배포 절차" && !("tag" in r)));
+  // 종류 색(#1z-3) — 탭 이름과 같은 키.
+  assert.deepEqual(rows.map((r) => r.tone), ["answer", "mine", "request", "failed", "failed"]);
+  assert.equal(activityRows([{ kind: "sync_failed", at: 1, conversation: conv, detail: "x" }], names)[0].tone, "failed");
+  assert.ok(rows.every((r) => ACT_KINDS.some((k) => k.kind === r.tone)), "색 키 = 거르기 탭 kind");
   assert.equal(new Set(rows.map((r) => r.key)).size, rows.length, "항목 열쇠는 겹치지 않는다");
 });
 

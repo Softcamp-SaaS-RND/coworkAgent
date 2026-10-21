@@ -25,6 +25,8 @@
   --sent: #104A97;
   --recv-bg: #FDF1E0;
   --recv: #804D0C;
+  --answer-bg: #E0F1EF; /* 내 활동 '받은 답' 칩 바탕(#1z-3 시안 A — 글자는 --agent) */
+  --danger-soft: #FBE9E7; /* 내 활동 '실패' 칩 바탕(#1z-3 시안 A — 글자는 --danger) */
   --rail: #20252A;
   --rail-2: #383E43;
   --rail-text: #BABEC3;
@@ -64,6 +66,8 @@
   --dark-sent: #AACDFF;
   --dark-recv-bg: #302412;
   --dark-recv: #EABB79;
+  --dark-answer-bg: #173230;
+  --dark-danger-soft: #3A1A17;
   --dark-rail: #07080A;
   --dark-rail-2: #2C2E31;
   --dark-rail-text: #AAAEB3;
@@ -128,6 +132,8 @@
   --sent: var(--dark-sent);
   --recv-bg: var(--dark-recv-bg);
   --recv: var(--dark-recv);
+  --answer-bg: var(--dark-answer-bg);
+  --danger-soft: var(--dark-danger-soft);
   --rail: var(--dark-rail);
   --rail-2: var(--dark-rail-2);
   --rail-text: var(--dark-rail-text);
@@ -291,9 +297,23 @@ kbd, .kbd { font-family: var(--mono); font-size: var(--fs-xs); }
 /* 태그 · 칩 · 상태 */
 .tag { display: inline-block; font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: var(--lh-tight); padding: 0 var(--sp-2); border-radius: var(--radius-sm); background: var(--sent-bg); color: var(--sent); white-space: nowrap; }
 .tag.recv { background: var(--recv-bg); color: var(--recv); }
-.tag.plain { background: var(--subtle); color: var(--muted); font-weight: var(--fw-regular); }
 .tag.ask { background: var(--subtle); color: var(--run); }
 .tag.ask.done { color: var(--ok); }
+/* 내 활동 종류 색(#1z-3 시안 A) — 줄 칩 = 옅은 바탕 + 진한 글자, 거르기 탭 = 아이콘 · 이름 그 색 · 고른 탭은 그 바탕. 받은 요청 = 받은 글 · 내 요청 = 보낸 글 ·
+   받은 답 = 에이전트 · 실패 = 오류 색. */
+.tag.act-request { background: var(--recv-bg); color: var(--recv); }
+.tag.act-mine { background: var(--sent-bg); color: var(--sent); }
+.tag.act-answer { background: var(--answer-bg); color: var(--agent); }
+.tag.act-failed { background: var(--danger-soft); color: var(--danger); }
+#act_tabs a[data-kind="request"] { color: var(--recv); }
+#act_tabs a[data-kind="mine"] { color: var(--sent); }
+#act_tabs a[data-kind="answer"] { color: var(--agent); }
+#act_tabs a[data-kind="failed"] { color: var(--danger); }
+#act_tabs a[aria-current="page"]:not([data-kind="all"]) { font-weight: var(--fw-bold); }
+#act_tabs a[data-kind="request"][aria-current="page"] { background: var(--recv-bg); }
+#act_tabs a[data-kind="mine"][aria-current="page"] { background: var(--sent-bg); }
+#act_tabs a[data-kind="answer"][aria-current="page"] { background: var(--answer-bg); }
+#act_tabs a[data-kind="failed"][aria-current="page"] { background: var(--danger-soft); }
 /* 요청 의견 칸(#1z) — 3줄 · 칸 폭 전부, 아래 줄 = 글자 수 · 취소 · 확인(44px) */
 .req-note { display: flex; flex-direction: column; gap: var(--sp-2); align-items: stretch; }
 .req-note textarea { width: 100%; box-sizing: border-box; min-height: 88px; resize: vertical; }
@@ -767,7 +787,7 @@ details { margin: var(--sp-2) 0; }
 .pa .tile-shape { display: flex; }
 .agent-tile { background: var(--agent-tile); }
 .gs-card-head .icon-btn svg { display: block; }
-#agents_list li.has-edit { display: flex; align-items: center; gap: var(--sp-1); }
+#agents_list li.has-edit { display: flex; align-items: center; gap: var(--sp-1); padding-right: var(--sp-5); } /* 단추 · 연필이 화면 끝에 붙지 않게 — 줄 왼쪽 여백과 같게(#1z-3) */
 .share-tools { display: flex; gap: var(--sp-2); align-items: center; margin-top: var(--sp-2); }
 .share-tools select { flex: 1 1 auto; min-width: 0; }
 .share-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-1) 0; }

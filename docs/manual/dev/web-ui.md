@@ -53,6 +53,9 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
   `view.reqArchiveAction`(받은 · 보낸 요청 — 완료 = "archive" · archive 됨 = "archive 해제") → `archiveReq` = `POST /api/messages/{id}/archive` 뒤 `loadRequests`.
   절 머리 `reqHead` 끝 "archive n"(전체 수에 들지 않는다).
 - **내 활동**(#1q): 받은 요청 · 내 요청(지금 상태 + 메모, 상태가 바뀌면 맨 위 · 안 본 것) · 받은 답 · 실패만 — 탭 전체 · 받은 요청 · 내 요청 · 받은 답 · 실패 + 본문 검색.
+  종류 색(#1z-3 시안 A): `activityRows` 의 `tone`(`request` · `mine` · `answer` · `failed` — 탭 `ACT_KINDS.kind` 와 같은 키, 실패한 답 · 상대 반영 실패 = `failed`) →
+  줄 칩 `.tag.act-{tone}`(옅은 바탕 + 진한 글자: 받은 글 `--recv` · 보낸 글 `--sent` · 에이전트 `--agent` + `--answer-bg` · 오류 `--danger` + `--danger-soft`),
+  탭 `#act_tabs a[data-kind]` 는 같은 색 글자 · 고른 탭은 그 바탕(전체는 무채색).
   상대 사람 일반 메시지 · 자동 왕복 기록은 없다.
 - **대화 목록**(`view.js` `convListParts`): 나 · 상대 타일 = 내 대화(`dir = out` — 내가 연 대화 · 내가 연 자동 왕복)만 머리 없이 + "공유 대화"(`shared`) 머리,
   에이전트 대화(`in`)는 '나' 의 사이드바 '에이전트 응답' 화면으로(#1v · #1z-2). 그룹 타일 = "내 대화" · "에이전트 대화" · "공유 대화" 머리(제목 · 개수, 하나뿐이면 머리 없음). 끌어 옮기기는 묶음 안에서만(행 `data-section = {절}:{dir}`), 즐겨찾기 화면은 나누지 않는다. 대화 줄 = 한 줄(#1z-2) — 손잡이(#1x — `button.drag-handle` · `ico-grip`, `aria-label`
