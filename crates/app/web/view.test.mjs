@@ -4,12 +4,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   entryToken,
-  previewWindows,
+  previewSections,
   previewBubbles,
   previewKey,
   previewStaleOf,
-  previewTabs,
-  PREVIEW_TABS,
   PREVIEW_MSGS,
   DISCONNECTED,
   stateText,
@@ -680,7 +678,7 @@ test("peer_summary — '나' 대화 요약: 페어링된 상대는 대화 없어
   assert.deepEqual(peerSummary([], [], names), []);
 });
 
-test("preview_windows — 개요 미리보기(#1z-4): 상대마다 창 · 처음 탭 최근 활동 · 고른 탭 유지(사라지면 최근), 상대 타일은 대화마다 창", () => {
+test("preview_sections — 개요 미리보기(#1z-5 2차 시안 A): 상대마다 절 · 카드 최근 활동 순 · 한 줄(열 수) + 숨은 수, 상대 타일은 전부", () => {
   const names = new Map([
     [1, "가람 · A-PC"],
     [2, "나래 · B-PC"],
@@ -689,28 +687,25 @@ test("preview_windows — 개요 미리보기(#1z-4): 상대마다 창 · 처음
     { id: 11, peer_id: 1, last_at: 100, pos: 2 },
     { id: 12, peer_id: 1, last_at: 300, pos: 5 },
     { id: 13, peer_id: 1, last_at: null, pos: -1 },
+    { id: 14, peer_id: 1, last_at: 200, pos: 7 },
   ];
   const groups = peerSummary(convs, [2, 1], names, new Map([[1, 3]]));
-  const w = previewWindows(groups, false);
+  const ids = (secs) => secs.map((x) => [x.peer, x.name, x.waiting, x.cards.map((c) => c.id), x.more]);
   assert.deepEqual(
-    w.map((x) => [x.key, x.peer, x.name, x.waiting, x.conv?.id ?? null, x.tabs.map((c) => c.id)]),
+    ids(previewSections(groups, false, 4)),
     [
-      ["p2", 2, "나래", 0, null, []],
-      ["p1", 1, "가람", 3, 12, [13, 11, 12]],
+      [2, "나래", 0, [], 0],
+      [1, "가람", 3, [12, 14, 11, 13], 0],
     ],
+    "넘치지 않으면 전부 — 최근 활동 순, 시각 없으면 뒤",
   );
-  assert.equal(previewWindows(groups, false, new Map([[1, 11]]))[1].conv.id, 11, "고른 탭");
-  assert.equal(previewWindows(groups, false, new Map([[1, 99]]))[1].conv.id, 12, "고른 대화가 사라지면 최근");
-  const nulls = peerSummary([{ id: 21, peer_id: 1, last_at: null }, { id: 22, peer_id: 1, last_at: null }], [1], names);
-  assert.equal(previewWindows(nulls, false)[0].conv.id, 21, "시각 없으면 첫 대화");
-  const one = previewWindows(peerSummary(convs, [1], names), true);
+  assert.deepEqual(ids(previewSections(groups, false, 3))[1], [1, "가람", 3, [12, 14], 2], "넘치면 열 수 - 1 개 + 숨은 수(끝 칸 \"+n개\")");
+  assert.deepEqual(ids(previewSections(groups, false, 1))[1], [1, "가람", 3, [12], 3], "한 열이어도 카드 하나는");
+  assert.deepEqual(ids(previewSections(groups, true, 2))[1], [1, "가람", 3, [12, 14, 11, 13], 0], "상대 타일 = 전부");
   assert.deepEqual(
-    one.map((x) => [x.key, x.conv.id, x.tabs.length]),
-    [
-      ["c13", 13, 0],
-      ["c11", 11, 0],
-      ["c12", 12, 0],
-    ],
+    groups[1].rows.map((c) => c.id),
+    [13, 11, 12, 14],
+    "peerSummary 의 손으로 놓은 순서는 그대로(미리보기만 최근 순)",
   );
 });
 
@@ -750,14 +745,7 @@ test("preview_bubbles — 미리보기 말풍선(#1z-4): 마지막 n 개 · 요�
   );
 });
 
-test("preview_tabs_and_reload — 탭 3개까지 + 숨은 수(고른 대화는 늘 보임), 다시 읽을 때(요약 · 변경 신호) — 사용자 Q2 · Q3", () => {
-  const t = [1, 2, 3, 4, 5].map((id) => ({ id }));
-  const ids = (r) => [r.shown.map((x) => x.id), r.more];
-  assert.equal(PREVIEW_TABS, 3);
-  assert.deepEqual(ids(previewTabs(t.slice(0, 3), 1)), [[1, 2, 3], 0], "넘치지 않으면 전부");
-  assert.deepEqual(ids(previewTabs(t, 2)), [[1, 2, 3], 2]);
-  assert.deepEqual(ids(previewTabs(t, 5)), [[1, 2, 5], 2], "고른 대화가 밖이면 마지막 칸");
-  assert.deepEqual(ids(previewTabs(t, undefined)), [[1, 2, 3], 2]);
+test("preview_reload — 다시 읽을 때(요약 · 변경 신호) — #1z-4 사용자 Q3", () => {
   const c = { id: 7, last_at: 5, last_state: "done", last: { text: "a  b" } };
   assert.equal(previewKey(c), previewKey({ ...c, unread: 3 }), "안 읽음만 바뀌면 다시 읽지 않는다");
   assert.notEqual(previewKey(c), previewKey({ ...c, last_state: "running" }));

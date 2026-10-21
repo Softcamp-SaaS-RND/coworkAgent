@@ -938,39 +938,37 @@ details { margin: var(--sp-2) 0; }
 .side-list li[data-conv] .unread-n { margin-left: 0; }
 /* 개요 아코디언: 머리 사용자 아이콘 · 줄 에이전트 아이콘 */
 .home-agent { display: inline-flex; align-items: center; gap: var(--sp-1); }
-/* 개요 미리보기(#1z-4 시안 B) — 상대(상대 타일이면 대화)마다 작은 대화 창. 열 수 = 폭(창 최소 360px — 좁으면 한 열), 창 높이 320px 고정,
-   넘치면 세로 스크롤. 본문은 최신 글이 아래, 넘친 옛 글은 위에서 잘린다(flex-end + overflow hidden). 위 띠 = 그 상대 타일 색. */
-.pv-grid { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); grid-auto-rows: 320px; align-content: start; gap: var(--sp-5); padding: var(--sp-5); }
-.pv-win { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: inset 0 3px 0 var(--tone, var(--border)), var(--shadow-sm); }
-.pv-win[data-tone="peer-1"] { --tone: var(--peer-1); }
-.pv-win[data-tone="peer-2"] { --tone: var(--peer-2); }
-.pv-win[data-tone="peer-3"] { --tone: var(--peer-3); }
-.pv-win[data-tone="peer-4"] { --tone: var(--peer-4); }
-.pv-win[data-tone="peer-5"] { --tone: var(--peer-5); }
-.pv-head { flex: none; display: flex; align-items: center; gap: var(--sp-2); min-height: 48px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4); font-size: var(--fs-sm); color: var(--muted); }
-.pv-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: var(--fs-md); }
-.pv-open { flex: none; margin-left: auto; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); font-weight: var(--fw-medium); white-space: nowrap; text-decoration: none; }
-.pv-tabs { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3) var(--sp-2); }
-.pv-tablist { display: flex; gap: var(--sp-2); min-width: 0; overflow-x: auto; }
-.pv-more { flex: none; height: 30px; padding: 0 var(--sp-3); border: 1px dashed var(--border); border-radius: var(--radius-pill); background: transparent; color: var(--accent); font-size: var(--fs-xs); font-weight: var(--fw-bold); }
-.pv-tab { flex: none; height: 30px; display: inline-flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); color: var(--muted); font-size: var(--fs-xs); }
-.pv-tab[aria-selected="true"] { border-color: transparent; background: var(--sent-bg); color: var(--sent); font-weight: var(--fw-bold); }
-.pv-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--wait); }
-.pv-dot[data-state="done"] { background: var(--ok); }
-.pv-dot[data-state="queued"], .pv-dot[data-state="running"] { background: var(--run); }
-.pv-dot[data-state="error"], .pv-dot[data-state="undelivered"] { background: var(--danger); }
-.pv-unread { padding: 0 var(--sp-1); border-radius: var(--radius-pill); background: var(--accent); color: var(--on-accent); font-size: var(--fs-xs); line-height: var(--lh-tight); }
-.pv-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); overflow: hidden; border-top: 1px solid var(--border); background: var(--surface-2); color: var(--text); text-decoration: none; }
-.pv-body:hover { color: var(--text); }
-.pv-msg { flex: none; max-width: 82%; padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-sm) var(--radius-bubble) var(--radius-bubble) var(--radius-bubble); font-size: var(--fs-sm); line-height: var(--lh-tight); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+/* 개요 미리보기(#1z-5 2차 시안 A) — 상대마다 절(머리 + 대화방 카드 격자), 넘치면 세로 스크롤. 카드 열 수 = 폭(카드 최소 240px — 좁으면 한 열,
+   스크립트가 이 격자의 실제 열을 재서 '나' · 그룹은 한 줄만). 카드 본문 높이 고정 — 최신 글이 아래, 넘친 옛 글은 위에서 잘린다(flex-end + overflow hidden). */
+.pv-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--sp-5); padding: var(--sp-5); }
+.pv-sec { flex: none; display: flex; flex-direction: column; gap: var(--sp-3); }
+.pv-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--muted); }
+.pv-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: var(--fs-lg); }
+.pv-open { margin-left: auto; height: var(--control-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--accent); font-size: var(--fs-sm); font-weight: var(--fw-medium); white-space: nowrap; }
+.pv-open:hover { color: var(--accent-hover); }
+.pv-none { padding: var(--sp-3) var(--sp-4); border: 1px dashed var(--border); border-radius: var(--radius-bubble); }
+.pv-none button { margin-left: auto; }
+.pv-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: var(--sp-4); }
+.pv-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-bubble); box-shadow: var(--shadow-sm); color: var(--text); text-decoration: none; }
+.pv-card:hover { color: var(--text); border-color: var(--accent); }
+.pv-card.unseen { border-color: var(--accent); }
+.pv-card-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border); }
+.pv-card-head strong { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); }
+.pv-state { flex: none; padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--subtle); font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: var(--lh-body); }
+.pv-body { height: 120px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3); overflow: hidden; background: var(--surface-2); }
+.pv-msg { flex: none; max-width: 84%; padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm) var(--radius-bubble) var(--radius-bubble) var(--radius-bubble); font-size: var(--fs-xs); line-height: var(--lh-tight); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pv-msg.side-mine { align-self: flex-end; border-radius: var(--radius-bubble) var(--radius-sm) var(--radius-bubble) var(--radius-bubble); background: var(--sent-bg); }
 .pv-msg.side-theirs { align-self: flex-start; background: var(--recv-bg); }
-.pv-msg.agent, .pv-msg.running { background: var(--surface); border: 1px solid var(--agent); }
+.pv-msg.agent, .pv-msg.running { background: var(--agent-soft); border: 1px solid var(--agent); }
 .pv-msg.running { color: var(--run); }
 .pv-msg.error { background: var(--danger-soft); border: 1px solid var(--danger); color: var(--danger); }
 .pv-msg b { margin-right: var(--sp-1); color: var(--muted); }
 .pv-msg.agent b, .pv-msg.running b { color: var(--agent); }
-.pv-empty { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-3); border-top: 1px solid var(--border); background: var(--surface-2); color: var(--muted); font-size: var(--fs-sm); }
+.pv-card-foot { display: flex; align-items: center; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--faint); }
+.pv-card-foot .home-agent { min-width: 0; overflow: hidden; white-space: nowrap; color: var(--agent); }
+.pv-unread { margin-left: auto; flex: none; padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--accent); color: var(--on-accent); font-weight: var(--fw-bold); line-height: var(--lh-body); }
+.pv-more { min-height: 120px; border: 1px dashed var(--border); border-radius: var(--radius-bubble); background: transparent; color: var(--accent); font-size: var(--fs-md); font-weight: var(--fw-bold); }
+.pv-more:hover { border-color: var(--accent); }
 /* 주고받은 메시지 줄(시안 Peer): 원형 아바타 · 메타 · 본문 · 시각, 에이전트 줄 바탕 */
 .rows li.pm-agent { background: var(--agent-soft); }
 .rows a.pm-link { flex-direction: row; align-items: flex-start; gap: var(--sp-3); }

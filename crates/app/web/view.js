@@ -1099,30 +1099,17 @@ export function inGroup(convs, group) {
   return convs.filter((c) => ids.has(c.id));
 }
 
-/// 개요 미리보기(#1z-4 시안 B) 창마다 받는 마지막 글 수 — 창 높이에 최신 쪽부터 보이고 위는 잘린다.
+/// 개요 미리보기 카드마다 받는 마지막 글 수 — 카드 높이에 최신 쪽부터 보이고 위는 잘린다.
 export const PREVIEW_MSGS = 6;
 
-/// 개요 미리보기 창 — '나' · 그룹 = 상대마다 창(탭 = 그 상대 대화, 처음 탭 = `last_at` 최대, 고른 탭 `picked`(상대 id → 대화 id)가 아직 있으면 그것),
-/// 상대 타일(`single`) = 대화마다 창(탭 없음). `groups` = `peerSummary` 결과. 대화 없는 상대 창은 `conv` = `null`.
-export function previewWindows(groups, single, picked = new Map()) {
-  if (single) return groups.flatMap((g) => g.rows.map((c) => ({ key: `c${c.id}`, peer: g.peer, name: g.name, waiting: g.waiting, conv: c, tabs: [] })));
+/// 개요 미리보기 절(#1z-5 2차 시안 A) — 상대마다 절, 카드 = 그 상대 대화(최근 활동 순 — `last_at` 큰 것부터, 없으면 뒤). '나' · 그룹은 한 줄(`cols` = 폭에 맞춘 열 수)만 —
+/// 넘치면 `cols - 1` 개 + 숨은 수 `more`(끝 칸 "+n개"), 상대 타일(`single`)은 전부. `groups` = `peerSummary` 결과(대화 없는 상대는 `cards` 빈 배열).
+export function previewSections(groups, single, cols) {
   return groups.map((g) => {
-    const recent = g.rows.reduce((a, c) => (a == null || (c.last_at ?? -1) > (a.last_at ?? -1) ? c : a), null);
-    const conv = g.rows.find((c) => c.id === picked.get(g.peer)) ?? recent;
-    return { key: `p${g.peer}`, peer: g.peer, name: g.name, waiting: g.waiting, conv, tabs: g.rows };
+    const rows = [...g.rows].sort((a, b) => (b.last_at ?? -1) - (a.last_at ?? -1));
+    const cards = single || rows.length <= cols ? rows : rows.slice(0, Math.max(1, cols - 1));
+    return { ...g, cards, more: rows.length - cards.length };
   });
-}
-
-/// 미리보기 창 탭 수 — 넘치면 끝에 "+n개"(누르면 그 상대 개요 = 대화마다 창).
-export const PREVIEW_TABS = 3;
-
-/// 보일 탭 — 앞에서 `max` 개, 고른 대화가 그 밖이면 마지막 칸을 고른 대화로. `more` = 숨은 수.
-export function previewTabs(tabs, picked, max = PREVIEW_TABS) {
-  if (tabs.length <= max) return { shown: tabs, more: 0 };
-  const head = tabs.slice(0, max);
-  const pick = tabs.find((t) => t.id === picked);
-  const shown = !pick || head.includes(pick) ? head : [...head.slice(0, max - 1), pick];
-  return { shown, more: tabs.length - shown.length };
 }
 
 /// 미리보기 다시 읽을 때(#1z-4 R1 · 사용자 "Q3 반영") — 대화 요약의 마지막 글 시각 · 상태 · 앞부분이 바뀌었을 때. 마지막이 아닌 글의 변경은

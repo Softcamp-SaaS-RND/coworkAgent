@@ -3,12 +3,12 @@
 > **세션 시작 시 가장 먼저 읽는 문서.** 지금 어디서 재개하는지의 단일 좌표 — **매번 덮어쓴다.**
 > Task 목록은 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`), 미조치는 [overview/ledger.md](docs/overview/ledger.md).
 
-- **갱신**: 2026-10-22 / main — Task #1z-4 종결(개요 미리보기 시안 B)
+- **갱신**: 2026-10-22 / main — Task #1z-5 종결(개요 미리보기 2차 시안 A)
 
 ## 현재 작업
 
-없음 — 열린 Task 없음. #1z-4 개요 미리보기 종결(기본 보기 = 상대별 작은 대화 창 · 탭 3개 + "+n개" · 열 수 = 브라우저 폭 · 보기 기억).
-이 PC 앱 = 서명된 1.3.0 `D:\dev\git\coworkAgent\target\release\coworkAgent.exe` — #1z-4 는 다음 서명 릴리스에 들어간다.
+없음 — 열린 Task 없음. #1z-5 개요 미리보기 = 2차 시안 A 종결(상대별 절 + 대화방 카드 · 절마다 한 줄 + "+n개" · 빈 상대 점선 줄 — #1z-4 창 · 탭 대체).
+이 PC 앱 = 서명된 1.3.0 `D:\dev\git\coworkAgent\target\release\coworkAgent.exe` — #1z-4 · #1z-5 는 다음 서명 릴리스에 들어간다.
 
 - **중단 지점**: 없음.
   PRODUCT.md 의 다른 세션 수정(security-posture 링크 2줄) · docs/tech/security-posture.md 는 `D:\dev\git\coworkAgent` 작업 폴더에 그대로(미커밋).
@@ -23,4 +23,4 @@
 
 - **블로커 / 미해소**: 19 acceptance TC(사용자). 그룹 타일 묶음 머리 "에이전트 대화" vs 메뉴 "에이전트 응답"(#1z-2 report — 사용자 확인 필요). 구현자 해석(사용자 미확인 — 각 report): 1q 결정 7 · 15,
   1r plan 해석 1 · 3 · 결정 3 · 11, 1s 결정 1 · 2, 1z-2 결정 2. D34 개정 문구 "편집 · 삭제는 CLI(· API)" 와 달리 CLI 에 편집 · 삭제 명령 없음(확인 필요).
-  #30 미조치 2행 원장 수용(사용자 "수용" — `#30 R2-1` · `#30 (#1y 이어받음)`). #1z-4 미조치 1행 원장 조건 대기(`#1z-4 R1-1`).
+  #30 미조치 2행 원장 수용(사용자 "수용" — `#30 R2-1` · `#30 (#1y 이어받음)`). #1z-4 미조치 1행 원장 조건 대기(`#1z-4 R1-1` — #1z-5 가 이어받음).
