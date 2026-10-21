@@ -3050,7 +3050,14 @@ impl Chat {
         let loaded = {
             let db = self.db();
             chat::by_id(&db, conversation_id).and_then(|c| {
+                // 실행 에이전트를 대화(세션)와 같은 DB 시점에서 — 따로 다시 읽으면 그 사이 폴더 · 상위 읽기(#05-2)가 바뀌어 비운 세션을 새 세대로
+                // 이어 쓴다(#05-2 적대적 평가 R2).
                 let agent = match &c {
+                    // 연 쪽에서 실행 요청이 된 상대 에이전트 답 = 자동 왕복 — 내 왕복 에이전트.
+                    Some(c) if c.dir == Dir::Out && asked.author == Author::Agent => match &c.relay {
+                        Some(r) => agents::by_name(&db, &r.agent)?,
+                        None => None,
+                    },
                     // 멘션이면 부른 에이전트(해석 3).
                     Some(c) => agents::by_name(&db, asked.agent.as_deref().unwrap_or(&c.agent))?,
                     None => None,
@@ -3073,14 +3080,9 @@ impl Chat {
             let _ = chat::set_flags(&self.db(), asked.id, false, false, State::Done);
             return;
         }
-        let agent = if relaying {
+        if relaying {
             let _ = chat::relay_step(&self.db(), conv.id);
-            conv.relay
-                .as_ref()
-                .and_then(|r| agents::by_name(&self.db(), &r.agent).ok().flatten())
-        } else {
-            agent
-        };
+        }
         // 실패는 (내 쪽 글, 상대에게 보낼 글) 둘 — 중단 · 에이전트 삭제는 상대도 알아도 되는 사실이라 같은 글.
         let result = if asked.state == State::Running {
             let t = format!("실행 실패: {INTERRUPTED}");
@@ -3881,12 +3883,23 @@ impl Chat {
                     (Dir::Out, Some(r)) => r.agent.clone(),
                     _ => conv.agent.clone(),
                 });
-            let (agent, opts) = {
+            // 세션과 세대(`uid`)를 같은 DB 시점에서 — 실행 자리 · 앞 세션 요약을 기다리는 동안 폴더 · 상위 읽기(#05-2)가 바뀌어 그 세션이 비었으면
+            // 메모리에 든 옛 세션을 새 세대로 이어 요약하지 않는다(#05-2 적대적 평가 R1).
+            let (agent, opts, live) = {
                 let db = self.db();
                 let agent = agents::by_name(&db, &who).ok().flatten();
                 let peer = an_core::peers::by_id(&db, conv.peer_id).ok().flatten();
-                (agent, an_core::run_opts::resolve(&db, peer.as_ref()).ok())
+                let live = chat::by_id(&db, conv.id)
+                    .ok()
+                    .flatten()
+                    .and_then(|now| chat::sessions(&db, &now).ok())
+                    .is_some_and(|now| now.iter().any(|(n, s)| *n == name && *s == session));
+                (agent, an_core::run_opts::resolve(&db, peer.as_ref()).ok(), live)
             };
+            if !live {
+                log::info!("대화 {} 압축 — 기다리는 동안 비운 세션 건너뜀({who})", conv.uuid);
+                continue;
+            }
             let (Some(agent), Some((model, effort))) = (agent, opts) else {
                 log::warn!(
                     "대화 {} 압축 — 에이전트 {who} 없음 · 실행 옵션 읽기 실패",

@@ -143,7 +143,7 @@ async fn folder_change_during_run_drops_stale_session() {
     common::eventually(|| b.runs.lock().unwrap().len() == 1).await;
     // 옛 폴더의 실행이 아직 끝나지 않았다.
     let elsewhere = std::env::temp_dir().display().to_string();
-    agents::update(&b_db, dev.id, &elsewhere, &dev.prompt, None).unwrap();
+    agents::update(&b_db, dev.id, &elsewhere, &dev.prompt, None, false).unwrap();
     let a_db = common::db(&a);
     common::eventually(|| agent_messages(&a_db, conv.id).len() == 1).await;
     assert_eq!(

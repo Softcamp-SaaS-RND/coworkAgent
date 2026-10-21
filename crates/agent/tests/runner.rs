@@ -13,6 +13,7 @@ fn agent(prompt: &str) -> Agent {
         prompt: prompt.into(),
         group: None,
         uid: String::new(),
+        parent_read: false,
     }
 }
 
@@ -236,4 +237,27 @@ fn claude_version_gate() {
     assert!(version_ok((2, 1, 267)));
     assert!(version_ok((2, 2, 0)));
     assert!(!version_ok((1, 9, 999)));
+}
+
+/// 상위 한 단계 읽기(#05-2) — 켜면 `--add-dir <바로 위>` + 읽기 범위 안내, 끄면 · 막힌 위(드라이브 루트)면 둘 다 없다.
+#[test]
+fn parent_read_adds_dir() {
+    let root = std::env::temp_dir().join(format!("an-parent-read-{}", std::process::id()));
+    let work = root.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let with = |folder: &std::path::Path, on: bool| Agent {
+        folder: folder.display().to_string(),
+        parent_read: on,
+        ..agent("")
+    };
+    let args = claude_args(&with(&work, true), &Session::New("u".into()));
+    assert_eq!(value_of(&args, "--add-dir"), Some(root.display().to_string().as_str()));
+    let system = value_of(&args, "--append-system-prompt").unwrap();
+    assert!(system.starts_with(GUARD_PROMPT) && system.contains("[읽기 범위]"), "{system}");
+    for off in [with(&work, false), with(std::path::Path::new(if cfg!(windows) { r"C:\Windows" } else { "/usr" }), true)] {
+        let args = claude_args(&off, &Session::New("u".into()));
+        assert!(!args.iter().any(|a| a == "--add-dir"), "{args:?}");
+        assert_eq!(value_of(&args, "--append-system-prompt"), Some(GUARD_PROMPT));
+    }
+    std::fs::remove_dir_all(&root).unwrap();
 }

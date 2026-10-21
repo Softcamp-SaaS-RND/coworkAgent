@@ -347,12 +347,14 @@ PC 사이는 앱끼리 직접 통신한다.
 
 ```text
 claude -p --output-format stream-json --verbose --restricted --strict-mcp-config --permission-prompts none
-  --permission-mode dontAsk --tools <도구> --allowedTools <도구>
-  --append-system-prompt <가드 + [수신자 추가 지시]> --system-prompt-snapshot off
+  --permission-mode dontAsk --tools <도구> --allowedTools <도구> [--add-dir <바로 위 폴더>]
+  --append-system-prompt <가드 + [읽기 범위] + [수신자 추가 지시]> --system-prompt-snapshot off
   (--session-id <새 UUID> | --resume <세션 ID>) --model <모델> --effort <effort>
 ```
 
 - 도구는 읽기 전용 목록(`Read` · `Grep` · `Glob` · `LS` · `NotebookRead`) 안의 프로필 값, 비면 `Read,Grep,Glob`(D22 · D31).
+- `--add-dir` · `[읽기 범위]` 는 에이전트의 "상위 한단계 탐색 허용"(#05-2)을 켰을 때만 — 바로 위 폴더가 드라이브 루트 · 사용자 홈이거나 데이터 루트를 품으면 붙이지 않는다
+  (`an_core::paths::parent_read_dir`, 실행마다 다시 판단). 실측 시험 `cargo test -p an-agent --test parent_read_canary -- --ignored --nocapture`.
 - 모델 · effort 는 실행 직전에 정한다 — 그 상대 덮어쓰기 → 전역 설정 → `sonnet` · `high`. 설정을 못 읽으면 기본값으로 돌리지 않고 실패 답.
 - `--bare` 는 쓰지 않는다 — 구독 로그인을 읽지 않기 때문(D20).
 - **출력 = stream-json**(`-p` 에서는 `--verbose` 가 있어야 한다 — 2.1.296 확인). 실행기는 표준 출력을 줄마다 읽어 실시간 이벤트로 **단계

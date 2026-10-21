@@ -11,6 +11,9 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
 - `runner::claude_args(&Agent, &Session, model, effort)` — `-p --output-format stream-json --verbose --restricted --strict-mcp-config --permission-prompts none
   --permission-mode dontAsk --tools <t> --allowedTools <t> [--append-system-prompt <p>]` + `--session-id <uuid>`(`Session::New`) |
   `--resume <id>`(`Session::Resume`) + 끝에 `--model <m> --effort <e>`. `--bare` · `bypassPermissions` 없음(D20 · D22).
+  프로필 `parent_read` 이고 `an_core::paths::parent_read_dir` 가 `Some` 이면 `--add-dir <바로 위 폴더>` + 시스템 프롬프트에 `[읽기 범위]` 한 줄(#05-2 —
+  `--restricted` 는 파일 도구를 작업 폴더 + `--add-dir` 안으로 가둔다, 허용 규칙 `Read(//…)` 로는 넘지 못한다 — 2.1.306 실측). `None` 이면 폴더만(로그 한 줄).
+  `--add-dir` 은 값을 여러 개 받아 뒤의 위치 인자를 먹는다 — 원격 텍스트가 표준 입력이라 해당 없음.
 - `runner::GUARD_PROMPT`(D31 문의 응답 전용 — 개입 · 편집 · 삭제 · 명령 실행 금지, 비밀 싣지 않기) — `claude_args` 가 항상
   `--append-system-prompt`(가드 + `[수신자 추가 지시]` 프로필 지시) · `--system-prompt-snapshot off`(재개 세션에도 지금 가드) · 도구는
   `agents::read_only`. `MIN_CLAUDE`(2.1.267) · `parse_version` · `version_ok` — `run_claude` 는 낮은 버전이면 실행하지 않는다(`--effort` 다섯 값

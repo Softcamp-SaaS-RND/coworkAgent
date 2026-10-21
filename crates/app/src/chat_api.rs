@@ -29,6 +29,9 @@ struct NewAgent {
     folder: String,
     #[serde(default)]
     prompt: String,
+    /// 상위 한 단계 읽기 허용(#05-2) — 없으면 끔.
+    #[serde(default)]
+    parent_read: bool,
 }
 
 #[derive(Deserialize)]
@@ -182,6 +185,8 @@ struct AgentPatch {
     /// 빈 문자열 = 그룹 없음.
     #[serde(default)]
     group: Option<String>,
+    #[serde(default)]
+    parent_read: Option<bool>,
 }
 
 /// `GET /api/messages` — 대화를 가로지른 글 목록.
@@ -370,8 +375,14 @@ fn to_of(to: &Option<String>) -> Result<(), &'static str> {
     }
 }
 
+/// `parent_dir` = 상위 읽기로 실제 여는 폴더(끔 · 막힌 곳이면 `null` — 웹UI 가 생략 사유를 보인다).
 fn agent_json(a: Agent) -> Value {
-    json!({ "id": a.id, "name": a.name, "folder": a.folder, "prompt": a.prompt, "group": a.group })
+    let up = a
+        .parent_read
+        .then(|| an_core::paths::parent_read_dir(std::path::Path::new(&a.folder)))
+        .flatten()
+        .map(|p| p.display().to_string());
+    json!({ "id": a.id, "name": a.name, "folder": a.folder, "prompt": a.prompt, "group": a.group, "parent_read": a.parent_read, "parent_dir": up })
 }
 
 /// 폴더는 있는 절대 경로만 — 상대 경로는 앱의 현재 폴더 기준이 되어 의도와 달라진다. 데이터 루트를 품거나 네트워크 경로면 거부
@@ -501,7 +512,7 @@ async fn add_agent(State(chat): State<Arc<Chat>>, Json(req): Json<NewAgent>) -> 
             format!("같은 이름의 에이전트가 있다: {name}"),
         ));
     }
-    match agents::add(&db, name, &folder, req.prompt.trim()) {
+    match agents::add_with(&db, name, &folder, req.prompt.trim(), req.parent_read) {
         Ok(a) => (StatusCode::CREATED, Json(agent_json(a))).into_response(),
         Err(e) => db_fail(e),
     }
@@ -532,7 +543,8 @@ async fn update_agent(
         Some(Ok(g)) => g,
         Some(Err(m)) => return bad(&m),
     };
-    match agents::update(&db, id, &folder, &prompt, group.as_deref()) {
+    let parent_read = req.parent_read.unwrap_or(now.parent_read);
+    match agents::update(&db, id, &folder, &prompt, group.as_deref(), parent_read) {
         Ok(Some(a)) => Json(agent_json(a)).into_response(),
         Ok(None) => fail(io::Error::new(io::ErrorKind::NotFound, "없는 에이전트")),
         Err(e) => db_fail(e),

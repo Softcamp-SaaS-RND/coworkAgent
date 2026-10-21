@@ -7,7 +7,7 @@
      WEAK 줄은 기계가 매 실행 다시 단다 — 약한 gate 를 셀 수 있게 하는 표시이며
      판정에는 영향이 없다. -->
 
-측정 커밋: 214970a4764090591cbeab29f0c66bbb2c089b8b
+측정 커밋: 20fc5f1bd957df4523c85c3fd1ae6883b494c5ca
 
 - [x] E1: A4 — 워크스페이스 테스트 전부 통과
   CHECK: cargo test --workspace
@@ -17,7 +17,7 @@
 - [x] E2: A4 — clippy 경고 0
   CHECK: cargo clippy --workspace --all-targets -- -D warnings
   EXPECT: Finished
-  EVIDENCE: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.25s
+  EVIDENCE: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.24s
 
 - [x] E3: A2·A4 — 웹UI 로직 시험(종류 색 키 포함)
   CHECK: node --test --test-reporter=tap "crates/app/web/*.test.mjs"

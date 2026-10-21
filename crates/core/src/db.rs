@@ -2,7 +2,7 @@ use rusqlite::OptionalExtension;
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 23;
+pub const SCHEMA_VERSION: i64 = 24;
 
 /// DB 오류를 `io::Error` 로 — 상위 크레이트가 `map_err(db_err)` 로 쓴다(`Error` 는 rusqlite 것이라 `From` 을 구현할 수 없다).
 pub fn db_err(e: Error) -> std::io::Error {
@@ -623,6 +623,15 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
             tx.execute_batch("ALTER TABLE messages ADD COLUMN req_archived INTEGER;")?;
         }
         tx.execute_batch("PRAGMA user_version = 23;")?;
+        tx.commit()?;
+    }
+    // 24(#05-2): 에이전트 상위 한 단계 읽기 — 0 = 폴더만(지금까지와 같다) · 1 = 바로 위 폴더도(`--add-dir`).
+    if v < 24 {
+        let tx = conn.unchecked_transaction()?;
+        if !has_column(&tx, "agents", "parent_read")? {
+            tx.execute_batch("ALTER TABLE agents ADD COLUMN parent_read INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        tx.execute_batch("PRAGMA user_version = 24;")?;
         tx.commit()?;
     }
     Ok(conn)

@@ -1432,6 +1432,8 @@ export function markdownBlocks(text) {
 export const READ_ONLY_TOOLS = ["Read", "Grep", "Glob", "LS", "NotebookRead"];
 /// 에이전트 화면의 도구 안내 한 줄.
 export const TOOLS_NOTE = `탐색 도구(읽기 전용) 항상 사용: ${READ_ONLY_TOOLS.join(" · ")}`;
+/// "상위 한단계 탐색 허용" 도움말(#05-2) — 등록 칸(index.html title)과 같은 글.
+export const PARENT_NOTE = "켜면 폴더 바로 위 폴더 아래 전체(옆 폴더 포함)를 읽고 답합니다. 위가 드라이브 루트 · 사용자 홈이거나 데이터 폴더를 품으면 열지 않습니다.";
 /// 고를 수 있는 모델(an_core `run_opts::MODELS` 와 같다).
 export const MODELS = ["opus", "sonnet", "haiku"];
 /// `claude --effort` 값(an_core `run_opts::EFFORTS` 와 같다).

@@ -7,7 +7,7 @@
      WEAK 줄은 기계가 매 실행 다시 단다 — 약한 gate 를 셀 수 있게 하는 표시이며
      판정에는 영향이 없다. -->
 
-측정 커밋: 68e75afe98873c01f7633bb4f2236114b40cce0c
+측정 커밋: 20fc5f1bd957df4523c85c3fd1ae6883b494c5ca
 
 - [x] E1: A6 — 워크스페이스 테스트 전부 통과
   CHECK: cargo test --workspace
@@ -17,27 +17,27 @@
 - [x] E2: A6 — clippy 경고 0
   CHECK: cargo clippy --workspace --all-targets -- -D warnings
   EXPECT: Finished
-  EVIDENCE: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.25s
+  EVIDENCE: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.24s
 
 - [x] E3: A2·A3 — 업데이터 시험(로컬 HTTP · 서명 거절 · 서명 없는 exe)
   CHECK: cargo test -p coworkagent-app --test update
   EXPECT: /test result: ok\. 10 passed; 0 failed; 2 ignored/
-  EVIDENCE: test result: ok. 10 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.02s
+  EVIDENCE: test result: ok. 10 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.04s
 
 - [x] E4: A1·A3 — 실제 배포처(네트워크): 최신 태그 · 최신 정식 exe 서명 통과 · 다른 서명자 이름 · 고친 사본 실패
   CHECK: cargo test -p coworkagent-app --test update -- --ignored
   EXPECT: /test result: ok\. 2 passed; 0 failed/
-  EVIDENCE: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 1.58s
+  EVIDENCE: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 1.21s
 
 - [x] E5: A2·A3 — 배포처 · 서명자 · 감시 연결 · 버전 · 의존 코드 실재
   CHECK: python -c "import pathlib as P;u=P.Path('crates/app/src/update.rs').read_text(encoding='utf-8');m=P.Path('crates/app/src/main.rs').read_text(encoding='utf-8');c=P.Path('crates/app/Cargo.toml').read_text(encoding='utf-8');v=sum(P.Path('crates/%s/Cargo.toml'%k).read_text(encoding='utf-8').count('version = \x221.2.0\x22') for k in ('agent','app','core','net'));o=sum(P.Path(f).read_text(encoding='utf-8').count('tskimS') for f in ('crates/app/src/update.rs','README.md','PRODUCT.md','docs/manual/user/user-guide.md','docs/manual/dev/developer-guide.md','docs/manual/dev/an_app.md'));print('rel=%d signer=%d trust=%d check=%d settled=%d ver=%d old=%d ureq=%d wintrust=%d'%(u.count('pub const RELEASES: &str = \x22https://github.com/Softcamp-SaaS-RND/coworkAgent/releases\x22;'),u.count('pub const SIGNER: &str = \x22SOFTCAMP CO.,LTD.\x22;'),m.count('exe, update::verify);'),u.count('if let Err(e) = trusted(&new, &tag) {'),m.count('update::settled(&exe);'),v,o,c.count('ureq = { version = \x223.4.2\x22'),c.count('\x22Win32_Security_WinTrust\x22')))"
   EXPECT: rel=1 signer=1 trust=1 check=1 settled=1 ver=4 old=0 ureq=1 wintrust=1
   EVIDENCE: rel=1 signer=1 trust=1 check=1 settled=1 ver=4 old=0 ureq=1 wintrust=1
 
-- [ ] E6: A5·A6 — 문서 규약 · 크레이트 경계 · README · 문서 안내 실재
+- [x] E6: A5·A6 — 문서 규약 · 크레이트 경계 · README · 문서 안내 실재
   CHECK: python tools/check_ddd_docs.py && python tools/check_crates.py && python tools/check_readme.py && python -c "import pathlib as P;d=P.Path('docs/manual/dev/developer-guide.md').read_text(encoding='utf-8');g=P.Path('docs/manual/user/user-guide.md').read_text(encoding='utf-8');r=P.Path('README.md').read_text(encoding='utf-8');print('proc=%d sign=%d user=%d readme=%d'%(d.count('gh release create v{X.Y.Z} target/release/coworkAgent.exe -R Softcamp-SaaS-RND/coworkAgent'),d.count('Get-AuthenticodeSignature = Valid'),g.count('회사 인증서 서명이 아님'),r.count('1.2.0 은 **자동 업데이트**(Windows)')))"
   EXPECT: proc=1 sign=1 user=1 readme=1
-  EVIDENCE: FAIL(rc=1) INFO — 미해소 TODO: docs/masterPlan.md 1건 (허용 — 최종 보고에 목록화할 것) / FAIL — 1건 / - docs/tasks/30.auto-update/eval.md: 측정 커밋 378f3e09 이후 코드가 4건 바뀌었다 (crates/app/web/app.css, crates/app/web/app.js, crates/app/
+  EVIDENCE: proc=1 sign=1 user=1 readme=1
 
 - [ ] E7: A1·A4 — 실측: v1.1.1 · v1.2.0 정식 릴리스(서명 · SHA-256 · `releases/latest`), 1.1.9 업데이터 빌드가 임시 폴더에서 v1.2.0 으로 바뀌어 뜸(로그 "자동 업데이트:")
   EVIDENCE: pending

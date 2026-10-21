@@ -135,6 +135,18 @@ async fn agents_crud_api() {
         let (code, r) = call(port, &h, "POST", "/api/agents", &bad.to_string()).await;
         assert_eq!(code, 400, "{bad} → {r}");
     }
+    // 상위 한 단계 읽기(#05-2) — 기본 끔, 켜면 `parent_dir` = 바로 위, PATCH 로 끔.
+    assert_eq!((made["parent_read"].as_bool(), &made["parent_dir"]), (Some(false), &serde_json::Value::Null));
+    let up = std::env::temp_dir().join(format!("an-api-parent-{}", std::process::id()));
+    std::fs::create_dir_all(up.join("work")).unwrap();
+    let wide = serde_json::json!({ "name": "wide", "folder": up.join("work"), "parent_read": true }).to_string();
+    let (code, w) = call(port, &h, "POST", "/api/agents", &wide).await;
+    assert_eq!((code, w["parent_read"].as_bool(), w["parent_dir"].as_str()), (201, Some(true), Some(up.display().to_string().as_str())), "{w}");
+    let wpath = format!("/api/agents/{}", w["id"]);
+    let (code, w) = call(port, &h, "PATCH", &wpath, r#"{"parent_read":false}"#).await;
+    assert_eq!((code, w["parent_read"].as_bool(), &w["parent_dir"]), (200, Some(false), &serde_json::Value::Null), "{w}");
+    assert_eq!(call(port, &h, "DELETE", &wpath, "").await.0, 204);
+    std::fs::remove_dir_all(&up).unwrap();
     let path = format!("/api/agents/{}", made["id"]);
     assert_eq!(call(port, &h, "DELETE", &path, "").await.0, 204);
     assert_eq!(call(port, &h, "DELETE", &path, "").await.0, 404);

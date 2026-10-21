@@ -106,6 +106,8 @@ pub const GUARD_PROMPT: &str = "이 세션은 coworkAgent 를 통해 다른 PC �
 비밀(키 · 토큰 · 비밀번호 · 개인정보)은 답에 싣지 않는다.";
 
 /// 실행 인자(D22 · D31) — 도구는 읽기 전용 전부(#1d — 프로필과 무관), 시스템 프롬프트는 [`GUARD_PROMPT`] + 프로필 추가 지시.
+/// 프로필이 상위 한 단계 읽기를 켰고 [`an_core::paths::parent_read_dir`] 가 허락하면 `--add-dir <바로 위 폴더>` + 읽기 범위 안내(#05-2).
+/// `--add-dir` 은 값을 여러 개 받는다 — 프롬프트는 표준 입력이라 뒤 인자를 먹지 않는다(2.1.306 실측).
 pub fn claude_args(agent: &Agent, session: &Session, model: &str, effort: &str) -> Vec<String> {
     let tools = an_core::agents::READ_ONLY_TOOLS.join(",");
     let mut a: Vec<String> = [
@@ -129,6 +131,25 @@ pub fn claude_args(agent: &Agent, session: &Session, model: &str, effort: &str) 
     .map(|s| s.to_string())
     .collect();
     let mut system = GUARD_PROMPT.to_string();
+    if agent.parent_read {
+        match an_core::paths::parent_read_dir(Path::new(&agent.folder)) {
+            Some(up) => {
+                system.push_str(&format!(
+                    "
+
+[읽기 범위] 이 폴더와 바로 위 폴더 {} 아래를 읽을 수 있다. 그 위는 읽을 수 없다.",
+                    up.display()
+                ));
+                a.push("--add-dir".into());
+                a.push(up.display().to_string());
+            }
+            None => log::info!(
+                "에이전트 {} — 상위 읽기 생략(드라이브 루트 · 홈 · 데이터 폴더 · 네트워크 경로): {}",
+                agent.name,
+                agent.folder
+            ),
+        }
+    }
     if !agent.prompt.trim().is_empty() {
         system.push_str("\n\n[수신자 추가 지시]\n");
         system.push_str(agent.prompt.trim());

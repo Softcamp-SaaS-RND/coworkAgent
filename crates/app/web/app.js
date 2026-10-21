@@ -101,6 +101,7 @@ import {
   mentionToken,
   preview,
   TOOLS_NOTE,
+  PARENT_NOTE,
   MODELS,
   EFFORTS,
   peerGroups,
@@ -1378,6 +1379,7 @@ function renderAgentList(force = false) {
   $("agent_groups").replaceChildren(
     ...shown.map((a) => {
       const folder = el("input", { value: a.folder, class: "mono" });
+      const parent = el("input", { type: "checkbox", checked: a.parent_read, title: PARENT_NOTE });
       const prompt = el("textarea", { rows: "3" });
       prompt.value = a.prompt;
       const promptBox = el("div", { class: "field" }, prompt);
@@ -1390,6 +1392,10 @@ function renderAgentList(force = false) {
           "div",
           { class: "form-grid" },
           ...field("폴더(절대 경로)", folder),
+          ...field("상위 한단계 탐색 허용", parent),
+          ...(a.parent_read
+            ? [el("span", { class: "label hint", text: "읽는 위 폴더" }), el("span", { class: "hint mono", text: a.parent_dir ?? "열지 않음(드라이브 루트 · 사용자 홈 · 데이터 폴더를 품음)" })]
+            : []),
           el("span", { class: "label hint", text: "도구" }),
           el("span", { class: "hint", text: TOOLS_NOTE }),
           ...field("추가 지시", prompt, promptBox),
@@ -1397,7 +1403,7 @@ function renderAgentList(force = false) {
         el(
           "div",
           { class: "actions" },
-          button("저장", () => act("에이전트 저장", () => api("PATCH", `/api/agents/${a.id}`, { folder: folder.value, prompt: prompt.value }), "agent_msg", loadAgents), "primary"),
+          button("저장", () => act("에이전트 저장", () => api("PATCH", `/api/agents/${a.id}`, { folder: folder.value, prompt: prompt.value, parent_read: parent.checked }), "agent_msg", loadAgents), "primary"),
           button("삭제", () => act("삭제", () => api("DELETE", `/api/agents/${a.id}`), "agent_msg", loadAgents), "danger"),
         ),
       );
@@ -1430,6 +1436,7 @@ $("agent_form").addEventListener("submit", (ev) => {
     name: $("agent_name").value,
     folder: $("agent_folder").value,
     prompt: $("agent_prompt").value,
+    parent_read: $("agent_parent").checked,
   };
   act(
     "등록",

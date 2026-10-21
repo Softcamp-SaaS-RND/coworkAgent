@@ -1279,7 +1279,7 @@ fn schema23_req_archived() {
         .unwrap();
     }
     let c = db::open(&p).unwrap();
-    assert_eq!(db::user_version(&c).unwrap(), 23);
+    assert_eq!(db::user_version(&c).unwrap(), db::SCHEMA_VERSION);
     assert!(db::backup_path(&p, 22).exists(), "올리기 전 사본");
     let m = &chat::messages(&c, 1).unwrap()[0];
     assert_eq!((m.req_state, m.req_at, m.req_archived), (Some(chat::ReqState::Done), Some(40), None));

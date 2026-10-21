@@ -39,7 +39,7 @@ fn db_schema_version_kept_on_reopen() {
     let root = temp_root("dbver");
     let paths = Paths::under(&root);
     paths.ensure().unwrap();
-    assert_eq!(db::SCHEMA_VERSION, 23);
+    assert_eq!(db::SCHEMA_VERSION, 24);
     {
         // 00 이 남긴 스키마 1 파일 — 열면 2 로 오른다.
         let conn = rusqlite::Connection::open(paths.db_file()).unwrap();
@@ -265,13 +265,13 @@ fn schema9_group_model_columns() {
         chat::set_session(&conn, c.id, "s1").unwrap();
     }
     let session = |id| chat::by_id(&conn, id).unwrap().unwrap().session;
-    an_core::agents::update(&conn, a.id, "D:\\x", "", None).unwrap();
+    an_core::agents::update(&conn, a.id, "D:\\x", "", None, false).unwrap();
     assert_eq!(
         session(inbound.id).as_deref(),
         Some("s1"),
         "폴더 그대로면 유지"
     );
-    let a = an_core::agents::update(&conn, a.id, "D:\\y", "지시", Some("문서"))
+    let a = an_core::agents::update(&conn, a.id, "D:\\y", "지시", Some("문서"), false)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -287,7 +287,7 @@ fn schema9_group_model_columns() {
     assert_eq!(session(inbound.id), None, "폴더가 바뀌면 새 세션");
     assert_eq!(session(outbound.id).as_deref(), Some("s1"));
     assert_eq!(
-        an_core::agents::update(&conn, 999, "D:\\y", "", None).unwrap(),
+        an_core::agents::update(&conn, 999, "D:\\y", "", None, false).unwrap(),
         None
     );
 }
@@ -524,14 +524,23 @@ fn schema12_focus_mention() {
         chat::by_id(&conn, 1).unwrap().unwrap().session.as_deref(),
         Some("s1")
     );
-    let moved = agents::update(&conn, review.id, "/c", "", None)
+    let moved = agents::update(&conn, review.id, "/c", "", None, false)
         .unwrap()
         .unwrap();
     assert_ne!(moved.uid, review.uid, "폴더를 바꾸면 새 세대");
-    let same = agents::update(&conn, review.id, "/c", "지시", None)
+    let same = agents::update(&conn, review.id, "/c", "지시", None, false)
         .unwrap()
         .unwrap();
     assert_eq!(same.uid, moved.uid, "폴더 그대로면 세대 그대로");
+    // 상위 읽기(#05-2)를 바꿔도 새 세대 · 세션 비움 — 끈 뒤 위 폴더 내용이 든 세션을 잇지 않게.
+    chat::set_agent_session(&conn, 1, "review", "s4").unwrap();
+    let up = agents::update(&conn, review.id, "/c", "지시", None, true)
+        .unwrap()
+        .unwrap();
+    assert!(up.parent_read && up.uid != same.uid, "{up:?}");
+    assert_eq!(chat::agent_session(&conn, 1, "review").unwrap(), None);
+    assert!(!agents::add(&conn, "plain", "/d", "").unwrap().parent_read, "기본 끔");
+    assert!(agents::add_with(&conn, "wide", "/e", "", true).unwrap().parent_read);
     assert_eq!(chat::by_id(&conn, 1).unwrap().unwrap().session, None);
     assert_eq!(chat::agent_session(&conn, 1, "review").unwrap(), None);
     assert_eq!(
@@ -619,4 +628,24 @@ fn legacy_conflict_and_running_refused() {
     assert!(old.join("agentNetwork.db").exists() && !paths.db_file().exists());
     drop(held);
     assert!(paths.adopt_legacy(&old).unwrap(), "끄면 옮긴다");
+}
+
+/// 상위 한 단계 읽기(#05-2)로 여는 폴더 — 보통은 바로 위, 드라이브 루트 · 홈 · 데이터 루트를 품는 위는 `None`.
+#[cfg(windows)]
+#[test]
+fn parent_read_dir_guards() {
+    use an_core::paths::parent_read_dir;
+    let root = temp_root("parent-read");
+    let work = root.join("proj").join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    assert_eq!(parent_read_dir(&work), Some(root.join("proj")), "바로 위");
+    assert_eq!(parent_read_dir(&work.join("..").join("work")), Some(root.join("proj")), "`..` 정리");
+    assert_eq!(parent_read_dir(std::path::Path::new("C:\\")), None, "드라이브 루트 폴더 — 위 없음");
+    assert_eq!(parent_read_dir(std::path::Path::new("C:\\Windows")), None, "위가 드라이브 루트");
+    let home = dirs::home_dir().unwrap();
+    assert_eq!(parent_read_dir(&home.join("proj")), None, "위가 사용자 홈");
+    let data = an_core::paths::protected_roots()[0].clone();
+    let sibling = data.parent().unwrap().join("other-app");
+    assert_eq!(parent_read_dir(&sibling), None, "위가 데이터 루트를 품음");
+    std::fs::remove_dir_all(&root).unwrap();
 }

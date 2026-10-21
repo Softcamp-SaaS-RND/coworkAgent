@@ -349,7 +349,7 @@ async fn seed_dropped_when_agent_folder_changes() {
         .unwrap()
         .id;
     let other = std::env::temp_dir();
-    agents::update(&common::db(&t.b), id, other.to_str().unwrap(), "", None).unwrap();
+    agents::update(&common::db(&t.b), id, other.to_str().unwrap(), "", None, false).unwrap();
     assert_eq!(chat::ctx_seed(&common::db(&t.b), bc, "").unwrap(), None);
     t.a.chat
         .send(t.b_id, "review", Some(conv.id), "둘째")
@@ -489,4 +489,41 @@ async fn manual_waits_for_runs_and_only_auto_jumps_queue() {
         vec![auto.id, waiting.id, manual.id],
         "자동 압축만 앞자리, 나머지는 id 순"
     );
+}
+
+/// 압축이 앞 세션을 요약하는 동안 다른 에이전트의 상위 읽기(#05-2)를 바꾸면 그 에이전트 세션은 비었다 — 처음 읽어 둔 옛 세션을 새 세대로 이어
+/// 요약하지 않는다(#05-2 적대적 평가 R1).
+#[tokio::test(flavor = "multi_thread")]
+async fn compact_skips_session_cleared_while_waiting() {
+    let tag = "cx-toggle";
+    let b_db = an_core::paths::Paths::under(std::env::temp_dir().join(format!("an-agent-{tag}-b-{}", std::process::id()))).db_file();
+    let a_ctx = Arc::new(AtomicI64::new(50_000));
+    let b_ctx = Arc::new(AtomicI64::new(50_000));
+    let a = common::side_with(&format!("{tag}-a"), move |r| ctx_run(r, a_ctx)).await;
+    let b = common::side_with(&format!("{tag}-b"), move |r| -> Run {
+        let inner = ctx_run(r, b_ctx);
+        Arc::new(move |input: RunInput| {
+            if input.text == SUMMARY_PROMPT && matches!(&input.session, Session::Resume(s) if s != "s-lint") {
+                let db = an_core::db::open(&b_db).unwrap();
+                let lint = agents::by_name(&db, "lint").unwrap().unwrap();
+                agents::update(&db, lint.id, &lint.folder, &lint.prompt, None, true).unwrap();
+            }
+            inner(input)
+        })
+    })
+    .await;
+    let (b_id, _) = common::pair(&a, &b).await;
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
+    agents::add(&common::db(&b), "lint", ".", "").unwrap();
+    let (conv, _) = a.chat.send(b_id, "review", None, "첫 질문").await.unwrap();
+    common::eventually(|| answered(&a, conv.id, 1)).await;
+    let bc = b_conv(&b).id;
+    chat::set_agent_session(&common::db(&b), bc, "lint", "s-lint").unwrap();
+    a.chat.context(conv.id, "compact").unwrap();
+    common::eventually(|| markers(&a, conv.id)[0].state == State::Done).await;
+    let resumed = b.runs.lock().unwrap().iter().any(|r| matches!(&r.session, Session::Resume(s) if s == "s-lint"));
+    assert!(!resumed, "비운 세션을 이어 요약했다");
+    let db = common::db(&b);
+    assert!(chat::ctx_seed(&db, bc, "").unwrap().is_some(), "대화 에이전트 요약은 남는다");
+    assert_eq!(chat::ctx_seed(&db, bc, "lint").unwrap(), None);
 }

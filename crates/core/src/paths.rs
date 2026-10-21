@@ -188,6 +188,20 @@ pub fn agent_folder_problem(folder: &Path) -> Option<&'static str> {
     None
 }
 
+/// 에이전트의 상위 한 단계 읽기(#05-2)로 `--add-dir` 에 줄 폴더 — `folder` 의 바로 위. 그 위가 원격 읽기 범위로 너무 넓거나 위험하면 `None`(폴더만):
+/// 위가 없음(드라이브 루트 폴더) · 위가 드라이브 루트 · 위가 사용자 홈(`.ssh` · 다른 저장소) · 위가 [`agent_folder_problem`](데이터 루트를 품음 ·
+/// 네트워크 경로). 비교는 정규화(링크 · `..`) · 대소문자 무시, 돌려주는 값은 정규화 전 경로(`\\?\` 접두 없이 — `claude` 의 경로 비교와 맞게).
+pub fn parent_read_dir(folder: &Path) -> Option<PathBuf> {
+    let folder = std::path::absolute(folder).ok()?;
+    let up = folder.parent()?;
+    let home = dirs::home_dir();
+    let blocked = norm_path(up).parent().is_none()
+        || up.parent().is_none()
+        || home.is_some_and(|h| path_key(&h) == path_key(up))
+        || agent_folder_problem(up).is_some();
+    (!blocked).then(|| up.to_path_buf())
+}
+
 /// `folder` 가 `protected` 중 하나와 같거나 그 조상이거나 그 안인가. 있는 부분까지 정규화하고(링크 · `..`) 대소문자는 가리지 않는다.
 pub fn folder_blocked(folder: &Path, protected: &[PathBuf]) -> bool {
     let f = path_key(folder);
