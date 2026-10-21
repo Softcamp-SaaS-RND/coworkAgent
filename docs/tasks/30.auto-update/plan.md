@@ -71,7 +71,7 @@
   EXPECT: /test result: ok\. 2 passed; 0 failed/
   EVIDENCE: pending
 - [ ] E5: A2·A3 — 배포처 · 서명자 · 감시 연결 · 버전 · 의존 코드 실재
-  CHECK: python -c "import pathlib as P;u=P.Path('crates/app/src/update.rs').read_text(encoding='utf-8');m=P.Path('crates/app/src/main.rs').read_text(encoding='utf-8');c=P.Path('crates/app/Cargo.toml').read_text(encoding='utf-8');v=sum(P.Path('crates/%s/Cargo.toml'%k).read_text(encoding='utf-8').count('version = \x221.2.0\x22') for k in ('agent','app','core','net'));o=sum(P.Path(f).read_text(encoding='utf-8').count('tskimS') for f in ('crates/app/src/update.rs','README.md','PRODUCT.md','docs/manual/user/user-guide.md','docs/manual/dev/developer-guide.md','docs/manual/dev/an_app.md'));print('rel=%d signer=%d trust=%d check=%d settled=%d ver=%d old=%d ureq=%d wintrust=%d'%(u.count('pub const RELEASES: &str = \x22https://github.com/Softcamp-SaaS-RND/coworkAgent/releases\x22;'),u.count('pub const SIGNER: &str = \x22SOFTCAMP CO.,LTD.\x22;'),m.count('exe, update::verify);'),u.count('if let Err(e) = trusted(&new, &tag) {'),m.count('update::settled(&exe);'),v,o,c.count('ureq = { version = \x223.4.2\x22'),c.count('\x22Win32_Security_WinTrust\x22')))"
+  CHECK: python -c "import pathlib as P;u=P.Path('crates/app/src/update.rs').read_text(encoding='utf-8');m=P.Path('crates/app/src/main.rs').read_text(encoding='utf-8');c=P.Path('crates/app/Cargo.toml').read_text(encoding='utf-8');v=sum(P.Path('crates/%s/Cargo.toml'%k).read_text(encoding='utf-8').count('version = \x221.3.0\x22') for k in ('agent','app','core','net'));o=sum(P.Path(f).read_text(encoding='utf-8').count('tskimS') for f in ('crates/app/src/update.rs','README.md','PRODUCT.md','docs/manual/user/user-guide.md','docs/manual/dev/developer-guide.md','docs/manual/dev/an_app.md'));print('rel=%d signer=%d trust=%d check=%d settled=%d ver=%d old=%d ureq=%d wintrust=%d'%(u.count('pub const RELEASES: &str = \x22https://github.com/Softcamp-SaaS-RND/coworkAgent/releases\x22;'),u.count('pub const SIGNER: &str = \x22SOFTCAMP CO.,LTD.\x22;'),m.count('exe, update::verify);'),u.count('if let Err(e) = trusted(&new, &tag) {'),m.count('update::settled(&exe);'),v,o,c.count('ureq = { version = \x223.4.2\x22'),c.count('\x22Win32_Security_WinTrust\x22')))"
   EXPECT: rel=1 signer=1 trust=1 check=1 settled=1 ver=4 old=0 ureq=1 wintrust=1
   EVIDENCE: pending
 - [ ] E6: A5·A6 — 문서 규약 · 크레이트 경계 · README · 문서 안내 실재
@@ -85,3 +85,5 @@
 
 - 2026-10-21 · 적대적 평가 R1 반영 — `verify`(서명 + 버전 리소스 제품 · 파일 버전 = 태그) · `trusted(.new, tag)` · `update.txt` 덧붙임. E5 CHECK 보정(EXPECT 그대로 —
   eval-protocol 규약 2): `trust` = `exe, update::verify);`, `check` = `trusted(&new, &tag)`.
+- 2026-10-21 · 사용자 "의견수용"(1.3.0 빌드 · 서명 · 릴리스를 먼저, 그 뒤 E7 을 한 번에) — E7 의 교체 대상 = **최신 정식 릴리스 v1.3.0**(1.2.0 이 아니라 — #1z-3 · #05-2 를 담아
+  버전을 올렸다). v1.2.0 서명 릴리스 등록 · `releases/latest` 실측은 그대로 근거. E5 CHECK 보정(EXPECT 그대로 — eval-protocol 규약 2): 크레이트 버전 `1.3.0`.
