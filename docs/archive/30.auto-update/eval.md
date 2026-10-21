@@ -7,27 +7,27 @@
      WEAK 줄은 기계가 매 실행 다시 단다 — 약한 gate 를 셀 수 있게 하는 표시이며
      판정에는 영향이 없다. -->
 
-측정 커밋: 9476d79f359c2fa35155ee52597624ed8557342d
+측정 커밋: 707e86ade776bcac632e1651ba3f9fae2074d317
 
 - [x] E1: A6 — 워크스페이스 테스트 전부 통과
   CHECK: cargo test --workspace
   EXPECT: /test result: ok\. [1-9][0-9]* passed; 0 failed/
-  EVIDENCE: test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+  EVIDENCE: test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
 - [x] E2: A6 — clippy 경고 0
   CHECK: cargo clippy --workspace --all-targets -- -D warnings
   EXPECT: Finished
-  EVIDENCE: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.24s
+  EVIDENCE: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.23s
 
 - [x] E3: A2·A3 — 업데이터 시험(로컬 HTTP · 서명 거절 · 서명 없는 exe)
   CHECK: cargo test -p coworkagent-app --test update
   EXPECT: /test result: ok\. 10 passed; 0 failed; 2 ignored/
-  EVIDENCE: test result: ok. 10 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.02s
+  EVIDENCE: test result: ok. 10 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.03s
 
 - [x] E4: A1·A3 — 실제 배포처(네트워크): 최신 태그 · 최신 정식 exe 서명 통과 · 다른 서명자 이름 · 고친 사본 실패
   CHECK: cargo test -p coworkagent-app --test update -- --ignored
   EXPECT: /test result: ok\. 2 passed; 0 failed/
-  EVIDENCE: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 1.14s
+  EVIDENCE: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 1.09s
 
 - [x] E5: A2·A3 — 배포처 · 서명자 · 감시 연결 · 버전 · 의존 코드 실재
   CHECK: python -c "import pathlib as P;u=P.Path('crates/app/src/update.rs').read_text(encoding='utf-8');m=P.Path('crates/app/src/main.rs').read_text(encoding='utf-8');c=P.Path('crates/app/Cargo.toml').read_text(encoding='utf-8');v=sum(P.Path('crates/%s/Cargo.toml'%k).read_text(encoding='utf-8').count('version = \x221.3.0\x22') for k in ('agent','app','core','net'));o=sum(P.Path(f).read_text(encoding='utf-8').count('tskimS') for f in ('crates/app/src/update.rs','README.md','PRODUCT.md','docs/manual/user/user-guide.md','docs/manual/dev/developer-guide.md','docs/manual/dev/an_app.md'));print('rel=%d signer=%d trust=%d check=%d settled=%d ver=%d old=%d ureq=%d wintrust=%d'%(u.count('pub const RELEASES: &str = \x22https://github.com/Softcamp-SaaS-RND/coworkAgent/releases\x22;'),u.count('pub const SIGNER: &str = \x22SOFTCAMP CO.,LTD.\x22;'),m.count('exe, update::verify);'),u.count('if let Err(e) = trusted(&new, &tag) {'),m.count('update::settled(&exe);'),v,o,c.count('ureq = { version = \x223.4.2\x22'),c.count('\x22Win32_Security_WinTrust\x22')))"
@@ -39,8 +39,8 @@
   EXPECT: proc=1 sign=1 user=1 readme=1
   EVIDENCE: proc=1 sign=1 user=1 readme=1
 
-- [ ] E7: A1·A4 — 실측: v1.1.1 · v1.2.0 정식 릴리스(서명 · SHA-256 · `releases/latest`), 1.1.9 업데이터 빌드가 임시 폴더에서 v1.2.0 으로 바뀌어 뜸(로그 "자동 업데이트:")
-  EVIDENCE: pending
+- [x] E7: A1·A4 — 실측: v1.1.1 · v1.2.0 정식 릴리스(서명 · SHA-256 · `releases/latest`), 1.1.9 업데이터 빌드가 임시 폴더에서 v1.2.0 으로 바뀌어 뜸(로그 "자동 업데이트:")
+  EVIDENCE: Claude(구현자) 2026-10-22 — 릴리스(plan 개정: 교체 대상 = 최신 정식 v1.3.0, v1.1.1 · v1.2.0 은 2026-10-21 등록): 사용자 서명 `target/release/coworkAgent.exe` `Get-AuthenticodeSignature` Valid · CN "SOFTCAMP CO.,LTD." · DigiCert 타임스탬프 · FileVersion 1.3.0 → `gh release create v1.3.0 --target 080b20b --latest` → `releases/latest` = v1.3.0(prerelease false) · 받은 exe SHA-256 `5C9D5D97…BC2DE11` = 등록 파일 · E4 2 passed. 실측: 사용자 앱 `coworkAgent stop` = "종료함" → scratchpad `e7\coworkAgent.exe`(1.1.9 업데이터 빌드, 서명 없음) 인자 없이 실행 → 로그 `자동 업데이트: Updated("v1.3.0") (지금 1.3.0)` · `자동 업데이트: UpToDate (지금 1.3.0)` · `시작 — 127.0.0.1:51912`, 그 자리 exe = 1.3.0 · Valid · 같은 SHA-256, `.old` 2초 안 지워짐 → 사본 `stop` · 원래 앱 다시 실행 → HKCU `Run` `coworkAgent` = `"D:\dev\git\coworkAgent\target\release\coworkAgent.exe"`(사본이 고쳐 쓴 경로를 원래 앱이 되돌림 — D13) · 사본 지움.
 
 
 WEAK: E7 CHECK 없음 — 수동 gate(사람이 적은 EVIDENCE 로 판정)
@@ -115,6 +115,7 @@ Next steps:
 
 ## 미조치 지적
 
-- R2-1 의 Windows 통합 시험(지난 감시가 살아 있는 동안 새 앱 준비 → 다음 시작 실패 시 되돌리지 않음) — 원문 "…Windows 통합 시험을 추가한다." · 판정 사실(시험 없음) ·
-  미조치 사유: 리뷰 상한 2/2 도달, 프로세스 둘을 띄우는 통합 시험은 E7 실측(실제 교체 뒤 `.old` 삭제 확인)으로 갈음.
-- #1y 미조치 1(교체 중단 창 — `swap` 의 두 이름 바꾸기 사이 전원 차단 시 exe 자리 빔) 그대로 이어받음(개발자 가이드 2.4 손 복구).
+| 지적 원문 | 판정 | 미조치 사유 |
+|---|---|---|
+| R2-1 Recommendation "…Windows 통합 시험을 추가한다."(지난 감시가 살아 있는 동안 새 앱 준비 → 다음 시작 실패 시 되돌리지 않음) | 사실(시험 없음) | 리뷰 상한 2/2. 프로세스 둘을 띄우는 통합 시험 대신 E7 실측 — 실제 교체 뒤 `.old` 가 2초 안 지워짐(`settled` 다시 시도). 남는 창: 새 앱이 첫 15초 안에 거듭 죽어 `GaveUp` 이면 되돌림 |
+| #1y 이어받음 — 교체 중단 창(`swap` 의 두 이름 바꾸기 사이 전원 차단 시 exe 자리 빔) | 사실(설계 한계) | 이름 바꾸기 둘 사이 창은 OS 원자 교체가 없어 남는다 — 개발자 가이드 2.4 손 복구(`.old` → 원래 이름) |

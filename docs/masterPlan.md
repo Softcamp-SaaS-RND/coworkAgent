@@ -57,7 +57,8 @@
   React/Svelte + Vite.
 - **D11** 대상 Windows 10/11 x64 · macOS 12+ universal(arm64+x64) 단일 파일. 제외: Windows ARM64 · Linux. mac 빌드는 보유한 Mac.
 - **D12** 자동 업데이트 형식 = HTTPS 매니페스트 + 업데이트 파일 서명 검증(앱 자체 ed25519) + 실행 파일 교체. 배포처 ·
-  코드 서명(Authenticode · Developer ID)은 D36.
+  코드 서명(Authenticode · Developer ID)은 D36. (#30 개정 — 2026-10-21 사용자) Windows 검증 = **회사 코드 서명 인증서 Authenticode**(WinVerifyTrust 유효 · 폐기 확인 ·
+  서명자 CN `SOFTCAMP CO.,LTD.`) — 앱 자체 ed25519 대신, 매니페스트 = GitHub `releases/latest` 넘겨주기(태그).
 - **D13** 자동 실행 기본 ON(첫 실행에 묻지 않음), 켜기 · 끄기 = 웹UI 설정 "시작". 앱이 시작마다 설정 값으로 맞춘다
   (켜짐 = 등록 · 경로 고침, 꺼짐 = 지움). 바꾸기 순서: 켜기 = OS → 저장, 끄기 = 저장 → OS. 디버그 빌드는 등록 없음. Windows
   `HKCU\…\Run` · macOS `~/Library/LaunchAgents/com.coworkagent.plist`(`RunAtLoad`, `KeepAlive` 없음). **비정상 종료 감시**:
@@ -199,7 +200,9 @@
   토큰을 실행 파일에 넣지 않음 ② 업데이트 정보 서명(D12 ed25519) 필수 — 같은 곳의 SHA-256 은 위조를 못 막음 ③ 교체 = 실행 중
   exe 이름 바꾸기 → 새 파일 → 감시 프로세스(D13)가 다시 띄움 ④ D32 · 순방향 마이그레이션이라 사용자 승인 후 교체 · 상대 버전
   차이 표시 ⑤ 확인 주기는 API 아닌 고정 주소(사내 공용 IP 의 API 횟수 제한). 확인 필요: 사내 EDR 의 자기 교체 차단 · 사내 PC 의
-  배포처 접근. 배포처 위치는 착수 시.
+  배포처 접근. 배포처 위치는 착수 시. (#30 개정 — 2026-10-21 사용자) 자동 업데이트 · 릴리스 배포를 앞당김: 배포처 = GitHub
+  `https://github.com/Softcamp-SaaS-RND/coworkAgent/releases` 정식 릴리스(Latest — 사전 배포는 대상 아님), Windows exe 는 회사 인증서로 서명한 뒤 등록(서명은 사용자),
+  ② = D12 개정(Authenticode), ④ = 묻지 않고 교체(#1y 결정 8), 상대 버전 차이 표시는 TODO. 파이프라인(Azure DevOps) · macOS 는 TODO 그대로.
 - **D37** **레일 그룹 — 이 PC 에만 있는 대화 묶음**(프로젝트 단위 정리). 상대에게 보이지 않고 프레임 · 피어 프로토콜 변경 없음 —
   비목표 "3 PC 이상 다자 채널" 그대로. (#1w 개정 — 사용자 2026-10-19) 담는 단위 = **대화만**(한 대화는 여러 그룹에 — 사용자별 대화 세션 중 필요한 것만
   골라 묶는다). 상대 단위 소속(#1j `group_peers`)은 폐지 — 스키마 21 이 그때의 그 상대 대화를 하나씩 넣어 옮겼다(뒤에 생긴 대화는 들어오지 않는다). 넣고 빼기 =
@@ -277,7 +280,8 @@
     "초대 수락" 과 같게, 다른 설정 항목 · 화면으로 가면 접힘), 메뉴 "초대 생성" = 누르면 초대를 만든다(클릭 때만 · 한 번에 하나), "에이전트 등록" 이 목록 끝
     "새 에이전트" 줄 보이기 · 숨기기, 내 에이전트 검색 없음.
 - **S5** 연결 가능(통신 가능한 사용자) 목록 — 해당 툴을 실행하고 있는 PC 목록. 발견 범위는 D7.
-- **S6** 자동 업데이트 — D12 · D36. (#1y 에서 GitHub 릴리스 자동 업데이트를 만들었다가 사용자 지시로 걷어냄 — 2026-10-20, 그대로 TODO)
+- **S6** 자동 업데이트 — D12 · D36. (#1y 에서 만들었다가 2026-10-20 걷어냄 → #30 에서 되살림 — 트레이 모드 감시가 앱 전에 GitHub 정식 릴리스 확인 · 받기 ·
+  회사 인증서 서명 확인 · 묻지 않고 교체 · 뜨지 못하면 되돌림, Windows 만)
 - **S7** 자동 실행 — D13.
 - **S8** 다른 툴이 서브메뉴로 실행할 수 있는 실행 파라미터 — 예: 다른 툴의 서브메뉴에서 coworkAgent 실행 → 대화 UI 로 바로 진입.
   literal 은 D14.
@@ -293,7 +297,7 @@ Task 상태는 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`).
 | 0 — 관통 골격 | 00.skeleton · 01.pairing · 02.inbound-toast · 03.native-free · 04.agent-roundtrip · 05.inquiry-guard · 05-2.parent-read | 00~09 |
 | 1 — 대화 | 10.slack-ui · 11.two-sided-chat · 12.auto-relay · 13.notify-settings · 14.rename-coworkagent · 15.ux-refresh · 16.agent-cli · 17.workspace-renewal · 18.focus-mention · 19.prototype-acceptance(수동 테스트케이스 일괄, D28) | 10~19 |
 | 2 — 피어 | mDNS 자동 발견 · 연결 가능 목록(S5) | 20~29 |
-| 3 — 배포·통합 | 실행 파라미터(S8) · 자동 업데이트 + 업데이트 파일 서명 검증(S6) · 코드 서명 · 릴리스 파이프라인 — **TODO, D36** | 30~39 |
+| 3 — 배포·통합 | 실행 파라미터(S8) · 자동 업데이트 + 업데이트 파일 서명 검증(S6 — 30.auto-update 종결) · 코드 서명 · 릴리스 파이프라인 — **TODO, D36** | 30~39 |
 | 4 — macOS(TODO, D25) | macOS universal 빌드 · 실동작 확인(Phase 0~3 의 Mac 수동 gate 일괄) · 코드 서명 검토 | 40~49 |
 
 <!-- 버퍼(Phase 당 10개) 소진 시 오버플로(숫자 뒤 소문자 한 글자: 0a~0z)를 여기 미리 적는다 — doc-conventions -->
@@ -360,5 +364,7 @@ Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 
   등록된 에이전트 줄 오른쪽 여백 24px — 사용자 결정(시안 A), 종결 목록에 1z-3
 - 2026-10-21 · Task #05-2 · D21 · D22 보강(에이전트 "상위 한단계 탐색 허용" — 켜면 `--add-dir <바로 위 폴더>`, 드라이브 루트 · 홈 · 데이터 루트를 품는 위 제외) —
   사용자 지시, Phase 0 표에 05-2
+- 2026-10-21 · Task #30 · D12 개정(검증 = 회사 인증서 Authenticode + 서명자 CN) · D36 개정(배포처 GitHub `Softcamp-SaaS-RND/coworkAgent` · 자동 업데이트 앞당김) ·
+  S6(자동 업데이트 되살림 — #1y 걷어냄 재개정) · 1.1.1 · 1.2.0 · 1.3.0 서명 정식 릴리스(1.1.9 → v1.3.0 실제 교체 실측) — 사용자 지시, Phase 3 표에 30 종결
 - 2026-10-19 · 1.0.0 배포 · D25 보강(보유한 Mac 의 macOS universal 실행 파일을 사전 배포에 첨부, 확인 · 서명은 Phase 4) — 사용자 지시(버전 1.0.0 · Mac 빌드 = 보유한 Mac)
 - 2026-10-19 · S1 개정(요청 상태 = 네 상태 사이 어디로든 — 되돌리기 포함) · S4 보강(요청 보드 손잡이 포인터 끌기 · 놓은 열로 옮김 · 요청 화면 "메모" → "피드백") — 사용자 지시(Task 밖 수정)
