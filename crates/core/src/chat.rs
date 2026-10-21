@@ -1460,6 +1460,18 @@ pub fn messages(conn: &Connection, conversation_id: i64) -> rusqlite::Result<Vec
     .collect()
 }
 
+/// 대화의 마지막 `n` 개(오래된 것부터, 개요 미리보기 #1z-4) — [`messages`] 와 같은 순서의 끝을 SQL 에서 자른다(대화 전체를 읽지 않는다).
+pub fn messages_tail(conn: &Connection, conversation_id: i64, n: i64) -> rusqlite::Result<Vec<Message>> {
+    let mut ms = conn
+        .prepare(&format!(
+            "SELECT {MSG_COLS} FROM messages WHERE conversation_id = ?1 ORDER BY lc DESC, uuid DESC LIMIT ?2"
+        ))?
+        .query_map(params![conversation_id, n], msg_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    ms.reverse();
+    Ok(ms)
+}
+
 /// 대화를 가로지른 글 — `mine` 이 참이면 내가 쓴 글, 거짓이면 상대 쪽이 쓴 글, `None` 이면 둘 다. `scope` 로 그 상대 · 그룹 대화만,
 /// `author` 로 그 종류만, `q` 는 본문 부분 일치. 거른 뒤 최신 것부터 `limit` 건. 질의 · 요청 거르기(`ask`)에는 공유 사본 글이 들지 않는다(#1o).
 pub fn messages_across(

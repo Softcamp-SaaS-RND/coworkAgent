@@ -4,6 +4,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   entryToken,
+  previewWindows,
+  previewBubbles,
+  previewKey,
+  previewStaleOf,
+  previewTabs,
+  PREVIEW_TABS,
+  PREVIEW_MSGS,
   DISCONNECTED,
   stateText,
   peerState,
@@ -671,6 +678,94 @@ test("peer_summary — '나' 대화 요약: 페어링된 상대는 대화 없어
     ],
   );
   assert.deepEqual(peerSummary([], [], names), []);
+});
+
+test("preview_windows — 개요 미리보기(#1z-4): 상대마다 창 · 처음 탭 최근 활동 · 고른 탭 유지(사라지면 최근), 상대 타일은 대화마다 창", () => {
+  const names = new Map([
+    [1, "가람 · A-PC"],
+    [2, "나래 · B-PC"],
+  ]);
+  const convs = [
+    { id: 11, peer_id: 1, last_at: 100, pos: 2 },
+    { id: 12, peer_id: 1, last_at: 300, pos: 5 },
+    { id: 13, peer_id: 1, last_at: null, pos: -1 },
+  ];
+  const groups = peerSummary(convs, [2, 1], names, new Map([[1, 3]]));
+  const w = previewWindows(groups, false);
+  assert.deepEqual(
+    w.map((x) => [x.key, x.peer, x.name, x.waiting, x.conv?.id ?? null, x.tabs.map((c) => c.id)]),
+    [
+      ["p2", 2, "나래", 0, null, []],
+      ["p1", 1, "가람", 3, 12, [13, 11, 12]],
+    ],
+  );
+  assert.equal(previewWindows(groups, false, new Map([[1, 11]]))[1].conv.id, 11, "고른 탭");
+  assert.equal(previewWindows(groups, false, new Map([[1, 99]]))[1].conv.id, 12, "고른 대화가 사라지면 최근");
+  const nulls = peerSummary([{ id: 21, peer_id: 1, last_at: null }, { id: 22, peer_id: 1, last_at: null }], [1], names);
+  assert.equal(previewWindows(nulls, false)[0].conv.id, 21, "시각 없으면 첫 대화");
+  const one = previewWindows(peerSummary(convs, [1], names), true);
+  assert.deepEqual(
+    one.map((x) => [x.key, x.conv.id, x.tabs.length]),
+    [
+      ["c13", 13, 0],
+      ["c11", 11, 0],
+      ["c12", 12, 0],
+    ],
+  );
+});
+
+test("preview_bubbles — 미리보기 말풍선(#1z-4): 마지막 n 개 · 요약 글 뺌 · 쪽 · 이름 · 글자만 · 상태 색", () => {
+  const conv = { id: 1, dir: "out", agent: "review", peer_id: 2 };
+  const ms = [
+    { id: 1, author: "human", mine: true, text: "처음", state: "sent" },
+    { id: 2, author: "context", text: "요약", state: "done" },
+    { id: 3, author: "human", mine: true, text: "줄\n바꿈  <b>굵게</b>", state: "sent" },
+    { id: 4, author: "agent", mine: false, text: "답", state: "done" },
+    { id: 5, author: "agent", mine: false, text: "", state: "running" },
+    { id: 6, author: "agent", mine: false, text: "", state: "error" },
+  ];
+  const b = previewBubbles(conv, ms, "나래 · B-PC", 4);
+  assert.deepEqual(
+    b.map((x) => [x.id, x.side, x.who, x.text, x.tone]),
+    [
+      [3, "mine", "나", "줄 바꿈 <b>굵게</b>", "human"],
+      [4, "theirs", "나래/review", "답", "agent"],
+      [5, "theirs", "나래/review", "실행 중", "running"],
+      [6, "theirs", "나래/review", "오류", "error"],
+    ],
+  );
+  assert.equal(previewBubbles(conv, ms, "나래").length, 5, "기본 PREVIEW_MSGS(6) — 요약 글 뺀 다섯");
+  assert.equal(PREVIEW_MSGS, 6);
+  // R1 — 마지막이 아닌 글의 편집 · 상태 변경도 말풍선(= 다시 그리기 서명)이 바뀐다.
+  const edited = ms.map((m) => (m.id === 4 ? { ...m, text: "고친 답" } : m.id === 5 ? { ...m, state: "done", text: "끝" } : m));
+  assert.notDeepEqual(previewBubbles(conv, edited, "나래", 4), b);
+  assert.deepEqual(
+    previewBubbles(conv, edited, "나래", 4).map((x) => [x.id, x.text, x.tone]),
+    [
+      [3, "줄 바꿈 <b>굵게</b>", "human"],
+      [4, "고친 답", "agent"],
+      [5, "끝", "agent"],
+      [6, "오류", "error"],
+    ],
+  );
+});
+
+test("preview_tabs_and_reload — 탭 3개까지 + 숨은 수(고른 대화는 늘 보임), 다시 읽을 때(요약 · 변경 신호) — 사용자 Q2 · Q3", () => {
+  const t = [1, 2, 3, 4, 5].map((id) => ({ id }));
+  const ids = (r) => [r.shown.map((x) => x.id), r.more];
+  assert.equal(PREVIEW_TABS, 3);
+  assert.deepEqual(ids(previewTabs(t.slice(0, 3), 1)), [[1, 2, 3], 0], "넘치지 않으면 전부");
+  assert.deepEqual(ids(previewTabs(t, 2)), [[1, 2, 3], 2]);
+  assert.deepEqual(ids(previewTabs(t, 5)), [[1, 2, 5], 2], "고른 대화가 밖이면 마지막 칸");
+  assert.deepEqual(ids(previewTabs(t, undefined)), [[1, 2, 3], 2]);
+  const c = { id: 7, last_at: 5, last_state: "done", last: { text: "a  b" } };
+  assert.equal(previewKey(c), previewKey({ ...c, unread: 3 }), "안 읽음만 바뀌면 다시 읽지 않는다");
+  assert.notEqual(previewKey(c), previewKey({ ...c, last_state: "running" }));
+  assert.notEqual(previewKey(c), previewKey({ ...c, last: { text: "a c" } }));
+  assert.deepEqual(previewStaleOf([{ kind: "conv", id: 3 }, { kind: "conv", id: 4 }]), [3, 4]);
+  for (const all of [[], undefined, null, [{ kind: "conv" }], [{ kind: "peer" }], [{ kind: "conv", id: 1 }, { kind: "peer" }]]) {
+    assert.equal(previewStaleOf(all), null, JSON.stringify(all));
+  }
 });
 
 test("conv_sections_by_peer — '나' 사이드바: 상대별 절(★ 대화도 제자리 — #1j), 대화가 없으면 빈 '대화' 절", () => {

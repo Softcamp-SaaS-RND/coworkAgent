@@ -31,6 +31,16 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
   상대가 연 대화(내 에이전트가 어느 사용자에게 답했는지)를 요청한 상대별 절로, 대화 줄 그대로 · 같은 절 안 끌어 옮기기, 메뉴 수 = 그 대화들의 안 읽음 합 · `renderAgentConvs`). 상대 타일 = 요청 / 즐겨찾기 · 북마크 · 에이전트(등록된 에이전트만) 그 상대만,
   첫 화면은 그 상대 개요 — 상대 타일로 `#agents/convs` 를 열면 '나' 로(`view.peerLeaves`), 상대 타일 배지 = `view.tileUnread`(에이전트 대화 `in` 안 읽음 제외). 개요 아코디언(#1z-2) = 머리 맨 앞
   사용자 아이콘(`rowTile` — 그 상대 타일 모양 · 색) · 대화 줄 에이전트 이름 앞 로봇(`.home-agent` · `speakerEl("agent")`). 그룹 타일 = 개요(그룹 요약) / 요청 / 즐겨찾기 · 북마크.
+  개요 보기(#1z-4 시안 B) = 머리 "목록 | 미리보기"(`.seg` `#home_view_list` · `#home_view_preview`, 설정 `ui_home_view` — `preview` 기본 · 시작할 때만 읽고 누르면 저장).
+  미리보기 `#home_preview.pv-grid` = 창 격자 `repeat(auto-fill, minmax(min(100%, 360px), 1fr))` · `grid-auto-rows: 320px`(열 수 = 폭, 넘치면 세로 스크롤) —
+  '나' · 그룹은 상대마다 창 `.pv-win`(머리 = 아이콘 · 이름 · 접속 · 대기 요청 · "대화 열기 →", 위 띠 = 타일 색 `data-tone`), 대화방 탭 `.pv-tab`(상태 점 · 안 읽음,
+  처음 = `last_at` 최대, 고른 탭 = `state.previewTab` — 저장 안 함), 본문 `a.pv-body`(누르면 그 대화) = 고른 대화의 마지막 글 `PREVIEW_MSGS`(6)를 `previewBubbles`
+  말풍선 `.pv-msg`(쪽 `bubbleSide`, 이름 `authorLabel`, 글자만 · 3줄, `agent` · `running` · `error` 색, 요약 글 뺌) — 최신이 아래, 넘친 옛 글은 위에서 잘림.
+  상대 타일 개요는 대화마다 창(머리 = 제목 · 상태 · 에이전트, 탭 없음 — `previewWindows(…, single)`). 글은 `GET /api/conversations/{id}/messages?limit=6` 으로
+  필요한 대화만 다시 읽는다 — 받은 적 없음 · 요약 변화(`previewKey`) · 변경 신호가 그 대화(`previewStaleOf` → `state.previewStale`, 전체면 `previewAll`) · 개요에 들어옴 ·
+  보기 바꿈 · 탭 고름 · 읽기 실패(5초 새로 고침마다 전부 읽지 않음, 서버 `messages_tail` 이 SQL 에서 자름). `state.previewMsgs` = `{key, ms, seq}`(앞선 차례 응답은 덮지 않음),
+  늦은 응답 = `previewLatest` 로 그리지 않음, 다시 그리기 서명 = 실제 말풍선. 읽음은 바꾸지 않는다. 이 PC 에서 마지막이 아닌 글만 바뀌면(신호 없음) 개요에 다시 들어올 때.
+  탭은 `PREVIEW_TABS`(3)개까지(`previewTabs` — 고른 대화는 늘 보임), 넘치면 `.pv-more` "+n개" → `pickTile(상대)` = 그 상대 개요.
   그 아래 대화 목록 · 제목 검색. 메뉴 머리 설명은 없다(개요 카드는 안 읽음 · 대기 요청만). 상대 에이전트 줄에 "세션 생성" 단추, 내 에이전트 줄 ✎ → 설정의
   그 에이전트 상세. 사이드바 머리 부제(#1x — `view.sideSub`) = '나' 이름(별칭이면 + 호스트) · 상대 = 호스트(별칭이면 "{이름} · {호스트}") — 지문 · "페어링 됨" ·
   접속 문구 없음(접속 = 레일 점, 레일 타일 `aria-label` 에는 남긴다). 주고받은 메시지(#1q) = 상대별 절 처음 접힘(`open:peer:{상대}` 기억) · 머리 = 타일 · 이름 · "n건" · 마지막 메시지 한 줄 · 시각, 펼치면 서버에서

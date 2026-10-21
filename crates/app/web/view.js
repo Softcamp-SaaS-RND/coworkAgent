@@ -1099,6 +1099,65 @@ export function inGroup(convs, group) {
   return convs.filter((c) => ids.has(c.id));
 }
 
+/// 개요 미리보기(#1z-4 시안 B) 창마다 받는 마지막 글 수 — 창 높이에 최신 쪽부터 보이고 위는 잘린다.
+export const PREVIEW_MSGS = 6;
+
+/// 개요 미리보기 창 — '나' · 그룹 = 상대마다 창(탭 = 그 상대 대화, 처음 탭 = `last_at` 최대, 고른 탭 `picked`(상대 id → 대화 id)가 아직 있으면 그것),
+/// 상대 타일(`single`) = 대화마다 창(탭 없음). `groups` = `peerSummary` 결과. 대화 없는 상대 창은 `conv` = `null`.
+export function previewWindows(groups, single, picked = new Map()) {
+  if (single) return groups.flatMap((g) => g.rows.map((c) => ({ key: `c${c.id}`, peer: g.peer, name: g.name, waiting: g.waiting, conv: c, tabs: [] })));
+  return groups.map((g) => {
+    const recent = g.rows.reduce((a, c) => (a == null || (c.last_at ?? -1) > (a.last_at ?? -1) ? c : a), null);
+    const conv = g.rows.find((c) => c.id === picked.get(g.peer)) ?? recent;
+    return { key: `p${g.peer}`, peer: g.peer, name: g.name, waiting: g.waiting, conv, tabs: g.rows };
+  });
+}
+
+/// 미리보기 창 탭 수 — 넘치면 끝에 "+n개"(누르면 그 상대 개요 = 대화마다 창).
+export const PREVIEW_TABS = 3;
+
+/// 보일 탭 — 앞에서 `max` 개, 고른 대화가 그 밖이면 마지막 칸을 고른 대화로. `more` = 숨은 수.
+export function previewTabs(tabs, picked, max = PREVIEW_TABS) {
+  if (tabs.length <= max) return { shown: tabs, more: 0 };
+  const head = tabs.slice(0, max);
+  const pick = tabs.find((t) => t.id === picked);
+  const shown = !pick || head.includes(pick) ? head : [...head.slice(0, max - 1), pick];
+  return { shown, more: tabs.length - shown.length };
+}
+
+/// 미리보기 다시 읽을 때(#1z-4 R1 · 사용자 "Q3 반영") — 대화 요약의 마지막 글 시각 · 상태 · 앞부분이 바뀌었을 때. 마지막이 아닌 글의 변경은
+/// 변경 신호(그 대화) · 개요에 다시 들어옴 · 탭 고름이 다시 읽게 한다(`app.js` `renderHomePreview`).
+export function previewKey(c) {
+  return JSON.stringify([c.id, c.last_at ?? null, c.last_state ?? null, preview(c.last?.text)]);
+}
+
+/// 변경 신호 → 미리보기를 다시 읽을 대화 — `null` = 전부(빈 · 배열 아님 · id 없는 대화 · 대화 아닌 자원), 아니면 대화 id 들.
+export function previewStaleOf(res) {
+  if (!Array.isArray(res) || !res.length || res.some((r) => r?.kind !== "conv" || r.id == null)) return null;
+  return res.map((r) => r.id);
+}
+
+/// 미리보기 말풍선 — 마지막 `n` 개, 요약 글(`context`) 뺌. 쪽 = `bubbleSide`, 이름 = `authorLabel`, 본문 = 글자만(`preview`, 비면 상태 글자).
+/// `tone` = `error`(오류 · 답 미전달) · `running`(실행 대기 · 실행 중) · `agent` · `human`.
+export function previewBubbles(conv, ms, peerName, n = PREVIEW_MSGS) {
+  return ms
+    .filter((m) => m.author !== "context")
+    .slice(-n)
+    .map((m) => ({
+      id: m.id,
+      side: bubbleSide(m),
+      who: authorLabel(conv, m, peerName),
+      text: preview(m.text) || stateText(m.state),
+      tone: ["error", "undelivered"].includes(m.state)
+        ? "error"
+        : ["queued", "running"].includes(m.state)
+          ? "running"
+          : m.author === "agent"
+            ? "agent"
+            : "human",
+    }));
+}
+
 /// 그룹 요약에 머리를 둘 페어링된 상대 — 레일 순서 중 그 그룹에 대화가 있는 상대만('나' 처럼 대화 없는 상대를 늘어놓지 않는다).
 export function groupPeers(convs, paired) {
   const has = new Set(convs.map((c) => c.peer_id));

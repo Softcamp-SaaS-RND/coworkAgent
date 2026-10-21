@@ -24,6 +24,12 @@ import {
   formatTime,
   route,
   Latest,
+  previewWindows,
+  previewBubbles,
+  previewKey,
+  previewStaleOf,
+  previewTabs,
+  PREVIEW_MSGS,
   settingsTree,
   settingsGroupSections,
   convCopy,
@@ -243,6 +249,11 @@ const state = {
   reqWaiting: 0, // 받은 요청 중 대기 — 고른 타일 범위(사이드바 '요청')
   waitingBy: new Map(), // 받은 요청 중 대기 — 상대별('나' 의 '대화' 요약, #1g)
   folded: new Set(), // 접은 상대별 절 열쇠 `{화면}:{상대}`(#1g, 설정 `ui_folded` — 시작할 때 읽는다)
+  homeView: "preview", // 개요 보기(#1z-4) — `preview` · `list`(설정 `ui_home_view` — 시작할 때 읽는다)
+  previewTab: new Map(), // 개요 미리보기 — 상대 id → 고른 대화 id(저장하지 않는다, 없으면 최근 활동 대화)
+  previewMsgs: new Map(), // 개요 미리보기 — 대화 id → `{key, ms, seq}` 마지막으로 받은 글(`previewKey` · 받은 차례)
+  previewStale: new Set(), // 개요 미리보기 — 다시 읽을 대화 id(변경 신호 · 탭 고름 · 읽기 실패)
+  previewAll: true, // 개요 미리보기 — 창의 대화를 전부 다시 읽기(개요에 들어옴 · 보기 바꿈 · 전체 변경 신호)
   reqBox: null, // '요청' 화면 — `null` = 개요(#1q), 탭 = 받은(`theirs`) · 보낸(`mine`)
   peerAgents: new Map(), // 상대 id → 그 PC 의 에이전트 이름(`null` = 받지 못함) — 타일을 고를 때 받는다(원격 왕복이라 새로 고침마다 묻지 않는다)
   detailOpen: window.innerWidth >= 1280, // 실행 상세 — 넓은 창이면 열고 시작(저장하지 않는다)
@@ -261,6 +272,7 @@ const state = {
   netFails: 0, // 연달아 닿지 못한 요청 수(#1j — 앱과 연결 끊김)
 };
 const latest = new Latest();
+const previewLatest = new Latest(); // 개요 미리보기 — 늦게 온 글 읽기는 버린다
 
 // ---- 뷰어 ----
 
@@ -1701,9 +1713,16 @@ function renderHome() {
   const groups = peerSummary(convs, ids, state.peerNames, state.waitingBy);
   $("home_title").textContent = group ? `그룹 · ${group.name}` : peer ? `개요 · ${displayName(peer)}` : "개요";
   $("group_empty").hidden = !group || convs.length > 0;
+  $("home_intro").hidden = groups.length > 0 || group != null; // 두 보기 공통(#1z-4 R2)
+  // 보기(#1z-4) — 미리보기(기본, 시안 B) · 목록(아래 접는 절).
+  const pv = state.homeView === "preview";
+  $("home_view_list").setAttribute("aria-pressed", String(!pv));
+  $("home_view_preview").setAttribute("aria-pressed", String(pv));
+  $("home_summary").hidden = pv;
+  $("home_preview").hidden = !pv;
+  if (pv) return renderHomePreview(groups, !group && state.railPeer != null);
   const peerOf = (id) => state.peers.find((x) => x.id === id);
   const sig = JSON.stringify([groups.map(({ rows, ...g }) => [g, rows.map((c) => [c.id, c.title, c.last_state, c.unread, c.last_at, c.starred])]), groups.map((g) => presence(peerOf(g.peer)).text)]);
-  $("home_intro").hidden = groups.length > 0 || group != null;
   if (!needsRender($("home_summary"), sig, false)) return;
   $("home_summary").replaceChildren(
     ...groups.map((g) => {
@@ -1742,6 +1761,150 @@ function renderHome() {
     }),
   );
 }
+
+/// 개요 미리보기(#1z-4 시안 B) — 창마다 고른 대화의 마지막 글(`PREVIEW_MSGS`, 서버가 SQL 에서 자름)을 말풍선으로. 다시 읽기는 필요한 대화만
+/// (사용자 "Q3 반영" — 5초마다 전부 읽지 않는다): 받은 적 없음 · 요약이 바뀜(`previewKey`) · 변경 신호가 그 대화를 가리킴(`previewStale`) · 개요에 들어옴 ·
+/// 보기 바꿈(`previewAll`). 실패한 대화는 다음에 다시. 서명 = 실제로 그릴 말풍선(실패하면 지난 글로 그리고 다음 성공 때 바뀐다). 늦게 온 응답은 차례(`seq`)가
+/// 앞선 것으로 덮지 않고, 다른 화면이면 그리지 않는다. 읽음은 바꾸지 않는다(대화를 열어야 읽음).
+// ponytail: 이 PC 에서 마지막이 아닌 글만 바뀌는 경우(신호 없음 · 요약 그대로)는 개요에 다시 들어올 때 보인다 — 이 PC 변경 신호가 생기면 그것으로(D39 ②).
+async function renderHomePreview(groups, single) {
+  const wins = previewWindows(groups, single, state.previewTab);
+  const ticket = previewLatest.next();
+  const all = state.previewAll;
+  const stale = state.previewStale;
+  state.previewAll = false;
+  state.previewStale = new Set();
+  const convs = wins
+    .map((w) => w.conv)
+    .filter((c) => c && (all || stale.has(c.id) || state.previewMsgs.get(c.id)?.key !== previewKey(c)));
+  const seq = ticket;
+  const got = await Promise.allSettled(convs.map((c) => api("GET", `/api/conversations/${c.id}/messages?limit=${PREVIEW_MSGS}`)));
+  got.forEach((r, i) => {
+    const c = convs[i];
+    if (r.status !== "fulfilled") state.previewStale.add(c.id);
+    else if ((state.previewMsgs.get(c.id)?.seq ?? -1) < seq) state.previewMsgs.set(c.id, { key: previewKey(c), ms: r.value, seq });
+  });
+  // 이번에 고르지 않은 표시(다른 창의 신호)는 남긴다 — 다음 그리기에서.
+  for (const id of stale) if (!convs.some((c) => c.id === id)) state.previewStale.add(id);
+  if (!previewLatest.is(ticket)) return;
+  const failed = got.find((r) => r.status === "rejected");
+  if (failed) $("status_msg").textContent = "미리보기 오류: " + failed.reason.message;
+  const live = new Set(state.convs.map((c) => c.id));
+  for (const id of state.previewMsgs.keys()) if (!live.has(id)) state.previewMsgs.delete(id);
+  for (const id of state.previewStale) if (!live.has(id)) state.previewStale.delete(id);
+  if (route(location.hash).view !== "home" || state.homeView !== "preview") return;
+  const peerOf = (id) => state.peers.find((x) => x.id === id);
+  const sig = JSON.stringify([
+    single,
+    wins.map((w) => [
+      w.key,
+      w.name,
+      w.waiting,
+      w.conv && [
+        w.conv.id,
+        w.conv.title,
+        w.conv.last_state,
+        w.conv.unread,
+        convMeta(w.conv).agent,
+        state.previewMsgs.has(w.conv.id) && previewBubbles(w.conv, state.previewMsgs.get(w.conv.id).ms, state.peerNames.get(w.conv.peer_id)),
+      ],
+      w.tabs.map((c) => [c.id, c.title, c.last_state, c.unread]),
+      presence(peerOf(w.peer)).text,
+      peerOf(w.peer)?.paired,
+    ]),
+  ]);
+  const box = $("home_preview");
+  if (!needsRender(box, sig, false)) return;
+  box.replaceChildren(...wins.map((w) => previewWindowEl(w, single, peerOf(w.peer))));
+}
+
+/// 미리보기 창 하나 — 머리(상대: 아이콘 · 이름 · 접속 · 대기 요청 / 상대 타일: 대화 제목 · 상태 · 에이전트) · 대화방 탭 · 본문(누르면 그 대화).
+/// 본문은 글자로만 — 상대가 쓴 글을 HTML · 마크다운으로 해석하지 않는다.
+function previewWindowEl(w, single, p) {
+  const c = w.conv;
+  const title = c ? convLabel(c, state.peerNames).title : "";
+  const pres = presence(p);
+  const head = single
+    ? [
+        el("strong", { text: title }),
+        c.last_state ? el("span", { class: `st-${c.last_state}`, text: stateText(c.last_state) }) : "",
+        el("span", { class: "home-agent" }, speakerEl("agent"), el("span", { text: convMeta(c).agent })),
+        c.unread ? el("span", { class: "stat", text: `안 읽음 ${c.unread}` }) : "",
+      ]
+    : [
+        rowTile(`small ${colorOf(w.peer)}`, p?.icon),
+        el("strong", { text: w.name }),
+        el("span", { class: `st-dot st-${pres.key}`, "aria-hidden": "true" }),
+        el("span", { text: p ? pres.text : "페어링 해제" }),
+        w.waiting ? el("span", { class: "stat", text: `대기 요청 ${w.waiting}` }) : "",
+      ];
+  // 탭은 `PREVIEW_TABS` 개까지(고른 대화는 늘 보임), 넘치면 "+n개" — 누르면 그 상대 개요(대화마다 창, 사용자 "Q2 반영").
+  const { shown, more } = previewTabs(w.tabs, c?.id);
+  const tabs = shown.map((t) =>
+    el(
+      "button",
+      {
+        type: "button",
+        role: "tab",
+        class: "pv-tab",
+        "aria-selected": String(t.id === c?.id),
+        "data-tab": `${w.peer}:${t.id}`,
+        onclick: () => pickPreviewTab(w.peer, t.id),
+      },
+      el("span", { class: "pv-dot", "data-state": t.last_state ?? "", "aria-hidden": "true" }),
+      el("span", { text: convLabel(t, state.peerNames).title }),
+      t.unread ? el("span", { class: "pv-unread", "aria-label": `안 읽음 ${t.unread}`, text: String(t.unread) }) : "",
+    ),
+  );
+  const cached = c ? state.previewMsgs.get(c.id) : null;
+  const bubbles = cached ? previewBubbles(c, cached.ms, state.peerNames.get(c.peer_id)) : [];
+  const body = c
+    ? el(
+        "a",
+        { class: "pv-body", href: `#c/${c.id}`, "aria-label": `${title} 대화 열기` },
+        ...(!cached
+          ? [el("span", { class: "hint", text: "글을 읽지 못했습니다" })]
+          : bubbles.length
+            ? bubbles.map((b) => el("div", { class: `pv-msg side-${b.side} ${b.tone}` }, b.who !== "나" ? el("b", { text: b.who }) : "", b.text))
+            : [el("span", { class: "hint", text: "글 없음" })]),
+      )
+    : el("div", { class: "pv-empty" }, el("span", { text: "아직 주고받은 대화가 없습니다" }), p?.paired ? button(SESSION_NEW, () => newChat(w.peer), "small") : "");
+  return el(
+    "article",
+    { class: "pv-win", "data-tone": colorOf(w.peer) },
+    el("div", { class: "pv-head" }, ...head, c ? el("a", { class: "pv-open", href: `#c/${c.id}`, text: "대화 열기 →" }) : ""),
+    tabs.length
+      ? el(
+          "div",
+          { class: "pv-tabs" },
+          el("div", { class: "pv-tablist", role: "tablist", "aria-label": `${w.name} 대화방` }, ...tabs),
+          more
+            ? el("button", { type: "button", class: "pv-more", title: `${w.name} 대화방 ${w.tabs.length}개 모두 보기`, onclick: () => pickTile(w.peer), text: `+${more}개` })
+            : "",
+        )
+      : "",
+    body,
+  );
+}
+
+/// 미리보기 탭 고르기 — 화면 상태에만(저장하지 않는다), 다시 그린 뒤 그 탭에 초점.
+async function pickPreviewTab(peer, conv) {
+  state.previewTab.set(peer, conv);
+  state.previewStale.add(conv); // 고른 대화는 새로 읽는다(받아 둔 글이 오래됐을 수 있다)
+  await renderHome();
+  $("home_preview").querySelector(`[data-tab="${peer}:${conv}"]`)?.focus();
+}
+
+/// 개요 보기 바꾸기(#1z-4) — 바로 그리고 설정 `ui_home_view` 에 남긴다(실패는 상태 줄, 화면은 바꾼 대로).
+function setHomeView(v) {
+  state.homeView = v;
+  state.previewAll = true;
+  renderHome();
+  api("PUT", "/api/settings", { ui_home_view: v }).catch((e) => {
+    $("status_msg").textContent = "보기 저장 실패: " + e.message;
+  });
+}
+for (const v of ["list", "preview"]) $(`home_view_${v}`).addEventListener("click", () => setHomeView(v));
 
 $("conv_search").addEventListener("input", renderConvList);
 
@@ -1880,7 +2043,10 @@ async function render() {
   if (peerLeaves(r.view) && state.railPeer != null) pickRail(null); // 에이전트 응답은 '나' 에만(#1z-2)
   renderConvList();
   show(r.view);
-  if (r.view === "home") renderHome();
+  if (r.view === "home") {
+    state.previewAll = true; // 개요에 들어옴 — 미리보기 글을 전부 새로(#1z-4, 다른 화면에서 고친 글)
+    renderHome();
+  }
   if (r.view === "activity") await loadActivity(true);
   if (r.view === "requests") await loadRequests(true);
   if (r.view === "starred") renderStarred();
@@ -4153,6 +4319,7 @@ async function showSettings() {
     setSideWidth(s.ui_side_width ?? 272);
     // 접힘도 시작할 때만(#1g) — 그 뒤는 화면이 바꾼 값이 정본.
     state.folded = new Set(s.ui_folded ?? []);
+    state.homeView = s.ui_home_view ?? "preview"; // 개요 보기(#1z-4)도 시작할 때만
     $("max_runs").value = String((await api("GET", "/api/runs")).cap);
   } catch (e) {
     $("status_msg").textContent = "설정 오류: " + e.message;
@@ -4261,7 +4428,12 @@ function chime() {
 function listen() {
   const es = new EventSource(`/api/events?t=${encodeURIComponent(token)}`);
   // 붙은 뒤 "봤다" 를 알린다(트레이 새 요청 지움) — 상태 변경은 POST 로만.
-  es.onopen = () => api("POST", "/api/seen").catch(() => {});
+  es.onopen = () => {
+    api("POST", "/api/seen").catch(() => {});
+    // 끊긴 동안의 변경 신호는 다시 오지 않는다 — 붙을 때마다 미리보기 글을 전부 새로(#1z-4 R2).
+    state.previewAll = true;
+    refreshHome();
+  };
   es.onmessage = (ev) => {
     let n;
     try {
@@ -4299,6 +4471,10 @@ function listen() {
     } catch {
       c = {};
     }
+    // 개요 미리보기(#1z-4) — 신호가 가리킨 대화(전체면 전부)는 다음 그리기에서 다시 읽는다.
+    const stale = previewStaleOf(c.res);
+    if (stale == null) state.previewAll = true;
+    else for (const id of stale) state.previewStale.add(id);
     onChange(c.res);
   });
 }

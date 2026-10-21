@@ -26,7 +26,7 @@
   `DELETE /api/agents/{id}` · `GET /api/peers/{id}/agents` → `{names}` · `GET/POST /api/conversations`(목록 = 요약 `title` · `last_state` · `last_at` · `last{text, author, mine, agent, via}|null`(#1j — 마지막 글, `text` 앞 120자);
   `{peer_id, agent, text, title?}` → 201 `{conversation, message}`) · `PATCH /api/conversations/{id} {title}`(이 PC 에만, 빈 문자열 = 지움) ·
   `GET /api/messages?side=theirs|mine&peer=&kind=human|agent&q=&limit=`(대화를 가로지른 글 — 거른 뒤 최신순, 기본 200 · 최대 500) · `GET /api/runs` `{cap, running, waiting}`(항목 `message_id` · `conversation_id` · `peer_id` · `peer` · `agent` · `text` 앞 40자 — #1b) ·
-  `PUT /api/runs {cap}`(정수 1 ~ 8 아니면 400, 저장 + 문에 바로) · `GET/POST /api/conversations/{id}/messages`(대화 글 목록 메시지에
+  `PUT /api/runs {cap}`(정수 1 ~ 8 아니면 400, 저장 + 문에 바로) · `GET/POST /api/conversations/{id}/messages`(GET `limit` = 마지막 N 개만, 오래된 것부터 — 1 ~ 500 밖 400, #1z-4 개요 미리보기 · 대화 글 목록 메시지에
   `progress{state, ahead, detail}|null`(#1b · `detail` = 단계 요약 `{turns, tools, secs}`|null — #1c) · `outbox{state, tries, error}|null`(#1c — 상대에
   아직 닿지 않았거나(`pending` · `inflight`) 포기한(`failed`) 내 글) · `created_at` · `reply_to` ·
   `turns` · `duration_ms` · `mine` · `exec` · `via`; 새 대화 · 이어 쓰기 본문의 `via` 는 `cli` 만(그 밖 400, 자동 왕복 시작에 주면 400); `to` 는 생략 또는 `agent` 만(`human` · 그 밖 400 — 새 대화 ·
@@ -109,7 +109,7 @@
   읽는다, 못 읽거나 대기 0 이면 보통 알림 "요청 받음 — {에이전트}"). `MessageKind::Clear`(#1x — 상대가 모든 사용자 글 삭제) = kind `message` "대화 기록 삭제 — {에이전트}" ·
   본문 "{이름} · {호스트}\n{이름} 이(가) 대화 기록을 모두 지웠습니다"(미리보기와 무관, `notify_request` 축).
   `notify::routes` — `GET/PUT /api/settings`(PUT 은 준 항목만 · 모르는 항목 · 틀린 값 400, `relay_cap_default` 1 ~ 50, `claude_model` ·
-  `claude_effort`(실행 기본값 `sonnet` · `high`) · `ui_theme`(`light` 기본 — #1x · `dark`) · `ui_tile_size`(#1x — `small` 기본 · `normal`, 틀린 값 400 "ui_tile_size 는 normal · small", `an_core::run_opts::TILE_SIZE_KEY`) · `ui_peer_weeks`(#1y — 정수 1 ~ 12, 기본 4, 틀린 값 400 "ui_peer_weeks 는 1 ~ 12", `an_core::run_opts::PEER_WEEKS_KEY`) · `ui_side_width`(200 ~ 560) · `ui_folded`(접은 절 열쇠 목록 — `{화면}:{상대 id | me}` 300개까지, #1g) · `me_alias` · `me_icon`(빈 = 지움),
+  `claude_effort`(실행 기본값 `sonnet` · `high`) · `ui_theme`(`light` 기본 — #1x · `dark`) · `ui_tile_size`(#1x — `small` 기본 · `normal`, 틀린 값 400 "ui_tile_size 는 normal · small", `an_core::run_opts::TILE_SIZE_KEY`) · `ui_home_view`(#1z-4 — `preview` 기본 · `list`, 틀린 값 400 "ui_home_view 는 preview · list", `an_core::run_opts::HOME_VIEW_KEY`) · `ui_peer_weeks`(#1y — 정수 1 ~ 12, 기본 4, 틀린 값 400 "ui_peer_weeks 는 1 ~ 12", `an_core::run_opts::PEER_WEEKS_KEY`) · `ui_side_width`(200 ~ 560) · `ui_folded`(접은 절 열쇠 목록 — `{화면}:{상대 id | me}` 300개까지, #1g) · `me_alias` · `me_icon`(빈 = 지움),
   설정 DB 읽기 오류는 500) ·
   `GET /api/events`(SSE, 상태 변경 없음 — 알림 `message` + 변경 신호 `event: change` `{res: [{kind, id?}]}`, 변경 신호는 `Notifier::on_event` 가 켜짐 · 세부 설정 앞에서 늘 보내고
   뒤처지면 빈 `res` 하나 — `notify::next_change`, D39 ②) · `POST /api/seen`(지움). 상한 없는 자동 왕복 새 대화는 `relay_cap_default`.

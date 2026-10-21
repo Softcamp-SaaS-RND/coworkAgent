@@ -95,8 +95,13 @@
           <div class="head-title">
             <strong><span class="ico ico-home" aria-hidden="true"></span><span id="home_title">개요</span></strong>
           </div>
+          <div class="seg" role="group" aria-label="개요 보기">
+            <button id="home_view_list" type="button" aria-pressed="false">목록</button>
+            <button id="home_view_preview" type="button" aria-pressed="true">미리보기</button>
+          </div>
         </header>
         <ol id="home_summary" class="rows"></ol>
+        <div id="home_preview" class="pv-grid"></div>
         <p id="group_empty" class="empty hint" hidden>대화 없음</p>
         <div id="home_intro" class="empty">
           <h1>coworkAgent</h1>

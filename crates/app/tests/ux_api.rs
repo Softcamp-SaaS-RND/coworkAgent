@@ -1945,6 +1945,26 @@ async fn tile_size_setting_persists() {
     assert_eq!(s["ui_tile_size"], "normal", "다시 열어도 남는다");
 }
 
+/// 개요 보기(#1z-4) — 기본 미리보기, 목록으로 바꾸면 남고, 틀린 값은 400.
+#[tokio::test(flavor = "multi_thread")]
+async fn home_view_setting_persists() {
+    let a = side("hv").await;
+    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
+    assert_eq!(s["ui_home_view"], "preview");
+    let (code, s) = a
+        .call("PUT", "/api/settings", json!({ "ui_home_view": "list" }))
+        .await;
+    assert_eq!((code, &s["ui_home_view"]), (200, &json!("list")), "{s}");
+    let (code, _) = a
+        .call("PUT", "/api/settings", json!({ "ui_home_view": "grid" }))
+        .await;
+    assert_eq!(code, 400);
+    let (port, h) = web(&a.paths, a.node.clone(), a.chat.clone()).await;
+    let (_, raw) = common::send_body(port, "GET", "/api/settings", &h, "").await;
+    let s: Value = serde_json::from_str(raw.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(s["ui_home_view"], "list", "다시 열어도 남는다");
+}
+
 /// 받은 요청 효과음(#1x) — 기본 켜짐, 끄면 남는다.
 #[tokio::test(flavor = "multi_thread")]
 async fn notify_sound_setting() {

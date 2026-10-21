@@ -168,6 +168,8 @@
   - (#1r · #1s) 접이식 절은 단계마다 하위 머리 · 행을 한 단 들여 쓴다(부모 → 하위 → 하위, 세로 안내선 없음 — #1s) — 개요 · 요청 · 주고받은 메시지 등 상대별 절 공통.
   - 상대 타일 = 요청 / 즐겨찾기 · 북마크 · 에이전트(#1z-2 개정 — 하위 "등록된 에이전트" 만, 그 상대만), 첫 화면 = 그 상대 개요, 대화는 사이드바 목록. 상대 타일 배지 = 그 타일에서
     보이는 대화의 안 읽음(에이전트 대화 제외 — '나' 의 에이전트 응답 수가 센다). 개요 아코디언 = 머리 사용자 아이콘 · 대화 줄 에이전트 로봇 아이콘(#1z-2).
+  - (#1z-4 — 2026-10-22 사용자, 시안 B) 개요 기본 보기 = **미리보기**: 상대마다 작은 대화 창(대화방 탭 3개 + "+n개" · 최근 글 말풍선, 상대 타일은 대화방마다 창),
+    열 수 = 브라우저 폭 · 세로 스크롤, "목록 | 미리보기" 는 설정 `ui_home_view` 에 기억. 미리보기 글은 마지막 몇 개만, 요약 변화 · 변경 신호 · 들어옴 때만 다시 읽고 읽음은 바꾸지 않는다.
   - (#1v) **요청 보드**(D39 ①) — '요청' 화면 "목록 | 보드"(이 PC 에 기억), 보드는 탭 한 쪽만 · 열 = 대기 · 수용 · 반려 · 완료(머리 = 서버 집계) · 상태 거르기 숨김,
     받은 요청 카드를 다른 열에 끌어 놓으면 의견 칸 → 확인 시 요청자에게(취소면 그대로), 보낸 요청 보드는 읽기 전용, 카드 글자 단추 유지.
     (보드 보강 — 사용자 2026-10-19) 끌기 = 카드 손잡이 포인터 끌기(HTML 끌어 놓기 아님 — 브라우저 끌기 확장이 반응하지 않게), 놓으면 카드가 그 열로 옮겨진 채 칸이 열린다,
@@ -305,7 +307,7 @@ Task 상태는 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`).
 Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 1b.inbound-capacity · 1c.durable-messaging · 1d.request-list ·
 1e.autostart-watchdog · 1f.message-edit · 1g.rail-scope · 1h.stabilization · 1i.rail-group · 1j.messenger-ui · 1k.ui-polish ·
 1l.ui-icons · 1m.context-compact · 1n.cli-start-stop · 1o.chat-list-split · 1p.project-tidy · 1q.request-overview · 1r.ui-polish ·
-1s.fold-line-readme · 1t.notion-ux · 1u.scoped-refresh · 1v.notion-design · 1w.conv-leave · 1x.session-ui · 1y.data-update · 1z.chat-look · 1z-2.ui-refine · 1z-3.activity-color. 남음:
+1s.fold-line-readme · 1t.notion-ux · 1u.scoped-refresh · 1v.notion-design · 1w.conv-leave · 1x.session-ui · 1y.data-update · 1z.chat-look · 1z-2.ui-refine · 1z-3.activity-color · 1z-4.home-preview. 남음:
 - 후보(착수 전): 통계 메뉴(사이드바 상단 — 보여줄 숫자 미정 · 서버 집계 API 필요).
 - 후보(착수 전): outbox 정산 순서 점검 — 기존 종류(`req_state` 거절 등)도 "행을 지운 뒤 정산" 순서라 원자성 보강이 필요한지 판단(1f 평가의 범위 밖 관찰).
 - 후보(착수 전): 요청 보드 보기 설정(D39 ① · 1t U2 — U1 은 #1v 종결) — 보드의 그룹 · 정렬 · 거르기(이 PC 에만, 지금 보기 기억은 `ui_folded` 열쇠를 빌려 씀 → 전용 설정 키). 닿는 D·S: D35 · D39.
@@ -366,5 +368,7 @@ Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 
   사용자 지시, Phase 0 표에 05-2
 - 2026-10-21 · Task #30 · D12 개정(검증 = 회사 인증서 Authenticode + 서명자 CN) · D36 개정(배포처 GitHub `Softcamp-SaaS-RND/coworkAgent` · 자동 업데이트 앞당김) ·
   S6(자동 업데이트 되살림 — #1y 걷어냄 재개정) · 1.1.1 · 1.2.0 · 1.3.0 서명 정식 릴리스(1.1.9 → v1.3.0 실제 교체 실측) — 사용자 지시, Phase 3 표에 30 종결
+- 2026-10-22 · Task #1z-4 · D35 보강(개요 기본 보기 = 미리보기 — 상대별 작은 대화 창, 시안 B · 탭 3개 + "+n개" · 열 수 = 브라우저 폭 · 보기 기억 `ui_home_view`) —
+  사용자 결정(시안 B · 질문 답 · "Q2, Q3 반영"), 종결 목록에 1z-4
 - 2026-10-19 · 1.0.0 배포 · D25 보강(보유한 Mac 의 macOS universal 실행 파일을 사전 배포에 첨부, 확인 · 서명은 Phase 4) — 사용자 지시(버전 1.0.0 · Mac 빌드 = 보유한 Mac)
 - 2026-10-19 · S1 개정(요청 상태 = 네 상태 사이 어디로든 — 되돌리기 포함) · S4 보강(요청 보드 손잡이 포인터 끌기 · 놓은 열로 옮김 · 요청 화면 "메모" → "피드백") — 사용자 지시(Task 밖 수정)

@@ -213,6 +213,18 @@ async fn conversation_api_roundtrip() {
     assert_eq!(r["conversation"]["id"], conv);
     let ms = messages(port, &h, conv, 4).await;
     assert_eq!(ms[3]["text"], "답: 이어서");
+    // 개요 미리보기(#1z-4) — `limit` = 마지막 N 개(오래된 것부터), N 이 많으면 전부, 범위 밖 400.
+    let (code, tail) = call(port, &h, "GET", &format!("{path}?limit=2"), "").await;
+    assert_eq!(code, 200, "{tail}");
+    assert_eq!(
+        (tail[0]["text"].as_str(), tail[1]["text"].as_str(), tail.as_array().unwrap().len()),
+        (Some("이어서"), Some("답: 이어서"), 2)
+    );
+    let (_, all) = call(port, &h, "GET", &format!("{path}?limit=9"), "").await;
+    assert_eq!(all.as_array().unwrap().len(), 4);
+    for bad in ["0", "501", "x"] {
+        assert_eq!(call(port, &h, "GET", &format!("{path}?limit={bad}"), "").await.0, 400, "limit={bad}");
+    }
 
     let (_, list) = call(port, &h, "GET", "/api/conversations", "").await;
     assert_eq!(list.as_array().unwrap().len(), 1);

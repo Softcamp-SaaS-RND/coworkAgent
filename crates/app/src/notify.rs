@@ -294,6 +294,13 @@ impl Notifier {
             return Err(invalid("ui_tile_size 는 normal · small"));
         }
         if patch
+            .ui_home_view
+            .as_deref()
+            .is_some_and(|t| !run_opts::HOME_VIEWS.contains(&t))
+        {
+            return Err(invalid("ui_home_view 는 preview · list"));
+        }
+        if patch
             .ui_peer_weeks
             .is_some_and(|w| !(1..=run_opts::PEER_WEEKS_MAX).contains(&w))
         {
@@ -352,6 +359,7 @@ impl Notifier {
             (run_opts::THEME_KEY, &patch.ui_theme),
             (run_opts::RAIL_ORDER_KEY, &patch.ui_rail_order),
             (run_opts::TILE_SIZE_KEY, &patch.ui_tile_size),
+            (run_opts::HOME_VIEW_KEY, &patch.ui_home_view),
         ] {
             if let Some(v) = v {
                 writes.push((key, v.clone()));
@@ -452,6 +460,11 @@ impl Notifier {
     /// 레일 타일 크기(#1x) — `normal` · `small`.
     pub fn tile_size(&self) -> io::Result<String> {
         run_opts::tile_size(&an_core::sync::lock(&self.db)).map_err(db_err)
+    }
+
+    /// 개요 보기(#1z-4) — `preview` · `list`.
+    pub fn home_view(&self) -> io::Result<String> {
+        run_opts::home_view(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
 
     /// 주고받은 메시지 보기 기간(주, #1y) — 1 ~ 12.
@@ -690,6 +703,8 @@ pub struct SettingsPatch {
     pub ui_rail_order: Option<String>,
     /// 레일 타일 크기(#1x) — `normal` · `small`.
     pub ui_tile_size: Option<String>,
+    /// 개요 보기(#1z-4) — `preview` · `list`.
+    pub ui_home_view: Option<String>,
     /// 주고받은 메시지 보기 기간(주, #1y) — 1 ~ 12.
     pub ui_peer_weeks: Option<i64>,
     /// 사이드바(대화 목록) 폭(px, [`run_opts::SIDE_WIDTHS`]).
@@ -724,6 +739,7 @@ fn settings_json(n: &Notifier) -> io::Result<serde_json::Value> {
     v["ui_theme"] = json!(theme);
     v["ui_rail_order"] = json!(n.rail_order()?);
     v["ui_tile_size"] = json!(n.tile_size()?);
+    v["ui_home_view"] = json!(n.home_view()?);
     v["ui_peer_weeks"] = json!(n.peer_weeks()?);
     let (side, alias, icon) = n.screen()?;
     v["ui_side_width"] = json!(side);

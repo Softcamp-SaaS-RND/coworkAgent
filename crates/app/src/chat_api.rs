@@ -121,6 +121,13 @@ struct SearchQuery {
     limit: Option<i64>,
 }
 
+/// `GET /api/conversations/{id}/messages` — `limit` 이면 마지막 N 개만(개요 미리보기 #1z-4, 1 ~ [`MESSAGES_MAX`]).
+#[derive(Deserialize)]
+struct TailQuery {
+    #[serde(default)]
+    limit: Option<i64>,
+}
+
 /// 검색어 길이(글자) · 메시지 묶음 기본 · 최대 건수.
 pub const SEARCH_MAX_CHARS: usize = 100;
 pub const SEARCH_DEFAULT: i64 = 20;
@@ -582,7 +589,10 @@ async fn list_conversations(State(chat): State<Arc<Chat>>) -> Response {
     }
 }
 
-async fn list_messages(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) -> Response {
+async fn list_messages(State(chat): State<Arc<Chat>>, Path(id): Path<i64>, Query(q): Query<TailQuery>) -> Response {
+    if q.limit.is_some_and(|n| !(1..=MESSAGES_MAX).contains(&n)) {
+        return bad(&format!("limit 은 1 ~ {MESSAGES_MAX}"));
+    }
     // DB 잠금은 글을 읽는 동안만 — 아래 보관 상태 조회가 같은 잠금을 다시 잡는다.
     let read = {
         let db = chat.db();
@@ -591,7 +601,11 @@ async fn list_messages(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) -> Re
             Ok(None) => return fail(io::Error::new(io::ErrorKind::NotFound, "없는 대화")),
             Err(e) => return db_fail(e),
         }
-        chat::messages(&db, id)
+        // 마지막 N 개(오래된 것부터)는 SQL 에서 자른다 — 글마다 진행 · 보관 · 편집 가능도 그 글만 읽는다.
+        match q.limit {
+            Some(n) => chat::messages_tail(&db, id, n),
+            None => chat::messages(&db, id),
+        }
     };
     match read {
         Ok(ms) => Json(

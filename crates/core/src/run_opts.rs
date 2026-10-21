@@ -24,6 +24,9 @@ pub const PEER_WEEKS_KEY: &str = "ui_peer_weeks";
 pub const PEER_WEEKS_DEFAULT: i64 = 4;
 pub const PEER_WEEKS_MAX: i64 = 12;
 pub const TILE_SIZES: [&str; 2] = ["small", "normal"];
+/// 개요 보기(#1z-4) — `preview`(기본, 상대별 작은 대화 창) · `list`(상대별 접는 절).
+pub const HOME_VIEW_KEY: &str = "ui_home_view";
+pub const HOME_VIEWS: [&str; 2] = ["preview", "list"];
 /// 그룹 이름 · 표시 이름(별칭) 최대 글자 수.
 pub const MAX_GROUP_CHARS: usize = 32;
 pub const MAX_ALIAS_CHARS: usize = 32;
@@ -127,6 +130,13 @@ pub fn tile_size(conn: &Connection) -> rusqlite::Result<String> {
     Ok(settings::get(conn, TILE_SIZE_KEY)?
         .filter(|t| TILE_SIZES.contains(&t.as_str()))
         .unwrap_or_else(|| TILE_SIZES[0].into()))
+}
+
+/// 개요 보기 — 없거나 틀리면 `preview`.
+pub fn home_view(conn: &Connection) -> rusqlite::Result<String> {
+    Ok(settings::get(conn, HOME_VIEW_KEY)?
+        .filter(|t| HOME_VIEWS.contains(&t.as_str()))
+        .unwrap_or_else(|| HOME_VIEWS[0].into()))
 }
 
 /// 주고받은 메시지 보기 기간(주) — 없거나 1 ~ 12 밖이면 4.
