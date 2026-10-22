@@ -3,7 +3,7 @@
 > **세션 시작 시 가장 먼저 읽는 문서.** 지금 어디서 재개하는지의 단일 좌표 — **매번 덮어쓴다.**
 > Task 목록은 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`), 미조치는 [overview/ledger.md](docs/overview/ledger.md).
 
-- **갱신**: 2026-10-23 / main `0769a47`(origin/main squash push — 트리 같음 확인) — Task #1z-7 종결 · main 반영 · 브랜치 `task/1z-7-conv-type-look` · 작업 폴더 정리
+- **갱신**: 2026-10-23 / main `95dc790` — **v1.3.3 정식 릴리스(Latest)** 등록(소스 `95dc790` · 서명 Valid SOFTCAMP CO.,LTD. · SHA-256 `9de583c7…` 받은 파일 대조 · `real_github_latest` · `real_signed_release` ok). 앞서 #1z-7 종결 · main 반영(`0769a47`)
 
 ## 현재 작업
 
@@ -16,7 +16,7 @@
 
 ## 다음 행동
 
-1. 1.3.3(#1z-7 · #05-3 · 미리보기 축소 포함 — 1.3.2 는 미릴리스) 서명 릴리스 여부 결정. 선생님 확인: #05-3 라벨 "셸 명령 실행 허용"(intent 결정 8) · 세션 비움(7) · 압축 요약 셸 없이(9), #1z-7 구현자 해석(report — 아이콘 색 agent-tile ≈ peer-2 관찰).
+1. 1.3.3 릴리스 완료(1.2.0 · 1.3.0 · 1.3.1 · 1.3.2 자동 업데이트 대상 — 1.3.2 도 이미 정식 릴리스였다). 선생님 확인: #05-3 라벨 "셸 명령 실행 허용"(intent 결정 8) · 세션 비움(7) · 압축 요약 셸 없이(9), #1z-7 구현자 해석(report — 아이콘 색 agent-tile ≈ peer-2 관찰).
 2. 19 acceptance TC(사용자) — 19 문서는 `task/19-prototype-acceptance` 브랜치에(main 병합 — 이후 main 은 일반 merge). 19 원장 재측정 · `tools/check_acceptance.py` 번호 형식(1a ~ 1z) 수정 필요.
 3. v1.0.0 · v1.0.1 · v1.1.0 · v1.3.0 macOS zip 첨부(보유한 Mac).
 
