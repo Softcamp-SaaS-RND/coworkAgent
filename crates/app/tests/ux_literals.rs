@@ -269,6 +269,8 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app.js", "const secs = previewSections(groups, single, state.previewCols);", "#1z-5 '나' · 그룹은 절마다 한 줄"),
     ("app.js", "}).observe($(\"home_preview\"));", "#1z-5 창 폭이 바뀌면 열 수를 다시 잰다"),
     ("app.js", "text: `+${s.more}개` })", "#1z-5 넘치면 \"+n개\""),
+    ("app.js", "    el(\"div\", { class: \"pv-head\" }, ...head),", "개요 미리보기 절 머리에 \"{이름} 개요 →\" 없음(사용자 지시)"),
+    ("app.css", "--pv-zoom: 1.15;", "개요 미리보기 15% 확대(사용자 지시)"),
     ("app.js", "if (all) for (const id of state.previewMsgs.keys()) if (!convs.some((c) => c.id === id)) state.previewStale.add(id);", "#1z-5 R1 전체 무효화는 숨은 카드에도"),
     ("app.js", "api(\"GET\", `/api/conversations/${c.id}/messages?limit=${PREVIEW_MSGS}`)", "#1z-4 미리보기는 마지막 글만"),
     ("app.js", "api(\"PUT\", \"/api/settings\", { ui_home_view: v })", "#1z-4 보기 기억"),

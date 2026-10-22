@@ -33,7 +33,8 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
   사용자 아이콘(`rowTile` — 그 상대 타일 모양 · 색) · 대화 줄 에이전트 이름 앞 로봇(`.home-agent` · `speakerEl("agent")`). 그룹 타일 = 개요(그룹 요약) / 요청 / 즐겨찾기 · 북마크.
   개요 보기(#1z-4) = 머리 "목록 | 미리보기"(`.seg` `#home_view_list` · `#home_view_preview`, 설정 `ui_home_view` — `preview` 기본 · 시작할 때만 읽고 누르면 저장).
   미리보기(#1z-5 2차 시안 A) `#home_preview.pv-list` = 상대마다 절 `.pv-sec`(세로 목록, 넘치면 세로 스크롤) — 머리 `.pv-head` = 아이콘(`rowTile`) · 이름 · 접속 · "· 대화 n" ·
-  안 읽음 · 대기 요청 · `.pv-open` "{이름} 개요 →"(`pickTile`, 상대 타일이면 없음), 카드 격자 `.pv-cards` = `repeat(auto-fill, minmax(min(100%, 240px), 1fr))`.
+  안 읽음 · 대기 요청(머리 "{이름} 개요 →" 없음 — 그 상대 개요는 "+n개" · 레일 타일), 절마다 `zoom: var(--pv-zoom)`(1.15 — 사용자 "15% 정도 확대"),
+  카드 격자 `.pv-cards` = `repeat(auto-fill, minmax(min(100%, 240px), 1fr))`(확대된 단위 — 열 수는 그만큼 준다).
   카드 `a.pv-card`(누르면 그 대화, 안 읽음이면 `.unseen` 테두리) = 머리(제목 · 상태 `.pv-state`) · 본문 `.pv-body`(높이 120px) = 마지막 글 `PREVIEW_MSGS`(6)를 `previewBubbles`
   말풍선 `.pv-msg`(쪽 `bubbleSide`, 이름 `authorLabel`, 글자만 · 2줄, `agent` · `running` · `error` 색, 요약 글 뺌 — 최신이 아래, 넘친 옛 글은 위에서 잘림) ·
   바닥 `.pv-card-foot`(로봇 · 에이전트 · 시각 · 안 읽음). `previewSections(groups, single, cols)` = 카드 최근 활동 순(`last_at` 큰 것부터), '나' · 그룹은 한 줄 —

@@ -106,6 +106,7 @@
   --gap: 12px;
   --bubble-mine-alpha: 0.1; /* 말풍선 층 — 내 글 강조색 · 상대 글 타일 색(0 = 층 없음) */
   --bubble-theirs-alpha: 0.0;
+  --pv-zoom: 1.15; /* 개요 미리보기 절 확대(사용자 "15% 정도 확대" — 열 수는 확대된 격자에서 잰다) */
 }
 :root[data-theme="dark"] {
   --bg: var(--dark-bg);
@@ -941,11 +942,9 @@ details { margin: var(--sp-2) 0; }
 /* 개요 미리보기(#1z-5 2차 시안 A) — 상대마다 절(머리 + 대화방 카드 격자), 넘치면 세로 스크롤. 카드 열 수 = 폭(카드 최소 240px — 좁으면 한 열,
    스크립트가 이 격자의 실제 열을 재서 '나' · 그룹은 한 줄만). 카드 본문 높이 고정 — 최신 글이 아래, 넘친 옛 글은 위에서 잘린다(flex-end + overflow hidden). */
 .pv-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--sp-5); padding: var(--sp-5); }
-.pv-sec { flex: none; display: flex; flex-direction: column; gap: var(--sp-3); }
+.pv-sec { flex: none; display: flex; flex-direction: column; gap: var(--sp-3); zoom: var(--pv-zoom); }
 .pv-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--muted); }
 .pv-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: var(--fs-lg); }
-.pv-open { margin-left: auto; height: var(--control-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--accent); font-size: var(--fs-sm); font-weight: var(--fw-medium); white-space: nowrap; }
-.pv-open:hover { color: var(--accent-hover); }
 .pv-none { padding: var(--sp-3) var(--sp-4); border: 1px dashed var(--border); border-radius: var(--radius-bubble); }
 .pv-none button { margin-left: auto; }
 .pv-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: var(--sp-4); }

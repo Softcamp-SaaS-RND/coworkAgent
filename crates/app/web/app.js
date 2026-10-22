@@ -1818,7 +1818,7 @@ async function renderHomePreview(groups, single) {
     ]),
   ]);
   const box = $("home_preview");
-  if (needsRender(box, sig, false)) box.replaceChildren(...secs.map((s) => previewSectionEl(s, single, peerOf(s.peer))));
+  if (needsRender(box, sig, false)) box.replaceChildren(...secs.map((s) => previewSectionEl(s, peerOf(s.peer))));
   // 한 줄 열 수 = 그린 격자의 실제 열(CSS `auto-fill`) — 처음 값과 다르면 그 수로 다시 그린다(창 폭이 바뀌면 `ResizeObserver` 가 다시 잰다).
   if (fitPreviewCols()) renderHome();
 }
@@ -1838,9 +1838,9 @@ new ResizeObserver(() => {
   if (route(location.hash).view === "home" && state.homeView === "preview" && fitPreviewCols()) renderHome();
 }).observe($("home_preview"));
 
-/// 미리보기 절 하나 — 머리(상대 아이콘 · 이름 · 접속 · 대화 수 · 안 읽음 · 대기 요청 · "{이름} 개요 →") + 카드 한 줄(끝 칸 "+n개" = 그 상대 개요).
+/// 미리보기 절 하나 — 머리(상대 아이콘 · 이름 · 접속 · 대화 수 · 안 읽음 · 대기 요청) + 카드 한 줄(끝 칸 "+n개" = 그 상대 개요 — 머리 "{이름} 개요 →" 는 사용자 지시로 뺌).
 /// 대화 없는 상대 = 점선 한 줄 + "+ 새 세션"(페어링된 상대만).
-function previewSectionEl(s, single, p) {
+function previewSectionEl(s, p) {
   const pres = presence(p);
   const head = [
     rowTile(`small ${colorOf(s.peer)}`, p?.icon),
@@ -1855,7 +1855,7 @@ function previewSectionEl(s, single, p) {
   return el(
     "section",
     { class: "pv-sec" },
-    el("div", { class: "pv-head" }, ...head, single ? "" : el("button", { type: "button", class: "pv-open", onclick: () => pickTile(s.peer), text: `${s.name} 개요 →` })),
+    el("div", { class: "pv-head" }, ...head),
     el(
       "div",
       { class: "pv-cards" },
