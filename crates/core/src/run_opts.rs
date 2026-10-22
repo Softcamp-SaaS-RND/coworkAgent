@@ -27,6 +27,9 @@ pub const TILE_SIZES: [&str; 2] = ["small", "normal"];
 /// 개요 보기(#1z-4) — `preview`(기본, 상대별 작은 대화 창) · `list`(상대별 접는 절).
 pub const HOME_VIEW_KEY: &str = "ui_home_view";
 pub const HOME_VIEWS: [&str; 2] = ["preview", "list"];
+/// 개요 미리보기 카드 본문 배율(%, #1z-6) — 첫 값이 기본(지금 크기). 글자는 그대로, 말풍선 칸 높이 · 줄 수만.
+pub const HOME_ZOOM_KEY: &str = "ui_home_zoom";
+pub const HOME_ZOOMS: [i64; 5] = [100, 125, 150, 175, 200];
 /// 그룹 이름 · 표시 이름(별칭) 최대 글자 수.
 pub const MAX_GROUP_CHARS: usize = 32;
 pub const MAX_ALIAS_CHARS: usize = 32;
@@ -137,6 +140,14 @@ pub fn home_view(conn: &Connection) -> rusqlite::Result<String> {
     Ok(settings::get(conn, HOME_VIEW_KEY)?
         .filter(|t| HOME_VIEWS.contains(&t.as_str()))
         .unwrap_or_else(|| HOME_VIEWS[0].into()))
+}
+
+/// 개요 미리보기 배율(%) — 없거나 [`HOME_ZOOMS`] 밖이면 100.
+pub fn home_zoom(conn: &Connection) -> rusqlite::Result<i64> {
+    Ok(settings::get(conn, HOME_ZOOM_KEY)?
+        .and_then(|v| v.parse().ok())
+        .filter(|z| HOME_ZOOMS.contains(z))
+        .unwrap_or(HOME_ZOOMS[0]))
 }
 
 /// 주고받은 메시지 보기 기간(주) — 없거나 1 ~ 12 밖이면 4.

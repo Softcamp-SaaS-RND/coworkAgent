@@ -28,6 +28,7 @@ import {
   previewBubbles,
   previewKey,
   previewStaleOf,
+  previewZoom,
   PREVIEW_MSGS,
   settingsTree,
   settingsGroupSections,
@@ -1719,6 +1720,7 @@ function renderHome() {
   $("home_view_preview").setAttribute("aria-pressed", String(pv));
   $("home_summary").hidden = pv;
   $("home_preview").hidden = !pv;
+  $("home_zoom_pick").hidden = !pv; // 미리보기 크기(#1z-6)는 미리보기에서만
   if (pv) return renderHomePreview(groups, !group && state.railPeer != null);
   const peerOf = (id) => state.peers.find((x) => x.id === id);
   const sig = JSON.stringify([groups.map(({ rows, ...g }) => [g, rows.map((c) => [c.id, c.title, c.last_state, c.unread, c.last_at, c.starred])]), groups.map((g) => presence(peerOf(g.peer)).text)]);
@@ -1900,6 +1902,26 @@ function previewCardEl(c) {
     ),
   );
 }
+
+/// 개요 미리보기 크기(#1z-6) — 카드 본문 높이 · 말풍선 줄 수만(글자 그대로, 한 줄 열 수 그대로 — CSS 값만 바꾸므로 다시 그리지 않는다).
+/// 값은 시작할 때(`showSettings`)와 고를 때만 — 다른 설정 저장의 늦은 응답(`fillPrefs`)이 막 고른 배율을 되돌리지 않게(#1z-6 R1, `ui_home_view` 와 같은 규칙).
+function applyHomeZoom(z) {
+  const { scale, lines } = previewZoom(z);
+  const box = $("home_preview");
+  box.style.setProperty("--pv-scale", String(scale));
+  box.style.setProperty("--pv-lines", String(lines));
+  $("ui_home_zoom").value = String(Math.round(scale * 100));
+}
+/// 배율 저장 — 한 번에 하나, 보내는 동안 또 고르면 마지막 값만 이어서(`SendLatest`, #1z-6 R2 — 동시 요청이 앞 값으로 끝나지 않게). 실패는 상태 줄, 화면은 고른 대로.
+const homeZoomSaver = new SendLatest((z) =>
+  api("PUT", "/api/settings", { ui_home_zoom: z }).catch((err) => {
+    $("status_msg").textContent = "미리보기 크기 저장 실패: " + err.message;
+  }),
+);
+$("ui_home_zoom").addEventListener("change", (e) => {
+  applyHomeZoom(e.target.value);
+  homeZoomSaver.push(Number(e.target.value));
+});
 
 /// 개요 보기 바꾸기(#1z-4) — 바로 그리고 설정 `ui_home_view` 에 남긴다(실패는 상태 줄, 화면은 바꾼 대로).
 function setHomeView(v) {
@@ -4326,6 +4348,7 @@ async function showSettings() {
     // 접힘도 시작할 때만(#1g) — 그 뒤는 화면이 바꾼 값이 정본.
     state.folded = new Set(s.ui_folded ?? []);
     state.homeView = s.ui_home_view ?? "preview"; // 개요 보기(#1z-4)도 시작할 때만
+    applyHomeZoom(s.ui_home_zoom); // 미리보기 크기(#1z-6)도 시작할 때만
     $("max_runs").value = String((await api("GET", "/api/runs")).cap);
   } catch (e) {
     $("status_msg").textContent = "설정 오류: " + e.message;

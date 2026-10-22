@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 import {
   entryToken,
   previewSections,
+  previewZoom,
+  HOME_ZOOMS,
   previewBubbles,
   previewKey,
   previewStaleOf,
@@ -709,6 +711,22 @@ test("preview_sections — 개요 미리보기(#1z-5 2차 시안 A): 상대마�
   );
 });
 
+test("preview_zoom — 개요 미리보기 크기(#1z-6): 100 ~ 200 25 단계(축소 없음) → 본문 배수 · 말풍선 줄 수, 목록 밖은 100%", () => {
+  assert.deepEqual(HOME_ZOOMS, [100, 125, 150, 175, 200]);
+  assert.deepEqual(
+    HOME_ZOOMS.map((z) => [z, previewZoom(z).scale, previewZoom(z).lines]),
+    [
+      [100, 1, 2],
+      [125, 1.25, 3],
+      [150, 1.5, 3],
+      [175, 1.75, 4],
+      [200, 2, 4],
+    ],
+  );
+  assert.deepEqual(previewZoom("150"), { scale: 1.5, lines: 3 }, "select 값(글자)도");
+  for (const z of [75, 110, 250, undefined, null, "x"]) assert.deepEqual(previewZoom(z), { scale: 1, lines: 2 }, String(z));
+});
+
 test("preview_bubbles — 미리보기 말풍선(#1z-4): 마지막 n 개 · 요약 글 뺌 · 쪽 · 이름 · 글자만 · 상태 색", () => {
   const conv = { id: 1, dir: "out", agent: "review", peer_id: 2 };
   const ms = [
@@ -729,8 +747,8 @@ test("preview_bubbles — 미리보기 말풍선(#1z-4): 마지막 n 개 · 요�
       [6, "theirs", "나래/review", "오류", "error"],
     ],
   );
-  assert.equal(previewBubbles(conv, ms, "나래").length, 5, "기본 PREVIEW_MSGS(6) — 요약 글 뺀 다섯");
-  assert.equal(PREVIEW_MSGS, 6);
+  assert.equal(previewBubbles(conv, ms, "나래").length, 5, "기본 PREVIEW_MSGS(12) — 글 여섯 중 요약 글 뺀 다섯");
+  assert.equal(PREVIEW_MSGS, 12);
   // R1 — 마지막이 아닌 글의 편집 · 상태 변경도 말풍선(= 다시 그리기 서명)이 바뀐다.
   const edited = ms.map((m) => (m.id === 4 ? { ...m, text: "고친 답" } : m.id === 5 ? { ...m, state: "done", text: "끝" } : m));
   assert.notDeepEqual(previewBubbles(conv, edited, "나래", 4), b);

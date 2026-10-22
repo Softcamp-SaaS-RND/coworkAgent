@@ -34,13 +34,16 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
   개요 보기(#1z-4) = 머리 "목록 | 미리보기"(`.seg` `#home_view_list` · `#home_view_preview`, 설정 `ui_home_view` — `preview` 기본 · 시작할 때만 읽고 누르면 저장).
   미리보기(#1z-5 2차 시안 A) `#home_preview.pv-list` = 상대마다 절 `.pv-sec`(세로 목록, 넘치면 세로 스크롤) — 머리 `.pv-head` = 아이콘(`rowTile`) · 이름 · 접속 · "· 대화 n" ·
   안 읽음 · 대기 요청(머리 "{이름} 개요 →" 없음 — 그 상대 개요는 "+n개" · 레일 타일), 절마다 `zoom: var(--pv-zoom)`(1.15 — 사용자 "15% 정도 확대"),
+  "미리보기 크기"(#1z-6 — 머리 `#home_zoom_pick` `select#ui_home_zoom`, 미리보기에서만, 설정 `ui_home_zoom` 100 기본 · 125 · 150 · 175 · 200 — 축소 없음, 시작할 때 · 고를 때만 적용(`PREFS` 밖 — 다른 설정 저장의 늦은 응답이 되돌리지 않게, #1z-6 R1), 저장은 `SendLatest`(한 번에 하나 · 마지막 값, R2) ·
+  `applyHomeZoom` 이 `view.previewZoom` 의 `--pv-scale`(1 ~ 2 — 본문 높이 · "+n개" 칸 높이) · `--pv-lines`(2 · 3(125 · 150) · 4(175 · 200) — 말풍선 줄 수)를 `#home_preview` 에.
+  글자 · 카드 폭 · 한 줄 열 수는 그대로, CSS 값만이라 다시 그리지 않음),
   카드 격자 `.pv-cards` = `repeat(auto-fill, minmax(min(100%, 240px), 1fr))`(확대된 단위 — 열 수는 그만큼 준다).
-  카드 `a.pv-card`(누르면 그 대화, 안 읽음이면 `.unseen` 테두리) = 머리(제목 · 상태 `.pv-state`) · 본문 `.pv-body`(높이 120px) = 마지막 글 `PREVIEW_MSGS`(6)를 `previewBubbles`
-  말풍선 `.pv-msg`(쪽 `bubbleSide`, 이름 `authorLabel`, 글자만 · 2줄, `agent` · `running` · `error` 색, 요약 글 뺌 — 최신이 아래, 넘친 옛 글은 위에서 잘림) ·
+  카드 `a.pv-card`(누르면 그 대화, 안 읽음이면 `.unseen` 테두리) = 머리(제목 · 상태 `.pv-state`) · 본문 `.pv-body`(높이 `120px × --pv-scale`) = 마지막 글 `PREVIEW_MSGS`(12)를 `previewBubbles`
+  말풍선 `.pv-msg`(쪽 `bubbleSide`, 이름 `authorLabel`, 글자만 · `--pv-lines` 줄, `agent` · `running` · `error` 색, 요약 글 뺌 — 최신이 아래, 넘친 옛 글은 위에서 잘림) ·
   바닥 `.pv-card-foot`(로봇 · 에이전트 · 시각 · 안 읽음). `previewSections(groups, single, cols)` = 카드 최근 활동 순(`last_at` 큰 것부터), '나' · 그룹은 한 줄 —
   넘치면 `cols - 1` 개 + 끝 칸 `.pv-more` "+n개"(`pickTile(상대)` = 그 상대 개요), 상대 타일은 전부. 한 줄 열 수 `state.previewCols` = 그린 `.pv-cards` 의 실제 트랙 수
   (`fitPreviewCols` — 바뀌면 다시 그림, `ResizeObserver(#home_preview)` 가 폭 바뀜마다 다시 잼). 대화 없는 페어링 상대 = 점선 한 줄 `.pv-none` + "세션 생성".
-  글은 `GET /api/conversations/{id}/messages?limit=6` 으로 보이는 카드의 대화만, 필요할 때만 다시 읽는다 — 받은 적 없음 · 요약 변화(`previewKey`) · 변경 신호가 그 대화
+  글은 `GET /api/conversations/{id}/messages?limit=12` 으로 보이는 카드의 대화만, 필요할 때만 다시 읽는다 — 받은 적 없음 · 요약 변화(`previewKey`) · 변경 신호가 그 대화
   (`previewStaleOf` → `state.previewStale`, 전체면 `previewAll` — 한 줄 밖 숨은 카드는 `previewStale` 로 남겨 보일 때, #1z-5 R1) · 개요에 들어옴 · 보기 바꿈 · 읽기 실패(5초 새로 고침마다 전부 읽지 않음, 서버 `messages_tail` 이 SQL 에서 자름).
   `state.previewMsgs` = `{key, ms, seq}`(앞선 차례 응답은 덮지 않음), 늦은 응답 = `previewLatest` 로 그리지 않음, 다시 그리기 서명 = 절 · 카드 · 실제 말풍선 · 열 수.
   읽음은 바꾸지 않는다. 이 PC 에서 마지막이 아닌 글만 바뀌면(신호 없음) 개요에 다시 들어올 때.

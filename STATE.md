@@ -3,12 +3,13 @@
 > **세션 시작 시 가장 먼저 읽는 문서.** 지금 어디서 재개하는지의 단일 좌표 — **매번 덮어쓴다.**
 > Task 목록은 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`), 미조치는 [overview/ledger.md](docs/overview/ledger.md).
 
-- **갱신**: 2026-10-22 / main — Task #1z-5 종결(개요 미리보기 2차 시안 A)
+- **갱신**: 2026-10-22 / main — Task #1z-6 종결(개요 미리보기 크기 100 ~ 200%)
 
 ## 현재 작업
 
-없음 — 열린 Task 없음. #1z-5 개요 미리보기 = 2차 시안 A 종결(상대별 절 + 대화방 카드 · 절마다 한 줄 + "+n개" · 빈 상대 점선 줄 — #1z-4 창 · 탭 대체).
-이 PC 앱 = 서명된 1.3.0 `D:\dev\git\coworkAgent\target\release\coworkAgent.exe` — #1z-4 · #1z-5 는 다음 서명 릴리스에 들어간다.
+없음 — 열린 Task 없음. #1z-6 개요 "미리보기 크기" 100 ~ 200% 종결(말풍선 칸 높이 · 줄 수, 글자 고정, `ui_home_zoom` 기억).
+v1.3.0 은 2026-10-22 에 `b83579f`(#1z-5 · 미리보기 15% 확대 포함)로 다시 등록(태그 옮김 — 앞서 1.3.0 을 받은 PC 는 자동으로 안 바뀜).
+이 PC 앱 = 서명된 1.3.0 `D:\dev\git\coworkAgent\target\release\coworkAgent.exe` — 버전 1.3.1 로 올림(#1z-4 ~ #1z-6 포함), 1.3.1 서명 릴리스 대기(앱 끄고 `cargo build --release -p coworkagent-app` → 서명 → 등록).
 
 - **중단 지점**: 없음.
   PRODUCT.md 의 다른 세션 수정(security-posture 링크 2줄) · docs/tech/security-posture.md 는 `D:\dev\git\coworkAgent` 작업 폴더에 그대로(미커밋).

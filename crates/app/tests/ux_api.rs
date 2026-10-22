@@ -1965,6 +1965,28 @@ async fn home_view_setting_persists() {
     assert_eq!(s["ui_home_view"], "list", "다시 열어도 남는다");
 }
 
+/// 개요 미리보기 배율(#1z-6) — 기본 100, 125 ~ 200 은 남고, 축소(75) · 단계 밖(110) · 글자는 400.
+#[tokio::test(flavor = "multi_thread")]
+async fn home_zoom_setting_persists() {
+    let a = side("hz").await;
+    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
+    assert_eq!(s["ui_home_zoom"], 100);
+    let (code, s) = a
+        .call("PUT", "/api/settings", json!({ "ui_home_zoom": 175 }))
+        .await;
+    assert_eq!((code, &s["ui_home_zoom"]), (200, &json!(175)), "{s}");
+    for bad in [json!(75), json!(110), json!(225), json!("150")] {
+        let (code, _) = a
+            .call("PUT", "/api/settings", json!({ "ui_home_zoom": bad }))
+            .await;
+        assert_eq!(code / 100, 4, "{bad}");
+    }
+    let (port, h) = web(&a.paths, a.node.clone(), a.chat.clone()).await;
+    let (_, raw) = common::send_body(port, "GET", "/api/settings", &h, "").await;
+    let s: Value = serde_json::from_str(raw.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(s["ui_home_zoom"], 175, "다시 열어도 남는다");
+}
+
 /// 받은 요청 효과음(#1x) — 기본 켜짐, 끄면 남는다.
 #[tokio::test(flavor = "multi_thread")]
 async fn notify_sound_setting() {

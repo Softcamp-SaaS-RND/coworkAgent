@@ -1099,8 +1099,17 @@ export function inGroup(convs, group) {
   return convs.filter((c) => ids.has(c.id));
 }
 
-/// 개요 미리보기 카드마다 받는 마지막 글 수 — 카드 높이에 최신 쪽부터 보이고 위는 잘린다.
-export const PREVIEW_MSGS = 6;
+/// 개요 미리보기 카드마다 받는 마지막 글 수 — 카드 높이에 최신 쪽부터 보이고 위는 잘린다(#1z-6 — 200% 본문도 채우게 12).
+export const PREVIEW_MSGS = 12;
+
+/// 개요 미리보기 배율(%, #1z-6 — 설정 `ui_home_zoom`, 서버 `HOME_ZOOMS`) — 첫 값이 기본(지금 크기). 축소 없음(사용자 — 처음 화면이 이미 작다).
+export const HOME_ZOOMS = [100, 125, 150, 175, 200];
+
+/// 배율 → 카드 본문 높이 배수 · 말풍선 줄 수(글자 크기는 그대로). 목록 밖 값은 100%.
+export function previewZoom(z) {
+  const pct = HOME_ZOOMS.includes(Number(z)) ? Number(z) : HOME_ZOOMS[0];
+  return { scale: pct / 100, lines: pct >= 175 ? 4 : pct >= 125 ? 3 : 2 };
+}
 
 /// 개요 미리보기 절(#1z-5 2차 시안 A) — 상대마다 절, 카드 = 그 상대 대화(최근 활동 순 — `last_at` 큰 것부터, 없으면 뒤). '나' · 그룹은 한 줄(`cols` = 폭에 맞춘 열 수)만 —
 /// 넘치면 `cols - 1` 개 + 숨은 수 `more`(끝 칸 "+n개"), 상대 타일(`single`)은 전부. `groups` = `peerSummary` 결과(대화 없는 상대는 `cards` 빈 배열).

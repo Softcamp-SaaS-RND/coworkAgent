@@ -301,6 +301,12 @@ impl Notifier {
             return Err(invalid("ui_home_view 는 preview · list"));
         }
         if patch
+            .ui_home_zoom
+            .is_some_and(|z| !run_opts::HOME_ZOOMS.contains(&z))
+        {
+            return Err(invalid("ui_home_zoom 는 100 · 125 · 150 · 175 · 200"));
+        }
+        if patch
             .ui_peer_weeks
             .is_some_and(|w| !(1..=run_opts::PEER_WEEKS_MAX).contains(&w))
         {
@@ -349,6 +355,9 @@ impl Notifier {
         }
         if let Some(w) = patch.ui_peer_weeks {
             writes.push((run_opts::PEER_WEEKS_KEY, w.to_string()));
+        }
+        if let Some(z) = patch.ui_home_zoom {
+            writes.push((run_opts::HOME_ZOOM_KEY, z.to_string()));
         }
         if let Some(f) = folded {
             writes.push((run_opts::FOLDED_KEY, f));
@@ -465,6 +474,11 @@ impl Notifier {
     /// 개요 보기(#1z-4) — `preview` · `list`.
     pub fn home_view(&self) -> io::Result<String> {
         run_opts::home_view(&an_core::sync::lock(&self.db)).map_err(db_err)
+    }
+
+    /// 개요 미리보기 배율(%, #1z-6) — 100 · 125 · 150 · 175 · 200.
+    pub fn home_zoom(&self) -> io::Result<i64> {
+        run_opts::home_zoom(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
 
     /// 주고받은 메시지 보기 기간(주, #1y) — 1 ~ 12.
@@ -705,6 +719,8 @@ pub struct SettingsPatch {
     pub ui_tile_size: Option<String>,
     /// 개요 보기(#1z-4) — `preview` · `list`.
     pub ui_home_view: Option<String>,
+    /// 개요 미리보기 배율(%, #1z-6) — [`run_opts::HOME_ZOOMS`].
+    pub ui_home_zoom: Option<i64>,
     /// 주고받은 메시지 보기 기간(주, #1y) — 1 ~ 12.
     pub ui_peer_weeks: Option<i64>,
     /// 사이드바(대화 목록) 폭(px, [`run_opts::SIDE_WIDTHS`]).
@@ -740,6 +756,7 @@ fn settings_json(n: &Notifier) -> io::Result<serde_json::Value> {
     v["ui_rail_order"] = json!(n.rail_order()?);
     v["ui_tile_size"] = json!(n.tile_size()?);
     v["ui_home_view"] = json!(n.home_view()?);
+    v["ui_home_zoom"] = json!(n.home_zoom()?);
     v["ui_peer_weeks"] = json!(n.peer_weeks()?);
     let (side, alias, icon) = n.screen()?;
     v["ui_side_width"] = json!(side);

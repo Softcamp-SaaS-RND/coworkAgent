@@ -107,6 +107,8 @@
   --bubble-mine-alpha: 0.1; /* 말풍선 층 — 내 글 강조색 · 상대 글 타일 색(0 = 층 없음) */
   --bubble-theirs-alpha: 0.0;
   --pv-zoom: 1.15; /* 개요 미리보기 절 확대(사용자 "15% 정도 확대" — 열 수는 확대된 격자에서 잰다) */
+  --pv-scale: 1; /* 개요 미리보기 카드 본문 배수(#1z-6 — 스크립트가 `#home_preview` 에 1 ~ 2) */
+  --pv-lines: 2; /* 말풍선 줄 수(#1z-6 — 배율 125% 3줄 · 175% 4줄) */
 }
 :root[data-theme="dark"] {
   --bg: var(--dark-bg);
@@ -954,8 +956,8 @@ details { margin: var(--sp-2) 0; }
 .pv-card-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border); }
 .pv-card-head strong { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); }
 .pv-state { flex: none; padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--subtle); font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: var(--lh-body); }
-.pv-body { height: 120px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3); overflow: hidden; background: var(--surface-2); }
-.pv-msg { flex: none; max-width: 84%; padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm) var(--radius-bubble) var(--radius-bubble) var(--radius-bubble); font-size: var(--fs-xs); line-height: var(--lh-tight); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pv-body { height: calc(120px * var(--pv-scale)); box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3); overflow: hidden; background: var(--surface-2); }
+.pv-msg { flex: none; max-width: 84%; padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm) var(--radius-bubble) var(--radius-bubble) var(--radius-bubble); font-size: var(--fs-xs); line-height: var(--lh-tight); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: var(--pv-lines); -webkit-box-orient: vertical; overflow: hidden; }
 .pv-msg.side-mine { align-self: flex-end; border-radius: var(--radius-bubble) var(--radius-sm) var(--radius-bubble) var(--radius-bubble); background: var(--sent-bg); }
 .pv-msg.side-theirs { align-self: flex-start; background: var(--recv-bg); }
 .pv-msg.agent, .pv-msg.running { background: var(--agent-soft); border: 1px solid var(--agent); }
@@ -966,7 +968,7 @@ details { margin: var(--sp-2) 0; }
 .pv-card-foot { display: flex; align-items: center; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--faint); }
 .pv-card-foot .home-agent { min-width: 0; overflow: hidden; white-space: nowrap; color: var(--agent); }
 .pv-unread { margin-left: auto; flex: none; padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--accent); color: var(--on-accent); font-weight: var(--fw-bold); line-height: var(--lh-body); }
-.pv-more { min-height: 120px; border: 1px dashed var(--border); border-radius: var(--radius-bubble); background: transparent; color: var(--accent); font-size: var(--fs-md); font-weight: var(--fw-bold); }
+.pv-more { min-height: calc(120px * var(--pv-scale)); border: 1px dashed var(--border); border-radius: var(--radius-bubble); background: transparent; color: var(--accent); font-size: var(--fs-md); font-weight: var(--fw-bold); }
 .pv-more:hover { border-color: var(--accent); }
 /* 주고받은 메시지 줄(시안 Peer): 원형 아바타 · 메타 · 본문 · 시각, 에이전트 줄 바탕 */
 .rows li.pm-agent { background: var(--agent-soft); }
