@@ -11,6 +11,9 @@ pub const SHELL_TOOLS: &[&str] = &["Bash", "PowerShell"];
 #[cfg(not(windows))]
 pub const SHELL_TOOLS: &[&str] = &["Bash"];
 
+/// 아이콘 색(#1z-7) — 웹UI 타일 색 토큰 열쇠(클래스 이름 그대로), 첫 값이 기본. 이 PC 화면에만 쓴다(상대 PC 에 보내지 않는다).
+pub const ICON_COLORS: [&str; 6] = ["agent-tile", "peer-1", "peer-2", "peer-3", "peer-4", "peer-5"];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Agent {
     pub id: i64,
@@ -25,11 +28,13 @@ pub struct Agent {
     pub parent_read: bool,
     /// 셸 명령 실행 허용(#05-3) — 참이면 실행 도구에 [`SHELL_TOOLS`] 를 더한다(셸에는 폴더 제한이 없다).
     pub shell: bool,
+    /// 아이콘 색(#1z-7) — [`ICON_COLORS`] 중 하나. 실행에 닿지 않는다.
+    pub color: String,
     /// 세대 — 등록 · 폴더 · 상위 읽기 · 셸 변경 때마다 새 값(다시 쓰지 않는다). 끝난 실행은 지금 세대가 실행 때와 같을 때만 세션을 남긴다.
     pub uid: String,
 }
 
-const COLS: &str = "id, name, folder, prompt, grp, coalesce(uid, ''), parent_read, shell";
+const COLS: &str = "id, name, folder, prompt, grp, coalesce(uid, ''), parent_read, shell, color";
 
 fn row(r: &Row) -> rusqlite::Result<Agent> {
     Ok(Agent {
@@ -41,6 +46,7 @@ fn row(r: &Row) -> rusqlite::Result<Agent> {
         uid: r.get(5)?,
         parent_read: r.get(6)?,
         shell: r.get(7)?,
+        color: r.get(8)?,
     })
 }
 
@@ -126,6 +132,12 @@ pub fn forget_sessions(conn: &Connection, name: &str) -> rusqlite::Result<()> {
            (SELECT id FROM conversations WHERE (dir = 'in' AND agent = ?1) OR (dir = 'out' AND relay_agent = ?1)))",
         [name],
     )?;
+    Ok(())
+}
+
+/// 아이콘 색만 바꾼다(#1z-7) — 실행에 닿지 않아 세대 · 세션은 그대로. 값 검사는 부르는 쪽([`ICON_COLORS`]).
+pub fn set_color(conn: &Connection, id: i64, color: &str) -> rusqlite::Result<()> {
+    conn.execute("UPDATE agents SET color = ?2 WHERE id = ?1", params![id, color])?;
     Ok(())
 }
 

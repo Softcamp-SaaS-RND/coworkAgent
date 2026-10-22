@@ -18,6 +18,7 @@ fn agent(folder: &Path, parent_read: bool) -> Agent {
         uid: String::new(),
         parent_read,
         shell: false,
+        color: "agent-tile".into(),
     }
 }
 

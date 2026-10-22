@@ -36,6 +36,9 @@
   --peer-4: #905A3A;
   --peer-5: #24738E;
   --agent-tile: #0C6C68; /* 에이전트 줄 타일 — 두 테마 같음(흰 아이콘) */
+  --conv-in: var(--agent); /* 대화 유형 색(#1z-7 시안 A) — 내 에이전트 응답(다크는 --agent 를 따라감) */
+  --conv-out: var(--accent); /* 내가 문의 */
+  --conv-shared: var(--faint); /* 공유 사본(점선) */
   --on-dark: #FFFFFF; /* 레일 · 타일 · 아바타 글자 — 두 테마 모두 어두운 바탕 위 */
   --on-danger: #FFFFFF;
   --backdrop: rgb(0 0 0 / 0.35);
@@ -551,7 +554,7 @@ form.grid > button { grid-column: 2; justify-self: start; }
 form.stack { flex-direction: column; align-items: stretch; }
 form.stack > button { align-self: flex-start; }
 .form-grid input[type="checkbox"] { justify-self: start; }
-.form-grid label, form.grid label, form.grid .label { color: var(--muted); font-size: var(--fs-md); }
+.form-grid label, .form-grid .label, form.grid label, form.grid .label { color: var(--muted); font-size: var(--fs-md); }
 .field { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
 .field textarea { width: 100%; }
 .checks { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); font-size: var(--fs-md); }
@@ -936,7 +939,7 @@ details { margin: var(--sp-2) 0; }
 /* 레일: 끌 때 글자가 잡히지 않게 */
 #rail { user-select: none; }
 /* 대화 목록 한 줄: 손잡이 · 로봇 아이콘 · 제목 · 실행 중 점 · 안 읽음 수 · 시각 */
-.room-av.agent-av { width: 24px; height: 24px; background: var(--agent-tile); color: var(--on-dark); }
+.room-av.agent-av { width: 24px; height: 24px; background: var(--kind); color: var(--surface); }
 .room-av.agent-av .ico { width: 14px; height: 14px; }
 .side-list li[data-conv] > .drag-handle { top: 50%; transform: translateY(-50%); }
 /* 행 ⋯ 은 줄 끝 제자리(사용자 지시 — 떠 있으면 시각을 가린다), 안 보일 때도 자리는 둔다 */
@@ -955,9 +958,9 @@ details { margin: var(--sp-2) 0; }
 .pv-none { padding: var(--sp-3) var(--sp-4); border: 1px dashed var(--border); border-radius: var(--radius-bubble); }
 .pv-none button { margin-left: auto; }
 .pv-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(240px * var(--pv-scale))), 1fr)); gap: var(--sp-4); }
-.pv-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-bubble); box-shadow: var(--shadow-sm); color: var(--text); text-decoration: none; }
-.pv-card:hover { color: var(--text); border-color: var(--accent); }
-.pv-card.unseen { border-color: var(--accent); }
+.pv-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--surface); border: 1.5px solid var(--kind, var(--border)); border-radius: var(--radius-bubble); box-shadow: var(--shadow-sm); color: var(--text); text-decoration: none; }
+.pv-card:hover { color: var(--text); box-shadow: var(--shadow); }
+.pv-card.unseen { outline: 2px solid var(--accent); outline-offset: 2px; } /* 안 읽음 = 바깥 윤곽선(#1z-7 — 유형 테두리를 덮지 않게) */
 .pv-card-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border); }
 .pv-card-head strong { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); }
 .pv-state { flex: none; padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--subtle); font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: var(--lh-body); }
@@ -989,3 +992,31 @@ details { margin: var(--sp-2) 0; }
 .rows .meta strong.pm-agent-name { color: var(--agent); }
 .pm-body { overflow-wrap: anywhere; }
 .pm-time { flex: none; font-size: var(--fs-xs); color: var(--faint); }
+
+/* 대화 유형 색(#1z-7 시안 A) — 둘레(`data-kind` = 대화 `dir`)가 색을 정하고 줄 · 카드 · 머리 · 아이콘 칩이 그 색을 쓴다.
+   내 에이전트 응답 = 청록, 내가 문의 = 파랑, 공유 사본 = 회색 점선(아이콘 없음). */
+[data-kind="in"] { --kind: var(--conv-in); --kind-soft: var(--answer-bg); }
+[data-kind="out"] { --kind: var(--conv-out); --kind-soft: var(--accent-soft); }
+[data-kind="shared"] { --kind: var(--conv-shared); --kind-soft: var(--surface-2); }
+.kind-chip { background: var(--kind); color: var(--surface); }
+.conv-kind { width: 28px; height: 28px; flex: none; border-radius: var(--radius-lg); display: inline-flex; align-items: center; justify-content: center; }
+.conv-head[data-kind] { border-bottom: 2px solid var(--kind); }
+.side-list li[data-kind] { border-color: var(--kind); }
+.side-list li[data-kind].current { background: var(--kind-soft); box-shadow: inset 0 0 0 1px var(--kind); }
+.side-list li[data-kind].current a { color: var(--text); }
+.home-kind, .pv-kind { width: 20px; height: 20px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+.home-kind .ico, .pv-kind .ico { width: 12px; height: 12px; }
+.rows li[data-kind] { margin: 0 var(--sp-3) var(--sp-1); overflow: hidden; border: 1px solid var(--kind); border-radius: var(--radius-lg); }
+.rows li[data-kind] > a { flex-direction: row; align-items: center; gap: var(--sp-3); }
+/* 공유 사본 점선 — 위 테두리 규칙들보다 뒤(같은 우선순위에서 이기게) */
+.side-list li[data-kind="shared"], .rows li[data-kind="shared"], .pv-card[data-kind="shared"] { border-style: dashed; }
+.conv-head[data-kind="shared"] { border-bottom-style: dashed; } /* 머리는 아래 선만(R1 — 네 방향 점선이 켜지지 않게) */
+
+/* 내 에이전트 상세(#1z-7) — 로봇 타일(고른 색) · 아이콘 색 단추 · 체크박스 옆 한 줄 설명 */
+.agent-pa .ico { width: 20px; height: 20px; }
+.agent-pa.small .ico { width: 16px; height: 16px; }
+.check-line { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.check-line input[type="checkbox"] { margin: 0; }
+.swatches { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.swatch { width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--border); }
+.swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--text); }

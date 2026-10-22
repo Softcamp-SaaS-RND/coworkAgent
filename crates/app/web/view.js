@@ -1507,6 +1507,9 @@ export const SHELL_WARN = [
   "믿는 상대만 연결된 PC 에서 켜세요. 켜시겠습니까?",
 ].join("\n");
 /// 셸을 켠 에이전트 상세의 경고 줄(#05-3).
+/// 상세 체크박스 옆 한 줄 설명(#1z-7 — 긴 설명은 체크박스 `title`).
+export const PARENT_HINT = "켜면 바로 위 폴더 아래 전체를 읽음";
+export const SHELL_HINT = "켜면 workflow 수행용 셸 사용(위험 확인)";
 export const SHELL_ON = "켜짐 — 연결된 상대가 이 PC 에서 셸 명령을 실행할 수 있습니다(폴더 제한 없음 · 사람 승인 없음).";
 /// 셸 위험 확인을 띄울까(#05-3) — 끔 → 켬일 때만(등록은 `before` = 끔, 켠 채 다른 칸만 고치면 묻지 않는다).
 export function shellConfirmNeeded(before, after) {
@@ -1518,8 +1521,21 @@ export function agentPatch(a, form) {
   const body = { folder: form.folder, prompt: form.prompt };
   if (!!form.parent_read !== !!a.parent_read) body.parent_read = !!form.parent_read;
   if (!!form.shell !== !!a.shell) body.shell = !!form.shell;
+  if (form.color !== undefined && form.color !== agentColor(a.color)) body.color = form.color; // 아이콘 색(#1z-7)
   return body;
 }
+/// 에이전트 아이콘 색(#1z-7 — an_core `agents::ICON_COLORS` 와 같다, 타일 색 클래스 이름 그대로). 첫 값이 기본.
+export const AGENT_COLORS = ["agent-tile", "peer-1", "peer-2", "peer-3", "peer-4", "peer-5"];
+/// 저장된 색 → 그릴 색(옛 응답 · 모르는 값 = 기본).
+export function agentColor(c) {
+  return AGENT_COLORS.includes(c) ? c : AGENT_COLORS[0];
+}
+/// 대화 유형 아이콘(#1z-7) — 내 에이전트가 답(`in`) = 로봇, 내가 문의(`out`) = 사람, 공유 사본 = 없음.
+export function convKindIcon(conv) {
+  return conv.dir === "in" ? "bot" : conv.dir === "out" ? "user" : null;
+}
+/// 대화 유형 이름(#1z-7 — 제목 아이콘의 읽는 이름).
+export const KIND_NAMES = { in: "내 에이전트 응답", out: "내가 문의" };
 /// 고를 수 있는 모델(an_core `run_opts::MODELS` 와 같다).
 export const MODELS = ["opus", "sonnet", "haiku"];
 /// `claude --effort` 값(an_core `run_opts::EFFORTS` 와 같다).

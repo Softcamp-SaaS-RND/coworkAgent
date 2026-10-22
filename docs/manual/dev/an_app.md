@@ -21,7 +21,8 @@
   주고받기에 성공한 유닉스 초 · 없으면 `null` — 화면이 "n분 전 통신" 을 센다, #1c) ·
   `POST /api/pairing-window`(초대 생성) → `{seconds, code, invite}`. 오류 404 · 400 · 502, JSON 아닌 본문 415.
 - `chat_api::routes(chat)` — `GET/POST /api/agents`(이름 1 ~ 64자 · 폴더는 있는 절대 경로 · 데이터 루트를 품거나 네트워크 경로면 400(`an_core::paths::agent_folder_problem`, #1a) · 같은 이름 409 · 도구 칸 없음 — `tools` 를 주면 422(#1d)) ·
-  `PATCH /api/agents/{id} {folder?, prompt?, group?, parent_read?, shell?}`(이름은 바꾸지 않는다 — 주면 400) · 에이전트 JSON 에 `group`(#1j 웹UI 는 쓰지 않는다) ·
+  `PATCH /api/agents/{id} {folder?, prompt?, group?, parent_read?, shell?, color?}`(이름은 바꾸지 않는다 — 주면 400 · `color` 는 `agents::ICON_COLORS` 밖이면 400 "color 는 …", #1z-7) ·
+  에이전트 JSON 에 `color`(#1z-7) · 에이전트 JSON 에 `group`(#1j 웹UI 는 쓰지 않는다) ·
   등록 `parent_read`(없으면 끔) · 에이전트 JSON `parent_read` · `parent_dir`(#05-2 — 실제 여는 위 폴더, 끔 · 막힌 곳이면 `null`) ·
   등록 · 수정 `shell`(#05-3 — 없으면 끔 · 그대로) · 에이전트 JSON `shell` — 웹UI 는 끔 → 켬으로 보낼 때만 `window.confirm(SHELL_WARN)`(`view.js` `shellConfirmNeeded`, 취소 = 보내지 않음) ·
   `DELETE /api/agents/{id}` · `GET /api/peers/{id}/agents` → `{names}` · `GET/POST /api/conversations`(목록 = 요약 `title` · `last_state` · `last_at` · `last{text, author, mine, agent, via}|null`(#1j — 마지막 글, `text` 앞 120자);

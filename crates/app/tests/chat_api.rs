@@ -158,6 +158,16 @@ async fn agents_crud_api() {
     let (code, s) = call(port, &h, "PATCH", &spath, r#"{"shell":false}"#).await;
     assert_eq!((code, s["shell"].as_bool()), (200, Some(false)), "{s}");
     assert_eq!(call(port, &h, "DELETE", &spath, "").await.0, 204);
+    // 아이콘 색(#1z-7) — 기본 agent-tile, 목록 안 값은 바뀌고 다시 읽어도 남음, 목록 밖 400 · 그대로.
+    assert_eq!(made["color"].as_str(), Some("agent-tile"));
+    let cpath = format!("/api/agents/{}", made["id"]);
+    let (code, c) = call(port, &h, "PATCH", &cpath, r#"{"color":"peer-4"}"#).await;
+    assert_eq!((code, c["color"].as_str(), &c["folder"]), (200, Some("peer-4"), &made["folder"]), "{c}");
+    let (code, c) = call(port, &h, "PATCH", &cpath, r##"{"color":"#ff0000"}"##).await;
+    assert_eq!(code, 400, "{c}");
+    let (_, list) = call(port, &h, "GET", "/api/agents", "").await;
+    let mine = list.as_array().unwrap().iter().find(|a| a["id"] == made["id"]).unwrap();
+    assert_eq!(mine["color"].as_str(), Some("peer-4"), "{list}");
     let path = format!("/api/agents/{}", made["id"]);
     assert_eq!(call(port, &h, "DELETE", &path, "").await.0, 204);
     assert_eq!(call(port, &h, "DELETE", &path, "").await.0, 404);

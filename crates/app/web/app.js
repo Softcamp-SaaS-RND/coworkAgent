@@ -113,6 +113,12 @@ import {
   SHELL_ON,
   shellConfirmNeeded,
   agentPatch,
+  AGENT_COLORS,
+  agentColor,
+  convKindIcon,
+  KIND_NAMES,
+  PARENT_HINT,
+  SHELL_HINT,
   MODELS,
   EFFORTS,
   peerGroups,
@@ -206,6 +212,18 @@ function appOffline() {
 /// 아이콘(#1l) — `app.css` `.ico-{이름}` 모양 · 크기 16px 한 벌. 읽기 도구에는 숨긴다(옆 글자가 이름).
 function ico(name) {
   return el("span", { class: `ico ico-${name}`, "aria-hidden": "true" });
+}
+
+/// 대화 유형 칩(#1z-7) — 유형 색 면 + 아이콘(내 에이전트 응답 = 로봇 · 내가 문의 = 사람), 색은 둘레의 `data-kind` 가 정한다. 공유 사본은 없음.
+/// 읽는 이름 = 유형 이름(R1 — 같은 제목의 응답 · 문의 줄을 스크린리더도 가른다, 링크 이름에 들어간다).
+function kindChip(c, cls) {
+  const n = convKindIcon(c);
+  return n ? el("span", { class: `${cls} kind-chip`, role: "img", "aria-label": KIND_NAMES[c.dir] }, ico(n)) : "";
+}
+
+/// 내 에이전트 로봇 타일(#1z-7) — 고른 아이콘 색.
+function agentTile(color, cls = "") {
+  return el("span", { class: `pa agent-pa ${agentColor(color)} ${cls}`.trim(), "aria-hidden": "true" }, ico("bot"));
 }
 
 function el(tag, props = {}, ...children) {
@@ -997,7 +1015,7 @@ function manageItem(key, label, head, ...body) {
   return el("div", { class: "manage-item" }, el("div", { class: "manage-head" }, ...head, btn), detail);
 }
 
-/// 줄 타일(#1k) — 상대 · 에이전트 사람 모양(그림이 있으면 그림), 그룹은 사람 + 그림자.
+/// 줄 타일(#1k) — 상대 사람 모양(그림이 있으면 그림), 그룹은 사람 + 그림자. 내 에이전트는 `agentTile`(#1z-7).
 function rowTile(cls, icon, group = false) {
   return el("span", { class: `pa ${cls}`, "aria-hidden": "true" }, tileFace(icon, group));
 }
@@ -1401,22 +1419,46 @@ function renderAgentList(force = false) {
       const prompt = el("textarea", { rows: "3" });
       prompt.value = a.prompt;
       const promptBox = el("div", { class: "field" }, prompt);
+      // 아이콘 색(#1z-7) — 고르면 단추 표시만, 저장 때 보낸다.
+      let color = agentColor(a.color);
+      const swatches = el(
+        "span",
+        { class: "swatches", role: "group", "aria-label": "아이콘 색" },
+        ...AGENT_COLORS.map((c) =>
+          el("button", {
+            type: "button",
+            class: `swatch ${c}`,
+            title: `아이콘 색 ${c}`,
+            "aria-label": `아이콘 색 ${c}`,
+            "aria-pressed": String(c === color),
+            onclick: (ev) => {
+              color = c;
+              for (const b of swatches.children) b.setAttribute("aria-pressed", String(b === ev.currentTarget));
+            },
+          }),
+        ),
+      );
+      const checkLine = (box, hint) => el("span", { class: "check-line" }, box, el("span", { class: "hint", text: hint }));
+      // 한 격자(#1z-7 — 이름도 같은 라벨 열에, 값 열이 한 줄로 맞는다).
       return manageItem(
         "agent" + a.id,
         a.name,
-        [rowTile("agent-tile", null), el("span", { class: "manage-name" }, el("strong", { text: a.name }), el("span", { class: "hint mono", text: a.folder }))],
-        kvTable([["이름", a.name]]),
+        [agentTile(a.color), el("span", { class: "manage-name" }, el("strong", { text: a.name }), el("span", { class: "hint mono", text: a.folder }))],
         el(
           "div",
           { class: "form-grid" },
+          el("span", { class: "label", text: "이름" }),
+          el("span", { class: "check-line" }, el("strong", { text: a.name }), el("span", { class: "hint", text: "등록 뒤 바꿀 수 없음" })),
+          el("span", { class: "label", text: "아이콘 색" }),
+          swatches,
           ...field("폴더(절대 경로)", folder),
-          ...field("상위 한단계 탐색 허용", parent),
+          ...field("상위 한단계 탐색 허용", parent, checkLine(parent, PARENT_HINT)),
           ...(a.parent_read
             ? [el("span", { class: "label hint", text: "읽는 위 폴더" }), el("span", { class: "hint mono", text: a.parent_dir ?? "열지 않음(드라이브 루트 · 사용자 홈 · 데이터 폴더를 품음)" })]
             : []),
-          ...field("셸 명령 실행 허용", shell),
+          ...field("셸 명령 실행 허용", shell, checkLine(shell, SHELL_HINT)),
           ...(a.shell ? [el("span", { class: "label hint", text: "셸" }), el("span", { class: "hint shell-on", text: SHELL_ON })] : []),
-          el("span", { class: "label hint", text: "도구" }),
+          el("span", { class: "label", text: "도구" }),
           el("span", { class: "hint", text: TOOLS_NOTE }),
           ...field("추가 지시", prompt, promptBox),
         ),
@@ -1428,12 +1470,18 @@ function renderAgentList(force = false) {
             () => {
               // 셸을 켤 때 한 번 위험 확인(#05-3) — 취소면 보내지 않는다.
               if (shellConfirmNeeded(a.shell, shell.checked) && !window.confirm(SHELL_WARN)) return;
-              const body = agentPatch(a, { folder: folder.value, prompt: prompt.value, parent_read: parent.checked, shell: shell.checked });
+              const body = agentPatch(a, { folder: folder.value, prompt: prompt.value, parent_read: parent.checked, shell: shell.checked, color });
               act("에이전트 저장", () => api("PATCH", `/api/agents/${a.id}`, body), "agent_msg", loadAgents);
             },
             "primary",
           ),
           button("삭제", () => act("삭제", () => api("DELETE", `/api/agents/${a.id}`), "agent_msg", loadAgents), "danger"),
+          // 닫기(#1z-7) = 연필 단추와 같은 접기, 초점은 연필로(숨은 칸에 남지 않게).
+          button("닫기", () => {
+            const pen = $(`agent${a.id}_manage`);
+            pen.click();
+            pen.focus();
+          }),
         ),
       );
     }),
@@ -1545,7 +1593,7 @@ function convItem({ c, label }, section) {
   const cls = [state.current?.id === c.id ? "current" : "", meta.unread ? "unread" : ""].filter(Boolean).join(" ");
   return el(
     "li",
-    { class: cls || null, "data-conv": String(c.id), "data-drag": "conv", "data-id": String(c.id), "data-section": section },
+    { class: cls || null, "data-conv": String(c.id), "data-drag": "conv", "data-id": String(c.id), "data-section": section, "data-kind": c.dir },
     // 손잡이 끌기(#1x) — 즐겨찾기 ☆ 는 대화 머리에서. 줄 링크는 HTML 끌기를 막는다(브라우저 끌기 확장).
     el("button", {
       type: "button",
@@ -1557,8 +1605,9 @@ function convItem({ c, label }, section) {
     el(
       "a",
       { href: `#c/${c.id}`, title: label.sub, draggable: "false" },
-      // 한 줄(#1z-2 — 사용자 "대화방 제목만 표시하고 2행은 제거"): 로봇 아이콘(모든 줄 같은 AI 에이전트 아이콘) · 제목 · 실행 중 점 · 안 읽음 수 · 시각.
-      el("span", { class: "room-av agent-av", "aria-hidden": "true" }, ico("bot")),
+      // 한 줄(#1z-2 — 사용자 "대화방 제목만 표시하고 2행은 제거"): 유형 아이콘(#1z-7 — 내 에이전트 응답 = 로봇 · 내가 문의 = 사람, 공유 사본 = 없음) · 제목 ·
+      // 실행 중 점 · 안 읽음 수 · 시각.
+      kindChip(c, "room-av agent-av"),
       el(
         "span",
         { class: "room-text" },
@@ -1768,10 +1817,11 @@ function renderHome() {
             const meta = convMeta(c);
             return el(
               "li",
-              { class: meta.unread ? "unseen" : null },
+              { class: meta.unread ? "unseen" : null, "data-kind": c.dir },
               el(
                 "a",
                 { href: `#c/${c.id}`, onclick: () => followFromHome(c) },
+                kindChip(c, "home-kind"),
                 el(
                   "span",
                   { class: "meta" },
@@ -1905,10 +1955,11 @@ function previewCardEl(c) {
   const bubbles = cached ? previewBubbles(c, cached.ms, state.peerNames.get(c.peer_id)) : [];
   return el(
     "a",
-    { class: c.unread ? "pv-card unseen" : "pv-card", href: `#c/${c.id}`, "aria-label": `${title} 대화 열기`, onclick: () => followFromHome(c) },
+    { class: c.unread ? "pv-card unseen" : "pv-card", href: `#c/${c.id}`, "aria-label": `${[KIND_NAMES[c.dir], title].filter(Boolean).join(" · ")} 대화 열기`, onclick: () => followFromHome(c), "data-kind": c.dir },
     el(
       "div",
       { class: "pv-card-head" },
+      kindChip(c, "pv-kind"),
       el("strong", { text: title }),
       c.last_state ? el("span", { class: `pv-state st-${c.last_state}`, text: stateText(c.last_state) }) : "",
     ),
@@ -2122,6 +2173,12 @@ async function render() {
 function renderConvHead(conv) {
   const label = convLabel(conv, state.peerNames);
   $("conv_title").textContent = label.title;
+  // 유형 아이콘 · 머리 선 색(#1z-7) — 공유 사본은 아이콘 없음.
+  const kind = convKindIcon(conv);
+  $("conv_title_line").closest(".conv-head").dataset.kind = conv.dir;
+  Object.assign($("conv_kind"), { hidden: !kind, title: KIND_NAMES[conv.dir] ?? "" });
+  $("conv_kind").setAttribute("aria-label", KIND_NAMES[conv.dir] ?? "");
+  $("conv_kind").replaceChildren(...(kind ? [ico(kind)] : []));
   const run = state.msgsOf === conv.id ? lastRun(state.msgs, conv.dir !== "out") : "";
   // 닫힌 대화(#1w) — 나감 · 상대가 나감(공유 사본은 `shareHead` 가 말한다).
   const closed = conv.dir === "shared" ? "" : convClosed(conv);
@@ -3399,14 +3456,15 @@ function renderAgentsView() {
   const p = state.peers.find((x) => x.id === state.railPeer);
   const peers = p ? [p] : state.peers.filter((x) => x.paired);
   $("agents_title").textContent = p ? `${displayName(p)}의 에이전트` : "등록된 에이전트";
-  const row = (name, sub, props) =>
+  // 앞 표시 = 상대 에이전트 점 · 내 에이전트는 고른 색 로봇 타일(#1z-7).
+  const row = (name, sub, props, lead = el("span", { class: "agent-dot", "aria-hidden": "true" })) =>
     el(
       "li",
       {},
       el(
         "a",
         props,
-        el("span", { class: "meta" }, el("span", { class: "agent-dot", "aria-hidden": "true" }), el("strong", { class: "agent-name", text: name })),
+        el("span", { class: "meta" }, lead, el("strong", { class: "agent-name", text: name })),
         sub ? el("span", { class: "hint", text: sub }) : "",
       ),
     );
@@ -3437,13 +3495,18 @@ function renderAgentsView() {
   // '나' = 절: 내 에이전트(맨 앞) · 상대마다 '{이름}의 에이전트'(#1g) — 에이전트가 없는 상대는 숨긴다(불러오는 중 · 실패는 보인다).
   // 내 에이전트(#1k) — 줄 오른쪽 연필 = 설정 '내 에이전트' 의 그 에이전트를 펼쳐서(줄을 눌러도 같다).
   const mine = state.agents.map((a) => {
-    const li = row(a.name, `내 에이전트 · ${a.folder}`, {
-      href: "#settings/agents",
-      onclick: (ev) => {
-        ev.preventDefault();
-        editAgent(a.id);
+    const li = row(
+      a.name,
+      `내 에이전트 · ${a.folder}`,
+      {
+        href: "#settings/agents",
+        onclick: (ev) => {
+          ev.preventDefault();
+          editAgent(a.id);
+        },
       },
-    });
+      agentTile(a.color, "small"),
+    );
     const pen = el("button", { type: "button", class: "icon-btn agent-edit", title: "편집", "aria-label": `${a.name} 편집`, onclick: () => editAgent(a.id) });
     pen.innerHTML = PENCIL_SVG;
     li.classList.add("has-edit");

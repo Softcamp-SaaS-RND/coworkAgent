@@ -16,6 +16,7 @@ fn tools(shell: bool) -> Vec<String> {
         uid: String::new(),
         parent_read: false,
         shell,
+        color: "agent-tile".into(),
     };
     let args = claude_args(&agent, &Session::New(an_agent::chat::new_uuid()), "haiku", "low");
     let out = run_process(&find_claude(), &args, &work, "ok 라고만 답해.", Duration::from_secs(300)).unwrap();

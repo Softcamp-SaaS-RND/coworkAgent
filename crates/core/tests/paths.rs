@@ -39,7 +39,7 @@ fn db_schema_version_kept_on_reopen() {
     let root = temp_root("dbver");
     let paths = Paths::under(&root);
     paths.ensure().unwrap();
-    assert_eq!(db::SCHEMA_VERSION, 25);
+    assert_eq!(db::SCHEMA_VERSION, 26);
     {
         // 00 이 남긴 스키마 1 파일 — 열면 2 로 오른다.
         let conn = rusqlite::Connection::open(paths.db_file()).unwrap();
@@ -565,6 +565,38 @@ fn schema12_focus_mention() {
 }
 
 /// 옛 루트 — DB · 신원 · 로그 · 잠금.
+/// 26(#1z-7): 에이전트 아이콘 색 — 있던 에이전트는 기본 `agent-tile`, 색만 바꾸면 세대 · 세션 그대로.
+#[test]
+fn schema26_agent_color() {
+    use an_core::{agents, chat};
+    let root = temp_root("schema26");
+    let paths = Paths::under(&root);
+    paths.ensure().unwrap();
+    {
+        let conn = db::open(&paths.db_file()).unwrap();
+        conn.execute_batch(
+            "ALTER TABLE agents DROP COLUMN color; PRAGMA user_version = 25;
+             INSERT INTO agents (id, name, folder, tools, prompt, created_at) VALUES (5, 'old', '/o', 'Read', '', 0);",
+        )
+        .unwrap();
+    }
+    let conn = db::open(&paths.db_file()).unwrap();
+    assert_eq!(db::user_version(&conn).unwrap(), 26);
+    let old = agents::by_id(&conn, 5).unwrap().unwrap();
+    assert_eq!(old.color, agents::ICON_COLORS[0], "있던 에이전트는 기본 색");
+    assert_eq!(agents::add(&conn, "new", "/n", "").unwrap().color, "agent-tile", "새 에이전트도 기본 색");
+    conn.execute_batch(
+        "INSERT INTO peers (id, spki, name, host, addr, round, created_at) VALUES (1, x'01', 'p', 'h', '1.2.3.4:1', 'r', 0);
+         INSERT INTO conversations (id, uuid, peer_id, agent, dir, session, created_at) VALUES (1, 'c1', 1, 'old', 'in', 's1', 0);",
+    )
+    .unwrap();
+    agents::set_color(&conn, 5, "peer-3").unwrap();
+    let now = agents::by_id(&conn, 5).unwrap().unwrap();
+    assert_eq!((now.color.as_str(), now.uid.as_str()), ("peer-3", old.uid.as_str()), "색만 바꾸면 세대 그대로");
+    assert_eq!(chat::by_id(&conn, 1).unwrap().unwrap().session.as_deref(), Some("s1"), "세션 그대로");
+    assert_eq!(agents::ICON_COLORS, ["agent-tile", "peer-1", "peer-2", "peer-3", "peer-4", "peer-5"]);
+}
+
 fn legacy_root(base: &std::path::Path) -> PathBuf {
     let old = base.join("agentNetwork");
     std::fs::create_dir_all(old.join("logs")).unwrap();

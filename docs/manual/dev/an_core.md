@@ -50,6 +50,8 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
 - `agents::Agent.parent_read`(#05-2 — 상위 한 단계 읽기 허용) · `Agent.shell`(#05-3 — 셸 명령 실행 허용) · `add_with(conn, name, folder, prompt, parent_read, shell)`(`add` = 둘 다 끔) ·
   `update(conn, id, folder, prompt, group, parent_read, shell)` — 폴더 · `parent_read` · `shell` 이 바뀌면 새 세대(`uid`) · `forget_sessions`(끈 뒤 위 폴더 내용 · 셸 출력이 든 세션 · 요약을 잇지 않게).
   `agents::SHELL_TOOLS` — 셸을 켠 실행에 더하는 도구(Windows `Bash` · `PowerShell`, 그 밖 `Bash`).
+  `agents::ICON_COLORS`(#1z-7 — `agent-tile` · `peer-1` ~ `peer-5`, 웹UI 타일 색 클래스 이름, 첫 값 기본) · `Agent.color` · `set_color(conn, id, color)` — 색만 바꾼다(세대 · 세션 그대로,
+  값 검사는 부르는 쪽). 이 PC 화면에만 — 상대 PC 에 보내는 에이전트 목록(`names`)에 없다.
 - `agents` — `Agent { id, name, folder, prompt, group, uid }`(`uid` = 세대 — 등록 · 폴더 변경 때 새 값) · `add(conn, name, folder, prompt)`(`agents.tools`
   열은 `NOT NULL` 이라 5개를 적어 두고 읽지 않는다) · `by_name` ·
   `by_id` · `list` · `remove` · `update(id, folder, prompt, group)`(`group` 은 #1j 화면이 쓰지 않는다 · 이름은 바꾸지 않는다 — 대화 · 상대 PC 가 이름으로 부른다. 폴더가 바뀌면
@@ -120,6 +122,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   스키마 19(#1m, 한 트랜잭션): `messages.ctx_tokens` · `ctx_op` · `ctx_seeds(conversation_id, agent, text)`. `chat::Author::Context` · `set_ctx_tokens` ·
   `add_context` · `finish_context` · `sessions(conv)` · `clear_sessions(conv, keep_seeds)` · `set_ctx_seed` · `ctx_seed` · `drop_ctx_seed`, `pending` 은 구분선
   글 먼저 · 구분선은 내 활동 · 미리보기 · 안 읽음 · 가로지른 글 · 메모 범위에서 뺌.
+  스키마 26(#1z-7, 한 트랜잭션): `agents.color`(TEXT NOT NULL DEFAULT 'agent-tile' — 있던 에이전트는 기본 색, 화면 표시만).
   스키마 25(#05-3, 한 트랜잭션): `agents.shell`(INTEGER NOT NULL DEFAULT 0 — 있던 에이전트는 끔, 읽기 전용 도구만).
   스키마 24(#05-2, 한 트랜잭션): `agents.parent_read`(INTEGER NOT NULL DEFAULT 0 — 있던 에이전트는 끔, 지금까지와 같은 범위).
   스키마 23(#1y, 한 트랜잭션): `messages.req_archived`(NULL = 자동 대상 · 1 = 손으로 archive · 0 = 손으로 해제 — 자동 제외). `chat` — `ARCHIVE_DAYS`(7) ·

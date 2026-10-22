@@ -199,6 +199,9 @@ struct AgentPatch {
     parent_read: Option<bool>,
     #[serde(default)]
     shell: Option<bool>,
+    /// 아이콘 색(#1z-7) — `agents::ICON_COLORS` 밖이면 400.
+    #[serde(default)]
+    color: Option<String>,
 }
 
 /// `GET /api/messages` — 대화를 가로지른 글 목록.
@@ -394,7 +397,7 @@ fn agent_json(a: Agent) -> Value {
         .then(|| an_core::paths::parent_read_dir(std::path::Path::new(&a.folder)))
         .flatten()
         .map(|p| p.display().to_string());
-    json!({ "id": a.id, "name": a.name, "folder": a.folder, "prompt": a.prompt, "group": a.group, "parent_read": a.parent_read, "parent_dir": up, "shell": a.shell })
+    json!({ "id": a.id, "name": a.name, "folder": a.folder, "prompt": a.prompt, "group": a.group, "parent_read": a.parent_read, "parent_dir": up, "shell": a.shell, "color": a.color })
 }
 
 /// 폴더는 있는 절대 경로만 — 상대 경로는 앱의 현재 폴더 기준이 되어 의도와 달라진다. 데이터 루트를 품거나 네트워크 경로면 거부
@@ -557,8 +560,21 @@ async fn update_agent(
     };
     let parent_read = req.parent_read.unwrap_or(now.parent_read);
     let shell = req.shell.unwrap_or(now.shell);
+    if let Some(c) = req.color.as_deref()
+        && !agents::ICON_COLORS.contains(&c)
+    {
+        return bad(&format!("color 는 {}", agents::ICON_COLORS.join(" · ")));
+    }
     match agents::update(&db, id, &folder, &prompt, group.as_deref(), parent_read, shell) {
-        Ok(Some(a)) => Json(agent_json(a)).into_response(),
+        Ok(Some(mut a)) => {
+            if let Some(c) = req.color {
+                if let Err(e) = agents::set_color(&db, id, &c) {
+                    return db_fail(e);
+                }
+                a.color = c;
+            }
+            Json(agent_json(a)).into_response()
+        }
         Ok(None) => fail(io::Error::new(io::ErrorKind::NotFound, "없는 에이전트")),
         Err(e) => db_fail(e),
     }

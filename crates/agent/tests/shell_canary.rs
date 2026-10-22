@@ -20,6 +20,7 @@ fn ask(work: &Path, shell: bool) -> String {
             uid: String::new(),
             parent_read: false,
             shell,
+            color: "agent-tile".into(),
         },
         session: Session::New(an_agent::chat::new_uuid()),
         text: "셸 도구(Bash 또는 PowerShell)로 다음 두 명령을 실행하고 출력을 그대로 답해. 셸 도구가 없으면 NO_SHELL 이라고만 답해.\n\

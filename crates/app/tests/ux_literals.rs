@@ -170,7 +170,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("index.html", r#"id="star_btn" class="star-btn" aria-label="즐겨찾기""#, "#1j 별"),
     ("app.js", "side-${side}", "#1j 말풍선"),
     ("app.js", r#"class: "day-break""#, "#1j 말풍선"),
-    ("app.js", r#"el("span", { class: "room-av agent-av", "aria-hidden": "true" }, ico("bot")),"#, "#1z-2 대화 줄 로봇 아이콘"),
+    ("app.js", r#"kindChip(c, "room-av agent-av"),"#, "#1z-2 대화 줄 아이콘 · #1z-7 유형별(로봇 · 사람)"),
     ("app.js", "function starButton(", "#1j 별"),
     ("app.js", "function bookmarkButton(", "#1j 북마크"),
     ("app.css", ".msg.side-mine", "#1j 말풍선"),
@@ -252,7 +252,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app.js", "{ class: `has-mark pm-row pm-${kind}` },", "#1z-2 주고받은 메시지 시안 Peer"),
     ("app.js", "{ class: `pm-av pm-av-${kind}`, role: \"img\", \"aria-label\": s.label, title: s.label }", "#1z-2 원형 아바타"),
     ("app.js", r#"goSettings("invite_accept", "invite_text")"#, "#1k 레일 + · #1r 수락 칸은 라우터가"),
-    ("app.js", r#"rowTile("agent-tile", null)"#, "#1k 줄 타일"),
+    ("app.js", r#"[agentTile(a.color), el("span", { class: "manage-name" }"#, "#1k 줄 타일 · #1z-7 로봇 타일(고른 색)"),
     ("view.js", "agent: conv.dir === \"in\" ? `내 ${conv.agent}` : conv.agent", "#1k 받은 대화만 '내 '"),
     ("app.css", ".pair-btns {", "#1k 설정"),
     ("app.css", ".manage-head {", "#1k 설정"),
@@ -410,6 +410,27 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("index.html", r#"<span class="ico ico-arrow-down" aria-hidden="true"></span>받은 요청</a>"#, "#1r 요청 탭 아이콘"),
     ("index.html", r#"<span class="ico ico-arrow-up" aria-hidden="true"></span>보낸 요청</a>"#, "#1r 요청 탭 아이콘"),
     ("app.js", r#"}, ico(k.icon), el("span", { text: k.label })),"#, "#1r 내 활동 탭 아이콘"),
+    // 1z-7 — 대화 유형 아이콘 · 색(시안 A), 내 에이전트 상세(한 격자 · 아이콘 색 · 닫기)
+    ("index.html", r#"<span id="conv_kind" class="conv-kind kind-chip" role="img" hidden></span><strong id="conv_title"></strong>"#, "#1z-7 제목 앞 유형 아이콘"),
+    ("view.js", r#"return conv.dir === "in" ? "bot" : conv.dir === "out" ? "user" : null;"#, "#1z-7 응답 = 로봇 · 문의 = 사람 · 공유 = 없음"),
+    ("view.js", r#"export const KIND_NAMES = { in: "내 에이전트 응답", out: "내가 문의" };"#, "#1z-7 유형 이름"),
+    ("app.css", "  --conv-in: var(--agent);", "#1z-7 응답 = 청록"),
+    ("app.css", "  --conv-out: var(--accent);", "#1z-7 문의 = 파랑"),
+    ("app.css", "  --conv-shared: var(--faint);", "#1z-7 공유 = 회색"),
+    ("app.css", ".conv-head[data-kind] { border-bottom: 2px solid var(--kind); }", "#1z-7 머리 아래 선"),
+    ("app.css", ".side-list li[data-kind] { border-color: var(--kind); }", "#1z-7 사이드바 줄 테두리"),
+    ("app.css", ".pv-card.unseen { outline: 2px solid var(--accent); outline-offset: 2px; }", "#1z-7 안 읽음은 윤곽선(유형 테두리 그대로)"),
+    ("app.css", "border: 1.5px solid var(--kind, var(--border));", "#1z-7 카드 테두리 = 유형 색"),
+    ("app.js", r#"{ class: c.unread ? "pv-card unseen" : "pv-card", href: `#c/${c.id}`, "aria-label": `${[KIND_NAMES[c.dir], title].filter(Boolean).join(" · ")} 대화 열기`, onclick: () => followFromHome(c), "data-kind": c.dir },"#, "#1z-7 미리보기 카드 유형 · R1 읽는 이름에 유형"),
+    ("app.js", r#"el("span", { class: `${cls} kind-chip`, role: "img", "aria-label": KIND_NAMES[c.dir] }, ico(n))"#, "#1z-7 R1 유형 칩 읽는 이름"),
+    ("app.css", r#".conv-head[data-kind="shared"] { border-bottom-style: dashed; }"#, "#1z-7 R1 공유 머리는 아래 선만"),
+    ("app.js", r#"{ class: meta.unread ? "unseen" : null, "data-kind": c.dir },"#, "#1z-7 개요 목록 줄 유형"),
+    ("app.js", r#""data-section": section, "data-kind": c.dir },"#, "#1z-7 사이드바 줄 유형"),
+    ("app.js", r#"el("span", { class: "label", text: "아이콘 색" }),"#, "#1z-7 아이콘 색 줄"),
+    ("app.js", r#"el("span", { class: "label", text: "이름" }),"#, "#1z-7 이름도 같은 격자"),
+    ("app.js", r#"button("닫기", () => {"#, "#1z-7 닫기"),
+    ("app.js", "agentTile(a.color, \"small\"),", "#1z-7 등록된 에이전트 줄 로봇 타일"),
+    ("view.js", r#"export const AGENT_COLORS = ["agent-tile", "peer-1", "peer-2", "peer-3", "peer-4", "peer-5"];"#, "#1z-7 아이콘 색 6개"),
 ];
 
 /// 없어야 하는 문구 — (파일 키, 문구, 출처). `a+b` 는 두 파일 모두에 없어야 한다.
@@ -594,6 +615,7 @@ const ABSENT: &[(&str, &str, &str)] = &[
     ("view.js", r#"label: "에이전트 대화""#, "#1z-2 메뉴 이름 에이전트 응답"),
     ("index.html", r#"aria-label="초대 수락">+</button>"#, "#1z-2 레일 + 글자"),
     ("app.js", "groupSettingsListEl(", "#1z-2 시안 A 목록 없음"),
+    ("app.js", r#"kvTable([["이름", a.name]])"#, "#1z-7 이름 표 → 격자"),
 ];
 
 /// 정확한 개수 — (파일 키, 문구, 개수, 출처).

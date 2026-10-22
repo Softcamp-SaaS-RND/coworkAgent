@@ -130,6 +130,9 @@ import {
   SHELL_WARN,
   shellConfirmNeeded,
   agentPatch,
+  AGENT_COLORS,
+  agentColor,
+  convKindIcon,
   mentionQuery,
   mentionTarget,
   hasMention,
@@ -1205,6 +1208,23 @@ test("agent_patch — 셸 · 상위 읽기는 바꿨을 때만 보낸다(오래 
   assert.deepEqual(agentPatch(loaded, { folder: "D:\\w", prompt: "x", parent_read: false, shell: true }), { folder: "D:\\w", prompt: "x" });
   assert.deepEqual(agentPatch(loaded, { folder: "f", prompt: "", parent_read: true, shell: false }), { folder: "f", prompt: "", parent_read: true, shell: false });
   assert.deepEqual(agentPatch({}, { folder: "f", prompt: "", parent_read: false, shell: true }), { folder: "f", prompt: "", shell: true }, "옛 응답(칸 없음) = 끔");
+});
+
+test("agent_color — 아이콘 색은 바꿨을 때만 보내고, 모르는 값 · 옛 응답은 기본(#1z-7)", () => {
+  assert.deepEqual(AGENT_COLORS, ["agent-tile", "peer-1", "peer-2", "peer-3", "peer-4", "peer-5"]);
+  assert.equal(agentColor(undefined), "agent-tile");
+  assert.equal(agentColor("#ff0000"), "agent-tile");
+  assert.equal(agentColor("peer-3"), "peer-3");
+  const a = { shell: false, parent_read: false, color: "peer-2" };
+  assert.deepEqual(agentPatch(a, { folder: "f", prompt: "", color: "peer-2" }), { folder: "f", prompt: "" });
+  assert.deepEqual(agentPatch(a, { folder: "f", prompt: "", color: "peer-5" }), { folder: "f", prompt: "", color: "peer-5" });
+  assert.deepEqual(agentPatch({}, { folder: "f", prompt: "", color: "agent-tile" }), { folder: "f", prompt: "" }, "옛 응답 = 기본 색");
+});
+
+test("conv_kind_icon — 내 에이전트 응답 = 로봇, 내가 문의 = 사람, 공유 사본 = 없음(#1z-7)", () => {
+  assert.equal(convKindIcon({ dir: "in" }), "bot");
+  assert.equal(convKindIcon({ dir: "out" }), "user");
+  assert.equal(convKindIcon({ dir: "shared" }), null);
 });
 
 test("messages_sig_req — 요청 상태 · 메모가 바뀌면 다시 그린다", () => {
