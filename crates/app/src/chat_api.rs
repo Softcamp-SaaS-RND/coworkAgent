@@ -32,6 +32,9 @@ struct NewAgent {
     /// 상위 한 단계 읽기 허용(#05-2) — 없으면 끔.
     #[serde(default)]
     parent_read: bool,
+    /// 셸 명령 실행 허용(#05-3) — 없으면 끔.
+    #[serde(default)]
+    shell: bool,
 }
 
 #[derive(Deserialize)]
@@ -194,6 +197,8 @@ struct AgentPatch {
     group: Option<String>,
     #[serde(default)]
     parent_read: Option<bool>,
+    #[serde(default)]
+    shell: Option<bool>,
 }
 
 /// `GET /api/messages` — 대화를 가로지른 글 목록.
@@ -389,7 +394,7 @@ fn agent_json(a: Agent) -> Value {
         .then(|| an_core::paths::parent_read_dir(std::path::Path::new(&a.folder)))
         .flatten()
         .map(|p| p.display().to_string());
-    json!({ "id": a.id, "name": a.name, "folder": a.folder, "prompt": a.prompt, "group": a.group, "parent_read": a.parent_read, "parent_dir": up })
+    json!({ "id": a.id, "name": a.name, "folder": a.folder, "prompt": a.prompt, "group": a.group, "parent_read": a.parent_read, "parent_dir": up, "shell": a.shell })
 }
 
 /// 폴더는 있는 절대 경로만 — 상대 경로는 앱의 현재 폴더 기준이 되어 의도와 달라진다. 데이터 루트를 품거나 네트워크 경로면 거부
@@ -519,7 +524,7 @@ async fn add_agent(State(chat): State<Arc<Chat>>, Json(req): Json<NewAgent>) -> 
             format!("같은 이름의 에이전트가 있다: {name}"),
         ));
     }
-    match agents::add_with(&db, name, &folder, req.prompt.trim(), req.parent_read) {
+    match agents::add_with(&db, name, &folder, req.prompt.trim(), req.parent_read, req.shell) {
         Ok(a) => (StatusCode::CREATED, Json(agent_json(a))).into_response(),
         Err(e) => db_fail(e),
     }
@@ -551,7 +556,8 @@ async fn update_agent(
         Some(Err(m)) => return bad(&m),
     };
     let parent_read = req.parent_read.unwrap_or(now.parent_read);
-    match agents::update(&db, id, &folder, &prompt, group.as_deref(), parent_read) {
+    let shell = req.shell.unwrap_or(now.shell);
+    match agents::update(&db, id, &folder, &prompt, group.as_deref(), parent_read, shell) {
         Ok(Some(a)) => Json(agent_json(a)).into_response(),
         Ok(None) => fail(io::Error::new(io::ErrorKind::NotFound, "없는 에이전트")),
         Err(e) => db_fail(e),

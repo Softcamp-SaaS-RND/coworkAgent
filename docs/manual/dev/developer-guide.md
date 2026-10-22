@@ -352,9 +352,13 @@ claude -p --output-format stream-json --verbose --restricted --strict-mcp-config
   (--session-id <새 UUID> | --resume <세션 ID>) --model <모델> --effort <effort>
 ```
 
-- 도구는 읽기 전용 목록(`Read` · `Grep` · `Glob` · `LS` · `NotebookRead`) 안의 프로필 값, 비면 `Read,Grep,Glob`(D22 · D31).
+- 도구는 읽기 전용 `Read` · `Grep` · `Glob` 고정(D22 · D31 — 프로필과 무관). claude 에 없는 이름은 오류 없이 무시되므로 실제 도구 목록(`stream-json` 첫 줄 `system` init 의 `tools`)과
+  대조한다 — `cargo test -p an-agent --test tools_canary -- --ignored --nocapture`(#05-3, 셸 끔 · 켬 둘 다).
 - `--add-dir` · `[읽기 범위]` 는 에이전트의 "상위 한단계 탐색 허용"(#05-2)을 켰을 때만 — 바로 위 폴더가 드라이브 루트 · 사용자 홈이거나 데이터 루트를 품으면 붙이지 않는다
   (`an_core::paths::parent_read_dir`, 실행마다 다시 판단). 실측 시험 `cargo test -p an-agent --test parent_read_canary -- --ignored --nocapture`.
+- 에이전트의 "셸 명령 실행 허용"(#05-3)을 켜면 `<도구>` 에 `Bash` · `PowerShell`(macOS 는 `Bash`)이 붙고 가드는 `SHELL_GUARD_PROMPT`, 실행 환경은 기본 변수 목록만
+  (`runner::shell_env` — 앱을 띄운 셸의 키 · 토큰 변수가 넘어가지 않는다). 셸은 작업 폴더 · `--add-dir` 밖도 읽고 쓴다(`--restricted` 는 파일 도구만 가둔다).
+  실측 시험 `cargo test -p an-agent --test shell_canary -- --ignored --nocapture`.
 - 모델 · effort 는 실행 직전에 정한다 — 그 상대 덮어쓰기 → 전역 설정 → `sonnet` · `high`. 설정을 못 읽으면 기본값으로 돌리지 않고 실패 답.
 - `--bare` 는 쓰지 않는다 — 구독 로그인을 읽지 않기 때문(D20).
 - **출력 = stream-json**(`-p` 에서는 `--verbose` 가 있어야 한다 — 2.1.296 확인). 실행기는 표준 출력을 줄마다 읽어 실시간 이벤트로 **단계

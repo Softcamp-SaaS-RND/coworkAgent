@@ -3,7 +3,7 @@
 ## 개요
 
 `an-agent`(`crates/agent`) — domain Layer. 에이전트 왕복: `claude -p` 실행기(`runner`)와 대화 조율(`chat`). 원격 메시지는 신뢰하지
-않는 입력 — 텍스트는 표준 입력으로만, 도구는 읽기 전용 5개(`READ_ONLY_TOOLS` — #1d, 프로필과 무관)만. 의존: `an-core`(프로필 · 대화 · 메시지 표) · `an-net`(노드).
+않는 입력 — 텍스트는 표준 입력으로만, 도구는 읽기 전용 3개(`READ_ONLY_TOOLS` — #1d, 프로필과 무관)만. 의존: `an-core`(프로필 · 대화 · 메시지 표) · `an-net`(노드).
 Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세스 그룹과 같은 동작).
 
 ## 공개 계약
@@ -14,6 +14,11 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
   프로필 `parent_read` 이고 `an_core::paths::parent_read_dir` 가 `Some` 이면 `--add-dir <바로 위 폴더>` + 시스템 프롬프트에 `[읽기 범위]` 한 줄(#05-2 —
   `--restricted` 는 파일 도구를 작업 폴더 + `--add-dir` 안으로 가둔다, 허용 규칙 `Read(//…)` 로는 넘지 못한다 — 2.1.306 실측). `None` 이면 폴더만(로그 한 줄).
   `--add-dir` 은 값을 여러 개 받아 뒤의 위치 인자를 먹는다 — 원격 텍스트가 표준 입력이라 해당 없음.
+  프로필 `shell`(#05-3)이면 `--tools` · `--allowedTools` 에 `an_core::agents::SHELL_TOOLS` 를 더하고 가드는 `SHELL_GUARD_PROMPT`(명령 실행 금지만 뺌), `[읽기 범위]` 는
+  "파일 도구는 … 아래를 읽는다"(셸은 범위 밖도 읽는다 — `--restricted` 는 `--tools` 에 적은 셸을 남긴다, 2.1.308 실측).
+- `runner::shell_env(vars)` — `SHELL_ENV_KEEP`(OS 기본 · 사용자 폴더 · 임시 · PATH · 프록시 · `CLAUDE_CONFIG_DIR` · `CLAUDE_CODE_GIT_BASH_PATH`)에 든 변수만(Windows 는
+  이름 대소문자 무시). `run_process_lines(…, env, on_line)` — `env` 가 `Some` 이면 `env_clear` 뒤 그것만. `run_claude` 는 셸을 켠 실행만 `shell_env(vars_os())`(원장 `#1a A-I3`).
+  압축 요약 실행(`chat`)은 셸을 끈 에이전트 사본으로 돈다. 실측 시험 `cargo test -p an-agent --test shell_canary -- --ignored --nocapture`.
 - `runner::GUARD_PROMPT`(D31 문의 응답 전용 — 개입 · 편집 · 삭제 · 명령 실행 금지, 비밀 싣지 않기) — `claude_args` 가 항상
   `--append-system-prompt`(가드 + `[수신자 추가 지시]` 프로필 지시) · `--system-prompt-snapshot off`(재개 세션에도 지금 가드) · 도구는
   `agents::read_only`. `MIN_CLAUDE`(2.1.267) · `parse_version` · `version_ok` — `run_claude` 는 낮은 버전이면 실행하지 않는다(`--effort` 다섯 값

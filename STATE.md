@@ -3,24 +3,22 @@
 > **세션 시작 시 가장 먼저 읽는 문서.** 지금 어디서 재개하는지의 단일 좌표 — **매번 덮어쓴다.**
 > Task 목록은 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`), 미조치는 [overview/ledger.md](docs/overview/ledger.md).
 
-- **갱신**: 2026-10-22 / main — Task #1z-6 종결(개요 미리보기 크기 100 ~ 200%)
+- **갱신**: 2026-10-22 / task/05-3-shell-tool — Task #05-3 종결(에이전트 셸 명령 실행 허용), main squash push 승인 대기
 
 ## 현재 작업
 
-없음 — 열린 Task 없음. #1z-6 개요 "미리보기 크기" 100 ~ 200% 종결(말풍선 칸 높이 · 줄 수, 글자 고정, `ui_home_zoom` 기억).
-v1.3.0 은 2026-10-22 에 `b83579f`(#1z-5 · 미리보기 15% 확대 포함)로 다시 등록(태그 옮김 — 앞서 1.3.0 을 받은 PC 는 자동으로 안 바뀜).
-이 PC 앱 = 서명된 1.3.0 `D:\dev\git\coworkAgent\target\release\coworkAgent.exe` — 버전 1.3.1 로 올림(#1z-4 ~ #1z-6 포함), 1.3.1 서명 릴리스 대기(앱 끄고 `cargo build --release -p coworkagent-app` → 서명 → 등록).
+없음 — 열린 Task 없음. #05-3 에이전트 "셸 명령 실행 허용" 종결([report](docs/archive/05-3.shell-tool/report.md) — 기본 끔, 켜면 `Bash` · `PowerShell` · workflow 수행용 셸 가드 · `env_clear` ·
+켤 때 위험 확인, 읽기 전용 도구 3개 `Read` · `Grep` · `Glob`, 스키마 25). 브랜치 `task/05-3-shell-tool`(작업 폴더 `D:\dev\git\coworkAgent-05-3`, 기준 `7c9dbe2`) — main 미병합.
 
-- **중단 지점**: 없음.
-  PRODUCT.md 의 다른 세션 수정(security-posture 링크 2줄) · docs/tech/security-posture.md 는 `D:\dev\git\coworkAgent` 작업 폴더에 그대로(미커밋).
-- **다음 릴리스 절차**: 개발자 가이드 2.4 — 버전 올림 · push → 앱 끄고 `cargo build --release -p coworkagent-app` → 선생님 서명(같은 경로) →
-  Authenticode Valid · CN · 파일 버전 확인 → `gh release create v{X.Y.Z} … --target <origin/main SHA> --latest`. 1.2.0 이상 사용자는 자동으로 바뀐다.
-- **작업 메모**: `cargo fmt` 쓰지 않음(저장소가 기본 폭으로 맞춰져 있지 않다). Bash 셸 `cargo test` 는 링커 LNK1104/1201 이 잦다 — PowerShell 로.
+- **중단 지점**: main squash push(선생님 승인 대기). 원 작업 폴더의 다른 세션 미커밋(PRODUCT.md 링크 2줄 · docs/tech/security-posture.md)은 그대로 —
+  security-posture 2.2 절 "도구 = 읽기 전용 5개 · 셸 없음" 은 #05-3 뒤 사실과 다르다(그 문서 커밋 때 갱신).
+- **작업 메모**: `cargo fmt` 쓰지 않음. `cargo test` 는 PowerShell 로(VS 자동 업데이트 중에는 MSVC `link.exe` 가 없어 링크 실패 — 끝난 뒤 다시).
 
 ## 다음 행동
 
-1. 19 acceptance TC(사용자) — 19 문서는 `task/19-prototype-acceptance` 브랜치에(main 병합 — 이후 main 은 일반 merge). 19 원장 재측정 · `tools/check_acceptance.py` 번호 형식(1a ~ 1z) 수정 필요.
-2. v1.0.0 · v1.0.1 · v1.1.0 · v1.3.0 macOS zip 첨부(보유한 Mac).
+1. #05-3 main squash push(승인 뒤) → 버전 · 릴리스 여부 결정. 선생님 확인: 라벨 "셸 명령 실행 허용"(intent 결정 8) · 세션 비움(7) · 압축 요약 셸 없이(9).
+2. 19 acceptance TC(사용자) — 19 문서는 `task/19-prototype-acceptance` 브랜치에(main 병합 — 이후 main 은 일반 merge). 19 원장 재측정 · `tools/check_acceptance.py` 번호 형식(1a ~ 1z) 수정 필요.
+3. v1.0.0 · v1.0.1 · v1.1.0 · v1.3.0 macOS zip 첨부(보유한 Mac).
 
 - **블로커 / 미해소**: 19 acceptance TC(사용자). 그룹 타일 묶음 머리 "에이전트 대화" vs 메뉴 "에이전트 응답"(#1z-2 report — 사용자 확인 필요). 구현자 해석(사용자 미확인 — 각 report): 1q 결정 7 · 15,
   1r plan 해석 1 · 3 · 결정 3 · 11, 1s 결정 1 · 2, 1z-2 결정 2. D34 개정 문구 "편집 · 삭제는 CLI(· API)" 와 달리 CLI 에 편집 · 삭제 명령 없음(확인 필요).

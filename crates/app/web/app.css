@@ -630,6 +630,7 @@ details { margin: var(--sp-2) 0; }
 .float button.menu-sub { padding-left: var(--sp-6); }
 .float button[aria-expanded="true"] .kbd { transform: rotate(90deg); }
 .float .danger-text { color: var(--danger); }
+.hint.shell-on { color: var(--danger); }
 .float-form { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2); }
 .float-form .actions { display: flex; gap: var(--sp-2); justify-content: flex-end; }
 .picker { width: 380px; max-width: calc(100vw - 32px); }

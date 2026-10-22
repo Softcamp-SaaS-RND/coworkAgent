@@ -2,7 +2,7 @@ use rusqlite::OptionalExtension;
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 24;
+pub const SCHEMA_VERSION: i64 = 25;
 
 /// DB 오류를 `io::Error` 로 — 상위 크레이트가 `map_err(db_err)` 로 쓴다(`Error` 는 rusqlite 것이라 `From` 을 구현할 수 없다).
 pub fn db_err(e: Error) -> std::io::Error {
@@ -632,6 +632,15 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
             tx.execute_batch("ALTER TABLE agents ADD COLUMN parent_read INTEGER NOT NULL DEFAULT 0;")?;
         }
         tx.execute_batch("PRAGMA user_version = 24;")?;
+        tx.commit()?;
+    }
+    // 25(#05-3): 에이전트 셸 명령 실행 허용 — 0 = 읽기 전용 도구만(지금까지와 같다) · 1 = 셸 도구(`Bash` · `PowerShell`)도.
+    if v < 25 {
+        let tx = conn.unchecked_transaction()?;
+        if !has_column(&tx, "agents", "shell")? {
+            tx.execute_batch("ALTER TABLE agents ADD COLUMN shell INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        tx.execute_batch("PRAGMA user_version = 25;")?;
         tx.commit()?;
     }
     Ok(conn)

@@ -349,7 +349,7 @@ async fn seed_dropped_when_agent_folder_changes() {
         .unwrap()
         .id;
     let other = std::env::temp_dir();
-    agents::update(&common::db(&t.b), id, other.to_str().unwrap(), "", None, false).unwrap();
+    agents::update(&common::db(&t.b), id, other.to_str().unwrap(), "", None, false, false).unwrap();
     assert_eq!(chat::ctx_seed(&common::db(&t.b), bc, "").unwrap(), None);
     t.a.chat
         .send(t.b_id, "review", Some(conv.id), "둘째")
@@ -506,7 +506,7 @@ async fn compact_skips_session_cleared_while_waiting() {
             if input.text == SUMMARY_PROMPT && matches!(&input.session, Session::Resume(s) if s != "s-lint") {
                 let db = an_core::db::open(&b_db).unwrap();
                 let lint = agents::by_name(&db, "lint").unwrap().unwrap();
-                agents::update(&db, lint.id, &lint.folder, &lint.prompt, None, true).unwrap();
+                agents::update(&db, lint.id, &lint.folder, &lint.prompt, None, true, false).unwrap();
             }
             inner(input)
         })

@@ -16,6 +16,7 @@ fn agent(folder: &Path) -> Agent {
         group: None,
         uid: String::new(),
         parent_read: false,
+        shell: false,
     }
 }
 

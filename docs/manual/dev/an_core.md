@@ -17,7 +17,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   `agent_folder_problem` 이면 `None`, 비교는 정규화 · 대소문자 무시, 돌려주는 값은 정규화 전 경로).
 - `owner_only::restrict(dir)`(#1a) — Windows 보호 DACL(토큰 사용자 SID · SYSTEM, `FILE_ALL_ACCESS`, 하위 상속) · Unix 0700.
 - `sync::lock(&Mutex<T>)`(#1a) — 오염된 잠금도 안의 값을 꺼내 계속 쓴다(warn). 원시 `.lock().expect(` 는 쓰지 않는다.
-- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(24)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
+- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(25)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
   `messages` 에 `reply_to` · `turns` · `duration_ms` — 한 트랜잭션, 있는 열은 건너뜀). 더 새 스키마면 오류. 올리기 전 `{db}.v{버전}.bak`
   사본(`db::backup_path`, `VACUUM INTO`) — 이전 실행 파일로 롤백할 때 DB 를 이 사본으로 바꿔 쓴다. → 6 `messages` 에 `mine` ·
   `exec` · `lc`(이전 이력은 방향 · id 로 채움). → 7 `conversations` 에 `relay_agent` · `relay_cap` · `relay_count` · `relay_on` ·
@@ -46,9 +46,10 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   실행 설정).
 - `settings::get(conn, key)` · `set(conn, key, value)` — 문자열 설정. `FOCUS_KEY`(`focus`) · `focus(conn)`(값 `1` 만 켜짐 — 읽기 오류는 그대로). `AUTOSTART_KEY`(`autostart`) ·
   `autostart(conn)`(없으면 켜짐 — D13, 값 `0` 만 꺼짐, #1e).
-- `agents::READ_ONLY_TOOLS`(`Read` · `Grep` · `Glob` · `LS` · `NotebookRead`, D31) — 모든 실행의 도구(#1d — 프로필마다 고르지 않는다).
-- `agents::Agent.parent_read`(#05-2 — 상위 한 단계 읽기 허용) · `add_with(conn, name, folder, prompt, parent_read)`(`add` = 끔) ·
-  `update(conn, id, folder, prompt, group, parent_read)` — 폴더나 `parent_read` 가 바뀌면 새 세대(`uid`) · `forget_sessions`(끈 뒤 위 폴더 내용이 든 세션 · 요약을 잇지 않게).
+- `agents::READ_ONLY_TOOLS`(`Read` · `Grep` · `Glob`, D31 — #05-3 에서 `LS` · `NotebookRead` 뺌: claude 2.1.308 에 없는 도구, `an-agent` `tests/tools_canary.rs` 가 실제 도구 목록과 대조) — 모든 실행의 도구(#1d — 프로필마다 고르지 않는다).
+- `agents::Agent.parent_read`(#05-2 — 상위 한 단계 읽기 허용) · `Agent.shell`(#05-3 — 셸 명령 실행 허용) · `add_with(conn, name, folder, prompt, parent_read, shell)`(`add` = 둘 다 끔) ·
+  `update(conn, id, folder, prompt, group, parent_read, shell)` — 폴더 · `parent_read` · `shell` 이 바뀌면 새 세대(`uid`) · `forget_sessions`(끈 뒤 위 폴더 내용 · 셸 출력이 든 세션 · 요약을 잇지 않게).
+  `agents::SHELL_TOOLS` — 셸을 켠 실행에 더하는 도구(Windows `Bash` · `PowerShell`, 그 밖 `Bash`).
 - `agents` — `Agent { id, name, folder, prompt, group, uid }`(`uid` = 세대 — 등록 · 폴더 변경 때 새 값) · `add(conn, name, folder, prompt)`(`agents.tools`
   열은 `NOT NULL` 이라 5개를 적어 두고 읽지 않는다) · `by_name` ·
   `by_id` · `list` · `remove` · `update(id, folder, prompt, group)`(`group` 은 #1j 화면이 쓰지 않는다 · 이름은 바꾸지 않는다 — 대화 · 상대 PC 가 이름으로 부른다. 폴더가 바뀌면
@@ -119,6 +120,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   스키마 19(#1m, 한 트랜잭션): `messages.ctx_tokens` · `ctx_op` · `ctx_seeds(conversation_id, agent, text)`. `chat::Author::Context` · `set_ctx_tokens` ·
   `add_context` · `finish_context` · `sessions(conv)` · `clear_sessions(conv, keep_seeds)` · `set_ctx_seed` · `ctx_seed` · `drop_ctx_seed`, `pending` 은 구분선
   글 먼저 · 구분선은 내 활동 · 미리보기 · 안 읽음 · 가로지른 글 · 메모 범위에서 뺌.
+  스키마 25(#05-3, 한 트랜잭션): `agents.shell`(INTEGER NOT NULL DEFAULT 0 — 있던 에이전트는 끔, 읽기 전용 도구만).
   스키마 24(#05-2, 한 트랜잭션): `agents.parent_read`(INTEGER NOT NULL DEFAULT 0 — 있던 에이전트는 끔, 지금까지와 같은 범위).
   스키마 23(#1y, 한 트랜잭션): `messages.req_archived`(NULL = 자동 대상 · 1 = 손으로 archive · 0 = 손으로 해제 — 자동 제외). `chat` — `ARCHIVE_DAYS`(7) ·
   `archived_sql(alias)`(`{m}.req_state = 'done'` + 손 표시, 없으면 `coalesce(req_at, created_at)` 가 7일 지남 — SQL 쪽) · `Message.req_archived: Option<bool>` + `Message::archived(now)`

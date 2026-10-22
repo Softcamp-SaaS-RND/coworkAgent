@@ -3912,7 +3912,8 @@ impl Chat {
             }
             let uid = agent.uid.clone();
             let input = RunInput {
-                agent,
+                // 요약은 셸 없이(#05-3) — 세션에 남은 원격 글의 지시가 요약 실행 때 명령으로 이어지지 않게.
+                agent: agents::Agent { shell: false, ..agent },
                 session: Session::Resume(session),
                 text: SUMMARY_PROMPT.to_string(),
                 model,

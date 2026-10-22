@@ -126,6 +126,10 @@ import {
   MODELS,
   TOOLS_NOTE,
   READ_ONLY_TOOLS,
+  SHELL_NOTE,
+  SHELL_WARN,
+  shellConfirmNeeded,
+  agentPatch,
   mentionQuery,
   mentionTarget,
   hasMention,
@@ -1174,10 +1178,31 @@ test("requests_route — #requests 화면 · 사이드바 '요청' 은 그 화�
   assert.equal(sideNav(4).find((n) => n.label === "요청").href, "#requests");
 });
 
-test("models_tools — 모델 드롭다운 셋 · 도구 안내는 읽기 전용 다섯", () => {
+test("models_tools — 모델 드롭다운 셋 · 도구 안내는 읽기 전용 셋", () => {
   assert.deepEqual(MODELS, ["opus", "sonnet", "haiku"], "an_core run_opts::MODELS 와 같다");
-  assert.deepEqual(READ_ONLY_TOOLS, ["Read", "Grep", "Glob", "LS", "NotebookRead"]);
+  assert.deepEqual(READ_ONLY_TOOLS, ["Read", "Grep", "Glob"]);
   assert.ok(READ_ONLY_TOOLS.every((t) => TOOLS_NOTE.includes(t)), TOOLS_NOTE);
+});
+
+test("shell_confirm — 셸 위험 확인은 끔 → 켬일 때만 · 안내 글은 등록 칸 title 과 같다(#05-3)", () => {
+  assert.equal(shellConfirmNeeded(false, true), true, "켤 때");
+  assert.equal(shellConfirmNeeded(true, true), false, "켠 채 다른 칸만");
+  assert.equal(shellConfirmNeeded(true, false), false, "끌 때");
+  assert.equal(shellConfirmNeeded(false, false), false);
+  assert.equal(shellConfirmNeeded(undefined, true), true, "옛 응답(칸 없음) = 끔");
+  const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+  assert.ok(html.includes(`<input type="checkbox" id="agent_shell" title="${SHELL_NOTE}">`), "등록 칸 title");
+  for (const risk of ["workflow", "허용하지 않습니다", "사람 승인 없이", "폴더 · 상위 읽기 제한이 적용되지 않습니다", "신원 키", "~/.claude", "~/.ssh", "막는 장치가 아닙니다", "자동 왕복", "환경 변수", "프록시"]) {
+    assert.ok(SHELL_WARN.includes(risk), risk);
+  }
+});
+
+test("agent_patch — 셸 · 상위 읽기는 바꿨을 때만 보낸다(오래 열린 상세가 다른 창에서 끈 셸을 되살리지 않게, #05-3 R1)", () => {
+  const loaded = { shell: true, parent_read: false };
+  // 다른 창에서 셸을 껐어도 이 창은 켜진 채 — 추가 지시만 고쳐 저장하면 shell 을 싣지 않는다(서버 값 그대로 = 끔).
+  assert.deepEqual(agentPatch(loaded, { folder: "D:\\w", prompt: "x", parent_read: false, shell: true }), { folder: "D:\\w", prompt: "x" });
+  assert.deepEqual(agentPatch(loaded, { folder: "f", prompt: "", parent_read: true, shell: false }), { folder: "f", prompt: "", parent_read: true, shell: false });
+  assert.deepEqual(agentPatch({}, { folder: "f", prompt: "", parent_read: false, shell: true }), { folder: "f", prompt: "", shell: true }, "옛 응답(칸 없음) = 끔");
 });
 
 test("messages_sig_req — 요청 상태 · 메모가 바뀌면 다시 그린다", () => {

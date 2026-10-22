@@ -1,5 +1,6 @@
 use an_agent::runner::{
-    GUARD_PROMPT, MIN_CLAUDE, Session, parse_output, parse_version, run_process, version_ok,
+    GUARD_PROMPT, MIN_CLAUDE, SHELL_GUARD_PROMPT, Session, parse_output, parse_version, run_process, shell_env,
+    version_ok,
 };
 use an_core::agents::Agent;
 use std::io::ErrorKind;
@@ -14,6 +15,7 @@ fn agent(prompt: &str) -> Agent {
         group: None,
         uid: String::new(),
         parent_read: false,
+        shell: false,
     }
 }
 
@@ -46,11 +48,11 @@ fn args_follow_d22() {
     assert_eq!(value_of(&args, "--permission-mode"), Some("dontAsk"));
     assert_eq!(
         value_of(&args, "--tools"),
-        Some("Read,Grep,Glob,LS,NotebookRead")
+        Some("Read,Grep,Glob")
     );
     assert_eq!(
         value_of(&args, "--allowedTools"),
-        Some("Read,Grep,Glob,LS,NotebookRead")
+        Some("Read,Grep,Glob")
     );
     assert_eq!(
         value_of(&args, "--session-id"),
@@ -102,9 +104,9 @@ fn guard_prompt_always() {
 
 #[test]
 fn tools_are_all_read_only() {
-    // 프로필과 무관하게 탐색 도구 5개 — 체크 칸이 없다(#1d).
+    // 프로필과 무관하게 탐색 도구 3개 — 체크 칸이 없다(#1d · #05-3 없는 이름 LS · NotebookRead 뺌).
     let args = claude_args(&agent("짧게"), &Session::New("u".into()));
-    let all = "Read,Grep,Glob,LS,NotebookRead";
+    let all = "Read,Grep,Glob";
     assert_eq!(value_of(&args, "--tools"), Some(all));
     assert_eq!(value_of(&args, "--allowedTools"), Some(all));
 }
@@ -260,4 +262,48 @@ fn parent_read_adds_dir() {
         assert_eq!(value_of(&args, "--append-system-prompt"), Some(GUARD_PROMPT));
     }
     std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// 셸 명령 실행 허용(#05-3) — 켜면 도구에 셸(Windows `Bash` · `PowerShell`, 그 밖 `Bash`) · 셸용 가드, 끄면 읽기 전용 5개 · 가드 그대로.
+#[test]
+fn shell_adds_tools() {
+    let on = Agent { shell: true, ..agent("") };
+    let args = claude_args(&on, &Session::New("u".into()));
+    let want = if cfg!(windows) {
+        "Read,Grep,Glob,Bash,PowerShell"
+    } else {
+        "Read,Grep,Glob,Bash"
+    };
+    assert_eq!(value_of(&args, "--tools"), Some(want));
+    assert_eq!(value_of(&args, "--allowedTools"), Some(want));
+    assert_eq!(value_of(&args, "--append-system-prompt"), Some(SHELL_GUARD_PROMPT));
+    assert!(!SHELL_GUARD_PROMPT.contains("명령 · 스크립트 실행") && SHELL_GUARD_PROMPT.contains("workflow") && SHELL_GUARD_PROMPT.contains("삭제 · 편집 · 이동"));
+    for flag in ["--restricted", "--strict-mcp-config", "dontAsk"] {
+        assert!(args.iter().any(|a| a == flag), "{flag} 없음: {args:?}");
+    }
+    let off = claude_args(&agent(""), &Session::New("u".into()));
+    assert_eq!(value_of(&off, "--tools"), Some("Read,Grep,Glob"));
+    assert_eq!(value_of(&off, "--append-system-prompt"), Some(GUARD_PROMPT));
+    // 상위 읽기와 함께 켜면 "그 위는 읽을 수 없다" 를 싣지 않는다(셸은 범위 밖도 읽는다).
+    let root = std::env::temp_dir().join(format!("an-shell-scope-{}", std::process::id()));
+    let work = root.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let both = Agent { folder: work.display().to_string(), parent_read: true, ..on };
+    let system = claude_args(&both, &Session::New("u".into()))
+        .into_iter()
+        .skip_while(|a| a != "--append-system-prompt")
+        .nth(1)
+        .unwrap();
+    assert!(system.starts_with(SHELL_GUARD_PROMPT) && system.contains("[읽기 범위] 파일 도구는") && !system.contains("그 위는 읽을 수 없다"), "{system}");
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// 셸 실행 환경(#05-3) — 기본 목록만 남고 키 · 토큰 변수는 빠진다. Windows 는 이름 대소문자 무시.
+#[test]
+fn shell_env_keeps_base_only() {
+    let vars = [("Path", r"C:\bin"), ("HOME", "/h"), ("ANTHROPIC_API_KEY", "sk-x"), ("GITHUB_TOKEN", "t"), ("HTTPS_PROXY", "p"), ("CLAUDECODE", "1")]
+        .map(|(k, v)| (std::ffi::OsString::from(k), std::ffi::OsString::from(v)));
+    let kept: Vec<String> = shell_env(vars).into_iter().map(|(k, _)| k.to_string_lossy().into_owned()).collect();
+    let want: &[&str] = if cfg!(windows) { &["Path", "HOME", "HTTPS_PROXY"] } else { &["HOME", "HTTPS_PROXY"] };
+    assert_eq!(kept, want);
 }

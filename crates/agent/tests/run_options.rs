@@ -14,6 +14,7 @@ fn claude_args_carry_model_effort() {
         group: None,
         uid: String::new(),
         parent_read: false,
+        shell: false,
     };
     let args = claude_args(&agent, &Session::New("u".into()), "opus", "max");
     let at = |f: &str| args.iter().position(|a| a == f).expect(f);

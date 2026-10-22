@@ -1,8 +1,15 @@
 //! 에이전트 프로필(D21) — 이 PC 사용자가 등록한 것만 원격이 부를 수 있다.
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
-/// 모든 실행의 도구 — 탐색(읽기 전용) 전부, 프로필마다 고르지 않는다(D31 · #1d: 원격 요청은 문의 응답, 수신 PC 작업에 개입 · 편집 · 삭제 금지).
-pub const READ_ONLY_TOOLS: [&str; 5] = ["Read", "Grep", "Glob", "LS", "NotebookRead"];
+/// 모든 실행의 도구 — 탐색(읽기 전용) 전부, 프로필마다 고르지 않는다. claude 에 실재하는 이름만(#05-3 — `LS` · `NotebookRead` 는 2.1.308 에 없어 뺐다,
+/// `tests/tools_canary.rs` 가 실제 도구 목록과 대조한다)(D31 · #1d: 원격 요청은 문의 응답, 수신 PC 작업에 개입 · 편집 · 삭제 금지).
+pub const READ_ONLY_TOOLS: [&str; 3] = ["Read", "Grep", "Glob"];
+
+/// 셸 명령 실행 허용(#05-3)을 켠 프로필의 실행에 더하는 도구 — Windows 는 Git Bash 가 없으면 PowerShell 도구를 쓰므로 둘 다, 그 밖은 `Bash` 만.
+#[cfg(windows)]
+pub const SHELL_TOOLS: &[&str] = &["Bash", "PowerShell"];
+#[cfg(not(windows))]
+pub const SHELL_TOOLS: &[&str] = &["Bash"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Agent {
@@ -16,11 +23,13 @@ pub struct Agent {
     pub group: Option<String>,
     /// 상위 한 단계 읽기 허용 — 참이면 실행이 바로 위 폴더도 `--add-dir` 로 연다([`crate::paths::parent_read_dir`] 가 막는 곳이면 폴더만).
     pub parent_read: bool,
-    /// 세대 — 등록 · 폴더 · 상위 읽기 변경 때마다 새 값(다시 쓰지 않는다). 끝난 실행은 지금 세대가 실행 때와 같을 때만 세션을 남긴다.
+    /// 셸 명령 실행 허용(#05-3) — 참이면 실행 도구에 [`SHELL_TOOLS`] 를 더한다(셸에는 폴더 제한이 없다).
+    pub shell: bool,
+    /// 세대 — 등록 · 폴더 · 상위 읽기 · 셸 변경 때마다 새 값(다시 쓰지 않는다). 끝난 실행은 지금 세대가 실행 때와 같을 때만 세션을 남긴다.
     pub uid: String,
 }
 
-const COLS: &str = "id, name, folder, prompt, grp, coalesce(uid, ''), parent_read";
+const COLS: &str = "id, name, folder, prompt, grp, coalesce(uid, ''), parent_read, shell";
 
 fn row(r: &Row) -> rusqlite::Result<Agent> {
     Ok(Agent {
@@ -31,20 +40,28 @@ fn row(r: &Row) -> rusqlite::Result<Agent> {
         group: r.get(4)?,
         uid: r.get(5)?,
         parent_read: r.get(6)?,
+        shell: r.get(7)?,
     })
 }
 
-/// 이름이 겹치면 오류. `agents.tools` 열은 읽지 않는다(#1d — 도구는 [`READ_ONLY_TOOLS`] 고정). 상위 읽기 끔 — [`add_with`].
+/// 이름이 겹치면 오류. `agents.tools` 열은 읽지 않는다(#1d — 도구는 [`READ_ONLY_TOOLS`] 고정). 상위 읽기 · 셸 끔 — [`add_with`].
 pub fn add(conn: &Connection, name: &str, folder: &str, prompt: &str) -> rusqlite::Result<Agent> {
-    add_with(conn, name, folder, prompt, false)
+    add_with(conn, name, folder, prompt, false, false)
 }
 
-/// [`add`] + 상위 한 단계 읽기 허용(`parent_read`).
-pub fn add_with(conn: &Connection, name: &str, folder: &str, prompt: &str, parent_read: bool) -> rusqlite::Result<Agent> {
+/// [`add`] + 상위 한 단계 읽기 허용(`parent_read`) · 셸 명령 실행 허용(`shell`).
+pub fn add_with(
+    conn: &Connection,
+    name: &str,
+    folder: &str,
+    prompt: &str,
+    parent_read: bool,
+    shell: bool,
+) -> rusqlite::Result<Agent> {
     conn.execute(
-        "INSERT INTO agents (name, folder, tools, prompt, created_at, uid, parent_read)
-         VALUES (?1, ?2, ?3, ?4, unixepoch(), lower(hex(randomblob(16))), ?5)",
-        params![name, folder, READ_ONLY_TOOLS.join(","), prompt, parent_read],
+        "INSERT INTO agents (name, folder, tools, prompt, created_at, uid, parent_read, shell)
+         VALUES (?1, ?2, ?3, ?4, unixepoch(), lower(hex(randomblob(16))), ?5, ?6)",
+        params![name, folder, READ_ONLY_TOOLS.join(","), prompt, parent_read, shell],
     )?;
     by_name(conn, name).map(|a| a.expect("방금 쓴 프로필"))
 }
@@ -64,9 +81,9 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Vec<Agent>> {
         .collect()
 }
 
-/// 폴더 · 추가 지시 · 그룹 · 상위 읽기를 바꾼다 — 이름은 바꾸지 않는다(대화 · 상대 PC 가 이름으로 부른다). 없는 id 면 `None`.
-/// 폴더나 상위 읽기가 바뀌면 새 세대(`uid`)로 하고 이 에이전트가 이어 가던 세션(받은 대화 · 내가 연 자동 왕복 · 멘션)을 비운다 — Claude Code 세션은 폴더에
-/// 묶여 있어 새 폴더에서 `--resume` 하면 찾지 못한다 · 상위 읽기를 끈 뒤 위 폴더 내용이 든 세션 · 요약을 잇지 않게. 다음 실행은 새 세션.
+/// 폴더 · 추가 지시 · 그룹 · 상위 읽기 · 셸을 바꾼다 — 이름은 바꾸지 않는다(대화 · 상대 PC 가 이름으로 부른다). 없는 id 면 `None`.
+/// 폴더 · 상위 읽기 · 셸이 바뀌면 새 세대(`uid`)로 하고 이 에이전트가 이어 가던 세션(받은 대화 · 내가 연 자동 왕복 · 멘션)을 비운다 — Claude Code 세션은 폴더에
+/// 묶여 있어 새 폴더에서 `--resume` 하면 찾지 못한다 · 상위 읽기 · 셸을 끈 뒤 위 폴더 내용 · 셸 출력이 든 세션 · 요약을 잇지 않게. 다음 실행은 새 세션.
 pub fn update(
     conn: &Connection,
     id: i64,
@@ -74,16 +91,17 @@ pub fn update(
     prompt: &str,
     group: Option<&str>,
     parent_read: bool,
+    shell: bool,
 ) -> rusqlite::Result<Option<Agent>> {
     let tx = crate::db::write_tx(conn)?;
     let Some(now) = by_id(&tx, id)? else {
         return Ok(None);
     };
     tx.execute(
-        "UPDATE agents SET folder = ?2, prompt = ?3, grp = ?4, parent_read = ?5 WHERE id = ?1",
-        params![id, folder, prompt, group, parent_read],
+        "UPDATE agents SET folder = ?2, prompt = ?3, grp = ?4, parent_read = ?5, shell = ?6 WHERE id = ?1",
+        params![id, folder, prompt, group, parent_read, shell],
     )?;
-    if now.folder != folder || now.parent_read != parent_read {
+    if now.folder != folder || now.parent_read != parent_read || now.shell != shell {
         tx.execute(
             "UPDATE agents SET uid = lower(hex(randomblob(16))) WHERE id = ?1",
             [id],

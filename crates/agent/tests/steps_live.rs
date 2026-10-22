@@ -30,6 +30,7 @@ fn live_run_reports_steps_before_result() {
             group: None,
             uid: String::new(),
             parent_read: false,
+            shell: false,
         },
         session: Session::New(an_agent::chat::new_uuid()),
         text: "note.txt 를 Read 도구로 읽고 코드명만 답하라.".into(),

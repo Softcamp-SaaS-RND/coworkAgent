@@ -147,6 +147,17 @@ async fn agents_crud_api() {
     assert_eq!((code, w["parent_read"].as_bool(), &w["parent_dir"]), (200, Some(false), &serde_json::Value::Null), "{w}");
     assert_eq!(call(port, &h, "DELETE", &wpath, "").await.0, 204);
     std::fs::remove_dir_all(&up).unwrap();
+    // 셸 명령 실행 허용(#05-3) — 기본 끔, 켜서 등록 · PATCH 로 끔 · 다른 칸만 고치면 그대로.
+    assert_eq!(made["shell"].as_bool(), Some(false));
+    let sh = serde_json::json!({ "name": "sh", "folder": folder, "shell": true }).to_string();
+    let (code, s) = call(port, &h, "POST", "/api/agents", &sh).await;
+    assert_eq!((code, s["shell"].as_bool()), (201, Some(true)), "{s}");
+    let spath = format!("/api/agents/{}", s["id"]);
+    let (_, s) = call(port, &h, "PATCH", &spath, r#"{"prompt":"x"}"#).await;
+    assert_eq!(s["shell"].as_bool(), Some(true), "{s}");
+    let (code, s) = call(port, &h, "PATCH", &spath, r#"{"shell":false}"#).await;
+    assert_eq!((code, s["shell"].as_bool()), (200, Some(false)), "{s}");
+    assert_eq!(call(port, &h, "DELETE", &spath, "").await.0, 204);
     let path = format!("/api/agents/{}", made["id"]);
     assert_eq!(call(port, &h, "DELETE", &path, "").await.0, 204);
     assert_eq!(call(port, &h, "DELETE", &path, "").await.0, 404);
