@@ -55,7 +55,7 @@
 
 - [an_core](../../manual/dev/an_core.md) · [an_agent](../../manual/dev/an_agent.md) · [an_app](../../manual/dev/an_app.md) · [개발자 가이드](../../manual/dev/developer-guide.md)(실행 인자) ·
   [사용자 가이드](../../manual/user/user-guide.md) 6장 · `PRODUCT.md`(Claude 실행). 원장 `#1a A-I3` 갱신(셸 실행은 `env_clear` — 닫힘) · 새 행 `#05-3`(셸 허용 위험 — `SHELL_WARN` 의 항목 그대로, 수용 · 공지).
-  `docs/tech/security-posture.md` 는 원 작업 폴더의 다른 세션 미커밋 파일이라 손대지 않는다 — "셸 차단" 문장 갱신 필요를 report 에 남긴다. masterPlan(종결 환류): D21 · D22 · D31 개정 · 개정 기록.
+  tech 노트 security-posture(보안 태세 문서)는 원 작업 폴더의 다른 세션 미커밋 파일이라 손대지 않는다 — "셸 차단" 문장 갱신 필요를 report 에 남긴다. masterPlan(종결 환류): D21 · D22 · D31 개정 · 개정 기록.
 
 ## 평가 항목
 
