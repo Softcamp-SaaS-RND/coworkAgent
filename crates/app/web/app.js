@@ -1856,9 +1856,11 @@ function fitPreviewCols() {
   state.previewCols = n;
   return true;
 }
-new ResizeObserver(() => {
+/// 개요 미리보기가 보이면 열 수를 다시 재고, 바뀌었으면 다시 그린다(창 폭 · 미리보기 크기).
+function refitPreview() {
   if (route(location.hash).view === "home" && state.homeView === "preview" && fitPreviewCols()) renderHome();
-}).observe($("home_preview"));
+}
+new ResizeObserver(refitPreview).observe($("home_preview"));
 
 /// 미리보기 절 하나 — 머리(상대 아이콘 · 이름 · 접속 · 대화 수 · 안 읽음 · 대기 요청) + 카드 한 줄(끝 칸 "+n개" = 그 상대 개요 — 머리 "{이름} 개요 →" 는 사용자 지시로 뺌).
 /// 대화 없는 상대 = 점선 한 줄 + "+ 새 세션"(페어링된 상대만).
@@ -1923,7 +1925,7 @@ function previewCardEl(c) {
   );
 }
 
-/// 개요 미리보기 크기(#1z-6) — 카드 본문 높이 · 말풍선 줄 수만(글자 그대로, 한 줄 열 수 그대로 — CSS 값만 바꾸므로 다시 그리지 않는다).
+/// 개요 미리보기 크기(#1z-6) — 카드 폭 · 본문 높이 · 말풍선 줄 수(글자 크기는 그대로). 카드가 넓어져 한 줄 열 수가 바뀌면 그 수로 다시 그린다.
 /// 값은 시작할 때(`showSettings`)와 고를 때만 — 다른 설정 저장의 늦은 응답(`fillPrefs`)이 막 고른 배율을 되돌리지 않게(#1z-6 R1, `ui_home_view` 와 같은 규칙).
 function applyHomeZoom(z) {
   const { scale, lines } = previewZoom(z);
@@ -1931,6 +1933,7 @@ function applyHomeZoom(z) {
   box.style.setProperty("--pv-scale", String(scale));
   box.style.setProperty("--pv-lines", String(lines));
   $("ui_home_zoom").value = String(Math.round(scale * 100));
+  refitPreview();
 }
 /// 배율 저장 — 한 번에 하나, 보내는 동안 또 고르면 마지막 값만 이어서(`SendLatest`, #1z-6 R2 — 동시 요청이 앞 값으로 끝나지 않게). 실패는 상태 줄, 화면은 고른 대로.
 const homeZoomSaver = new SendLatest((z) =>

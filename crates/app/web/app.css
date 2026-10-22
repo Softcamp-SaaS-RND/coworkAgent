@@ -77,6 +77,8 @@
 
   --font: 'IBM Plex Sans KR', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
   --mono: Consolas, 'SF Mono', Menlo, monospace;
+  --fs-3xs: 10px; /* 개요 미리보기 말풍선 이름(사용자 지시 — 축소) */
+  --fs-2xs: 11px; /* 개요 미리보기 말풍선 글자(사용자 지시 — 축소) */
   --fs-xs: 12px;
   --fs-sm: 13px;
   --fs-md: 14px;
@@ -107,7 +109,7 @@
   --bubble-mine-alpha: 0.1; /* 말풍선 층 — 내 글 강조색 · 상대 글 타일 색(0 = 층 없음) */
   --bubble-theirs-alpha: 0.0;
   --pv-zoom: 1.15; /* 개요 미리보기 절 확대(사용자 "15% 정도 확대" — 열 수는 확대된 격자에서 잰다) */
-  --pv-scale: 1; /* 개요 미리보기 카드 본문 배수(#1z-6 — 스크립트가 `#home_preview` 에 1 ~ 2) */
+  --pv-scale: 1; /* 개요 미리보기 카드 폭 · 본문 높이 배수(#1z-6 — 스크립트가 `#home_preview` 에 1 ~ 2, 글자 크기는 그대로) */
   --pv-lines: 2; /* 말풍선 줄 수(#1z-6 — 배율 125% 3줄 · 175% 4줄) */
 }
 :root[data-theme="dark"] {
@@ -950,7 +952,7 @@ details { margin: var(--sp-2) 0; }
 .pv-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: var(--fs-lg); }
 .pv-none { padding: var(--sp-3) var(--sp-4); border: 1px dashed var(--border); border-radius: var(--radius-bubble); }
 .pv-none button { margin-left: auto; }
-.pv-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: var(--sp-4); }
+.pv-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(240px * var(--pv-scale))), 1fr)); gap: var(--sp-4); }
 .pv-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-bubble); box-shadow: var(--shadow-sm); color: var(--text); text-decoration: none; }
 .pv-card:hover { color: var(--text); border-color: var(--accent); }
 .pv-card.unseen { border-color: var(--accent); }
@@ -958,13 +960,13 @@ details { margin: var(--sp-2) 0; }
 .pv-card-head strong { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); }
 .pv-state { flex: none; padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--subtle); font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: var(--lh-body); }
 .pv-body { height: calc(120px * var(--pv-scale)); box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3); overflow: hidden; background: var(--surface-2); }
-.pv-msg { flex: none; max-width: 84%; padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm) var(--radius-bubble) var(--radius-bubble) var(--radius-bubble); font-size: var(--fs-xs); line-height: var(--lh-tight); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: var(--pv-lines); -webkit-box-orient: vertical; overflow: hidden; }
+.pv-msg { flex: none; max-width: 84%; padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm) var(--radius-bubble) var(--radius-bubble) var(--radius-bubble); font-size: var(--fs-2xs); line-height: var(--lh-tight); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: var(--pv-lines); -webkit-box-orient: vertical; overflow: hidden; }
 .pv-msg.side-mine { align-self: flex-end; border-radius: var(--radius-bubble) var(--radius-sm) var(--radius-bubble) var(--radius-bubble); background: var(--sent-bg); }
 .pv-msg.side-theirs { align-self: flex-start; background: var(--recv-bg); }
 .pv-msg.agent, .pv-msg.running { background: var(--agent-soft); border: 1px solid var(--agent); }
 .pv-msg.running { color: var(--run); }
 .pv-msg.error { background: var(--danger-soft); border: 1px solid var(--danger); color: var(--danger); }
-.pv-msg b { margin-right: var(--sp-1); color: var(--muted); }
+.pv-msg b { margin-right: var(--sp-1); color: var(--muted); font-size: var(--fs-3xs); }
 .pv-msg.agent b, .pv-msg.running b { color: var(--agent); }
 .pv-card-foot { display: flex; align-items: center; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--faint); }
 .pv-card-foot .home-agent { min-width: 0; overflow: hidden; white-space: nowrap; color: var(--agent); }

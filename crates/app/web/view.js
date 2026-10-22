@@ -1105,7 +1105,7 @@ export const PREVIEW_MSGS = 12;
 /// 개요 미리보기 배율(%, #1z-6 — 설정 `ui_home_zoom`, 서버 `HOME_ZOOMS`) — 첫 값이 기본(지금 크기). 축소 없음(사용자 — 처음 화면이 이미 작다).
 export const HOME_ZOOMS = [100, 125, 150, 175, 200];
 
-/// 배율 → 카드 본문 높이 배수 · 말풍선 줄 수(글자 크기는 그대로). 목록 밖 값은 100%.
+/// 배율 → 카드 폭 · 본문 높이 배수 · 말풍선 줄 수(글자 크기는 그대로). 목록 밖 값은 100%.
 export function previewZoom(z) {
   const pct = HOME_ZOOMS.includes(Number(z)) ? Number(z) : HOME_ZOOMS[0];
   return { scale: pct / 100, lines: pct >= 175 ? 4 : pct >= 125 ? 3 : 2 };
