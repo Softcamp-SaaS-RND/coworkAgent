@@ -381,7 +381,7 @@ test("menu_icons — 사이드바 · 설정 트리 · 새로 만들기 항목마
   }
   assert.deepEqual(
     sideNav(null).filter((n) => !n.sep).map((n) => n.icon),
-    ["home", "bell", "inbox", "swap", "star", "bookmark", "bot", "bot", "chat"],
+    ["home", "bell", "inbox", "star", "bookmark", "bot", "bot", "chat"],
   );
 });
 
@@ -559,14 +559,13 @@ test("display_name — 이 PC 에서 부르는 이름 = 표시 이름(없거나 
   assert.equal(displayName({ name: "user-b", alias: "" }), "user-b", "빈 표시 이름 = 원래 이름");
 });
 
-test("side_nav — '나' 메뉴 세 절(개요 | 내 활동 · 요청 · 주고받은 메시지 | 즐겨찾기 · 북마크 · 에이전트 › 등록된 에이전트 · 에이전트 응답), 상대 타일 두 절(#1j · #1v · #1z-2)", () => {
+test("side_nav — '나' 메뉴 세 절(개요 | 내 활동 · 요청 | 즐겨찾기 · 북마크 · 에이전트 › 등록된 에이전트 · 에이전트 응답), 상대 타일 세 절(개요 | 요청 | …)(#1j · #1v · #1z-2 · 사용자 지시)", () => {
   const show = (xs) => xs.map((n) => (n.sep ? "|" : [n.label, n.href ?? null, n.count ?? 0]));
   assert.deepEqual(show(sideNav(null, 3, 2, 4)), [
     ["개요", "#", 0],
     "|",
     ["내 활동", "#activity", 3],
     ["요청", "#requests", 2],
-    ["주고받은 메시지", "#p", 0],
     "|",
     ["즐겨찾기", "#starred", 4],
     ["북마크", "#saved", 0],
@@ -576,6 +575,8 @@ test("side_nav — '나' 메뉴 세 절(개요 | 내 활동 · 요청 · 주고�
   ]);
   const peer = sideNav(2, 5, 1);
   assert.deepEqual(show(peer), [
+    ["개요", "#", 0],
+    "|",
     ["요청", "#requests", 1],
     "|",
     ["즐겨찾기", "#starred", 0],
@@ -583,19 +584,20 @@ test("side_nav — '나' 메뉴 세 절(개요 | 내 활동 · 요청 · 주고�
     ["에이전트", null, 0],
     ["등록된 에이전트", "#agents", 0],
   ]);
-  assert.deepEqual(sideNav(2)[0].count, 0, "대기 수 기본 0");
-  assert.deepEqual(peer.filter((n) => !n.sep && n.href).map((n) => route(n.href).view), ["requests", "starred", "saved", "agents"]);
+  assert.deepEqual(sideNav(2)[2].count, 0, "대기 수 기본 0");
+  assert.deepEqual(peer.filter((n) => !n.sep && n.href).map((n) => route(n.href).view), ["home", "requests", "starred", "saved", "agents"]);
   assert.ok(!sideNav(2)[0].sep && !sideNav(2).at(-1).sep, "구분선은 절 사이에만 — 머리 · 끝에 없다");
   assert.deepEqual(route("#p/2"), { view: "peer", id: 2 }, "옛 주소 — 화면은 그 상대 개요로 넘긴다");
   assert.deepEqual(route("#p"), { view: "peer", id: null }, "'나' 주고받은 메시지 = 전부");
 });
 
-test("side_nav_exchanged_me_only — '주고받은 메시지' 은 '나' 에만, 상대에는 '개요' 메뉴도 없다(첫 화면이 그 상대 개요 — #1j)", () => {
+test("side_nav_overview_all — '주고받은 메시지' 메뉴 없음(내 활동과 겹침), 모든 타일의 첫 칸 = '개요'(상대는 요청 위 — 사용자 지시)", () => {
   const labels = (tile) => sideNav(tile).filter((n) => !n.sep).map((n) => n.label);
-  assert.ok(labels(null).includes("주고받은 메시지"));
-  for (const tile of [7, "group"]) assert.ok(!labels(tile).includes("주고받은 메시지"), String(tile));
-  assert.ok(!labels(7).includes("개요"));
-  assert.deepEqual(labels("group").slice(0, 1), ["개요"]);
+  for (const tile of [null, 7, "group"]) {
+    assert.ok(!labels(tile).includes("주고받은 메시지"), String(tile));
+    assert.deepEqual(labels(tile).slice(0, 1), ["개요"], String(tile));
+  }
+  assert.ok(labels(7).indexOf("개요") < labels(7).indexOf("요청"));
 });
 
 test("side_nav_starred — 즐겨찾기는 모든 타일의 하단 첫 칸, 수 = 그 범위 ★ 대화", () => {

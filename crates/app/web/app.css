@@ -939,6 +939,8 @@ details { margin: var(--sp-2) 0; }
 .room-av.agent-av { width: 24px; height: 24px; background: var(--agent-tile); color: var(--on-dark); }
 .room-av.agent-av .ico { width: 14px; height: 14px; }
 .side-list li[data-conv] > .drag-handle { top: 50%; transform: translateY(-50%); }
+/* 행 ⋯ 은 줄 끝 제자리(사용자 지시 — 떠 있으면 시각을 가린다), 안 보일 때도 자리는 둔다 */
+.side-list li[data-conv] > .row-more { position: static; flex: none; align-self: center; margin-right: var(--sp-1); }
 .side-list li[data-conv] .title { justify-content: flex-start; align-items: center; gap: var(--sp-2); }
 .side-list li[data-conv] .room-title { flex: 1 1 auto; min-width: 0; white-space: nowrap; }
 .side-list li[data-conv] .unread-n { margin-left: 0; }

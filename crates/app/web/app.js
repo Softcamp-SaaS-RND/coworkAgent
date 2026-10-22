@@ -1670,7 +1670,8 @@ function renderAgentConvs() {
           el(
             "section",
             { class: "side-section" },
-            el("h2", { class: "side-title" }, el("span", { text: s.title }), el("b", { class: "count", text: String(s.rows.length) })),
+            // 사용자 이름만 — 대화 수는 없다(사용자 지시), 안 읽음은 줄마다.
+            el("h2", { class: "side-title" }, el("span", { text: s.title })),
             el("ul", { class: "side-list" }, ...s.rows.map((r) => convItem(r, s.key))),
           ),
         )
@@ -1715,6 +1716,11 @@ function grouped(screen, rows, toEls) {
   return peerGroups(rows, pairedIds(), state.peerNames).map((g) =>
     el("li", { class: "fold" }, foldEl(`${screen}:${g.peer}`, [`${g.name} · ${g.rows.length}`], [el("ol", { class: "rows" }, ...toEls(g.rows))])),
   );
+}
+
+/// '나' 개요(목록 · 미리보기)에서 대화를 열면 레일 · 사이드바도 그 상대로(사용자 지시) — 상대 · 그룹 개요는 그대로.
+function followFromHome(c) {
+  if (state.railPeer == null && state.railGroup == null) pickRail(c.peer_id);
 }
 
 /// '나' 의 '대화' 화면이면 요약을 다시 그린다.
@@ -1765,7 +1771,7 @@ function renderHome() {
               { class: meta.unread ? "unseen" : null },
               el(
                 "a",
-                { href: `#c/${c.id}` },
+                { href: `#c/${c.id}`, onclick: () => followFromHome(c) },
                 el(
                   "span",
                   { class: "meta" },
@@ -1899,7 +1905,7 @@ function previewCardEl(c) {
   const bubbles = cached ? previewBubbles(c, cached.ms, state.peerNames.get(c.peer_id)) : [];
   return el(
     "a",
-    { class: c.unread ? "pv-card unseen" : "pv-card", href: `#c/${c.id}`, "aria-label": `${title} 대화 열기` },
+    { class: c.unread ? "pv-card unseen" : "pv-card", href: `#c/${c.id}`, "aria-label": `${title} 대화 열기`, onclick: () => followFromHome(c) },
     el(
       "div",
       { class: "pv-card-head" },

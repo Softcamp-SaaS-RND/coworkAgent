@@ -558,21 +558,20 @@ export function preview(text) {
 
 // ---- 작업 화면 — 상단 바 · 사이드바 · 내 활동 · 대화 · 실행 상세 · 통합 검색 ----
 
-/// 사이드바 내비(#1g) — '나'(`tile` = `null`) = 전부를 상대별로 묶어 보는 6개, 상대 타일 = 그 상대만 4개(개요는 아래 목록, 내 활동은 '나' 에만).
-/// 그룹 타일(`tile` = `"group"`, #1i) = 개요(그룹 요약) · 요청 · 북마크 항목 · 주고받은 글 4개 — 내 활동('나' 에만) · 에이전트(대화 단위 아님) 없음.
-/// 세 절(#1h) — 상단 개요 / 중단 내 활동 · 요청 · 주고받은 글 / 하단 북마크 항목 · 에이전트(사용자가 모은 · 등록한 것), 절 사이 `{ sep: true }`
+/// 사이드바 내비(#1g) — '나'(`tile` = `null`) = 전부를 상대별로 묶어 보는 메뉴, 상대 타일 = 그 상대만(내 활동은 '나' 에만).
+/// 그룹 타일(`tile` = `"group"`, #1i) = 개요(그룹 요약) · 요청 · 즐겨찾기 · 북마크 — 내 활동('나' 에만) · 에이전트(대화 단위 아님) 없음.
+/// 세 절(#1h) — 상단 개요(모든 타일 — 상대는 그 상대 개요, 사용자 지시) / 중단 내 활동 · 요청 / 하단 즐겨찾기 · 북마크 · 에이전트(사용자가 모은 · 등록한 것), 절 사이 `{ sep: true }`
 /// (빈 절은 건너뛴다). 내 활동은 안 본 수(`count`), 요청은 받은 요청 중 대기 수(`waiting`).
 /// '에이전트'(#1v) = 링크 없는 머리(`head`) + 들여쓴 하위(`sub`) — 등록된 에이전트 · 에이전트 응답(#1z-2 — '나' 에만, 상대가 연 대화, 수 = 안 읽음 `agentUnread`).
 export function sideNav(tile, unseen = 0, waiting = 0, starred = 0, agentUnread = 0) {
   const me = tile == null;
   const group = tile === "group";
-  // 상대 타일의 첫 화면이 그 상대 개요라(#1j) 상대에는 '개요' 메뉴가 없다. '주고받은 메시지' 는 '나' 에만 — 상대 · 그룹은 대화방 목록이 같은 글을 보인다.
+  // '주고받은 메시지' 메뉴는 없다(사용자 지시 — 내 활동과 겹친다, 옛 주소 `#p` 화면은 남음).
   // `icon` = `app.css` `.ico-{이름}`(#1l — 화면 머리 제목과 같은 아이콘).
-  const top = me || group ? [{ label: "개요", href: "#", icon: "home" }] : [];
+  const top = [{ label: "개요", href: "#", icon: "home" }];
   const mid = [
     ...(me ? [{ label: "내 활동", href: "#activity", count: unseen, icon: "bell" }] : []),
     { label: "요청", href: "#requests", count: waiting, icon: "inbox" },
-    ...(me ? [{ label: "주고받은 메시지", href: "#p", icon: "swap" }] : []),
   ];
   const end = [
     { label: "즐겨찾기", href: "#starred", count: starred, icon: "star" },
