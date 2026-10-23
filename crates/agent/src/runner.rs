@@ -571,7 +571,7 @@ pub fn run_claude(program: &Path, input: &RunInput) -> io::Result<RunOutput> {
     let env = input.agent.shell.then(|| shell_env(std::env::vars_os()));
     let out = run_process_lines(
         program,
-        &claude_args(&input.agent, &input.session, &input.model, &input.effort),
+        &agent_args(input),
         Path::new(&input.agent.folder),
         &input.text,
         RUN_TIMEOUT,
@@ -605,11 +605,79 @@ pub fn run_claude(program: &Path, input: &RunInput) -> io::Result<RunOutput> {
 
 /// 에이전트의 실행 도구(#1z-9)로 돌린다 — Codex 면 [`run_codex`], 아니면 [`run_claude`]. 운영 `Run`.
 pub fn run_agent(input: &RunInput) -> io::Result<RunOutput> {
+    let program = agent_program(&input.agent);
     if input.agent.engine == an_core::agents::CODEX {
-        run_codex(&find_codex(), input)
+        run_codex(&program, input)
     } else {
-        run_claude(&find_claude(), input)
+        run_claude(&program, input)
     }
+}
+
+/// 에이전트 실행 도구의 실행 파일(#1z-10) — [`run_agent`] 와 실행 명령 기록이 같이 쓴다.
+pub fn agent_program(agent: &Agent) -> PathBuf {
+    if agent.engine == an_core::agents::CODEX {
+        find_codex()
+    } else {
+        find_claude()
+    }
+}
+
+/// 에이전트 실행 인자(#1z-10) — [`run_claude`] · [`run_codex`] 가 띄울 때와 실행 명령 기록이 같은 함수를 쓴다(복사한 명령 = 띄운 명령).
+pub fn agent_args(input: &RunInput) -> Vec<String> {
+    if input.agent.engine == an_core::agents::CODEX {
+        codex_args(&input.agent, &input.session)
+    } else {
+        claude_args(&input.agent, &input.session, &input.model, &input.effort)
+    }
+}
+
+/// 이 PC 가 띄우는 실행 명령 한 줄(#1z-10 — 세부정보 '대화 정보' 복사) — 실행 파일 + 인자, 이 OS 셸 따옴표. 원격 본문은 표준 입력이라 없다.
+pub fn launch_line(input: &RunInput) -> String {
+    shell_line(&agent_program(&input.agent), &agent_args(input), cfg!(windows))
+}
+
+/// PowerShell 이 작은따옴표로 읽는 글자 — ASCII `'` 와 둥근 따옴표 ‘ ’ ‚ ‛(R1 — 하나만 바꾸면 둥근 따옴표로 인용을 빠져나가 뒤 글이 명령이 된다).
+const PS_QUOTES: [char; 5] = ['\'', '\u{2018}', '\u{2019}', '\u{201A}', '\u{201B}'];
+
+/// PowerShell 7.3 아래(Windows PowerShell 5.1)와 7.3+ 의 `Legacy` 인자 전달은 네이티브 인자 안 큰따옴표 · 빈 인자를 잃는다(R1 · R2 실측) — 붙여 넣으면 다른 명령이
+/// 되므로 그때는 실행 파일을 띄우기 전에 멈춘다(`Windows` · `Standard` 모드만 통과).
+pub const PS_MIN_GUARD: &str = "if ($PSVersionTable.PSVersion -lt [version]'7.3' -or $PSNativeCommandArgumentPassing -eq 'Legacy') { throw 'PowerShell 7.3 이상(pwsh) · 인자 전달 Windows/Standard 에 붙여 넣으세요 — 낮은 버전 · Legacy 는 인자 안 큰따옴표 · 빈 인자를 잃습니다' };";
+
+/// 실행 파일 + 인자를 셸에 붙여 넣을 한 줄로 — `powershell` 이면 [`PS_MIN_GUARD`] + `& '<실행 파일>' …`(작은따옴표 안 [`PS_QUOTES`] 는 두 번, 역슬래시 그대로 —
+/// PowerShell 7.3+ 인자 전달 기준), 아니면 POSIX 셸(`'…'`, 안 `'` = `'\''`). 따옴표 없이 두는 인자 = 글자 · 숫자 · `_-./:=`(PowerShell 은 `\` 도) —
+/// 쉼표(PowerShell 배열) · `@` · 공백 · 따옴표 · 줄바꿈이 든 것은 감싼다.
+pub fn shell_line(program: &Path, args: &[String], powershell: bool) -> String {
+    let wrap = |a: &str| {
+        if powershell {
+            let mut out = String::from("'");
+            for c in a.chars() {
+                out.push(c);
+                if PS_QUOTES.contains(&c) {
+                    out.push(c);
+                }
+            }
+            out.push('\'');
+            out
+        } else {
+            format!("'{}'", a.replace('\'', r"'\''"))
+        }
+    };
+    let quote = |a: &str| {
+        let plain = !a.is_empty()
+            && a.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_-./:=".contains(c) || (powershell && c == '\\'));
+        if plain { a.to_string() } else { wrap(a) }
+    };
+    let program = wrap(&program.to_string_lossy());
+    let head = if powershell {
+        format!("{PS_MIN_GUARD} & {program}")
+    } else {
+        program
+    };
+    std::iter::once(head)
+        .chain(args.iter().map(|a| quote(a)))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// TOML 기본 문자열(`-c key=value` 의 값) — JSON 문자열 이스케이프(`\"` · `\\` · `\n` · `\uXXXX`)는 TOML 기본 문자열에서도 같은 뜻이다.
@@ -768,7 +836,7 @@ pub fn run_codex(program: &Path, input: &RunInput) -> io::Result<RunOutput> {
     };
     let out = run_process_lines(
         program,
-        &codex_args(&input.agent, &input.session),
+        &agent_args(input),
         Path::new(&input.agent.folder),
         &input.text,
         RUN_TIMEOUT,

@@ -1349,6 +1349,53 @@ pub fn set_session(conn: &Connection, id: i64, session: &str) -> rusqlite::Resul
     .map(drop)
 }
 
+/// 대화의 마지막 에이전트 실행 명령(#1z-10) — 실행 직전에 덮어쓴다(`at` = 유닉스 초).
+pub fn set_cmd(conn: &Connection, id: i64, cmd: &str, at: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE conversations SET cmd = ?2, cmd_at = ?3 WHERE id = ?1",
+        params![id, cmd, at],
+    )
+    .map(drop)
+}
+
+/// 세부정보 '대화 정보'(#1z-10) — 시작 · 마지막 글 · 끝난 압축(수동 · 자동) · 비우기 수 · 마지막 실행 명령.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConvInfo {
+    pub created_at: i64,
+    /// 그 대화 글의 가장 늦은 시각 — 글이 없으면 `created_at`.
+    pub last_at: i64,
+    pub compacts: i64,
+    pub last_compact_at: Option<i64>,
+    pub clears: i64,
+    pub cmd: Option<String>,
+    pub cmd_at: Option<i64>,
+}
+
+pub fn info(conn: &Connection, id: i64) -> rusqlite::Result<Option<ConvInfo>> {
+    conn.query_row(
+        "SELECT c.created_at,
+                coalesce((SELECT max(created_at) FROM messages WHERE conversation_id = c.id), c.created_at),
+                (SELECT count(*) FROM messages WHERE conversation_id = c.id AND state = 'done' AND ctx_op IN ('compact', 'auto_compact')),
+                (SELECT max(created_at) FROM messages WHERE conversation_id = c.id AND state = 'done' AND ctx_op IN ('compact', 'auto_compact')),
+                (SELECT count(*) FROM messages WHERE conversation_id = c.id AND state = 'done' AND ctx_op = 'clear'),
+                c.cmd, c.cmd_at
+         FROM conversations c WHERE c.id = ?1",
+        [id],
+        |r| {
+            Ok(ConvInfo {
+                created_at: r.get(0)?,
+                last_at: r.get(1)?,
+                compacts: r.get(2)?,
+                last_compact_at: r.get(3)?,
+                clears: r.get(4)?,
+                cmd: r.get(5)?,
+                cmd_at: r.get(6)?,
+            })
+        },
+    )
+    .optional()
+}
+
 pub fn add_message(
     conn: &Connection,
     conversation_id: i64,

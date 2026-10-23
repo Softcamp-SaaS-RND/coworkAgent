@@ -2,7 +2,7 @@ use rusqlite::OptionalExtension;
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 27;
+pub const SCHEMA_VERSION: i64 = 28;
 
 /// DB 오류를 `io::Error` 로 — 상위 크레이트가 `map_err(db_err)` 로 쓴다(`Error` 는 rusqlite 것이라 `From` 을 구현할 수 없다).
 pub fn db_err(e: Error) -> std::io::Error {
@@ -662,6 +662,18 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
             tx.execute_batch("ALTER TABLE agents ADD COLUMN skip_git INTEGER NOT NULL DEFAULT 1;")?;
         }
         tx.execute_batch("PRAGMA user_version = 27;")?;
+        tx.commit()?;
+    }
+    // 28(#1z-10): 대화의 마지막 에이전트 실행 명령(이 PC 가 띄운 실행 파일 + 인자 — 세부정보 '대화 정보' 복사) — 있던 대화는 없음.
+    if v < 28 {
+        let tx = conn.unchecked_transaction()?;
+        if !has_column(&tx, "conversations", "cmd")? {
+            tx.execute_batch("ALTER TABLE conversations ADD COLUMN cmd TEXT;")?;
+        }
+        if !has_column(&tx, "conversations", "cmd_at")? {
+            tx.execute_batch("ALTER TABLE conversations ADD COLUMN cmd_at INTEGER;")?;
+        }
+        tx.execute_batch("PRAGMA user_version = 28;")?;
         tx.commit()?;
     }
     Ok(conn)

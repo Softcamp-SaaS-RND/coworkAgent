@@ -12,6 +12,11 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
   프로필 메뉴. 상단 바 집중 칩은 없다.
 - **메뉴 아이콘**(#1l · #1r): 사이드바 · 설정 트리 · 새로 만들기 · 타일 · 대화 · 그룹 · 컨텍스트 메뉴 · 프로필 메뉴(상태 셋은 색 점, 그 밖 user · pencil · bell · gear) ·
   내 활동 탭(bell · arrow-down · arrow-up · chat · x) · 요청 탭(arrow-down · arrow-up) 항목마다 `.ico-{이름}`. 바꾸기 · 고치기는 연필(`ico-pencil` · `PENCIL_SVG`).
+- **글자 앞 아이콘**(#1z-10 결정 4 — 이미 아이콘 있는 메뉴는 그대로): 라벨 · 절 제목 · 단추 · 스위치 글자 앞 `.ico.lead`(글자색 16px · 한 칸, JS `lead(name)` ·
+  `button(label, fn, cls, icon)` · `field(label, control, box, icon)` · `convAct(…, icon)`). 설정 화면 제목 = `settingsTree()` 의 메뉴 아이콘을 `renderTree` 가 붙임 · 강조색
+  (`.set-head h2 .ico.lead`). 새 아이콘 = activity · info · clock · folder · terminal · copy · eye · code · help · send · list · grid · resize · user-plus · folder-plus · cpu ·
+  sliders · layers · palette · sort · volume · refresh · file · filter · key · globe · save · folder-up · git · message(`app.css` mask SVG). 상단 "+ 새로 만들기" · 레일
+  "+ 사용자" · "+ 그룹" 의 `+` 글자는 아이콘(plus · user-plus · folder-plus)으로. 자리 목록 = 아이콘 시안 매핑 표(#1z-10 plan).
 - **세션 생성**(#1r · #1x — `#new`): 제목 · 이름 = `view.SESSION_NEW` "세션 생성"(+ 메뉴 `newMenu` · 사이드바 대화 목록 + · 에이전트 줄 단추 · 빈 상대 절 단추 같은 이름).
   줄 라벨마다 아이콘(상대 user · 상대 에이전트 bot · 내 응답 에이전트 swap · 최대 응답 횟수 reset · 제목 title). 메시지 · 메시지 종류 칸은 없다(#1x).
   "내 응답 에이전트"(`chat_relay_agent` → `relay_agent`) 를 고를 때만 하위 줄 "최대 응답 횟수"(`chat_relay_cap` → `relay_cap`, 처음 값 = 설정 `relay_cap_default`)가 보인다.
@@ -95,7 +100,10 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
   닿는 곳: 대화 머리(`#conv_kind` 28px 칩 — 제목 앞, `role="img"` 이름 `KIND_NAMES` · 머리 아래 2px 선), 사이드바 대화 줄(`convItem` — 대화 · 즐겨찾기 · 에이전트 응답, 줄 테두리 ·
   고른 줄 = 유형 옅은 바탕 + 안쪽 테두리), 개요 미리보기 카드(1.5px 테두리 · 머리 `pv-kind` 칩, 안 읽음 = 바깥 `outline` 강조색 · 마우스 = 그림자), 개요 목록 줄(`home-kind` 칩 ·
   테두리). 설정의 대화 관리 줄(그룹설정)과 말풍선은 그대로.
-- **세부정보 패널**: 진행 · 대화 정보(상대 · 에이전트 · 실행 기본값 — `제목` 줄 없음, #1z-8) · 자동 왕복 · 관람자 · 요청 · 북마크.
+- **세부정보 패널**: 진행 · 대화 정보 · 자동 왕복 · 관람자 · 요청 · 북마크(절 제목마다 아이콘 — #1z-10).
+  - **대화 정보**(#1z-10 — 옛 상대 · 에이전트 · 실행 기본값 줄 없음): `<dl id="info_rows">` 를 `renderInfo` 가 `GET /api/conversations/{id}/info` 로 채운다(대화 · 글 수 ·
+    마지막 글 상태가 바뀔 때만 다시 읽음, 실패면 다음 그리기에서 다시, 응답은 마지막 읽기 것만 — `infoView.gen`). 줄 = `view.convInfoRows(info, dir)` — 받은 대화 = 기간(clock) · 답하는 도구(bot) · 읽는 폴더(folder) · 컨텍스트(compress — 압축 n회 ·
+    마지막, 비우기) · 실행 명령(terminal — 한 줄 말줄임 + **복사** = 전체 명령 · 아래 `INFO_CMD_HINT`), 보낸 대화 · 공유 사본 = 기간 · 컨텍스트.
 - **통합 검색 결과**(#1z-8 시안 S1): 상자 머리 `#search_opts` = 스위치 `#search_closed`("나간 대화 포함", `checkbox role="switch"` — 탭이 열린 동안만, 설정 아님) ·
   "지운 대화는 검색되지 않습니다", 결과는 `#search_results` 만 다시 그린다(스위치 초점 유지). 조회 `GET /api/search?q=…&closed={켬}`(서버 기본 = 닫힌 대화 뺌). 줄 = 칩(`searchMark` —
   `view.searchGroups` 의 `mark`: 메시지 = 말풍선 · 대화 = 유형 아이콘(둘 다 `data-kind` 대화 유형 색, 공유 사본 = 점선 빈 칩), 사람 = 그 타일, 에이전트 = 로봇(내 것 = 고른 아이콘 색 ·
@@ -104,7 +112,9 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
   (`openSettings` — 화면 = `<section id="{메뉴 id}" class="set-page">`, 고른 메뉴 링크 `aria-current="page"`). 해시 `#settings/{화면}` · 별칭 `view.SETTINGS_ALIAS`
   (`invite_make` · `invite_accept` · `peers` → 연결, `agent_new` → 에이전트), 빈 · 모르는 = 연결(사용자 "초기 화면은 연결 매뉴 선택된 상태"). 화면 머리 `.set-head` = 제목 + '?' + 머리 단추.
   본문 폭 제한 없음. 체크박스는 전부 스위치(`checkbox role="switch"` + CSS — 값 · 이벤트 · Space 그대로, 설정 밖 체크박스는 그대로).
-  - 연결 · 그룹설정 · 에이전트 = 목록 · 상세 2단(`.md-split` — 목록 360px · 상세, 960px 아래 위아래로). 고름 = `pick[화면]`(다시 그려도 유지), 줄 = `mdRow` 단추(`aria-pressed`, 연필 없음 —
+  - 연결 · 그룹설정 · 에이전트 = 목록 · 상세 2단(`.md-split` — 목록 360px · 상세, 960px 아래 위아래로). 상세를 고르면 상자 높이 = 내용(#1z-10 결정 8 —
+    `.md-detail:has(…)` `align-self: start` · `max-height: 100%`, `.md-body` `flex: 0 1 auto`): 단추 줄(`.md-foot`)이 내용 바로 아래 · 상자 바닥, 칸보다 길면 본문만 스크롤.
+    고르기 전 빈 안내는 칸 전체. 고름 = `pick[화면]`(다시 그려도 유지), 줄 = `mdRow` 단추(`aria-pressed`, 연필 없음 —
     #1r "고치기는 연필" 을 설정 목록에서 개정), 상세 = `mdHead`(타일 · 이름 · 부제 · ✕ "상세 닫기") · 몸 · `mdFoot`(작업 · 끝 "닫기"). ✕ · 닫기 = `closePick` — 고름 풀기 · 초점 = 연 곳
     (목록 줄 · 머리 단추 "초대 생성" · "초대 수락" · "에이전트 등록").
   - 연결: 머리 `#window_btn`(초대 생성 — 상세에 `#invite_make` 초대 글 · 복사, 한 번에 하나 `inviteBusy`) · `#accept_btn`(초대 수락 — 상세에 `#invite_accept` 붙여 넣기 폼, 진입이 `invite_accept`

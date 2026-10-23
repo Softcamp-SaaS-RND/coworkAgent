@@ -39,7 +39,7 @@ fn db_schema_version_kept_on_reopen() {
     let root = temp_root("dbver");
     let paths = Paths::under(&root);
     paths.ensure().unwrap();
-    assert_eq!(db::SCHEMA_VERSION, 27);
+    assert_eq!(db::SCHEMA_VERSION, 28);
     {
         // 00 이 남긴 스키마 1 파일 — 열면 2 로 오른다.
         let conn = rusqlite::Connection::open(paths.db_file()).unwrap();
@@ -613,7 +613,7 @@ fn schema27_agent_engine() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 27);
+    assert_eq!(db::user_version(&conn).unwrap(), db::SCHEMA_VERSION);
     let old = agents::by_id(&conn, 5).unwrap().unwrap();
     assert_eq!((old.engine.as_str(), old.skip_git), ("claude", true), "있던 에이전트는 Claude Code");
     let cx = agents::add_with(&conn, "cx", "/c", "", false, false, agents::CODEX, false).unwrap();
@@ -630,6 +630,51 @@ fn schema27_agent_engine() {
     let moved = agents::update(&conn, cx.id, "/d", "", None, false, false).unwrap().unwrap();
     assert_eq!(moved.engine, "codex", "고쳐도 실행 도구 그대로");
     assert_eq!(agents::ENGINES, ["claude", "codex"]);
+}
+
+/// 28(#1z-10): 대화의 마지막 실행 명령 — 있던 대화는 없음. 대화 정보 = 시작 · 마지막 글 · 끝난 압축 · 비우기 수(진행 중 · 실패는 세지 않음).
+#[test]
+fn schema28_conv_info() {
+    use an_core::chat;
+    let root = temp_root("schema28");
+    let paths = Paths::under(&root);
+    paths.ensure().unwrap();
+    {
+        let conn = db::open(&paths.db_file()).unwrap();
+        conn.execute_batch(
+            "ALTER TABLE conversations DROP COLUMN cmd; ALTER TABLE conversations DROP COLUMN cmd_at; PRAGMA user_version = 27;
+             INSERT INTO peers (id, spki, name, host, addr, round, created_at) VALUES (1, x'01', 'p', 'h', '1.2.3.4:1', 'r', 0);
+             INSERT INTO conversations (id, uuid, peer_id, agent, dir, created_at) VALUES (1, 'c1', 1, 'a', 'in', 100);
+             INSERT INTO conversations (id, uuid, peer_id, agent, dir, created_at) VALUES (2, 'c2', 1, 'a', 'out', 50);",
+        )
+        .unwrap();
+    }
+    let conn = db::open(&paths.db_file()).unwrap();
+    assert_eq!(db::user_version(&conn).unwrap(), 28);
+    let empty = chat::info(&conn, 2).unwrap().unwrap();
+    assert_eq!(
+        (empty.created_at, empty.last_at, empty.compacts, empty.last_compact_at, empty.clears, empty.cmd, empty.cmd_at),
+        (50, 50, 0, None, 0, None, None),
+        "글 없는 대화 = 마지막 = 시작, 있던 대화 = 명령 없음"
+    );
+    conn.execute_batch(
+        "INSERT INTO messages (uuid, conversation_id, author, text, state, created_at) VALUES ('m1', 1, 'human', 'q', 'done', 110);
+         INSERT INTO messages (uuid, conversation_id, author, text, state, created_at, ctx_op) VALUES ('m2', 1, 'context', '', 'done', 120, 'compact');
+         INSERT INTO messages (uuid, conversation_id, author, text, state, created_at, ctx_op) VALUES ('m3', 1, 'context', '', 'done', 130, 'auto_compact');
+         INSERT INTO messages (uuid, conversation_id, author, text, state, created_at, ctx_op) VALUES ('m4', 1, 'context', '', 'error', 140, 'compact');
+         INSERT INTO messages (uuid, conversation_id, author, text, state, created_at, ctx_op) VALUES ('m5', 1, 'context', '', 'running', 150, 'clear');
+         INSERT INTO messages (uuid, conversation_id, author, text, state, created_at, ctx_op) VALUES ('m6', 1, 'context', '', 'done', 160, 'clear');
+         INSERT INTO messages (uuid, conversation_id, author, text, state, created_at) VALUES ('m7', 2, 'human', 'x', 'done', 999);",
+    )
+    .unwrap();
+    chat::set_cmd(&conn, 1, "claude -p", 170).unwrap();
+    let i = chat::info(&conn, 1).unwrap().unwrap();
+    assert_eq!((i.created_at, i.last_at), (100, 160), "다른 대화 글은 보지 않는다");
+    assert_eq!((i.compacts, i.last_compact_at, i.clears), (2, Some(130), 1), "끝난 압축 · 비우기만");
+    assert_eq!((i.cmd.as_deref(), i.cmd_at), (Some("claude -p"), Some(170)));
+    chat::set_cmd(&conn, 1, "claude -p --resume s", 180).unwrap();
+    assert_eq!(chat::info(&conn, 1).unwrap().unwrap().cmd.as_deref(), Some("claude -p --resume s"), "마지막 실행으로 덮는다");
+    assert!(chat::info(&conn, 9).unwrap().is_none(), "없는 대화");
 }
 
 fn legacy_root(base: &std::path::Path) -> PathBuf {

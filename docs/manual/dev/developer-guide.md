@@ -366,6 +366,10 @@ claude -p --output-format stream-json --verbose --permission-prompts none --perm
 - 에이전트의 "셸 명령 실행 허용"(#05-3)을 켜면 `Bash` · `PowerShell`(macOS 는 `Bash`)을 미리 허용하고(끄면 막음) 가드는 `SHELL_GUARD_PROMPT`, 실행 환경은 기본 변수 목록만
   (`runner::shell_env` — 앱을 띄운 셸의 키 · 토큰 변수가 넘어가지 않는다). 셸은 작업 폴더 · `--add-dir` 밖도 읽고 쓴다.
   실측 시험 `cargo test -p an-agent --test shell_canary -- --ignored --nocapture`.
+- **실행 명령 기록**(#1z-10): `chat::execute` 가 띄우기 직전(세션 다시 실행이면 다시) `runner::launch_line(input)` 을 `conversations.cmd` 에 남긴다 — 실행 파일
+  `agent_program` + 인자 `agent_args`(`run_claude` · `run_codex` 가 띄울 때 쓰는 같은 함수), 원격 본문(표준 입력)은 없음. 따옴표 = `shell_line` — Windows PowerShell
+  `& '<실행 파일>' …`(작은따옴표 안 `'` · 둥근 따옴표 ‘ ’ ‚ ‛ 는 두 번 — R1 인용 탈출 막음, 쉼표 든 인자는 감쌈, 앞에 `PS_MIN_GUARD` — PowerShell 7.3 아래 · 인자 전달 `Legacy` 는 인자 안 큰따옴표 · 빈 인자를 잃어 멈춤, 실측 시험 `powershell_line_roundtrip`), 그 밖 POSIX(`'…'\''…'`). 압축 요약 실행은 남기지 않는다. 세부정보 '대화 정보' 의 복사가 이 값이다 —
+  이어 쓰기 세션 인자(`--resume` · `exec resume <thread>`)가 들어 있어 터미널에서 돌리면 그 대화 세션에 이어진다.
 - **Codex 에이전트**(#1z-9 — 등록 때 실행 도구 Codex 를 고른 에이전트, 바꾸지 않음): `runner::run_agent` 가 `run_codex` 로 보낸다. 인자(정본 `runner::codex_args`):
 
   ```text

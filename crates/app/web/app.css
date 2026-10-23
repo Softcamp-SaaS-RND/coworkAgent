@@ -553,6 +553,11 @@ button.drag-handle:active { cursor: grabbing; }
 .info { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-2) var(--sp-3); padding: var(--sp-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); font-size: var(--fs-sm); }
 .info dt { color: var(--faint); }
 .info dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+/* 대화 정보(#1z-10) — 실행 명령 = 한 줄 말줄임 + 복사, 안내는 두 칸 전체. */
+.info-cmd { display: flex; justify-content: flex-end; align-items: center; gap: var(--sp-2); min-width: 0; }
+.info-cmd code { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 var(--sp-1); background: var(--subtle); border-radius: var(--radius); }
+.info-cmd button { flex: none; }
+.info .info-hint { grid-column: 1 / -1; margin: 0; font-size: var(--fs-xs); color: var(--faint); text-align: left; }
 .relay-box { padding: var(--sp-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); font-size: var(--fs-sm); }
 .relay-line { align-self: stretch; display: flex; justify-content: space-between; gap: var(--sp-2); }
 .bar { align-self: stretch; height: 6px; border-radius: var(--radius-sm); background: var(--surface-2); overflow: hidden; }
@@ -618,12 +623,14 @@ form.stack > button { align-self: flex-start; }
 .md-empty { margin: auto; padding: var(--sp-6); color: var(--muted); text-align: center; }
 .md-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .md-pane[hidden] { display: none; }
+/* 상세를 고르면 상자 높이 = 내용(#1z-10 결정 8 — 단추 줄이 내용 바로 아래 · 상자 바닥), 칸보다 길면 칸 높이까지 · 본문만 스크롤. 고르기 전 빈 안내는 칸 전체. */
+.md-detail:has(> .md-pane:not([hidden]), > .md-head) { align-self: start; max-height: 100%; }
 #group_detail > .md-head, #group_detail > .md-foot { flex: none; }
 .md-head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
 .md-title { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .md-title strong { font-size: var(--fs-lg); font-weight: var(--fw-bold); }
 .md-title .hint { font-size: var(--fs-xs); overflow-wrap: anywhere; }
-.md-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
+.md-body { flex: 0 1 auto; min-height: 0; overflow-y: auto; padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
 .md-body.form-grid { display: grid; align-content: start; }
 .md-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--border); background: var(--surface-2); }
 .grow { flex: 1 1 auto; }
@@ -886,12 +893,45 @@ details { margin: var(--sp-2) 0; }
 .ico-check { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E"); }
 .ico-x { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E"); }
 .ico-bug { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='7' y='7' width='10' height='13' rx='5'/%3E%3Cpath d='M12 7V4M9 4.5l1.5 2M15 4.5l-1.5 2M3 12h4M17 12h4M4 18l3-2M20 18l-3-2M4 6l3 2M20 6l-3 2'/%3E%3C/svg%3E"); }
+.ico-activity { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-4l-3 9L9 3l-3 9H2'/%3E%3C/svg%3E"); }
+.ico-info { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0'/%3E%3Cpath d='M12 11v5'/%3E%3Cpath d='M12 8h.01'/%3E%3C/svg%3E"); }
+.ico-clock { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E"); }
+.ico-folder { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/%3E%3C/svg%3E"); }
+.ico-terminal { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 17l6-5-6-5'/%3E%3Cpath d='M12 19h8'/%3E%3C/svg%3E"); }
+.ico-copy { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 9h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z'/%3E%3Cpath d='M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1'/%3E%3C/svg%3E"); }
+.ico-eye { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z'/%3E%3Cpath d='M9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0'/%3E%3C/svg%3E"); }
+.ico-code { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 18l6-6-6-6'/%3E%3Cpath d='M8 6l-6 6 6 6'/%3E%3C/svg%3E"); }
+.ico-help { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0'/%3E%3Cpath d='M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3'/%3E%3Cpath d='M12 17h.01'/%3E%3C/svg%3E"); }
+.ico-send { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 2 11 13'/%3E%3Cpath d='M22 2l-7 20-4-9-9-4z'/%3E%3C/svg%3E"); }
+.ico-list { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 6h13M8 12h13M8 18h13'/%3E%3Cpath d='M3 6h.01M3 12h.01M3 18h.01'/%3E%3C/svg%3E"); }
+.ico-grid { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3h7v7H3z'/%3E%3Cpath d='M14 3h7v7h-7z'/%3E%3Cpath d='M14 14h7v7h-7z'/%3E%3Cpath d='M3 14h7v7H3z'/%3E%3C/svg%3E"); }
+.ico-resize { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6'/%3E%3Cpath d='M9 21H3v-6'/%3E%3Cpath d='M21 3l-7 7'/%3E%3Cpath d='M3 21l7-7'/%3E%3C/svg%3E"); }
+.ico-user-plus { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/%3E%3Cpath d='M5 7a4 4 0 1 0 8 0a4 4 0 1 0-8 0'/%3E%3Cpath d='M19 8v6M22 11h-6'/%3E%3C/svg%3E"); }
+.ico-folder-plus { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/%3E%3Cpath d='M12 10v6M9 13h6'/%3E%3C/svg%3E"); }
+.ico-cpu { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 6h12v12H6z'/%3E%3Cpath d='M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4'/%3E%3C/svg%3E"); }
+.ico-sliders { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3'/%3E%3Cpath d='M1 14h6M9 8h6M17 16h6'/%3E%3C/svg%3E"); }
+.ico-layers { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2 2 7l10 5 10-5z'/%3E%3Cpath d='M2 17l10 5 10-5'/%3E%3Cpath d='M2 12l10 5 10-5'/%3E%3C/svg%3E"); }
+.ico-palette { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.3A5.7 5.7 0 0 0 22 9.8C22 5.5 17.5 2 12 2z'/%3E%3Cpath d='M7.5 10.5h.01M10.5 6.5h.01M15.5 6.5h.01'/%3E%3C/svg%3E"); }
+.ico-sort { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h10M3 12h7M3 18h4'/%3E%3Cpath d='M17 4v16'/%3E%3Cpath d='M14 17l3 3 3-3'/%3E%3C/svg%3E"); }
+.ico-volume { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 5 6 9H2v6h4l5 4z'/%3E%3Cpath d='M15.5 8.5a5 5 0 0 1 0 7'/%3E%3Cpath d='M19 5a10 10 0 0 1 0 14'/%3E%3C/svg%3E"); }
+.ico-refresh { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12a9 9 0 0 1-15.5 6.3L3 16'/%3E%3Cpath d='M3 12a9 9 0 0 1 15.5-6.3L21 8'/%3E%3Cpath d='M21 3v5h-5'/%3E%3Cpath d='M3 21v-5h5'/%3E%3C/svg%3E"); }
+.ico-file { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z'/%3E%3Cpath d='M14 3v6h6'/%3E%3Cpath d='M8 13h8M8 17h5'/%3E%3C/svg%3E"); }
+.ico-filter { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 3H2l8 9.5V19l4 2v-8.5z'/%3E%3C/svg%3E"); }
+.ico-key { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12.5 8a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0'/%3E%3Cpath d='M13.5 10.5 4 20'/%3E%3Cpath d='M7 17l2 2M4 20l2 2'/%3E%3C/svg%3E"); }
+.ico-globe { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0'/%3E%3Cpath d='M3 12h18'/%3E%3Cpath d='M12 3c2.5 2.5 3.8 5.5 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.5-3.8-9S9.5 5.5 12 3'/%3E%3C/svg%3E"); }
+.ico-save { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z'/%3E%3Cpath d='M7 3v5h8'/%3E%3Cpath d='M7 21v-7h10v7'/%3E%3C/svg%3E"); }
+.ico-folder-up { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/%3E%3Cpath d='M12 17v-6'/%3E%3Cpath d='M9 14l3-3 3 3'/%3E%3C/svg%3E"); }
+.ico-git { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3v12'/%3E%3Cpath d='M15 6a3 3 0 1 0 6 0a3 3 0 1 0-6 0'/%3E%3Cpath d='M3 18a3 3 0 1 0 6 0a3 3 0 1 0-6 0'/%3E%3Cpath d='M18 9a9 9 0 0 1-9 9'/%3E%3C/svg%3E"); }
+.ico-message { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/%3E%3Cpath d='M8 9h8M8 13h5'/%3E%3C/svg%3E"); }
 .side-nav .nav-label { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .head-title > strong { display: inline-flex; align-items: center; gap: var(--sp-2); }
 #settings_tree a { display: flex; align-items: center; gap: var(--sp-2); }
 .menu-head { display: flex; align-items: center; gap: var(--sp-2); }
 .tool-btn .ico, .set-actions .ico { margin-right: var(--sp-2); }
 .me-dialog h2 .ico { margin-right: var(--sp-2); vertical-align: -2px; }
+/* 라벨 · 제목 · 단추 앞 아이콘(#1z-10 결정 4) — 글자색 16px · 글자와 한 칸, 설정 화면 제목만 메뉴 아이콘 + 강조색. */
+.ico.lead { margin-right: var(--sp-2); vertical-align: -3px; }
+.set-head h2 .ico.lead { color: var(--accent); }
 /* 말풍선(#1o 시안 Ⓐ) — 내 글 = 강조색을 연하게 + 오른쪽 띠, 상대 글 = 그 상대 타일 색을 더 연하게 + 왼쪽 띠(사람 · 에이전트 같음). */
 .msg[data-tone="peer-1"] { --tone: var(--peer-1); }
 .msg[data-tone="peer-2"] { --tone: var(--peer-2); }

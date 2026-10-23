@@ -132,6 +132,8 @@ import {
   WEB_TOOLS,
   EDIT_TOOLS,
   engineLabel,
+  convInfoRows,
+  INFO_CMD_HINT,
   agentEngineBlocks,
   READ_ONLY_TOOLS,
   SHELL_NOTE,
@@ -2422,8 +2424,8 @@ test("screen_settings_1x — 설정 '타일 크기'(크게 · 작게 — #1z 표
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
   const sel = html.slice(html.indexOf('<select id="ui_tile_size">'), html.indexOf("</select>", html.indexOf('<select id="ui_tile_size">')));
   assert.deepEqual([...sel.matchAll(/<option value="(\w+)">([^<]*)</g)].map((m) => [m[1], m[2]]), [["normal", "크게"], ["small", "작게 — 작은 아이콘 + 이름 한 줄"]]);
-  assert.ok(html.includes('<label for="ui_tile_size">타일 크기</label>'));
-  assert.match(html, /<label for="notify_sound">효과음<\/label>.*?<input type="checkbox" id="notify_sound" role="switch">/);
+  assert.ok(html.includes('<label for="ui_tile_size"><span class="ico ico-resize lead" aria-hidden="true"></span>타일 크기</label>'), "#1z-10 라벨 앞 아이콘");
+  assert.match(html, /<label for="notify_sound"><span class="ico ico-volume lead" aria-hidden="true"><\/span>효과음<\/label>.*?<input type="checkbox" id="notify_sound" role="switch">/);
   const css = readFileSync(new URL("./app.css", import.meta.url), "utf8");
   assert.ok(css.includes("--rail-w-small:"), "레일 폭 토큰");
   assert.match(css, /@media \(min-width: 721px\) \{\s*#app\.tile-small \{ --rail-w: var\(--rail-w-small\); \}/);
@@ -2641,4 +2643,41 @@ test("agent_engine — 실행 도구 라벨 · 좌우 옵션 블록 · Git 건�
   assert.deepEqual(agentPatch(cx, { folder: "f", prompt: "", skip_git: false }), { folder: "f", prompt: "", skip_git: false });
   assert.deepEqual(agentPatch({ folder: "f", prompt: "" }, { folder: "f", prompt: "", skip_git: true }), { folder: "f", prompt: "" }, "옛 응답 = 켬");
   for (const t of [...WEB_TOOLS, ...EDIT_TOOLS]) assert.ok(TOOLS_NOTE.includes(t), t);
+});
+
+test("conv_info — 대화 정보 줄: 받은 대화 = 기간 · 도구 · 폴더 · 컨텍스트 · 실행 명령, 보낸 · 공유 = 기간 · 컨텍스트(#1z-10)", () => {
+  const now = new Date(2026, 9, 23, 18, 0).getTime() / 1000;
+  const at = (d, h, m) => new Date(2026, 9, d, h, m).getTime() / 1000;
+  const info = {
+    created_at: at(21, 10, 50),
+    last_at: at(23, 16, 5),
+    compacts: 1,
+    last_compact_at: at(22, 9, 0),
+    clears: 0,
+    agent: { engine: "codex", folder: "/work/shop" },
+    cmd: { text: "& 'codex.exe' exec resume t -", at: at(23, 16, 4) },
+  };
+  const mine = convInfoRows(info, "in", now);
+  assert.deepEqual(
+    mine.map((r) => [r.icon, r.label]),
+    [["clock", "기간"], ["bot", "답하는 도구"], ["folder", "읽는 폴더"], ["compress", "컨텍스트"], ["terminal", "실행 명령"]],
+  );
+  assert.equal(mine[0].text, "10.21 10:50 시작 · 마지막 오늘 16:05");
+  assert.equal(mine[1].text, "Codex");
+  assert.deepEqual([mine[2].text, mine[2].mono], ["/work/shop", true]);
+  assert.equal(mine[3].text, "압축 1회 · 어제 09:00");
+  assert.equal(mine[4].copy, info.cmd.text, "복사 = 전체 명령");
+  for (const dir of ["out", "shared"])
+    assert.deepEqual(
+      convInfoRows({ ...info, agent: null, cmd: null }, dir, now).map((r) => r.label),
+      ["기간", "컨텍스트"],
+      `${dir} = 기간 · 컨텍스트만`,
+    );
+  const fresh = convInfoRows({ ...info, compacts: 0, last_compact_at: null, clears: 2, agent: null, cmd: null }, "in", now);
+  assert.deepEqual(
+    fresh.map((r) => r.text).slice(1),
+    ["지운 에이전트", "—", "압축 없음 · 비우기 2회", "아직 실행 없음"],
+  );
+  assert.equal(fresh.at(-1).copy, undefined, "명령이 없으면 복사 없음");
+  assert.match(INFO_CMD_HINT, /세션/);
 });

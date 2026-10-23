@@ -804,3 +804,46 @@ async fn leave_and_delete_routes() {
     assert_eq!(call(port, &h, "DELETE", &one, "").await.0, 404);
     assert_eq!(call(port, &h, "POST", &leave, "").await.0, 404);
 }
+
+/// 세부정보 '대화 정보'(#1z-10) — 받은 대화 = 실행 도구 · 폴더 · 마지막 실행 명령, 보낸 대화 = 없음(기간 · 컨텍스트만), 없는 대화 404.
+/// 실행 명령은 이 응답에만 — 대화 목록 · 글 목록에 없다.
+#[tokio::test(flavor = "multi_thread")]
+async fn conv_info_api() {
+    let (a, b) = (side("info-a").await, side("info-b").await);
+    let (pb, _) = pair_sides(&a, &b).await;
+    agents::add(&db::open(&b.paths.db_file()).unwrap(), "review", ".", "").unwrap();
+    let (pa_port, ha) = web(a.chat.clone()).await;
+    let body = serde_json::json!({ "peer_id": pb.id, "agent": "review", "text": "안녕" });
+    let (code, r) = call(pa_port, &ha, "POST", "/api/conversations", &body.to_string()).await;
+    assert_eq!(code, 201, "{r}");
+    let out_id = r["conversation"]["id"].as_i64().unwrap();
+    messages(pa_port, &ha, out_id, 2).await;
+
+    let (port, h) = web(b.chat.clone()).await;
+    let (_, list) = call(port, &h, "GET", "/api/conversations", "").await;
+    let in_id = list[0]["id"].as_i64().unwrap();
+    let (code, i) = call(port, &h, "GET", &format!("/api/conversations/{in_id}/info"), "").await;
+    assert_eq!(code, 200, "{i}");
+    assert_eq!(i["agent"], serde_json::json!({ "engine": "claude", "folder": "." }));
+    let cmd = i["cmd"]["text"].as_str().expect("받은 대화 = 실행 명령");
+    assert!(cmd.contains("-p") && cmd.contains("--session-id") && !cmd.contains("안녕"), "{cmd}");
+    assert!(i["cmd"]["at"].as_i64().is_some());
+    assert!(i["created_at"].as_i64().is_some() && i["last_at"].as_i64() >= i["created_at"].as_i64());
+    assert_eq!((i["compacts"].as_i64(), i["clears"].as_i64(), &i["last_compact_at"]), (Some(0), Some(0), &serde_json::Value::Null));
+    let (_, list) = call(port, &h, "GET", "/api/conversations", "").await;
+    let (_, ms) = call(port, &h, "GET", &format!("/api/conversations/{in_id}/messages"), "").await;
+    for v in [&list, &ms] {
+        assert!(!v.to_string().contains("--session-id") && !v.to_string().contains("\"cmd\""), "목록에 명령 없음: {v}");
+    }
+
+    let (code, o) = call(pa_port, &ha, "GET", &format!("/api/conversations/{out_id}/info"), "").await;
+    assert_eq!(code, 200, "{o}");
+    assert_eq!((&o["agent"], &o["cmd"]), (&serde_json::Value::Null, &serde_json::Value::Null), "보낸 대화 = 기간 · 컨텍스트만");
+    assert!(o["created_at"].as_i64().is_some());
+
+    agents::remove(&db::open(&b.paths.db_file()).unwrap(), agents::by_name(&db::open(&b.paths.db_file()).unwrap(), "review").unwrap().unwrap().id).unwrap();
+    let (_, gone) = call(port, &h, "GET", &format!("/api/conversations/{in_id}/info"), "").await;
+    assert_eq!(gone["agent"], serde_json::Value::Null, "지운 에이전트");
+    assert!(gone["cmd"]["text"].is_string(), "명령은 남는다");
+    assert_eq!(call(port, &h, "GET", "/api/conversations/999/info", "").await.0, 404);
+}

@@ -54,7 +54,9 @@
   작업 화면(#17, 이 PC 에만): `GET /api/search?q=&limit=&closed=` → `{messages, conversations, peers, agents}`(1 ~ 100자 — `closed` 기본 거짓 = 닫힌 대화(나감 · 상대가 나감 · 끝난 공유 사본)의 글 · 제목 뺌, #1z-8) · `GET /api/activity?peer=&kind=all|human|
   agent|relay|failed&q=&limit=` → `{items, unseen, unseen_all, upto{message, event}}`(`limit=0` = 수만) · `POST /api/activity/seen {peer?, message, event}`
   (받은 `upto` 까지) · `GET /api/saved?peer=&conversation=&limit=` · `PATCH /api/messages/{id} {saved}` · `PATCH /api/conversations/{id} {title?, starred?}` ·
-  `POST /api/conversations/{id}/read {upto}`(받은 마지막 글 id — 그 대화 글이 아니면 400). 요약 JSON 에 `starred` · `unread`, 메시지에 `model` · `effort` · `saved`.
+  `POST /api/conversations/{id}/read {upto}`(받은 마지막 글 id — 그 대화 글이 아니면 400). `GET /api/conversations/{id}/info`(#1z-10 — 세부정보 '대화 정보')
+  → `{created_at, last_at, compacts, last_compact_at, clears, agent, cmd}`: `agent = {engine, folder}`(받은 대화만 · 지운 에이전트 null) · `cmd = {text, at}`(받은 대화만 —
+  이 PC 가 띄운 마지막 실행 명령, 이 응답에만), 없는 대화 404. 요약 JSON 에 `starred` · `unread`, 메시지에 `model` · `effort` · `saved`.
   #18: 새 대화 · 이어 쓰기 본문 `request?`(요청 — 기본 질의), 이어 쓰기 `agent?`(멘션 — 보낸 대화 · 자동 왕복 아님, 대화 에이전트면 멘션 아님, 받은
   대화 · 자동 왕복 · 빈 이름 400) · `GET /api/messages` 의 `ask=query|request`(사람 글만, 그 밖 400) · 메시지 JSON 에 `request` · `agent` · `refused` ·
   설정 `focus`(`GET/PUT /api/settings` — 켜면 알림도 멈춘다).

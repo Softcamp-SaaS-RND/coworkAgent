@@ -325,6 +325,7 @@ pub fn routes(chat: Arc<Chat>) -> Router {
             "/api/conversations/{id}/read",
             axum::routing::post(read_conversation),
         )
+        .route("/api/conversations/{id}/info", get(conversation_info))
         .route(
             "/api/conversations/{id}/messages",
             get(list_messages).post(continue_conversation),
@@ -1041,6 +1042,30 @@ async fn read_conversation(
         Ok(None) => fail(io::Error::new(io::ErrorKind::NotFound, "없는 대화")),
         Err(e) => db_fail(e),
     }
+}
+
+/// `GET /api/conversations/{id}/info` — 세부정보 '대화 정보'(#1z-10): 시작 · 마지막 글 · 압축 · 비우기 수. 받은 대화(내 에이전트가 답함)만 `agent`(실행 도구 · 폴더 —
+/// 지웠으면 null) · `cmd`(이 PC 가 띄운 마지막 실행 명령) — 그 밖 대화는 상대 PC 가 정해 null. 명령은 이 응답에만(목록 · 상대 프레임에 싣지 않는다).
+async fn conversation_info(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) -> Response {
+    let db = chat.db();
+    let found = chat::by_id(&db, id).and_then(|c| Ok(c.zip(chat::info(&db, id)?)));
+    let (conv, info) = match found {
+        Ok(Some(x)) => x,
+        Ok(None) => return fail(io::Error::new(io::ErrorKind::NotFound, "없는 대화")),
+        Err(e) => return db_fail(e),
+    };
+    let mine = conv.dir == Dir::In;
+    let agent = match mine.then(|| agents::by_name(&db, &conv.agent)).transpose() {
+        Ok(a) => a.flatten(),
+        Err(e) => return db_fail(e),
+    };
+    Json(json!({
+        "created_at": info.created_at, "last_at": info.last_at,
+        "compacts": info.compacts, "last_compact_at": info.last_compact_at, "clears": info.clears,
+        "agent": agent.map(|a| json!({ "engine": a.engine, "folder": a.folder })),
+        "cmd": info.cmd.filter(|_| mine).map(|t| json!({ "text": t, "at": info.cmd_at })),
+    }))
+    .into_response()
 }
 
 /// 메시지 저장 · 해제(이 PC 에만) · 받은 요청 상태 · 본문 편집(#1f).

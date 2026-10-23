@@ -431,3 +431,126 @@ fn codex_abnormal_exit_is_error() {
     assert!(out.is_error, "완료 이벤트 없음 = 실패: {out:?}");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// 실행 명령(#1z-10) — 인자는 띄울 때와 같은 함수, 따옴표는 OS 셸(Windows = PowerShell · 그 밖 POSIX), 원격 본문(표준 입력)은 없다.
+#[test]
+fn launch_line_matches_spawn_args() {
+    use an_agent::runner::{RunInput, agent_args, launch_line, shell_line};
+    let input = |a: Agent| RunInput {
+        agent: a,
+        session: Session::Resume("s-1".into()),
+        text: "원격 본문 SECRET-TEXT".into(),
+        model: "sonnet".into(),
+        effort: "high".into(),
+        steps: Default::default(),
+    };
+    let cl = input(agent("추가"));
+    assert_eq!(agent_args(&cl), claude_args(&cl.agent, &cl.session), "Claude = claude_args 그대로");
+    let mut cx = agent("");
+    cx.engine = "codex".into();
+    let cx = input(cx);
+    assert_eq!(agent_args(&cx), codex_args(&cx.agent, &cx.session), "Codex = codex_args 그대로");
+    let line = launch_line(&cl);
+    assert!(line.contains("--resume") && line.contains("s-1"), "{line}");
+    assert!(!line.contains("SECRET-TEXT"), "원격 본문은 넣지 않는다");
+    assert!(launch_line(&cx).contains("resume"));
+
+    let args: Vec<String> = ["-p", "a b", "it's", r#"say "hi""#, "줄1\n줄2", "", "k=v,x", r"C:\a/b.c:d=e"].map(String::from).to_vec();
+    assert_eq!(
+        shell_line(std::path::Path::new(r"C:\Program Files\claude.exe"), &args, true),
+        format!(
+            "{} & 'C:\\Program Files\\claude.exe' -p 'a b' 'it''s' 'say \"hi\"' '줄1\n줄2' '' 'k=v,x' C:\\a/b.c:d=e",
+            an_agent::runner::PS_MIN_GUARD
+        ),
+        "PowerShell — 7.3 아래 멈춤 · 작은따옴표 · 안의 ' 는 '' · 쉼표(배열)는 따옴표 · 역슬래시는 그대로"
+    );
+    // R1 — 둥근 따옴표도 PowerShell 작은따옴표라 두 번(인용 탈출 → 명령 주입 막음).
+    let smart: Vec<String> = vec!["don\u{2019}t".into(), "p\u{2018}; Write-Output X; #".into()];
+    assert!(
+        shell_line(std::path::Path::new(r"C:\x’y\c.exe"), &smart, true)
+            .ends_with("& 'C:\\x’’y\\c.exe' 'don’’t' 'p‘‘; Write-Output X; #'"),
+        "{}",
+        shell_line(std::path::Path::new(r"C:\x’y\c.exe"), &smart, true)
+    );
+    assert_eq!(
+        shell_line(std::path::Path::new("/usr/bin/claude"), &args, false),
+        "'/usr/bin/claude' -p 'a b' 'it'\\''s' 'say \"hi\"' '줄1\n줄2' '' 'k=v,x' 'C:\\a/b.c:d=e'",
+        "POSIX — 안의 ' 는 '\\'' · 역슬래시는 따옴표"
+    );
+}
+
+/// R1 — 복사한 명령을 실제 PowerShell 7 에서 돌리면 실행 파일이 받는 인자가 원래 인자와 같다(argv 왕복 — 둥근 따옴표 주입 · 큰따옴표 · 빈 인자 · 줄바꿈 · `$` `@` `%`),
+/// Windows PowerShell 5.1 은 실행 전에 멈춘다. 실행 파일 대역 = node(인자를 JSON 으로 찍음). pwsh · node 가 없으면 건너뜀.
+#[cfg(windows)]
+#[test]
+fn powershell_line_roundtrip() {
+    use an_agent::runner::shell_line;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    let which = |n: &str| {
+        Command::new("where.exe")
+            .arg(n)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| String::from_utf8_lossy(&o.stdout).lines().next().map(|l| PathBuf::from(l.trim())))
+    };
+    let (Some(pwsh), Some(node)) = (which("pwsh"), which("node")) else {
+        eprintln!("pwsh · node 없음 — 건너뜀");
+        return;
+    };
+    let code = r#"console.log(JSON.stringify(process.argv.slice(1)).replace(/[\u007f-￿]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')))"#;
+    let args: Vec<String> = vec![
+        "-e".into(),
+        code.into(),
+        "it's".into(),
+        "don\u{2019}t".into(),
+        "p\u{2019}; Write-Output INJECTED; #".into(),
+        r#"sandbox_mode="read-only""#.into(),
+        String::new(),
+        "줄1\n줄2 \"q\"".into(),
+        "a,b".into(),
+        "$HOME @x %PATH%".into(),
+    ];
+    let dir = std::env::temp_dir().join(format!("an-psline-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let script = dir.join("line.ps1");
+    let mut bytes = vec![0xEF, 0xBB, 0xBF];
+    bytes.extend(shell_line(&node, &args, true).as_bytes());
+    std::fs::write(&script, bytes).unwrap();
+    let run = |exe: &Path| {
+        let o = Command::new(exe)
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&script)
+            .output()
+            .unwrap();
+        (o.status.success(), String::from_utf8_lossy(&o.stdout).into_owned(), String::from_utf8_lossy(&o.stderr).into_owned())
+    };
+    let (ok, out, err) = run(&pwsh);
+    assert!(ok, "pwsh 실패: {err}");
+    assert!(!out.lines().any(|l| l.trim() == "INJECTED"), "인용 탈출 없음(따로 실행된 명령 출력 없음): {out}");
+    let line = out.lines().rev().find(|l| l.starts_with('[')).unwrap_or_else(|| panic!("node 출력 없음: {out} {err}"));
+    let got: Vec<String> = serde_json::from_str(line).unwrap();
+    assert_eq!(got, args[2..].to_vec(), "PowerShell 7 = 인자 그대로");
+    // R2 — 7.3+ 라도 인자 전달이 Legacy 면 큰따옴표 · 빈 인자를 잃으니 멈춘다(Standard 는 통과).
+    for (mode, pass) in [("Legacy", false), ("Standard", true)] {
+        let o = Command::new(&pwsh)
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command"])
+            .arg(format!("$PSNativeCommandArgumentPassing = '{mode}'; & '{}'", script.display()))
+            .output()
+            .unwrap();
+        let out = String::from_utf8_lossy(&o.stdout);
+        let line = out.lines().rev().find(|l| l.starts_with('['));
+        if pass {
+            let got: Vec<String> = serde_json::from_str(line.unwrap_or_else(|| panic!("{mode}: node 출력 없음 {out}"))).unwrap();
+            assert_eq!(got, args[2..].to_vec(), "{mode} = 인자 그대로");
+        } else {
+            assert!(line.is_none() && String::from_utf8_lossy(&o.stderr).contains("Legacy"), "{mode} 는 멈춤: {out}");
+        }
+    }
+    if let Some(ps) = which("powershell") {
+        let (ok, out, err) = run(&ps);
+        assert!(!ok && !out.contains('[') && err.contains("7.3"), "5.1 은 멈춤: {out} {err}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -1521,6 +1521,31 @@ export const ENGINES = ["claude", "codex"];
 export function engineLabel(e) {
   return e === "codex" ? "Codex" : "Claude Code";
 }
+
+/// 실행 명령 복사 안내(#1z-10) — 명령은 띄운 그대로라 이어 쓰기 세션 인자가 들고, 프롬프트는 표준 입력으로 받는다.
+export const INFO_CMD_HINT = "이어 쓰기 세션 인자가 든 명령 그대로 — 터미널에서 돌리면 이 대화 세션에 이어지고, 프롬프트는 표준 입력으로 받습니다. Windows 는 PowerShell 7.3 이상(pwsh)에 붙여 넣으세요.";
+
+/// 세부정보 '대화 정보' 줄(#1z-10 — `GET /api/conversations/{id}/info`) → `{icon, label, text, mono, copy}`. 받은 대화(`in`) = 기간 · 답하는 도구 · 읽는 폴더 ·
+/// 컨텍스트 · 실행 명령(`copy` = 전체 명령), 보낸 대화 · 공유 사본 = 기간 · 컨텍스트(실행은 상대 PC 가 정한다).
+export function convInfoRows(info, dir, now = Date.now() / 1000) {
+  const when = (t) => `${dayLabel(t, now)} ${formatTime(t)}`;
+  const mine = dir === "in";
+  const ctx = info.compacts ? `압축 ${info.compacts}회 · ${when(info.last_compact_at)}` : "압축 없음";
+  const rows = [{ icon: "clock", label: "기간", text: `${when(info.created_at)} 시작 · 마지막 ${when(info.last_at)}` }];
+  if (mine)
+    rows.push(
+      { icon: "bot", label: "답하는 도구", text: info.agent ? engineLabel(info.agent.engine) : "지운 에이전트" },
+      { icon: "folder", label: "읽는 폴더", text: info.agent?.folder ?? "—", mono: true },
+    );
+  rows.push({ icon: "compress", label: "컨텍스트", text: info.clears ? `${ctx} · 비우기 ${info.clears}회` : ctx });
+  if (mine)
+    rows.push(
+      info.cmd
+        ? { icon: "terminal", label: "실행 명령", text: info.cmd.text, mono: true, copy: info.cmd.text }
+        : { icon: "terminal", label: "실행 명령", text: "아직 실행 없음" },
+    );
+  return rows;
+}
 /// 등록 2단계 · 상세의 좌우 옵션 블록(#1z-9 시안 B) — 고른 도구의 블록만 켜고, 다른 블록은 비활성 + 이유 문구.
 export function agentEngineBlocks(engine) {
   const block = (mine) => ({

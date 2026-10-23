@@ -3523,6 +3523,7 @@ impl Chat {
             effort: effort.clone(),
             steps,
         };
+        self.note_cmd(conv.id, &input);
         let run = self.run.clone();
         let first = input.clone();
         let ran = match tokio::task::spawn_blocking(move || run(first)).await {
@@ -3534,6 +3535,7 @@ impl Chat {
                     session: Session::New(new_uuid()),
                     ..input
                 };
+                self.note_cmd(conv.id, &again);
                 tokio::task::spawn_blocking(move || run(again)).await
             }
             other => other,
@@ -3553,6 +3555,14 @@ impl Chat {
                 detail: format!("실행 작업 실패: {e}"),
                 public: RUN_FAILED,
             }),
+        }
+    }
+
+    /// 대화의 마지막 실행 명령(#1z-10) — 띄우기 직전에 남긴다(실패한 실행도). 못 남겨도 실행은 그대로(경고만).
+    fn note_cmd(&self, conversation_id: i64, input: &RunInput) {
+        let line = crate::runner::launch_line(input);
+        if let Err(e) = chat::set_cmd(&self.db(), conversation_id, &line, chat::unix_now()) {
+            log::warn!("대화 {conversation_id} 실행 명령 기록 실패: {e}");
         }
     }
 
