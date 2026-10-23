@@ -20,8 +20,8 @@
   않음, 받은 `Pong` 은 접속 상태로 — #1c) · 피어 JSON 에 `online`(마지막 통신 75초 안) · `focus`(온라인일 때만 — #18) · `seen_at`(마지막으로
   주고받기에 성공한 유닉스 초 · 없으면 `null` — 화면이 "n분 전 통신" 을 센다, #1c) ·
   `POST /api/pairing-window`(초대 생성) → `{seconds, code, invite}`. 오류 404 · 400 · 502, JSON 아닌 본문 415.
-- `chat_api::routes(chat)` — `GET/POST /api/agents`(이름 1 ~ 64자 · 폴더는 있는 절대 경로 · 데이터 루트를 품거나 네트워크 경로면 400(`an_core::paths::agent_folder_problem`, #1a) · 같은 이름 409 · 도구 칸 없음 — `tools` 를 주면 422(#1d)) ·
-  `PATCH /api/agents/{id} {folder?, prompt?, group?, parent_read?, shell?, color?}`(이름은 바꾸지 않는다 — 주면 400 · `color` 는 `agents::ICON_COLORS` 밖이면 400 "color 는 …", #1z-7) ·
+- `chat_api::routes(chat)` — `GET/POST /api/agents`(실행 도구 `engine` 필수 — `claude` | `codex`, 없으면 422 · 밖이면 400 · Codex 에 `parent_read` · `shell` 참이면 400 · `skip_git` 없으면 켬, #1z-9 · 이름 1 ~ 64자 · 폴더는 있는 절대 경로 · 데이터 루트를 품거나 네트워크 경로면 400(`an_core::paths::agent_folder_problem`, #1a) · 같은 이름 409 · 도구 칸 없음 — `tools` 를 주면 422(#1d)) ·
+  `PATCH /api/agents/{id} {folder?, prompt?, group?, parent_read?, shell?, color?, skip_git?}`(이름 · 실행 도구 `engine` 은 바꾸지 않는다 — 주면 400, Codex 에 `parent_read` · `shell` 참 400, `skip_git` 은 세대 그대로 · #1z-9 · `color` 는 `agents::ICON_COLORS` 밖이면 400 "color 는 …", #1z-7) ·
   에이전트 JSON 에 `color`(#1z-7) · `uid`(#1z-8 R2 — 등록 세대: 같은 이름 · 같은 id 로 다시 등록하면 다름, 폴더 · 상위 · 셸이 바뀌면 새 값 — 웹UI 저장 전 값의 주인) · 에이전트 JSON 에 `group`(#1j 웹UI 는 쓰지 않는다) ·
   등록 `parent_read`(없으면 끔) · 에이전트 JSON `parent_read` · `parent_dir`(#05-2 — 실제 여는 위 폴더, 끔 · 막힌 곳이면 `null`) ·
   등록 · 수정 `shell`(#05-3 — 없으면 끔 · 그대로) · 에이전트 JSON `shell` — 웹UI 는 끔 → 켬으로 보낼 때만 `window.confirm(SHELL_WARN)`(`view.js` `shellConfirmNeeded`, 취소 = 보내지 않음) ·

@@ -356,22 +356,45 @@
               <div id="agent_detail" class="md-detail">
                 <p id="agent_empty" class="md-empty">에이전트를 고르세요</p>
                 <section id="agent_new" class="md-pane new-agent" aria-labelledby="agent_new_h" hidden>
-                  <div class="md-head"><span class="pa new-tile" aria-hidden="true"><span class="ico ico-plus" aria-hidden="true"></span></span><span class="md-title"><strong id="agent_new_h">새 에이전트</strong><span class="hint">등록하면 목록에 들어갑니다</span></span><button type="button" class="icon-btn md-x" data-close="agents" aria-label="상세 닫기" title="닫기"><span class="ico ico-x" aria-hidden="true"></span></button></div>
-                  <form id="agent_form" class="form-grid md-body">
+                  <div class="md-head"><span class="pa new-tile" aria-hidden="true"><span class="ico ico-plus" aria-hidden="true"></span></span><span class="md-title"><strong id="agent_new_h">새 에이전트</strong><span id="agent_new_step" class="hint">1 / 2 — 실행 도구 고르기</span></span><button type="button" class="icon-btn md-x" data-close="agents" aria-label="상세 닫기" title="닫기"><span class="ico ico-x" aria-hidden="true"></span></button></div>
+                  <div id="agent_engine_step" class="md-body">
+                    <h3 class="engine-q">어떤 도구로 실행할까요?</h3>
+                    <p class="hint">고른 도구는 등록 뒤 바꿀 수 없습니다. 이 에이전트와의 대화는 모두 그 도구로만 실행합니다.</p>
+                    <div class="engine-tiles" role="group" aria-label="실행 도구">
+                      <button type="button" id="agent_engine_claude" class="engine-tile" data-engine="claude"><span class="engine-name"><span class="chip engine-chip" data-engine="claude">Claude</span><strong>Claude Code</strong></span><span class="engine-facts"><span class="hint">읽기</span><span>Read · Grep · Glob · 웹 읽기, 편집 도구 막음</span><span class="hint">셸</span><span>기본 끔 · 켜면 workflow 수행(위험 확인)</span><span class="hint">모델</span><span>연결의 사용자별 모델 · effort</span></span></button>
+                      <button type="button" id="agent_engine_codex" class="engine-tile" data-engine="codex"><span class="engine-name"><span class="chip engine-chip" data-engine="codex">Codex</span><strong>Codex</strong></span><span class="engine-facts"><span class="hint">읽기</span><span>셸 명령으로 읽음 · 읽기 전용 샌드박스</span><span class="hint">Git</span><span>저장소 아닌 폴더도 실행(기본 켬)</span><span class="hint">모델</span><span>이 PC Codex 기본값</span></span></button>
+                    </div>
+                  </div>
+                  <form id="agent_form" class="form-grid md-body" hidden>
+                    <span class="label">실행 도구</span>
+                    <span class="check-line"><span id="agent_engine_chip" class="chip engine-chip"></span><span class="hint grow">등록 뒤 바꿀 수 없음</span><button type="button" id="agent_engine_back">도구 다시 고르기</button></span>
                     <label for="agent_name">이름</label>
                     <input id="agent_name" required maxlength="64" placeholder="review" title="등록한 뒤에는 이름을 바꿀 수 없습니다">
                     <label for="agent_folder">폴더(절대 경로)</label>
                     <input id="agent_folder" required placeholder="D:\work\project">
-                    <label for="agent_parent">상위 한단계 탐색 허용</label>
-                    <span class="check-line"><input type="checkbox" id="agent_parent" role="switch" title="켜면 폴더 바로 위 폴더 아래 전체(옆 폴더 포함)를 읽고 답합니다. 위가 드라이브 루트 · 사용자 홈이거나 데이터 폴더를 품으면 열지 않습니다."><span class="hint">켜면 바로 위 폴더 아래 전체를 읽음</span></span>
-                    <label for="agent_shell">셸 명령 실행 허용</label>
-                    <span class="check-line"><input type="checkbox" id="agent_shell" role="switch" title="켜면 이 PC 에 설정된 workflow(스크립트 · 빌드 · 테스트 등)를 셸(Bash · PowerShell) 명령으로 수행해 답합니다. 소스 · 문서 · 설정의 삭제 · 편집 등 이 PC 를 바꾸는 행동은 허용하지 않습니다(workflow 가 만드는 빌드 · 테스트 산출물은 예외). 셸에는 폴더 제한이 적용되지 않아 켤 때 위험 안내를 확인합니다."><span class="hint">켜면 workflow 수행용 셸 사용(위험 확인)</span></span>
-                    <span class="label">도구</span>
-                    <p id="agent_tools" class="hint"></p>
+                    <div class="engine-blocks">
+                      <fieldset id="agent_claude_opts" class="engine-block">
+                        <legend>Claude Code 옵션</legend>
+                        <span class="hint engine-off"></span>
+                        <label class="check-line"><input type="checkbox" id="agent_parent" role="switch" title="켜면 폴더 바로 위 폴더 아래 전체(옆 폴더 포함)를 읽고 답합니다. 위가 드라이브 루트 · 사용자 홈이거나 데이터 폴더를 품으면 열지 않습니다."><span>상위 한단계 탐색 허용</span></label>
+                        <span class="hint">켜면 바로 위 폴더 아래 전체를 읽음</span>
+                        <label class="check-line"><input type="checkbox" id="agent_shell" role="switch" title="켜면 이 PC 에 설정된 workflow(스크립트 · 빌드 · 테스트 등)를 셸(Bash · PowerShell) 명령으로 수행해 답합니다. 소스 · 문서 · 설정의 삭제 · 편집 등 이 PC 를 바꾸는 행동은 허용하지 않습니다(workflow 가 만드는 빌드 · 테스트 산출물은 예외). 셸에는 폴더 제한이 적용되지 않아 켤 때 위험 안내를 확인합니다."><span>셸 명령 실행 허용</span></label>
+                        <span class="hint">켜면 workflow 수행용 셸 사용(위험 확인)</span>
+                        <p id="agent_tools" class="hint"></p>
+                      </fieldset>
+                      <fieldset id="agent_codex_opts" class="engine-block">
+                        <legend>Codex 옵션</legend>
+                        <span class="hint engine-off"></span>
+                        <label class="check-line"><input type="checkbox" id="agent_skip_git" role="switch" checked><span>Git 저장소 아닌 폴더 허용</span></label>
+                        <span class="hint">기본 켬 — --skip-git-repo-check 로 실행</span>
+                        <span class="hint">읽기 범위: 읽기 전용 샌드박스 · 셸로 읽음(폴더 밖 읽기는 지시로만 막음)</span>
+                      </fieldset>
+                    </div>
                     <span class="label-row"><label for="agent_prompt">추가 지시</label><span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_prompt">?</button><span id="tip_prompt" class="tip" role="tooltip"><span class="tip-line">추가 지시 사용 예</span><span class="tip-line">• 답하기 전에 docs/ 의 설계 문서를 먼저 읽고 근거 파일 경로를 함께 적는다.</span><span class="tip-line">• 답은 한국어로, 결론 먼저 세 줄 안에 쓰고 근거를 아래에 붙인다.</span><span class="tip-line">• 모르는 내용은 추측하지 말고 "확인 필요" 와 확인할 파일을 적는다.</span></span></span></span>
                     <div class="field"><textarea id="agent_prompt" rows="4"></textarea></div>
                   </form>
-                  <div class="md-foot"><button type="submit" form="agent_form" class="primary">등록</button><span class="grow"></span><button type="button" id="agent_new_cancel">취소</button></div>
+                  <div id="agent_step1_foot" class="md-foot"><span class="hint">도구를 고르면 다음 단계로 넘어갑니다</span><span class="grow"></span><button type="button" id="agent_engine_cancel">취소</button></div>
+                  <div id="agent_step2_foot" class="md-foot" hidden><button type="submit" form="agent_form" class="primary">등록</button><span class="grow"></span><button type="button" id="agent_new_cancel">취소</button></div>
                 </section>
                 <section id="agent_pane" class="md-pane" hidden></section>
               </div>

@@ -122,6 +122,8 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   스키마 19(#1m, 한 트랜잭션): `messages.ctx_tokens` · `ctx_op` · `ctx_seeds(conversation_id, agent, text)`. `chat::Author::Context` · `set_ctx_tokens` ·
   `add_context` · `finish_context` · `sessions(conv)` · `clear_sessions(conv, keep_seeds)` · `set_ctx_seed` · `ctx_seed` · `drop_ctx_seed`, `pending` 은 구분선
   글 먼저 · 구분선은 내 활동 · 미리보기 · 안 읽음 · 가로지른 글 · 메모 범위에서 뺌.
+  스키마 27(#1z-9, 한 트랜잭션): `agents.engine`(TEXT NOT NULL DEFAULT 'claude' — 있던 에이전트는 Claude Code, 등록 뒤 바꾸지 않음 · `agents::ENGINES`) ·
+  `agents.skip_git`(INTEGER NOT NULL DEFAULT 1 — Codex `--skip-git-repo-check`, `set_skip_git` 은 세대 · 세션 그대로).
   스키마 26(#1z-7, 한 트랜잭션): `agents.color`(TEXT NOT NULL DEFAULT 'agent-tile' — 있던 에이전트는 기본 색, 화면 표시만).
   스키마 25(#05-3, 한 트랜잭션): `agents.shell`(INTEGER NOT NULL DEFAULT 0 — 있던 에이전트는 끔, 읽기 전용 도구만).
   스키마 24(#05-2, 한 트랜잭션): `agents.parent_read`(INTEGER NOT NULL DEFAULT 0 — 있던 에이전트는 끔, 지금까지와 같은 범위).

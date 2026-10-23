@@ -32,6 +32,8 @@ fn live_run_reports_steps_before_result() {
             parent_read: false,
             shell: false,
             color: "agent-tile".into(),
+            engine: "claude".into(),
+            skip_git: true,
         },
         session: Session::New(an_agent::chat::new_uuid()),
         text: "note.txt 를 Read 도구로 읽고 코드명만 답하라.".into(),

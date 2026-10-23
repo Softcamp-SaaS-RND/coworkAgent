@@ -90,7 +90,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("web", "받은 요청", "#1d 요청 목록"),
     ("web", "보낸 요청", "#1d 요청 목록"),
     ("web", r#"wait: "대기", accepted: "수용", rejected: "반려", done: "완료""#, "#1d 요청 목록"),
-    ("web", "탐색 도구(읽기 전용) 항상 사용", "#1d 도구"),
+    ("web", "읽기 도구 항상 허용", "#1d 도구 · #1z-9 결정 9(편집 도구 막음)"),
     ("web", r#"<select id="claude_model"></select>"#, "#1d 모델"),
     ("web", r#"export const MODELS = ["opus", "sonnet", "haiku"];"#, "#1d 모델"),
     // 1f — 이력 정리(웹UI 편집 모드는 #1v 에서 삭제 — 없음 표)
@@ -255,6 +255,20 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app.css", ".md-split { flex: 1 1 auto; min-height: 420px; display: grid; grid-template-columns: 360px minmax(0, 1fr);", "#1z-8 목록 · 상세 2단"),
     ("app.css", ".set-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));", "#1z-8 2열 타일"),
     ("app.css", "@media (max-width: 960px) {\n  .set-tiles, .md-cols { grid-template-columns: 1fr; }\n  .md-split { grid-template-columns: 1fr;", "#1z-8 좁은 창 1열 · 위아래"),
+    ("app.css", "@media (max-width: 960px) {\n  .engine-tiles, .engine-blocks { grid-template-columns: 1fr; }", "#1z-9 좁은 창 도구 타일 · 블록 1열(정의 뒤에 — 앞에 두면 덮임)"),
+    // 1z-9 — 실행 도구(시안 B): 등록 1단계 타일 → 2단계 폼(도구 칩 · 다시 고르기 · 좌우 옵션 블록 · Git 확인 건너뜀 스위치 기본 켬), 상세 도구 칩 · 블록
+    ("index.html", r#"<span id="agent_new_step" class="hint">1 / 2 — 실행 도구 고르기</span>"#, "#1z-9 등록 1단계"),
+    ("index.html", r#"<button type="button" id="agent_engine_claude" class="engine-tile" data-engine="claude">"#, "#1z-9 도구 타일"),
+    ("index.html", r#"<button type="button" id="agent_engine_codex" class="engine-tile" data-engine="codex">"#, "#1z-9 도구 타일"),
+    ("index.html", r#"<form id="agent_form" class="form-grid md-body" hidden>"#, "#1z-9 2단계 폼은 도구를 고른 뒤"),
+    ("index.html", r#"<button type="button" id="agent_engine_back">도구 다시 고르기</button>"#, "#1z-9 도구 다시 고르기"),
+    ("index.html", r#"<fieldset id="agent_claude_opts" class="engine-block">"#, "#1z-9 Claude 옵션 블록"),
+    ("index.html", r#"<fieldset id="agent_codex_opts" class="engine-block">"#, "#1z-9 Codex 옵션 블록"),
+    ("index.html", r#"<input type="checkbox" id="agent_skip_git" role="switch" checked><span>Git 저장소 아닌 폴더 허용</span>"#, "#1z-9 결정 2 스위치 기본 켬"),
+    ("app.js", "if (!newEngine) return; // 1단계에서 도구를 골라야 폼이 보인다", "#1z-9 도구 없는 등록 없음"),
+    ("app.js", "등록 뒤 바꿀 수 없음 — 바꾸려면 새로 등록", "#1z-9 상세 실행 도구"),
+    ("view.js", "`${engineLabel(engine)} 에이전트는 쓰지 않음`", "#1z-9 안 쓰는 블록 문구"),
+    ("app.css", ".engine-block:disabled { border-style: dashed;", "#1z-9 안 쓰는 블록 점선"),
     ("app.css", r#"#settings_tree a[aria-current="page"] {"#, "#1z-8 고른 메뉴 표시"),
     ("app.css", ".rows li.pm-agent { background: var(--agent-soft); }", "#1z-2 에이전트 줄 바탕"),
     ("app.js", r#"model.value = draft?.model ?? p.model ?? "";"#, "#1z-2 R1 펼친 다른 사용자의 저장 전 값 보존"),
@@ -664,7 +678,8 @@ const COUNTS: &[(&str, &str, usize, &str)] = &[
 fn literals_present() {
     let missing: Vec<String> = PRESENT
         .iter()
-        .filter(|(key, lit, _)| !sources(key).iter().any(|(_, text)| text.contains(lit)))
+        // 줄바꿈이 든 문구 — 체크아웃이 CRLF(core.autocrlf)여도 같게 본다.
+        .filter(|(key, lit, _)| !sources(key).iter().any(|(_, text)| text.replace("\r\n", "\n").contains(lit)))
         .map(|(key, lit, why)| format!("{why} — {key} 에 없음: {lit}"))
         .collect();
     assert!(missing.is_empty(), "{}", missing.join("\n"));

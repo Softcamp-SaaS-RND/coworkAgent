@@ -117,7 +117,7 @@ async fn agents_crud_api() {
     let a = side("crud").await;
     let (port, h) = web(a.chat.clone()).await;
     let folder = a.paths.root().display().to_string();
-    let body = serde_json::json!({ "name": "review", "folder": folder }).to_string();
+    let body = serde_json::json!({ "name": "review", "folder": folder, "engine": "claude" }).to_string();
     let (code, made) = call(port, &h, "POST", "/api/agents", &body).await;
     assert_eq!(code, 201, "{made}");
     assert!(made.get("tools").is_none(), "도구 칸 없음(#1d) {made}");
@@ -128,9 +128,9 @@ async fn agents_crud_api() {
     // 같은 이름 409, 없는 폴더 · 상대 경로 · 빈 이름 400.
     assert_eq!(call(port, &h, "POST", "/api/agents", &body).await.0, 409);
     for bad in [
-        serde_json::json!({ "name": "x", "folder": format!("{folder}/없는폴더") }),
-        serde_json::json!({ "name": "x", "folder": "." }),
-        serde_json::json!({ "name": " ", "folder": folder }),
+        serde_json::json!({ "name": "x", "folder": format!("{folder}/없는폴더"), "engine": "claude" }),
+        serde_json::json!({ "name": "x", "folder": ".", "engine": "claude" }),
+        serde_json::json!({ "name": " ", "folder": folder, "engine": "claude" }),
     ] {
         let (code, r) = call(port, &h, "POST", "/api/agents", &bad.to_string()).await;
         assert_eq!(code, 400, "{bad} → {r}");
@@ -139,7 +139,7 @@ async fn agents_crud_api() {
     assert_eq!((made["parent_read"].as_bool(), &made["parent_dir"]), (Some(false), &serde_json::Value::Null));
     let up = std::env::temp_dir().join(format!("an-api-parent-{}", std::process::id()));
     std::fs::create_dir_all(up.join("work")).unwrap();
-    let wide = serde_json::json!({ "name": "wide", "folder": up.join("work"), "parent_read": true }).to_string();
+    let wide = serde_json::json!({ "name": "wide", "folder": up.join("work"), "parent_read": true, "engine": "claude" }).to_string();
     let (code, w) = call(port, &h, "POST", "/api/agents", &wide).await;
     assert_eq!((code, w["parent_read"].as_bool(), w["parent_dir"].as_str()), (201, Some(true), Some(up.display().to_string().as_str())), "{w}");
     let wpath = format!("/api/agents/{}", w["id"]);
@@ -149,7 +149,7 @@ async fn agents_crud_api() {
     std::fs::remove_dir_all(&up).unwrap();
     // 셸 명령 실행 허용(#05-3) — 기본 끔, 켜서 등록 · PATCH 로 끔 · 다른 칸만 고치면 그대로.
     assert_eq!(made["shell"].as_bool(), Some(false));
-    let sh = serde_json::json!({ "name": "sh", "folder": folder, "shell": true }).to_string();
+    let sh = serde_json::json!({ "name": "sh", "folder": folder, "shell": true, "engine": "claude" }).to_string();
     let (code, s) = call(port, &h, "POST", "/api/agents", &sh).await;
     assert_eq!((code, s["shell"].as_bool()), (201, Some(true)), "{s}");
     let first = s.clone();
@@ -179,6 +179,38 @@ async fn agents_crud_api() {
     assert_eq!(call(port, &h, "DELETE", &path, "").await.0, 404);
     let (_, list) = call(port, &h, "GET", "/api/agents", "").await;
     assert!(list.as_array().unwrap().is_empty());
+}
+
+/// 실행 도구(#1z-9) — 필수(없으면 422 · 모르는 값 400) · 바꾸지 않음(PATCH 400) · Codex 에 Claude 전용 옵션 400 · Git 확인 건너뜀 기본 켬 · 끔 · 켬.
+#[tokio::test(flavor = "multi_thread")]
+async fn agents_engine_api() {
+    let a = side("engine").await;
+    let (port, h) = web(a.chat.clone()).await;
+    let folder = a.paths.root().display().to_string();
+    let post = |v: serde_json::Value| v.to_string();
+    let (code, r) = call(port, &h, "POST", "/api/agents", &post(serde_json::json!({ "name": "n", "folder": folder }))).await;
+    assert_eq!(code, 422, "도구 없음 → {r}");
+    let (code, r) = call(port, &h, "POST", "/api/agents", &post(serde_json::json!({ "name": "n", "folder": folder, "engine": "gemini" }))).await;
+    assert_eq!(code, 400, "모르는 도구 → {r}");
+    for (k, v) in [("parent_read", true), ("shell", true)] {
+        let mut b = serde_json::json!({ "name": "n", "folder": folder, "engine": "codex" });
+        b[k] = v.into();
+        let (code, r) = call(port, &h, "POST", "/api/agents", &b.to_string()).await;
+        assert_eq!(code, 400, "Codex + {k} → {r}");
+    }
+    let (code, cx) = call(port, &h, "POST", "/api/agents", &post(serde_json::json!({ "name": "cx", "folder": folder, "engine": "codex" }))).await;
+    assert_eq!((code, cx["engine"].as_str(), cx["skip_git"].as_bool()), (201, Some("codex"), Some(true)), "{cx}");
+    let path = format!("/api/agents/{}", cx["id"]);
+    let (code, r) = call(port, &h, "PATCH", &path, r#"{"engine":"claude"}"#).await;
+    assert_eq!(code, 400, "도구 바꾸기 → {r}");
+    let (code, r) = call(port, &h, "PATCH", &path, r#"{"shell":true}"#).await;
+    assert_eq!(code, 400, "Codex 에 셸 → {r}");
+    let (code, r) = call(port, &h, "PATCH", &path, r#"{"skip_git":false}"#).await;
+    assert_eq!((code, r["skip_git"].as_bool(), r["engine"].as_str(), &r["uid"]), (200, Some(false), Some("codex"), &cx["uid"]), "끔 · 세대 그대로 {r}");
+    let (_, list) = call(port, &h, "GET", "/api/agents", "").await;
+    assert_eq!(list[0]["skip_git"].as_bool(), Some(false), "{list}");
+    let (code, cl) = call(port, &h, "POST", "/api/agents", &post(serde_json::json!({ "name": "cl", "folder": folder, "engine": "claude", "shell": true }))).await;
+    assert_eq!((code, cl["engine"].as_str(), cl["shell"].as_bool()), (201, Some("claude"), Some(true)), "{cl}");
 }
 
 /// 대화의 메시지가 `n` 개가 될 때까지(최대 5초).

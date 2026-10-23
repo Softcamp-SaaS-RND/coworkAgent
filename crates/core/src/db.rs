@@ -2,7 +2,7 @@ use rusqlite::OptionalExtension;
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 26;
+pub const SCHEMA_VERSION: i64 = 27;
 
 /// DB 오류를 `io::Error` 로 — 상위 크레이트가 `map_err(db_err)` 로 쓴다(`Error` 는 rusqlite 것이라 `From` 을 구현할 수 없다).
 pub fn db_err(e: Error) -> std::io::Error {
@@ -650,6 +650,18 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
             tx.execute_batch("ALTER TABLE agents ADD COLUMN color TEXT NOT NULL DEFAULT 'agent-tile';")?;
         }
         tx.execute_batch("PRAGMA user_version = 26;")?;
+        tx.commit()?;
+    }
+    // 27(#1z-9): 에이전트 실행 도구(등록 뒤 고정) · Codex Git 확인 건너뜀 — 있던 에이전트는 Claude Code(지금까지와 같음).
+    if v < 27 {
+        let tx = conn.unchecked_transaction()?;
+        if !has_column(&tx, "agents", "engine")? {
+            tx.execute_batch("ALTER TABLE agents ADD COLUMN engine TEXT NOT NULL DEFAULT 'claude';")?;
+        }
+        if !has_column(&tx, "agents", "skip_git")? {
+            tx.execute_batch("ALTER TABLE agents ADD COLUMN skip_git INTEGER NOT NULL DEFAULT 1;")?;
+        }
+        tx.execute_batch("PRAGMA user_version = 27;")?;
         tx.commit()?;
     }
     Ok(conn)

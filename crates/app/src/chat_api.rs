@@ -35,6 +35,11 @@ struct NewAgent {
     /// 셸 명령 실행 허용(#05-3) — 없으면 끔.
     #[serde(default)]
     shell: bool,
+    /// 실행 도구(#1z-9) — `agents::ENGINES` 중 하나, 필수(없으면 422) · 등록 뒤 바꾸지 않는다.
+    engine: String,
+    /// Codex `--skip-git-repo-check`(#1z-9) — 없으면 켬.
+    #[serde(default)]
+    skip_git: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -191,6 +196,12 @@ struct SavedQuery {
 struct AgentPatch {
     #[serde(default)]
     name: Option<Value>,
+    /// 실행 도구는 바꾸지 않는다(#1z-9 — 주면 400).
+    #[serde(default)]
+    engine: Option<Value>,
+    /// Codex `--skip-git-repo-check`(#1z-9) — 세대 · 세션 그대로.
+    #[serde(default)]
+    skip_git: Option<bool>,
     #[serde(default)]
     folder: Option<String>,
     #[serde(default)]
@@ -401,7 +412,7 @@ fn agent_json(a: Agent) -> Value {
         .then(|| an_core::paths::parent_read_dir(std::path::Path::new(&a.folder)))
         .flatten()
         .map(|p| p.display().to_string());
-    json!({ "id": a.id, "name": a.name, "folder": a.folder, "prompt": a.prompt, "group": a.group, "parent_read": a.parent_read, "parent_dir": up, "shell": a.shell, "color": a.color, "uid": a.uid })
+    json!({ "id": a.id, "name": a.name, "folder": a.folder, "prompt": a.prompt, "group": a.group, "parent_read": a.parent_read, "parent_dir": up, "shell": a.shell, "color": a.color, "uid": a.uid, "engine": a.engine, "skip_git": a.skip_git })
 }
 
 /// 폴더는 있는 절대 경로만 — 상대 경로는 앱의 현재 폴더 기준이 되어 의도와 달라진다. 데이터 루트를 품거나 네트워크 경로면 거부
@@ -520,6 +531,12 @@ async fn add_agent(State(chat): State<Arc<Chat>>, Json(req): Json<NewAgent>) -> 
     {
         return bad("이름은 1 ~ 64자, 제어 문자 없이");
     }
+    if !agents::ENGINES.contains(&req.engine.as_str()) {
+        return bad(&format!("engine 은 {}", agents::ENGINES.join(" · ")));
+    }
+    if let Some(m) = codex_options(&req.engine, req.parent_read, req.shell) {
+        return bad(m);
+    }
     let folder = match checked_folder(&req.folder) {
         Ok(f) => f,
         Err(m) => return bad(&m),
@@ -531,7 +548,8 @@ async fn add_agent(State(chat): State<Arc<Chat>>, Json(req): Json<NewAgent>) -> 
             format!("같은 이름의 에이전트가 있다: {name}"),
         ));
     }
-    match agents::add_with(&db, name, &folder, req.prompt.trim(), req.parent_read, req.shell) {
+    let skip_git = req.skip_git.unwrap_or(true);
+    match agents::add_with(&db, name, &folder, req.prompt.trim(), req.parent_read, req.shell, &req.engine, skip_git) {
         Ok(a) => (StatusCode::CREATED, Json(agent_json(a))).into_response(),
         Err(e) => db_fail(e),
     }
@@ -544,6 +562,9 @@ async fn update_agent(
 ) -> Response {
     if req.name.is_some() {
         return bad("에이전트 이름은 바꾸지 않는다 — 새 이름이면 새로 등록");
+    }
+    if req.engine.is_some() {
+        return bad("실행 도구는 바꾸지 않는다 — 다른 도구면 새로 등록");
     }
     let db = chat.db();
     let now = match agents::by_id(&db, id) {
@@ -564,6 +585,9 @@ async fn update_agent(
     };
     let parent_read = req.parent_read.unwrap_or(now.parent_read);
     let shell = req.shell.unwrap_or(now.shell);
+    if let Some(m) = codex_options(&now.engine, parent_read, shell) {
+        return bad(m);
+    }
     if let Some(c) = req.color.as_deref()
         && !agents::ICON_COLORS.contains(&c)
     {
@@ -577,11 +601,23 @@ async fn update_agent(
                 }
                 a.color = c;
             }
+            if let Some(on) = req.skip_git {
+                if let Err(e) = agents::set_skip_git(&db, id, on) {
+                    return db_fail(e);
+                }
+                a.skip_git = on;
+            }
             Json(agent_json(a)).into_response()
         }
         Ok(None) => fail(io::Error::new(io::ErrorKind::NotFound, "없는 에이전트")),
         Err(e) => db_fail(e),
     }
+}
+
+/// Codex 에이전트에 Claude 전용 옵션(상위 한단계 탐색 · 셸 명령 실행)을 켜면 그 사유(#1z-9 — Codex 는 쓰지 않는다).
+fn codex_options(engine: &str, parent_read: bool, shell: bool) -> Option<&'static str> {
+    (engine == agents::CODEX && (parent_read || shell))
+        .then_some("Codex 에이전트는 상위 한단계 탐색 · 셸 명령 실행 허용을 쓰지 않는다")
 }
 
 async fn remove_agent(State(chat): State<Arc<Chat>>, Path(id): Path<i64>) -> Response {

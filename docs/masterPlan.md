@@ -83,6 +83,10 @@
   `%APPDATA%`(Roaming — 신원 키 중복 · SQLite 손상 위험).
 - **D16** Claude 연동 = **`claude -p` 헤드리스 실행** — 받은 PC 의 coworkAgent 가 그 PC 의 Claude Code 를 실행해 답한다(수신 측에
   띄워 둔 세션 불필요). 전제: 각 PC 에 Claude Code 설치·로그인(D20). 기각안: MCP stdio · Channels 푸시 · 훅.
+  (#1z-9 개정 — 2026-10-23 사용자) 에이전트마다 실행 도구 **Claude Code / Codex 택1**(등록 때 필수 · 등록 뒤 바꾸지 않음 — 그 에이전트 대화는 늘 그 도구). Codex 에이전트는 그 PC 의
+  `codex exec -C <폴더> -s read-only --json`(resume = `exec resume <thread_id>`, 가드 = `-c developer_instructions`, 옵션 "Git 저장소 아닌 폴더 허용" 기본 켬 = `--skip-git-repo-check`,
+  그 PC 사용자 Codex 설정 · 스킬 · MCP 그대로 · 모델 · effort 인자 없음 — Codex 기본값). 도구 CLI 는 답하는 PC 에만 있으면 된다(없으면 실행 실패 문구). Codex 계정 약관은 사용자 책임(D20 같은 고지 없음).
+  기각안: 등록 1단계 한 폼 도구 카드(시안 A) · `--ignore-user-config` · 등록 PC 의 CLI 유무로 등록 막기.
 - **D17** 원격 메시지는 **자동 처리**(사람 승인 게이트 없음, 도구 권한은 D22). 사용자가 켠 **집중**(이 PC 설정) 동안 새 실행
   요청(질의)은 받는 순간 거부(기록 · 실행 · 알림 없음) — 보낸 쪽은 "상대가 집중 중" · 다시 보내기, 진행 중 자동 왕복은 다음
   차례에서 멈춤. 실행 없는 요청(S1)은 집중 중에도 받는다. 기각안: 알림만 멈춤.
@@ -90,6 +94,8 @@
 - **D19** 이력은 **요청/응답 전체**를 채팅 모양으로 남기고 **이어서 작업**할 수 있다 — 대화마다 에이전트의 Claude 세션 ID 를
   저장해 resume(`--resume` · `--session-id`, 검증 환경 Claude Code 2.1.296). 같은 세션 동시 재개는 섞이므로 대화별 직렬 실행,
   작업 폴더는 에이전트별 고정. **@멘션**으로 부른 상대 PC 의 다른 에이전트는 **대화 × 에이전트 세션**을 따로 잇는다.
+  (#1z-9) Codex 에이전트의 세션 = `thread.started.thread_id`(우리가 정하지 못해 실행 출력에서 받아 같은 자리에 저장), 없는 thread = 새 세션으로 한 번 다시. 완료 이벤트(`turn.completed`)가 없거나
+  비정상 종료면 실패(적대적 평가 R1).
   **압축 · 비우기**: 대화 머리에 세션 창 사용량(답하는 PC 가 답과 함께 보냄, 상한 1M 고정 · 60% · 80% 경고), 압축 = 세션마다
   요약 실행 → 세션 비움 → 다음 새 세션 첫 실행에 요약 1회, 비우기 = 세션만(이력 그대로). 답하는 PC 가 80% 넘으면 자동 압축
   (설정, 기본 켜짐). 상대 쪽 세션은 피어 프레임 `Context`(보내기 전 `Pong.ctx` 확인 — 0.4.0 은 거절 안내), 자동 왕복은 두 PC
@@ -107,6 +113,9 @@
   workflow(스크립트 · 빌드 · 테스트) 수행용이며 폴더 · 상위 읽기 범위가 적용되지 않는다. 켤 때 위험 확인 창 · 상세 경고 줄로 공지, 바꾸면 세션을 비운다. 기각안: 명령 패턴 허용 목록 · 상대별 허용.
   (#1z-7 보강 — 2026-10-23 사용자) 프로필 **아이콘 색**(타일 색 6개 `agent-tile` · `peer-1` ~ `peer-5`, 기본 `agent-tile`) — 이 PC 화면의 그 에이전트 로봇 타일에만(설정 '내 에이전트' ·
   '등록된 에이전트'), 상대 PC 에 보내지 않고 실행 · 세션에 닿지 않는다. 이름은 계속 바꾸지 않는다(사용자 재확인 — "이름 편집 제공 안 함").
+  (#1z-9 개정 — 2026-10-23 사용자) 프로필에 **실행 도구**(D16 — 등록 뒤 고정, 스키마 27 `agents.engine` · 있던 에이전트 = Claude Code) · Codex 옵션 **"Git 저장소 아닌 폴더 허용"**(기본 켬,
+  `agents.skip_git` — 실행 인자만, 세대 그대로). Codex 에이전트에 상위 한단계 탐색 · 셸 명령 실행 허용은 없다(API 400 · 화면 블록 비활성). **폴더 = 원격 범위는 가드 문구로만** —
+  Codex(`-C` 밖 읽기 됨 — 실측)도 Claude(D22 개정 — 파일 도구 폴더 밖 읽기 됨)도 폴더 밖 읽기를 막지 않는다(사용자가 실측을 보고 고름). 등록 화면 = 시안 B 2단계(도구 타일 → 이름 · 폴더 · 좌우 옵션 블록).
   기각안: PC 당 기본 에이전트 1개 · 원격이 작업 폴더 지정.
 - **D22** 헤드리스 실행 권한: `--restricted --strict-mcp-config --permission-prompts none` + 권한 모드 명시 + `--tools` ·
   `--allowedTools` = D31 읽기 전용 3개 고정(D21 셸 허용이면 + 셸 도구), 그 밖은 즉시 거부(사람 개입 없음 — 루트 `PROJECT.md` 가드레일 6행). `--model` ·
@@ -114,6 +123,10 @@
   `haiku` 드롭다운만(목록 밖 저장 400). 설정을 못 읽으면 기본값으로 돌리지 않고 실행 실패. 기각안: `PermissionRequest` 훅 ·
   `bypassPermissions`. (#05-2 보강) D21 상위 한단계 탐색 허용이면 `--add-dir <바로 위 폴더>` + 시스템 프롬프트 `[읽기 범위]` 한 줄 —
   `--restricted` 가 파일 도구를 작업 폴더 + `--add-dir` 안으로 가둔다(허용 규칙 `Read(//…)` 로는 넘지 못함 — 2.1.306 실측). 기각안: 임의 추가 폴더 목록 · 여러 단계.
+  (#1z-9 개정 — 2026-10-23 사용자 "에이전트가 응답하는 환경에서는 로컬 에이전트가 동작하는 것과 최대한 맞춤. 편집, 삭제만 제외." · "--strict-mcp-config 옵션도 제거") —
+  `--restricted` · `--strict-mcp-config` · `--tools` 를 쓰지 않는다(그 PC 사용자 · 프로젝트 settings — MCP · 스킬 · 훅 · 허용 규칙 그대로). `dontAsk` + `--allowedTools Read,Grep,Glob,WebFetch,WebSearch`
+  (+ 셸 허용이면 셸) + `--disallowedTools Edit,Write,NotebookEdit`(+ 셸 끔이면 셸 — 사용자가 허용해도 거부, 하위 에이전트 포함 — 2.1.309 실측). MCP 는 미리 허용하지 않음(쓰기 · 지우기 도구가 섞임 —
+  사용자 허용 규칙만, 구현자 해석). 위 "파일 도구를 가둔다" 는 더 이상 성립하지 않는다 — `--add-dir` · `[읽기 범위]` 는 안내로 남는다.
   (#05-3 보강) D21 셸 허용이면 `--tools` · `--allowedTools` 에 셸 도구(`--restricted` 는 `--tools` 에 적은 셸을 남긴다 — 2.1.308 실측) · 가드 `SHELL_GUARD_PROMPT` ·
   실행 환경은 기본 변수 목록만(`env_clear` — 프록시 주소는 넘긴다). 압축 요약 실행은 셸 없이. claude 에 없는 도구 이름은 조용히 무시되므로 실제 도구 목록과 대조한다(`tools_canary`).
 - **D23** 대화 = **두 PC 사이**, 발화자 = 양쪽 사람 + 에이전트(CLI 출처는 `via` 표시). 새 글은 모두 대화 에이전트에게 실행 요청
@@ -150,7 +163,8 @@
   "종료"). 루트 `PROJECT.md` 가드레일 4행(트레이 메뉴 외 네이티브 창 없음) 유지.
 - **D31** 기본 기능 = **진행 중인 프로젝트 · 제품에 대한 문의 응답**. 모든 원격 실행(재개 포함)에 문의 응답 전용 시스템 프롬프트
   (`--append-system-prompt` — 개입 · 편집 · 삭제 · 명령 실행 금지, 비밀 싣지 않기)를 늘 붙이고, 도구는 읽기 전용 3개(`Read` ·
-  `Grep` · `Glob` — #05-3 에서 claude 에 없는 `LS` · `NotebookRead` 뺌)를 **모든 실행에 늘** 넣는다(고르지 않음). (#05-3 개정) D21 셸 허용 에이전트는 가드가
+  `Grep` · `Glob` — #05-3 에서 claude 에 없는 `LS` · `NotebookRead` 뺌)를 **모든 실행에 늘** 넣는다(고르지 않음). (#1z-9 개정) 늘 넣는 목록에 `WebFetch` · `WebSearch`, 편집 도구는 늘 막음(D22),
+  Codex 에이전트는 가드가 `CODEX_GUARD_PROMPT`(읽기 · 조회 셸 명령 · workflow 괜찮음, 삭제 · 편집 · 이동 · 설정 변경 · 외부 전송 금지 + 폴더 밖 읽지 않음 — 모델 규칙) · 쓰기는 읽기 전용 샌드박스. (#05-3 개정) D21 셸 허용 에이전트는 가드가
   `SHELL_GUARD_PROMPT` — 명령 실행 금지만 빼고 이 PC 에 설정된 workflow 수행 · 조회 허용(workflow 산출물 예외), 소스 · 문서 · 설정 직접 삭제 · 편집 · 저장소 변경 금지는 그대로(모델 규칙 — 막는 장치 아님). 고치기 · 만들기는 원격 실행이 아니라
   **요청**(S1 — 사람이 처리). 기각안: 시스템 프롬프트만.
 - **D32** **배포 전 하위 호환 없음** — 피어 프로토콜은 이전 버전 상대를 고려하지 않는다(양쪽 같은 빌드 전제, 호환 장치 신설
@@ -332,7 +346,7 @@ Task 상태는 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`).
 Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 1b.inbound-capacity · 1c.durable-messaging · 1d.request-list ·
 1e.autostart-watchdog · 1f.message-edit · 1g.rail-scope · 1h.stabilization · 1i.rail-group · 1j.messenger-ui · 1k.ui-polish ·
 1l.ui-icons · 1m.context-compact · 1n.cli-start-stop · 1o.chat-list-split · 1p.project-tidy · 1q.request-overview · 1r.ui-polish ·
-1s.fold-line-readme · 1t.notion-ux · 1u.scoped-refresh · 1v.notion-design · 1w.conv-leave · 1x.session-ui · 1y.data-update · 1z.chat-look · 1z-2.ui-refine · 1z-3.activity-color · 1z-4.home-preview · 1z-5.home-thumb · 1z-6.home-zoom · 1z-7.conv-type-look · 1z-8.settings-search. 남음:
+1s.fold-line-readme · 1t.notion-ux · 1u.scoped-refresh · 1v.notion-design · 1w.conv-leave · 1x.session-ui · 1y.data-update · 1z.chat-look · 1z-2.ui-refine · 1z-3.activity-color · 1z-4.home-preview · 1z-5.home-thumb · 1z-6.home-zoom · 1z-7.conv-type-look · 1z-8.settings-search · 1z-9.agent-engine. 남음:
 - 후보(착수 전): 통계 메뉴(사이드바 상단 — 보여줄 숫자 미정 · 서버 집계 API 필요).
 - 후보(착수 전): outbox 정산 순서 점검 — 기존 종류(`req_state` 거절 등)도 "행을 지운 뒤 정산" 순서라 원자성 보강이 필요한지 판단(1f 평가의 범위 밖 관찰).
 - 후보(착수 전): 요청 보드 보기 설정(D39 ① · 1t U2 — U1 은 #1v 종결) — 보드의 그룹 · 정렬 · 거르기(이 PC 에만, 지금 보기 기억은 `ui_folded` 열쇠를 빌려 씀 → 전용 설정 키). 닿는 D·S: D35 · D39.
@@ -405,6 +419,7 @@ Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 
 - 2026-10-23 · Task #1z-8 · S4 개정(설정 시안 B — 메뉴 8개 · 고른 화면만 · 처음 = 연결 · 목록 + 상세(설정 목록 연필 없음 — #1r 개정) · 스위치 · 디버깅, 통합 검색 "나간 대화 포함" 스위치 · 유형 칩 S1 ·
   상단 바 버전) · D35 개정(미리보기 말풍선 2줄 — #1z-6 줄 수 늘림 개정) · D37 개정(설정 그룹설정 = 목록 + 상세 · 넣기 / 빼기) · D40 보강(검색 기본 = 닫힌 대화 뺌) · D26 보강(대화 정보 `제목` 줄 없음)
   — 사용자 결정(seed · U1 ~ U8 · "초기 화면은 연결"), 종결 목록에 1z-8
+- 2026-10-23 · Task #1z-9 · D16 개정(에이전트 실행 도구 Claude Code / Codex 택1 · 등록 뒤 고정 · Codex = `codex exec`) · D19 보강(Codex 세션 = thread_id · 완료 이벤트) · D21 개정(실행 도구 · Git 저장소 아닌 폴더 허용 · 폴더 범위는 가드 문구만) · D22 개정(`--restricted` · `--strict-mcp-config` · `--tools` 뺌, 편집 도구만 막음 — 로컬 사용과 맞춤) · D31 보강(웹 읽기 도구 · Codex 가드) — 사용자 결정(시안 B · U2 ~ U7 · "로컬과 맞춤, 편집 · 삭제만 제외"), 버전 1.3.5 · 스키마 27, 종결 목록에 1z-9
 - 2026-10-19 · 1.0.0 배포 · D25 보강(보유한 Mac 의 macOS universal 실행 파일을 사전 배포에 첨부, 확인 · 서명은 Phase 4) — 사용자 지시(버전 1.0.0 · Mac 빌드 = 보유한 Mac)
 - 2026-10-19 · S1 개정(요청 상태 = 네 상태 사이 어디로든 — 되돌리기 포함) · S4 보강(요청 보드 손잡이 포인터 끌기 · 놓은 열로 옮김 · 요청 화면 "메모" → "피드백") — 사용자 지시(Task 밖 수정)
 - 2026-10-22 · D35 개정(메뉴 '주고받은 메시지' 뺌 — #1q 기각안 "주고받은 메시지 메뉴 없앰" 을 뒤집음, 상대 타일 메뉴 '개요' · '나' 개요에서 연 대화는 레일도 그 상대로 · 에이전트 응답 절 머리 대화 수 뺌 · 대화 줄 ⋯ 제자리) — 사용자 지시(Task 밖)

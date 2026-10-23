@@ -273,7 +273,7 @@ async fn agent_patch_edits_but_not_name() {
         .call(
             "POST",
             "/api/agents",
-            json!({ "name": "review", "folder": folder }),
+            json!({ "name": "review", "folder": folder, "engine": "claude" }),
         )
         .await;
     assert_eq!(code, 201, "{made}");

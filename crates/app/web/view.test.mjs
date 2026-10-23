@@ -128,6 +128,11 @@ import {
   REQ_STATES,
   MODELS,
   TOOLS_NOTE,
+  ENGINES,
+  WEB_TOOLS,
+  EDIT_TOOLS,
+  engineLabel,
+  agentEngineBlocks,
   READ_ONLY_TOOLS,
   SHELL_NOTE,
   SHELL_WARN,
@@ -851,7 +856,7 @@ test("new_menu — 네 항목이 각 화면으로, 초점 칸까지(자동 왕�
     { view: "settings", page: "conn", sub: "invite_accept" },
     { view: "settings", page: "agents", sub: "agent_new" },
   ]);
-  assert.deepEqual(items.map((i) => i.focus), ["chat_peer", "window_btn", "invite_text", "agent_name"]);
+  assert.deepEqual(items.map((i) => i.focus), ["chat_peer", "window_btn", "invite_text", "agent_engine_claude"]); // #1z-9 등록 1단계 = 도구 타일
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
   for (const i of items) assert.ok(html.includes(`id="${i.focus}"`), `index.html 에 ${i.focus}`);
 });
@@ -2615,4 +2620,25 @@ test("draft_owner — 저장 전 값(#1z-8 R1): 주인이 다른 같은 id(지�
   drafts.set(1, { owner: "a" }).set(2, { owner: "b" });
   pruneDrafts(drafts, [2]);
   assert.deepEqual([...drafts.keys()], [2]);
+});
+
+test("agent_engine — 실행 도구 라벨 · 좌우 옵션 블록 · Git 건너뜀 저장 · 도구 안내(#1z-9)", () => {
+  assert.deepEqual(ENGINES, ["claude", "codex"]);
+  assert.equal(engineLabel("codex"), "Codex");
+  assert.equal(engineLabel("claude"), "Claude Code");
+  assert.equal(engineLabel(undefined), "Claude Code", "옛 응답 = Claude Code");
+  assert.deepEqual(agentEngineBlocks("codex"), {
+    claude: { disabled: true, note: "Codex 에이전트는 쓰지 않음" },
+    codex: { disabled: false, note: "" },
+  });
+  assert.deepEqual(agentEngineBlocks("claude"), {
+    claude: { disabled: false, note: "" },
+    codex: { disabled: true, note: "Claude Code 에이전트는 쓰지 않음" },
+  });
+  assert.ok(agentEngineBlocks(null).claude.disabled && agentEngineBlocks(null).codex.disabled, "고르기 전 = 둘 다 비활성");
+  const cx = { folder: "f", prompt: "", parent_read: false, shell: false, engine: "codex", skip_git: true };
+  assert.deepEqual(agentPatch(cx, { folder: "f", prompt: "", skip_git: true }), { folder: "f", prompt: "" }, "그대로면 안 보냄");
+  assert.deepEqual(agentPatch(cx, { folder: "f", prompt: "", skip_git: false }), { folder: "f", prompt: "", skip_git: false });
+  assert.deepEqual(agentPatch({ folder: "f", prompt: "" }, { folder: "f", prompt: "", skip_git: true }), { folder: "f", prompt: "" }, "옛 응답 = 켬");
+  for (const t of [...WEB_TOOLS, ...EDIT_TOOLS]) assert.ok(TOOLS_NOTE.includes(t), t);
 });

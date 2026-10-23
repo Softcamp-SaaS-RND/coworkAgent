@@ -1,8 +1,9 @@
-//! 도구 이름 canary(#05-3) — 제품 인자(`claude_args`)로 실제 `claude` 가 알리는 도구 목록(`stream-json` 첫 `system` init 의 `tools`)이 넘긴 이름과 같은지 잰다.
-//! claude 는 없는 도구 이름을 오류 없이 무시한다(2.1.308 실측 — `LS` · `NotebookRead`) — 이름이 사라지면 여기서 드러난다.
+//! 도구 canary(#05-3 · #1z-9 결정 9) — 제품 인자(`claude_args`)로 실제 `claude` 가 알리는 도구 목록(`stream-json` 첫 `system` init 의 `tools`)에 미리 허용한 읽기 도구가
+//! 모두 있고, 막은 편집 도구(+ 셸 끔이면 셸)는 없는지 잰다. claude 는 없는 도구 이름을 오류 없이 무시한다(2.1.308 실측 — `LS` · `NotebookRead`) — 이름이 사라지면 여기서 드러난다.
+//! 그 밖의 도구(사용자 MCP · 스킬 등)는 그 PC 설정이라 대조하지 않는다.
 //! 개발 PC 전용 · 사용량을 쓴다: `cargo test -p an-agent --test tools_canary -- --ignored --nocapture`.
 use an_agent::runner::{Session, claude_args, find_claude, run_process};
-use an_core::agents::{Agent, READ_ONLY_TOOLS, SHELL_TOOLS};
+use an_core::agents::{Agent, EDIT_TOOLS, READ_ONLY_TOOLS, SHELL_TOOLS, WEB_TOOLS};
 use std::time::Duration;
 
 fn tools(shell: bool) -> Vec<String> {
@@ -17,6 +18,8 @@ fn tools(shell: bool) -> Vec<String> {
         parent_read: false,
         shell,
         color: "agent-tile".into(),
+        engine: "claude".into(),
+        skip_git: true,
     };
     let args = claude_args(&agent, &Session::New(an_agent::chat::new_uuid()), "haiku", "low");
     let out = run_process(&find_claude(), &args, &work, "ok 라고만 답해.", Duration::from_secs(300)).unwrap();
@@ -42,11 +45,16 @@ fn product_tools_exist() {
             unsafe { std::env::remove_var(k) };
         }
     }
-    let want = |extra: &[&str]| {
-        let mut w: Vec<String> = READ_ONLY_TOOLS.iter().chain(extra).map(|s| s.to_string()).collect();
-        w.sort();
-        w
-    };
-    assert_eq!(tools(false), want(&[]), "읽기 전용 도구 이름이 모두 실재");
-    assert_eq!(tools(true), want(SHELL_TOOLS), "셸 도구 이름도 실재");
+    let has = |got: &[String], t: &str| got.iter().any(|g| g == t);
+    let (off, on) = (tools(false), tools(true));
+    for t in READ_ONLY_TOOLS.iter().chain(&WEB_TOOLS) {
+        assert!(has(&off, t) && has(&on, t), "미리 허용한 읽기 도구 {t} 가 실재");
+    }
+    for t in EDIT_TOOLS {
+        assert!(!has(&off, t) && !has(&on, t), "편집 도구 {t} 는 막힘");
+    }
+    for t in SHELL_TOOLS {
+        assert!(!has(&off, t), "셸 끔 = {t} 없음");
+        assert!(has(&on, t), "셸 켬 = {t} 실재");
+    }
 }

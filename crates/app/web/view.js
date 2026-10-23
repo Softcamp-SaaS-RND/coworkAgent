@@ -572,7 +572,7 @@ export function newMenu() {
     { label: SESSION_NEW, href: "#new", focus: "chat_peer", icon: "chat" },
     { label: "초대 생성", href: "#settings/invite_make", focus: "window_btn", icon: "plus", press: "window_btn" },
     { label: "초대 수락", href: "#settings/invite_accept", focus: "invite_text", icon: "enter" },
-    { label: "에이전트 등록", href: "#settings/agent_new", focus: "agent_name", icon: "bot" },
+    { label: "에이전트 등록", href: "#settings/agent_new", focus: "agent_engine_claude", icon: "bot" },
   ];
 }
 
@@ -1507,8 +1507,28 @@ export function markdownBlocks(text) {
 
 /// 모든 실행의 도구 — 탐색(읽기 전용) 전부(an_core `READ_ONLY_TOOLS` 와 같다, #1d — 프로필마다 고르지 않는다).
 export const READ_ONLY_TOOLS = ["Read", "Grep", "Glob"];
+/// Claude 실행에 미리 허용하는 웹 읽기 도구 · 늘 막는 편집 도구(#1z-9 결정 9 — an_core `agents::WEB_TOOLS` · `EDIT_TOOLS` 와 같다).
+export const WEB_TOOLS = ["WebFetch", "WebSearch"];
+export const EDIT_TOOLS = ["Edit", "Write", "NotebookEdit"];
 /// 에이전트 화면의 도구 안내 한 줄.
-export const TOOLS_NOTE = `탐색 도구(읽기 전용) 항상 사용: ${READ_ONLY_TOOLS.join(" · ")}`;
+export const TOOLS_NOTE = `읽기 도구 항상 허용: ${[...READ_ONLY_TOOLS, ...WEB_TOOLS].join(" · ")} · 편집 도구 막음(${EDIT_TOOLS.join(" · ")}) · 그 밖은 이 PC Claude 설정의 허용 규칙`;
+/// Codex 옵션 안내(#1z-9 — 결정 2 · 5).
+export const SKIP_GIT_HINT = "기본 켬 — --skip-git-repo-check 로 실행";
+export const CODEX_READ_NOTE = "읽기 범위: 읽기 전용 샌드박스 · 셸로 읽음(폴더 밖 읽기는 지시로만 막음)";
+/// 실행 도구(#1z-9 — an_core `agents::ENGINES` 와 같다). 등록 때 하나 고르고 바꾸지 않는다.
+export const ENGINES = ["claude", "codex"];
+/// 실행 도구 → 보이는 이름(모르는 값 · 옛 응답 = Claude Code).
+export function engineLabel(e) {
+  return e === "codex" ? "Codex" : "Claude Code";
+}
+/// 등록 2단계 · 상세의 좌우 옵션 블록(#1z-9 시안 B) — 고른 도구의 블록만 켜고, 다른 블록은 비활성 + 이유 문구.
+export function agentEngineBlocks(engine) {
+  const block = (mine) => ({
+    disabled: engine !== mine,
+    note: engine === mine ? "" : engine ? `${engineLabel(engine)} 에이전트는 쓰지 않음` : "실행 도구를 고르면 열림",
+  });
+  return { claude: block("claude"), codex: block("codex") };
+}
 /// "상위 한단계 탐색 허용" 도움말(#05-2) — 등록 칸(index.html title)과 같은 글.
 export const PARENT_NOTE = "켜면 폴더 바로 위 폴더 아래 전체(옆 폴더 포함)를 읽고 답합니다. 위가 드라이브 루트 · 사용자 홈이거나 데이터 폴더를 품으면 열지 않습니다.";
 /// "셸 명령 실행 허용" 도움말(#05-3) — 등록 칸(index.html title)과 같은 글.
@@ -1545,6 +1565,7 @@ export function agentPatch(a, form) {
   if (!!form.parent_read !== !!a.parent_read) body.parent_read = !!form.parent_read;
   if (!!form.shell !== !!a.shell) body.shell = !!form.shell;
   if (form.color !== undefined && form.color !== agentColor(a.color)) body.color = form.color; // 아이콘 색(#1z-7)
+  if (form.skip_git !== undefined && !!form.skip_git !== (a.skip_git ?? true)) body.skip_git = !!form.skip_git; // Codex Git 확인 건너뜀(#1z-9)
   return body;
 }
 /// 에이전트 아이콘 색(#1z-7 — an_core `agents::ICON_COLORS` 와 같다, 타일 색 클래스 이름 그대로). 첫 값이 기본.

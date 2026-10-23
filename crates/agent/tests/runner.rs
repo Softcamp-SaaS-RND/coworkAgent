@@ -1,6 +1,6 @@
 use an_agent::runner::{
-    GUARD_PROMPT, MIN_CLAUDE, SHELL_GUARD_PROMPT, Session, parse_output, parse_version, run_process, shell_env,
-    version_ok,
+    CODEX_GUARD_PROMPT, GUARD_PROMPT, MIN_CLAUDE, MIN_CODEX, SHELL_GUARD_PROMPT, Session, codex_args, codex_session_gone,
+    count_codex_step, parse_codex, parse_codex_version, parse_output, parse_version, run_process, shell_env, version_ok,
 };
 use an_core::agents::Agent;
 use std::io::ErrorKind;
@@ -17,6 +17,8 @@ fn agent(prompt: &str) -> Agent {
         parent_read: false,
         shell: false,
         color: "agent-tile".into(),
+        engine: "claude".into(),
+        skip_git: true,
     }
 }
 
@@ -37,8 +39,10 @@ fn args_follow_d22() {
         &agent(""),
         &Session::New("11111111-2222-3333-4444-555555555555".into()),
     );
-    for flag in ["-p", "--restricted", "--strict-mcp-config"] {
-        assert!(args.iter().any(|a| a == flag), "{flag} 없음: {args:?}");
+    assert!(args.iter().any(|a| a == "-p"), "{args:?}");
+    // #1z-9 결정 9 — 로컬 사용과 맞춤: 제한 모드 · MCP 설정 무시 · 도구 목록 고정 없음.
+    for flag in ["--restricted", "--strict-mcp-config", "--tools"] {
+        assert!(!args.iter().any(|a| a == flag), "{flag} 있음: {args:?}");
     }
     assert_eq!(value_of(&args, "--output-format"), Some("stream-json"));
     assert!(
@@ -48,13 +52,11 @@ fn args_follow_d22() {
     assert_eq!(value_of(&args, "--permission-prompts"), Some("none"));
     assert_eq!(value_of(&args, "--permission-mode"), Some("dontAsk"));
     assert_eq!(
-        value_of(&args, "--tools"),
-        Some("Read,Grep,Glob")
-    );
-    assert_eq!(
         value_of(&args, "--allowedTools"),
-        Some("Read,Grep,Glob")
+        Some("Read,Grep,Glob,WebFetch,WebSearch")
     );
+    let denied = if cfg!(windows) { "Edit,Write,NotebookEdit,Bash,PowerShell" } else { "Edit,Write,NotebookEdit,Bash" };
+    assert_eq!(value_of(&args, "--disallowedTools"), Some(denied));
     assert_eq!(
         value_of(&args, "--session-id"),
         Some("11111111-2222-3333-4444-555555555555")
@@ -105,11 +107,11 @@ fn guard_prompt_always() {
 
 #[test]
 fn tools_are_all_read_only() {
-    // 프로필과 무관하게 탐색 도구 3개 — 체크 칸이 없다(#1d · #05-3 없는 이름 LS · NotebookRead 뺌).
+    // 미리 허용 = 탐색 · 웹 읽기, 편집 도구는 늘 막음(#1z-9 결정 9 — 그 밖은 사용자 settings 허용 규칙). 체크 칸이 없다(#1d).
     let args = claude_args(&agent("짧게"), &Session::New("u".into()));
-    let all = "Read,Grep,Glob";
-    assert_eq!(value_of(&args, "--tools"), Some(all));
-    assert_eq!(value_of(&args, "--allowedTools"), Some(all));
+    assert_eq!(value_of(&args, "--allowedTools"), Some("Read,Grep,Glob,WebFetch,WebSearch"));
+    let denied = value_of(&args, "--disallowedTools").unwrap();
+    assert!(denied.starts_with("Edit,Write,NotebookEdit"), "{denied}");
 }
 
 #[test]
@@ -271,19 +273,18 @@ fn shell_adds_tools() {
     let on = Agent { shell: true, ..agent("") };
     let args = claude_args(&on, &Session::New("u".into()));
     let want = if cfg!(windows) {
-        "Read,Grep,Glob,Bash,PowerShell"
+        "Read,Grep,Glob,WebFetch,WebSearch,Bash,PowerShell"
     } else {
-        "Read,Grep,Glob,Bash"
+        "Read,Grep,Glob,WebFetch,WebSearch,Bash"
     };
-    assert_eq!(value_of(&args, "--tools"), Some(want));
     assert_eq!(value_of(&args, "--allowedTools"), Some(want));
+    assert_eq!(value_of(&args, "--disallowedTools"), Some("Edit,Write,NotebookEdit"), "셸 켬 = 셸은 막지 않음");
     assert_eq!(value_of(&args, "--append-system-prompt"), Some(SHELL_GUARD_PROMPT));
     assert!(!SHELL_GUARD_PROMPT.contains("명령 · 스크립트 실행") && SHELL_GUARD_PROMPT.contains("workflow") && SHELL_GUARD_PROMPT.contains("삭제 · 편집 · 이동"));
-    for flag in ["--restricted", "--strict-mcp-config", "dontAsk"] {
-        assert!(args.iter().any(|a| a == flag), "{flag} 없음: {args:?}");
-    }
+    assert!(args.iter().any(|a| a == "dontAsk"), "{args:?}");
     let off = claude_args(&agent(""), &Session::New("u".into()));
-    assert_eq!(value_of(&off, "--tools"), Some("Read,Grep,Glob"));
+    assert_eq!(value_of(&off, "--allowedTools"), Some("Read,Grep,Glob,WebFetch,WebSearch"));
+    assert!(value_of(&off, "--disallowedTools").unwrap().ends_with("Bash") || value_of(&off, "--disallowedTools").unwrap().ends_with("PowerShell"), "셸 끔 = 셸 막음");
     assert_eq!(value_of(&off, "--append-system-prompt"), Some(GUARD_PROMPT));
     // 상위 읽기와 함께 켜면 "그 위는 읽을 수 없다" 를 싣지 않는다(셸은 범위 밖도 읽는다).
     let root = std::env::temp_dir().join(format!("an-shell-scope-{}", std::process::id()));
@@ -307,4 +308,126 @@ fn shell_env_keeps_base_only() {
     let kept: Vec<String> = shell_env(vars).into_iter().map(|(k, _)| k.to_string_lossy().into_owned()).collect();
     let want: &[&str] = if cfg!(windows) { &["Path", "HOME", "HTTPS_PROXY"] } else { &["HOME", "HTTPS_PROXY"] };
     assert_eq!(kept, want);
+}
+
+/// Codex 실행 인자(#1z-9 결정 4 · 5 · 8 · 2) — 새 세션 `-C <폴더> -s read-only`, 이어 쓰기 `resume … <thread>`(샌드박스는 설정), Git 스위치, 개발자 지시(TOML 문자열),
+/// 모델 · effort · 사용자 설정 무시 인자 없음, 프롬프트는 표준 입력.
+#[test]
+fn codex_args_follow_decisions() {
+    let cx = Agent { engine: "codex".into(), folder: r"D:\work\p".into(), ..agent("짧게 \"답\"") };
+    let new = codex_args(&cx, &Session::New("ignored".into()));
+    assert_eq!(&new[..6], ["exec", "-C", r"D:\work\p", "-s", "read-only", "--json"], "{new:?}");
+    assert!(new.contains(&"--skip-git-repo-check".to_string()) && new.last().unwrap() == "-", "{new:?}");
+    for no in ["--ignore-user-config", "-m", "--model", "resume", "ignored"] {
+        assert!(!new.iter().any(|a| a == no), "{no} 있음: {new:?}");
+    }
+    let dev = value_of(&new, "-c").unwrap();
+    let toml = dev.strip_prefix("developer_instructions=").unwrap();
+    let text: String = serde_json::from_str(toml).unwrap();
+    assert!(text.starts_with(CODEX_GUARD_PROMPT) && text.contains(r"[읽기 범위] 이 폴더 D:\work\p 아래만") && text.ends_with("[수신자 추가 지시]\n짧게 \"답\""), "{text}");
+    for must in ["문의", "삭제 · 편집 · 이동", "비밀"] {
+        assert!(CODEX_GUARD_PROMPT.contains(must), "{must}");
+    }
+    let resume = codex_args(&Agent { skip_git: false, ..cx }, &Session::Resume("t-1".into()));
+    assert_eq!(&resume[..4], ["exec", "resume", "-c", "sandbox_mode=\"read-only\""], "{resume:?}");
+    assert_eq!(&resume[resume.len() - 2..], ["t-1", "-"], "{resume:?}");
+    assert!(!resume.iter().any(|a| a == "--skip-git-repo-check" || a == "-C" || a == "-s"), "Git 끔 · resume 은 -C · -s 없음: {resume:?}");
+}
+
+/// `codex exec --json` 출력(0.163.0 실측 모양) — thread = 세션, 마지막 agent_message = 답, 실패 이벤트 = 오류, 사용량은 싣지 않음.
+#[test]
+fn parse_codex_json() {
+    let ok = r#"{"type":"thread.started","thread_id":"01a1-t"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"i0","type":"agent_message","text":"먼저 볼게요"}}
+{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"ZEBRA 답"}}
+{"type":"turn.completed","usage":{"input_tokens":27303,"cached_input_tokens":13440,"output_tokens":74}}
+"#;
+    let out = parse_codex(ok.as_bytes()).unwrap();
+    assert_eq!((out.session.as_str(), out.text.as_str(), out.is_error, out.ctx_tokens), ("01a1-t", "ZEBRA 답", false, None));
+    let failed = r#"{"type":"thread.started","thread_id":"t2"}
+{"type":"turn.failed","error":{"message":"rate limited"}}
+"#;
+    let out = parse_codex(failed.as_bytes()).unwrap();
+    assert_eq!((out.text.as_str(), out.is_error), ("rate limited", true));
+    let silent = r#"{"type":"thread.started","thread_id":"t3"}
+"#;
+    assert!(parse_codex(silent.as_bytes()).unwrap().is_error, "답 없음 = 오류");
+    // R1: 중간 답만 남고 끊김(turn.completed 없음) = 실패 — 상대에 성공 답 · 자동 왕복 · 압축 요약으로 가지 않게.
+    let cut = r#"{"type":"thread.started","thread_id":"t4"}
+{"type":"item.completed","item":{"id":"i0","type":"agent_message","text":"먼저 볼게요"}}
+"#;
+    let out = parse_codex(cut.as_bytes()).unwrap();
+    assert!(out.is_error && out.text.contains("turn.completed 없음"), "{out:?}");
+    assert_eq!(parse_codex(b"plain text").unwrap_err().kind(), ErrorKind::InvalidData);
+}
+
+/// 단계 요약(#1c 꼴) — 끝난 명령 · MCP · 웹 검색만 센다, 답 · 시작 이벤트는 아님.
+#[test]
+fn count_codex_steps() {
+    let mut d = an_net::proto::StepDetail { turns: 1, ..Default::default() };
+    let ev = |t: &str| serde_json::json!({ "type": "item.completed", "item": { "type": t, "command": "type secret.txt", "aggregated_output": "x" } });
+    assert!(count_codex_step(&mut d, &ev("command_execution")));
+    assert!(count_codex_step(&mut d, &ev("command_execution")));
+    assert!(count_codex_step(&mut d, &ev("mcp_tool_call")));
+    assert!(!count_codex_step(&mut d, &ev("agent_message")));
+    assert!(!count_codex_step(&mut d, &serde_json::json!({ "type": "item.started", "item": { "type": "command_execution" } })));
+    assert_eq!((d.turns, d.tools.get("Shell"), d.tools.get("MCP")), (4, Some(&2), Some(&1)));
+}
+
+/// 없는 thread 이어 쓰기(0.163.0 실측 stderr) · 버전 출력.
+#[test]
+fn codex_session_and_version() {
+    let err = b"Reading additional input from stdin...\nError: thread/resume: thread/resume failed: no rollout found for thread id 1111 (code -32600)\n";
+    assert!(codex_session_gone(err).unwrap().contains("no rollout found"));
+    assert_eq!(codex_session_gone(b"Error: rate limited"), None);
+    assert_eq!(parse_codex_version("codex-cli 0.163.0\n"), Some((0, 163, 0)));
+    assert_eq!(parse_codex_version("2.1.309 (Claude Code)"), None);
+    assert!(parse_codex_version("codex-cli 0.163.0").unwrap() >= MIN_CODEX);
+}
+
+/// R1: 비정상 종료(종료 코드 ≠ 0)면 완료 이벤트 · 답이 있어도 실패, 중간 답만 남고 끊겨도 실패 — 가짜 codex(버전 · JSON 줄 · 종료 코드).
+#[test]
+fn codex_abnormal_exit_is_error() {
+    use an_agent::runner::{RunInput, StepSink, run_codex};
+    let dir = std::env::temp_dir().join(format!("an-fake-codex-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let fake = |name: &str, body: &str, code: i32| {
+        if cfg!(windows) {
+            let p = dir.join(format!("{name}.cmd"));
+            let lines: String = body.lines().map(|l| format!("echo {l}\r\n")).collect();
+            std::fs::write(&p, format!("@echo off\r\nif \"%1\"==\"--version\" (echo codex-cli 0.163.0& exit /b 0)\r\n{lines}exit /b {code}\r\n")).unwrap();
+            p
+        } else {
+            let p = dir.join(name);
+            let lines: String = body.lines().map(|l| format!("echo '{l}'\n")).collect();
+            std::fs::write(&p, format!("#!/bin/sh\n[ \"$1\" = --version ] && echo codex-cli 0.163.0 && exit 0\ncat >/dev/null\n{lines}exit {code}\n")).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            p
+        }
+    };
+    let input = RunInput {
+        agent: Agent { engine: "codex".into(), folder: dir.display().to_string(), ..agent("") },
+        session: Session::New("x".into()),
+        text: "q".into(),
+        model: String::new(),
+        effort: String::new(),
+        steps: StepSink::default(),
+    };
+    let done = r#"{"type":"thread.started","thread_id":"t1"}
+{"type":"item.completed","item":{"type":"agent_message","text":"ok"}}
+{"type":"turn.completed","usage":{}}"#;
+    let out = run_codex(&fake("good", done, 0), &input).unwrap();
+    assert!(!out.is_error && out.text == "ok" && out.session == "t1", "{out:?}");
+    let out = run_codex(&fake("crash", done, 3), &input).unwrap();
+    assert!(out.is_error && out.text.contains("비정상 종료"), "종료 코드 3 = 실패: {out:?}");
+    let cut = r#"{"type":"thread.started","thread_id":"t2"}
+{"type":"item.completed","item":{"type":"agent_message","text":"half"}}"#;
+    let out = run_codex(&fake("cut", cut, 0), &input).unwrap();
+    assert!(out.is_error, "완료 이벤트 없음 = 실패: {out:?}");
+    std::fs::remove_dir_all(&dir).unwrap();
 }

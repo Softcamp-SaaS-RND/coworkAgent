@@ -128,7 +128,7 @@ async fn models_tools_no_tools_field() {
         .call(
             "POST",
             "/api/agents",
-            json!({ "name": "review", "folder": folder }),
+            json!({ "name": "review", "folder": folder, "engine": "claude" }),
         )
         .await;
     assert_eq!(code, 201, "{made}");
@@ -137,7 +137,7 @@ async fn models_tools_no_tools_field() {
         .call(
             "POST",
             "/api/agents",
-            json!({ "name": "w", "folder": folder, "tools": "Read" }),
+            json!({ "name": "w", "folder": folder, "engine": "claude", "tools": "Read" }),
         )
         .await;
     assert_eq!(code, 422, "등록에 도구(모르는 필드) → {r}");

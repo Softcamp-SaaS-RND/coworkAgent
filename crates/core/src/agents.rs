@@ -5,11 +5,21 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 /// `tests/tools_canary.rs` 가 실제 도구 목록과 대조한다)(D31 · #1d: 원격 요청은 문의 응답, 수신 PC 작업에 개입 · 편집 · 삭제 금지).
 pub const READ_ONLY_TOOLS: [&str; 3] = ["Read", "Grep", "Glob"];
 
+/// Claude 실행에 미리 허용하는 읽기 도구(#1z-9 결정 9) — 탐색 · 웹 읽기. 그 밖은 그 PC 사용자 settings 의 허용 규칙(로컬과 같음).
+pub const WEB_TOOLS: [&str; 2] = ["WebFetch", "WebSearch"];
+
+/// Claude 실행에서 늘 막는 편집 도구(#1z-9 결정 9 — "편집, 삭제만 제외") — 사용자 settings 가 허용해도 거부.
+pub const EDIT_TOOLS: [&str; 3] = ["Edit", "Write", "NotebookEdit"];
+
 /// 셸 명령 실행 허용(#05-3)을 켠 프로필의 실행에 더하는 도구 — Windows 는 Git Bash 가 없으면 PowerShell 도구를 쓰므로 둘 다, 그 밖은 `Bash` 만.
 #[cfg(windows)]
 pub const SHELL_TOOLS: &[&str] = &["Bash", "PowerShell"];
 #[cfg(not(windows))]
 pub const SHELL_TOOLS: &[&str] = &["Bash"];
+
+/// 실행 도구(#1z-9) — 등록 때 하나 고르고 바꾸지 않는다. 첫 값 = 스키마 27 이전에 등록된 행.
+pub const ENGINES: [&str; 2] = ["claude", "codex"];
+pub const CODEX: &str = "codex";
 
 /// 아이콘 색(#1z-7) — 웹UI 타일 색 토큰 열쇠(클래스 이름 그대로), 첫 값이 기본. 이 PC 화면에만 쓴다(상대 PC 에 보내지 않는다).
 pub const ICON_COLORS: [&str; 6] = ["agent-tile", "peer-1", "peer-2", "peer-3", "peer-4", "peer-5"];
@@ -30,11 +40,15 @@ pub struct Agent {
     pub shell: bool,
     /// 아이콘 색(#1z-7) — [`ICON_COLORS`] 중 하나. 실행에 닿지 않는다.
     pub color: String,
+    /// 실행 도구(#1z-9) — [`ENGINES`] 중 하나, 등록 뒤 바꾸지 않는다.
+    pub engine: String,
+    /// Codex 실행에 `--skip-git-repo-check`(#1z-9 — 기본 켬). Claude 에이전트는 쓰지 않는다. 실행에만 닿아 세대 · 세션은 그대로.
+    pub skip_git: bool,
     /// 세대 — 등록 · 폴더 · 상위 읽기 · 셸 변경 때마다 새 값(다시 쓰지 않는다). 끝난 실행은 지금 세대가 실행 때와 같을 때만 세션을 남긴다.
     pub uid: String,
 }
 
-const COLS: &str = "id, name, folder, prompt, grp, coalesce(uid, ''), parent_read, shell, color";
+const COLS: &str = "id, name, folder, prompt, grp, coalesce(uid, ''), parent_read, shell, color, engine, skip_git";
 
 fn row(r: &Row) -> rusqlite::Result<Agent> {
     Ok(Agent {
@@ -47,15 +61,18 @@ fn row(r: &Row) -> rusqlite::Result<Agent> {
         parent_read: r.get(6)?,
         shell: r.get(7)?,
         color: r.get(8)?,
+        engine: r.get(9)?,
+        skip_git: r.get(10)?,
     })
 }
 
-/// 이름이 겹치면 오류. `agents.tools` 열은 읽지 않는다(#1d — 도구는 [`READ_ONLY_TOOLS`] 고정). 상위 읽기 · 셸 끔 — [`add_with`].
+/// 이름이 겹치면 오류. `agents.tools` 열은 읽지 않는다(#1d — 도구는 실행기가 정한다). Claude Code · 상위 읽기 · 셸 끔 — [`add_with`].
 pub fn add(conn: &Connection, name: &str, folder: &str, prompt: &str) -> rusqlite::Result<Agent> {
-    add_with(conn, name, folder, prompt, false, false)
+    add_with(conn, name, folder, prompt, false, false, ENGINES[0], true)
 }
 
-/// [`add`] + 상위 한 단계 읽기 허용(`parent_read`) · 셸 명령 실행 허용(`shell`).
+/// [`add`] + 상위 한 단계 읽기 허용(`parent_read`) · 셸 명령 실행 허용(`shell`) · 실행 도구(`engine` — 값 검사는 부르는 쪽) · Codex Git 확인 건너뜀(`skip_git`).
+#[allow(clippy::too_many_arguments)]
 pub fn add_with(
     conn: &Connection,
     name: &str,
@@ -63,11 +80,13 @@ pub fn add_with(
     prompt: &str,
     parent_read: bool,
     shell: bool,
+    engine: &str,
+    skip_git: bool,
 ) -> rusqlite::Result<Agent> {
     conn.execute(
-        "INSERT INTO agents (name, folder, tools, prompt, created_at, uid, parent_read, shell)
-         VALUES (?1, ?2, ?3, ?4, unixepoch(), lower(hex(randomblob(16))), ?5, ?6)",
-        params![name, folder, READ_ONLY_TOOLS.join(","), prompt, parent_read, shell],
+        "INSERT INTO agents (name, folder, tools, prompt, created_at, uid, parent_read, shell, engine, skip_git)
+         VALUES (?1, ?2, ?3, ?4, unixepoch(), lower(hex(randomblob(16))), ?5, ?6, ?7, ?8)",
+        params![name, folder, READ_ONLY_TOOLS.join(","), prompt, parent_read, shell, engine, skip_git],
     )?;
     by_name(conn, name).map(|a| a.expect("방금 쓴 프로필"))
 }
@@ -132,6 +151,12 @@ pub fn forget_sessions(conn: &Connection, name: &str) -> rusqlite::Result<()> {
            (SELECT id FROM conversations WHERE (dir = 'in' AND agent = ?1) OR (dir = 'out' AND relay_agent = ?1)))",
         [name],
     )?;
+    Ok(())
+}
+
+/// Codex Git 확인 건너뜀만 바꾼다(#1z-9) — 실행 인자만 바뀌어 세대 · 세션은 그대로.
+pub fn set_skip_git(conn: &Connection, id: i64, on: bool) -> rusqlite::Result<()> {
+    conn.execute("UPDATE agents SET skip_git = ?2 WHERE id = ?1", params![id, on])?;
     Ok(())
 }
 

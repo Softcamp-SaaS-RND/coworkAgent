@@ -113,8 +113,12 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
     저장 · 승인 / 다시 알리기 / 연결 확인 · 내 에이전트 편집 · 삭제 · 닫기).
   - 그룹설정: 머리 `#peer_group_add`(만든 그룹을 고름). 목록 = 그룹(`renderGroupPage` — 검색 `#group_q`), 상세 = `groupDetail` — "이 그룹의 대화"(빼기) · "넣을 수 있는 대화"
     (사용자별 · 넣기 = 복사 — 다른 그룹 · 원래 자리 그대로) · 이름 바꾸기 · 삭제 · 닫기. 설정 화면의 대화 끌기는 없다(레일 · 사이드바 끌기 그대로).
-  - 에이전트: 머리 `#agent_new_btn`(상세에 `#agent_new` 등록 폼 — 등록하면 그 에이전트를 고르고 그 줄에 초점). 목록 = 내 에이전트(로봇 타일 · 이름 · 폴더 · "상위 탐색" · "셸" 칩, 검색 칸
-    없음 — #1l), 상세 = `agentDetail` 한 격자(#1z-7 — 이름(읽기 전용) · 아이콘 색 `swatches` · 폴더 · 상위 한단계 탐색 · 셸(스위치 + `check-line` 설명) · 도구 · 추가 지시) · 저장 · 삭제 ·
+  - 에이전트: 머리 `#agent_new_btn`(상세에 `#agent_new` 등록 폼 — #1z-9 시안 B 2단계: 1단계 `#agent_engine_step` 도구 타일 `#agent_engine_claude` · `#agent_engine_codex`(초점 첫 타일) →
+    고르면 2단계 `#agent_form`(도구 칩 `#agent_engine_chip` · "도구 다시 고르기" · 이름 · 폴더 · 좌우 블록 `#agent_claude_opts` / `#agent_codex_opts` — 안 고른 쪽 `fieldset disabled` · 점선 ·
+    `view.agentEngineBlocks` 문구 · Codex = 스위치 `agent_skip_git` 기본 켬 · 추가 지시), 등록 = `engine` 함께(도구 없으면 보내지 않음). 등록하면 그 에이전트를 고르고 그 줄에 초점).
+    목록 = 내 에이전트(로봇 타일 · 이름 · "{Claude Code|Codex} · 폴더" · "상위 탐색" · "셸" 칩, 검색 칸
+    없음 — #1l), 상세 = `agentDetail` 한 격자(#1z-7 — 이름(읽기 전용) · 실행 도구 칩(읽기 전용, #1z-9) · 아이콘 색 `swatches` · 폴더 · 좌우 블록(Claude Code — 상위 한단계 탐색 · 셸 · 도구 / Codex — Git 확인 건너뜀 · 읽기 범위,
+    안 쓰는 도구 블록 비활성) · 추가 지시) · 저장 · 삭제 ·
     닫기. 저장 전 값 = `agentDrafts`(id → 주인 `uid` · 폴더 · 추가 지시 · 스위치 · 색 — 다른 줄을 골랐다 와도 남고, 저장 성공 · 삭제면 지움. `gsDrafts` 와 함께 `view.draftOf` 가 주인(에이전트 등록 세대 `uid` — 같은 이름 다시 등록 · 폴더 · 상위 · 셸 저장이면 바뀜, R2 · 상대 지문)이 다르면 버리고 `pruneDrafts` 가 목록에 없는 id 를 버린다 — 지운 뒤 같은 id 를 다시 쓴 새 프로필에 옛 초안이 붙지 않게, #1z-8 R1). 사용자 상세 "내 에이전트 편집" · '등록된 에이전트' ✎(`editAgent`
     — 그 에이전트를 고르고 그 줄에 초점).
   - 실행 · 화면 · 시작 · 알림 = 2열 타일(`.set-tiles` / `.set-tile` — 라벨 · 한 줄 설명 왼쪽, 컨트롤 오른쪽, 960px 아래 1열). 입력 id = 설정 이름(`PREFS` 그대로). 알림 "자동 왕복" '?'

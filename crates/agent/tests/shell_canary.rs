@@ -21,6 +21,8 @@ fn ask(work: &Path, shell: bool) -> String {
             parent_read: false,
             shell,
             color: "agent-tile".into(),
+            engine: "claude".into(),
+            skip_git: true,
         },
         session: Session::New(an_agent::chat::new_uuid()),
         text: "셸 도구(Bash 또는 PowerShell)로 다음 두 명령을 실행하고 출력을 그대로 답해. 셸 도구가 없으면 NO_SHELL 이라고만 답해.\n\
@@ -55,11 +57,10 @@ fn shell_runs_with_clean_env() {
     std::fs::create_dir_all(&work).unwrap();
     std::fs::write(root.join("up.txt"), UP).unwrap();
 
+    // #1z-9 결정 9 — 파일 도구도 폴더 밖을 읽어(제한 모드 없음) "끄면 폴더 밖 못 읽음" 대조는 없앴다. 셸 끔 = 셸 도구 없음은 `tools_canary`.
     let on = ask(&work, true);
-    let off = ask(&work, false);
     assert!(on.contains(UP), "켜면 셸로 폴더 밖 파일을 읽는다: {on}");
     assert!(on.contains(KEEP), "넘기는 목록의 변수는 보인다(대조군): {on}");
     assert!(!on.contains(LEAK), "목록 밖 앱 환경 변수는 셸에 보이지 않는다: {on}");
-    assert!(!off.contains(UP), "끄면 셸이 없다(파일 도구는 폴더 밖 거부): {off}");
     std::fs::remove_dir_all(&root).unwrap();
 }

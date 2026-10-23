@@ -362,11 +362,14 @@ struct Failure {
 
 impl Failure {
     /// 실행기 오류 — 종류로 문구를 고른다.
-    fn run(e: &std::io::Error) -> Self {
-        let public = match e.kind() {
-            std::io::ErrorKind::TimedOut => "실행 실패: 받는 PC 의 시간 제한(30분)을 넘겼다",
-            std::io::ErrorKind::Unsupported => "실행 실패: 받는 PC 의 Claude Code 버전이 낮다",
-            std::io::ErrorKind::NotFound => "실행 실패: 받는 PC 에서 Claude Code 를 찾지 못했다",
+    /// `codex` = Codex 에이전트의 실행(#1z-9) — 버전 · 찾지 못함 문구의 도구 이름.
+    fn run(e: &std::io::Error, codex: bool) -> Self {
+        let public = match (e.kind(), codex) {
+            (std::io::ErrorKind::TimedOut, _) => "실행 실패: 받는 PC 의 시간 제한(30분)을 넘겼다",
+            (std::io::ErrorKind::Unsupported, false) => "실행 실패: 받는 PC 의 Claude Code 버전이 낮다",
+            (std::io::ErrorKind::Unsupported, true) => "실행 실패: 받는 PC 의 Codex CLI 버전이 낮다",
+            (std::io::ErrorKind::NotFound, false) => "실행 실패: 받는 PC 에서 Claude Code 를 찾지 못했다",
+            (std::io::ErrorKind::NotFound, true) => "실행 실패: 받는 PC 에서 Codex CLI 를 찾지 못했다",
             _ => RUN_FAILED,
         };
         Failure {
@@ -3127,8 +3130,8 @@ impl Chat {
             run.as_ref().and_then(|r| r.out.duration_ms),
         );
         let (model, effort) = (
-            run.as_ref().map(|r| r.model.clone()),
-            run.as_ref().map(|r| r.effort.clone()),
+            run.as_ref().map(|r| r.model.clone()).filter(|m| !m.is_empty()),
+            run.as_ref().map(|r| r.effort.clone()).filter(|e| !e.is_empty()),
         );
         let ctx = run.as_ref().and_then(|r| r.out.ctx_tokens);
         // 상대의 실행 요청이면 답(`reply`), 이 PC 사람의 실행 요청이면 상대 이력에 미러(`post`).
@@ -3461,8 +3464,11 @@ impl Chat {
             .map(Session::Resume)
             .unwrap_or_else(|| Session::New(new_uuid()));
         let resumed = matches!(session, Session::Resume(_));
-        // 그 상대의 덮어쓰기 → 전역 설정 → 기본값.
-        let (model, effort) = {
+        // 그 상대의 덮어쓰기 → 전역 설정 → 기본값. Codex 에이전트는 모델 · effort 인자 없이 그 PC Codex 기본값(#1z-9 결정 3) — 답 기록 · 상대 meta 에 싣지 않는다.
+        let codex = agent.engine == an_core::agents::CODEX;
+        let (model, effort) = if codex {
+            (String::new(), String::new())
+        } else {
             let db = self.db();
             let peer = an_core::peers::by_id(&db, conv.peer_id).map_err(Failure::record)?;
             an_core::run_opts::resolve(&db, peer.as_ref()).map_err(Failure::record)?
@@ -3542,7 +3548,7 @@ impl Chat {
                 model,
                 effort,
             }),
-            Ok(Err(e)) => Err(Failure::run(&e)),
+            Ok(Err(e)) => Err(Failure::run(&e, codex)),
             Err(e) => Err(Failure {
                 detail: format!("실행 작업 실패: {e}"),
                 public: RUN_FAILED,
@@ -3979,8 +3985,8 @@ impl Chat {
             asked.id,
             run.and_then(|r| r.out.turns),
             run.and_then(|r| r.out.duration_ms),
-            run.map(|r| r.model.as_str()),
-            run.map(|r| r.effort.as_str()),
+            run.map(|r| r.model.as_str()).filter(|m| !m.is_empty()),
+            run.map(|r| r.effort.as_str()).filter(|e| !e.is_empty()),
         )?;
         if asked.agent.is_some() {
             chat::set_agent(&tx, reply.id, asked.agent.as_deref())?;

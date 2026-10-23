@@ -128,7 +128,7 @@ fn data_parent() -> String {
 #[tokio::test(flavor = "multi_thread")]
 async fn add_agent_rejects_folder_with_data_root() {
     let (port, h) = web("add").await;
-    let body = serde_json::json!({ "name": "home", "folder": data_parent() }).to_string();
+    let body = serde_json::json!({ "name": "home", "folder": data_parent(), "engine": "claude" }).to_string();
     let (code, raw) = common::send_body(port, "POST", "/api/agents", &h, &body).await;
     assert_eq!(code, 400, "{raw}");
     assert!(raw.contains("데이터 폴더"), "{raw}");
@@ -138,7 +138,7 @@ async fn add_agent_rejects_folder_with_data_root() {
 async fn update_agent_rejects_folder_with_data_root() {
     let (port, h) = web("upd").await;
     let ok = temp("upd-ok").display().to_string();
-    let body = serde_json::json!({ "name": "docs", "folder": ok }).to_string();
+    let body = serde_json::json!({ "name": "docs", "folder": ok, "engine": "claude" }).to_string();
     let (code, raw) = common::send_body(port, "POST", "/api/agents", &h, &body).await;
     assert_eq!(code, 201, "{raw}");
     let made: serde_json::Value =

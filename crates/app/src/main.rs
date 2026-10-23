@@ -2,7 +2,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use an_agent::chat::Chat;
-use an_agent::runner::{find_claude, run_claude};
+use an_agent::runner::run_agent;
 use an_app::notify::{self, Notifier};
 use an_app::server::{self, Quit, Status};
 use an_app::tray::{Attention, Tray, read_start_error, write_start_error};
@@ -322,7 +322,7 @@ fn start(
     let chat = Chat::new(
         db::open(&paths.db_file())?,
         node.clone(),
-        Arc::new(|input| run_claude(&find_claude(), &input)),
+        Arc::new(|input| run_agent(&input)),
     );
     chat.attach();
     {

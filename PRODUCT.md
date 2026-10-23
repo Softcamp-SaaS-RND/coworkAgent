@@ -12,7 +12,7 @@
   - 피어 간 — 같은 LAN 자동 발견(mDNS) + 수동 주소, 설치별 ed25519 신원 · 페어링 · 공개키 고정 TLS(D7 · D8).
   - 로컬 UI — 127.0.0.1 전용 웹서버 + 기본 브라우저(D9).
   - Claude — 메시지를 받은 PC 에서 `claude -p` 를 자식 프로세스로 실행하고 결과를 답으로 보낸다(D16 · D17).
-    외부 전제: 각 PC 에 Claude Code 설치·로그인.
+    외부 전제: 각 PC 에 Claude Code 설치·로그인. (#1z-9) 에이전트마다 실행 도구 Claude Code / Codex 택1(등록 뒤 고정) — Codex 에이전트는 `codex exec`.
   - 다른 툴 → 실행 파라미터(D14).
 - 전체 의도·범위·제외는 [masterPlan.md](docs/masterPlan.md) `## 의도`, 기능 명세는 `## 기능 명세`(복제 금지).
 
@@ -89,7 +89,10 @@
   에이전트별 **셸 명령 실행 허용**(#05-3, 기본 끔) — 켜면 도구에 `Bash` · `PowerShell`(macOS 는 `Bash`)을 더하고 셸용 가드(이 PC 에 설정된 workflow 수행 · 조회용 — workflow 산출물은 예외, 소스 · 문서 · 설정 직접 삭제 · 편집 · 저장소 변경 금지),
   `claude -p` 에 앱 환경 변수를 넘기지 않는다(기본 변수 목록만). 셸에는 폴더 · 상위 읽기 · 데이터 루트 제한이 적용되지 않는다 — 켤 때 위험 확인 창, 압축 요약은 셸 없이.
 - **문의 응답 전용**(D31): 원격 실행은 수신 PC 프로젝트 · 제품에 대한 문의에 답만 한다 — 가드 시스템 프롬프트 항상(재개 포함),
-  도구는 읽기 전용 목록(`Read` · `Grep` · `Glob`)만, Claude Code 2.1.267 미만이면 실행하지 않는다.
+  Claude Code 2.1.267 미만이면 실행하지 않는다. (#1z-9 결정 9 — D22 개정) 로컬 사용과 맞춤: `--restricted` · `--strict-mcp-config` · `--tools` 없음(사용자 · 프로젝트 settings 그대로),
+  미리 허용 `Read` · `Grep` · `Glob` · `WebFetch` · `WebSearch`, 편집 도구(`Edit` · `Write` · `NotebookEdit`) 늘 막음 — 폴더 밖 읽기는 가드 문구로만.
+- **Codex 에이전트**(#1z-9): `codex exec -C <폴더> -s read-only --json`(+ "Git 저장소 아닌 폴더 허용" 기본 켬 = `--skip-git-repo-check`) · 개발자 지시 = Codex 가드 + 읽기 범위 + 추가 지시 ·
+  사용자 Codex 설정 그대로 · 모델 인자 없음 · 세션 = `thread_id`(`exec resume`) · Codex CLI 0.163.0 이상 — [developer-guide](docs/manual/dev/developer-guide.md).
 - **Claude 자격 증명**: coworkAgent 는 Claude 자격 증명·세션 토큰을 수집·저장·중개하지 않는다 — `claude` 가 그 PC 에
   설정된 인증을 스스로 쓴다(Anthropic 정책 원문 귀결). 계정은 각 PC 의 Max 구독 로그인(D20) — 구독 OAuth 를 읽지 않는
   `--bare` 는 쓰지 않는다.

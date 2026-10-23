@@ -350,20 +350,36 @@ PC 사이는 앱끼리 직접 통신한다.
 `runner::claude_args`).
 
 ```text
-claude -p --output-format stream-json --verbose --restricted --strict-mcp-config --permission-prompts none
-  --permission-mode dontAsk --tools <도구> --allowedTools <도구> [--add-dir <바로 위 폴더>]
-  --append-system-prompt <가드 + [읽기 범위] + [수신자 추가 지시]> --system-prompt-snapshot off
+claude -p --output-format stream-json --verbose --permission-prompts none --permission-mode dontAsk
+  --allowedTools Read,Grep,Glob,WebFetch,WebSearch[,Bash,PowerShell] --disallowedTools Edit,Write,NotebookEdit[,Bash,PowerShell]
+  [--add-dir <바로 위 폴더>] --append-system-prompt <가드 + [읽기 범위] + [수신자 추가 지시]> --system-prompt-snapshot off
   (--session-id <새 UUID> | --resume <세션 ID>) --model <모델> --effort <effort>
 ```
 
-- 도구는 읽기 전용 `Read` · `Grep` · `Glob` 고정(D22 · D31 — 프로필과 무관). claude 에 없는 이름은 오류 없이 무시되므로 실제 도구 목록(`stream-json` 첫 줄 `system` init 의 `tools`)과
-  대조한다 — `cargo test -p an-agent --test tools_canary -- --ignored --nocapture`(#05-3, 셸 끔 · 켬 둘 다).
+- (#1z-9 결정 9 — D22 개정) **로컬 사용과 맞춤 · 편집 도구만 막음**: `--restricted`(설정 무시 · 파일 도구 폴더 가둠) · `--strict-mcp-config` · `--tools` 를 쓰지 않는다 — 그 PC 사용자 ·
+  프로젝트 settings(MCP · 스킬 · 훅 · 허용 규칙)가 그대로 걸린다. `dontAsk` 라 허용 규칙 + 미리 허용(`--allowedTools` 읽기 도구)만 돌고, 편집 도구(`Edit` · `Write` · `NotebookEdit`)는
+  사용자가 허용했어도 `--disallowedTools` 로 막는다(2.1.309 실측 — "Write is disabled for this session, in subagents as well"). MCP 는 미리 허용하지 않는다(쓰기 · 지우기 도구가 섞임 —
+  사용자 허용 규칙만). **파일 도구도 폴더 밖을 읽는다**(실측) — 폴더 · `[읽기 범위]` 는 가드 문구로만 지킨다. 실제 도구 목록(`stream-json` 첫 줄 `system` init 의 `tools`)에 읽기 도구가
+  있고 편집 도구(+ 셸 끔이면 셸)가 없는지 — `cargo test -p an-agent --test tools_canary -- --ignored --nocapture`.
 - `--add-dir` · `[읽기 범위]` 는 에이전트의 "상위 한단계 탐색 허용"(#05-2)을 켰을 때만 — 바로 위 폴더가 드라이브 루트 · 사용자 홈이거나 데이터 루트를 품으면 붙이지 않는다
-  (`an_core::paths::parent_read_dir`, 실행마다 다시 판단). 실측 시험 `cargo test -p an-agent --test parent_read_canary -- --ignored --nocapture`.
-- 에이전트의 "셸 명령 실행 허용"(#05-3)을 켜면 `<도구>` 에 `Bash` · `PowerShell`(macOS 는 `Bash`)이 붙고 가드는 `SHELL_GUARD_PROMPT`, 실행 환경은 기본 변수 목록만
-  (`runner::shell_env` — 앱을 띄운 셸의 키 · 토큰 변수가 넘어가지 않는다). 셸은 작업 폴더 · `--add-dir` 밖도 읽고 쓴다(`--restricted` 는 파일 도구만 가둔다).
+  (`an_core::paths::parent_read_dir`, 실행마다 다시 판단).
+- 에이전트의 "셸 명령 실행 허용"(#05-3)을 켜면 `Bash` · `PowerShell`(macOS 는 `Bash`)을 미리 허용하고(끄면 막음) 가드는 `SHELL_GUARD_PROMPT`, 실행 환경은 기본 변수 목록만
+  (`runner::shell_env` — 앱을 띄운 셸의 키 · 토큰 변수가 넘어가지 않는다). 셸은 작업 폴더 · `--add-dir` 밖도 읽고 쓴다.
   실측 시험 `cargo test -p an-agent --test shell_canary -- --ignored --nocapture`.
-- 모델 · effort 는 실행 직전에 정한다 — 그 상대 덮어쓰기 → 전역 설정 → `sonnet` · `high`. 설정을 못 읽으면 기본값으로 돌리지 않고 실패 답.
+- **Codex 에이전트**(#1z-9 — 등록 때 실행 도구 Codex 를 고른 에이전트, 바꾸지 않음): `runner::run_agent` 가 `run_codex` 로 보낸다. 인자(정본 `runner::codex_args`):
+
+  ```text
+  codex exec -C <폴더> -s read-only --json [--skip-git-repo-check] -c developer_instructions=<TOML 문자열> -
+  codex exec resume -c sandbox_mode="read-only" --json [--skip-git-repo-check] -c developer_instructions=… <thread_id> -
+  ```
+
+  개발자 지시 = `CODEX_GUARD_PROMPT`(읽기 · 조회 셸 명령 · workflow 괜찮음, 삭제 · 편집 · 이동 · 설정 변경 · 외부 전송 금지) + `[읽기 범위] 이 폴더 … 아래만` + 추가 지시. 그 PC 사용자의
+  Codex 설정 · 스킬 · MCP 는 그대로(`--ignore-user-config` 없음 — 결정 8), 모델 · effort 인자 없음(Codex 기본값 — 답 meta 에 모델 없음). 쓰기는 읽기 전용 샌드박스가 막고(실측),
+  **`-C` 밖 읽기는 막지 못한다**(실측 — 가드 문구만). `--skip-git-repo-check` = 에이전트 옵션 "Git 저장소 아닌 폴더 허용"(기본 켬). 세션 = 첫 줄 `thread.started.thread_id`(우리가 정하지 못함),
+  답 = 마지막 `agent_message`, 실패 = `turn.failed` · `error`, 단계 요약 = 끝난 `command_execution`(`Shell`) · `mcp_tool_call`(`MCP`) · `web_search`, 창 사용량 없음(턴 합이라 뜻이 다름).
+  없는 thread = stderr `no rollout found for thread id` → 새 세션으로 한 번 다시. 실행 파일 = npm 전역의 실제 `codex.exe`(`codex.cmd` 는 배치 파일이라 띄우지 않음) → PATH `codex.exe`,
+  `codex --version` ≥ 0.163.0. 환경 변수는 그대로(Codex 셸 정책이 KEY · TOKEN 변수를 거른다). 실측 `cargo test -p an-agent --test codex_live -- --ignored --nocapture`.
+- 모델 · effort 는 실행 직전에 정한다 — 그 상대 덮어쓰기 → 전역 설정 → `sonnet` · `high`. 설정을 못 읽으면 기본값으로 돌리지 않고 실패 답. Codex 에이전트는 쓰지 않는다(#1z-9).
 - `--bare` 는 쓰지 않는다 — 구독 로그인을 읽지 않기 때문(D20).
 - **출력 = stream-json**(`-p` 에서는 `--verbose` 가 있어야 한다 — 2.1.296 확인). 실행기는 표준 출력을 줄마다 읽어 실시간 이벤트로 **단계
   요약**(`StepDetail{turns, tools, secs}`)을 센다 — `assistant` 이벤트의 `tool_use` 이름별 횟수(`mcp__` 로 시작하면 `MCP` 로 묶음) · 턴(1 에서
@@ -918,7 +934,7 @@ sequenceDiagram
 | PC ↔ PC | 미페어링 · 사칭 · 도청 · 초대 코드 추측 | TLS 1.3 상호 인증(ed25519 공개키 고정), 페어링된 키만 대화 요청(id 는 UUID 꼴만 — 아니면 `invalid`), 수신 3초 · 동시 32 · IP 당 4 · 미승인 32 · 한 창에서 IP 당 틀린 초대 코드 10회(넘으면 그 창 동안 거절) · 원격 이름의 제어 · 서식 문자(Cf) 제거. 상대 주소가 사내망인지는 검사하지 않는다(`0.0.0.0` 수신 · 아무 주소로 발신) — 사내망 전제 |
 | 공유 대화(#1o) | 사본 위조 · 남의 대화 끼어들기 · 다시 퍼뜨리기 · 관람자 노출 | 페어링된 상대만 관람자 · 받는 쪽은 그 상대가 만든 `shared` 사본에만 적용(같은 uuid 가 다른 소유면 `exists`) · 사본은 다시 공유 · 쓰기 불가 · 원 상대에게는 관람자 **수**만 · 관람자 5명 상한. 관람자에게 간 글은 빼도 회수되지 않는다(원 상대 승인 없음 — 알림만) |
 | 원격 글 → 화면 | 스크립트 주입 | `textContent` 로만 그림 · markdown sanitize · HTML 은 sandbox iframe |
-| 원격 글 → `claude` | 수신 PC 작업 개입 · 비밀 읽기 · 틀 위장 | 표준 입력만 · 늘 구분자 틀(6.5) · 가드 프롬프트(D31) · 읽기 전용 도구 · `--restricted`(작업 폴더 밖 Read · Grep · Glob · junction 거부, 프로젝트 · 사용자 설정의 훅 · 스킬 미적용 — 2.1.296 실측) · 데이터 폴더를 품는 에이전트 폴더 거부(등록 · 수정 · 실행 직전) · 30분 상한 |
+| 원격 글 → `claude` | 수신 PC 작업 개입 · 비밀 읽기 · 틀 위장 | 표준 입력만 · 늘 구분자 틀(6.5) · 가드 프롬프트(D31) · 편집 도구 늘 막음(#1z-9 결정 9 — `--restricted` 없음: 사용자 settings 그대로 · 폴더 밖 읽기는 가드 문구만) · Codex 는 `-s read-only` · 데이터 폴더를 품는 에이전트 폴더 거부(등록 · 수정 · 실행 직전) · 30분 상한 |
 | 실패 → 상대 | 경로 · 계정 · 버전 노출 | 상대에게는 정해진 실패 문구만(6.6), 원인은 내 쪽 글 · 로그 |
 | 처리경과 → 상대 | 도구 입력 · 파일 경로 · 모델 글 노출 | 단계 요약은 턴 · 도구 이름별 횟수 · 초만(`count_step` 은 입력 · 내용을 읽지 않음), 받은 쪽은 이름을 `clean_name` · 24자 · 16개로(8.2) |
 | 자동 업데이트(#1y · #30) | 바꿔치기한 실행 파일 · 낮은 버전으로 되돌리기 | 정식 릴리스(`releases/latest`) · 엄격히 큰 버전만 · 이 PC 의 실행 파일 꼴(PE · 같은 아키텍처)만 · 회사 인증서 Authenticode 서명(유효 · 서명자 CN `SOFTCAMP CO.,LTD.`) · 버전 리소스(제품 `coworkAgent` · 파일 버전 = 태그)만 · 뜨지 못하면 지난 버전으로 되돌림 · HTTPS(OS 인증서 저장소) |
@@ -935,8 +951,8 @@ sequenceDiagram
 **보안 회귀 검사(개발 PC)**
 
 ```powershell
-# --restricted 가 여전히 작업 폴더 밖 읽기 · 프로젝트 훅을 막는지(실제 claude · 사용량 조금) — Claude Code 를 올린 뒤
-cargo test -p an-agent --test restricted_canary -- --ignored --nocapture   # canary leak=0 denied=1 hook=0 control_hook=1
+# 편집 도구가 막히고 읽기 도구가 실재하는지(실제 claude · 사용량 조금, #1z-9 결정 9) — Claude Code 를 올린 뒤
+cargo test -p an-agent --test tools_canary -- --ignored --nocapture
 # 릴리스 exe 가 VCRUNTIME 을 가져오지 않는지 · DependentLoadFlags
 python tools/pe_imports.py target/release/coworkAgent.exe                   # vcruntime=0 dependent_load_flag=0x800
 ```

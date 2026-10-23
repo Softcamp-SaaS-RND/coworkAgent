@@ -39,7 +39,7 @@ fn db_schema_version_kept_on_reopen() {
     let root = temp_root("dbver");
     let paths = Paths::under(&root);
     paths.ensure().unwrap();
-    assert_eq!(db::SCHEMA_VERSION, 26);
+    assert_eq!(db::SCHEMA_VERSION, 27);
     {
         // 00 이 남긴 스키마 1 파일 — 열면 2 로 오른다.
         let conn = rusqlite::Connection::open(paths.db_file()).unwrap();
@@ -540,10 +540,10 @@ fn schema12_focus_mention() {
     assert!(up.parent_read && up.uid != same.uid, "{up:?}");
     assert_eq!(chat::agent_session(&conn, 1, "review").unwrap(), None);
     assert!(!agents::add(&conn, "plain", "/d", "").unwrap().parent_read, "기본 끔");
-    assert!(agents::add_with(&conn, "wide", "/e", "", true, false).unwrap().parent_read);
+    assert!(agents::add_with(&conn, "wide", "/e", "", true, false, "claude", true).unwrap().parent_read);
     // 셸 허용(#05-3)도 기본 끔, 바꾸면 새 세대 · 세션 비움 — 끈 뒤 셸 출력이 든 세션을 잇지 않게.
     assert!(!agents::add(&conn, "plain2", "/f", "").unwrap().shell, "셸 기본 끔");
-    assert!(agents::add_with(&conn, "sh", "/g", "", false, true).unwrap().shell);
+    assert!(agents::add_with(&conn, "sh", "/g", "", false, true, "claude", true).unwrap().shell);
     chat::set_agent_session(&conn, 1, "review", "s5").unwrap();
     let sh = agents::update(&conn, review.id, "/c", "지시", None, true, true)
         .unwrap()
@@ -581,7 +581,7 @@ fn schema26_agent_color() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 26);
+    assert_eq!(db::user_version(&conn).unwrap(), db::SCHEMA_VERSION);
     let old = agents::by_id(&conn, 5).unwrap().unwrap();
     assert_eq!(old.color, agents::ICON_COLORS[0], "있던 에이전트는 기본 색");
     assert_eq!(agents::add(&conn, "new", "/n", "").unwrap().color, "agent-tile", "새 에이전트도 기본 색");
@@ -595,6 +595,41 @@ fn schema26_agent_color() {
     assert_eq!((now.color.as_str(), now.uid.as_str()), ("peer-3", old.uid.as_str()), "색만 바꾸면 세대 그대로");
     assert_eq!(chat::by_id(&conn, 1).unwrap().unwrap().session.as_deref(), Some("s1"), "세션 그대로");
     assert_eq!(agents::ICON_COLORS, ["agent-tile", "peer-1", "peer-2", "peer-3", "peer-4", "peer-5"]);
+}
+
+/// 27(#1z-9): 실행 도구 · Codex Git 확인 건너뜀 — 있던 에이전트는 Claude Code · 켬, 건너뜀만 바꾸면 세대 · 세션 그대로.
+#[test]
+fn schema27_agent_engine() {
+    use an_core::{agents, chat};
+    let root = temp_root("schema27");
+    let paths = Paths::under(&root);
+    paths.ensure().unwrap();
+    {
+        let conn = db::open(&paths.db_file()).unwrap();
+        conn.execute_batch(
+            "ALTER TABLE agents DROP COLUMN engine; ALTER TABLE agents DROP COLUMN skip_git; PRAGMA user_version = 26;
+             INSERT INTO agents (id, name, folder, tools, prompt, created_at) VALUES (5, 'old', '/o', 'Read', '', 0);",
+        )
+        .unwrap();
+    }
+    let conn = db::open(&paths.db_file()).unwrap();
+    assert_eq!(db::user_version(&conn).unwrap(), 27);
+    let old = agents::by_id(&conn, 5).unwrap().unwrap();
+    assert_eq!((old.engine.as_str(), old.skip_git), ("claude", true), "있던 에이전트는 Claude Code");
+    let cx = agents::add_with(&conn, "cx", "/c", "", false, false, agents::CODEX, false).unwrap();
+    assert_eq!((cx.engine.as_str(), cx.skip_git), ("codex", false));
+    conn.execute_batch(
+        "INSERT INTO peers (id, spki, name, host, addr, round, created_at) VALUES (1, x'01', 'p', 'h', '1.2.3.4:1', 'r', 0);
+         INSERT INTO conversations (id, uuid, peer_id, agent, dir, session, created_at) VALUES (1, 'c1', 1, 'cx', 'in', 't1', 0);",
+    )
+    .unwrap();
+    agents::set_skip_git(&conn, cx.id, true).unwrap();
+    let now = agents::by_id(&conn, cx.id).unwrap().unwrap();
+    assert_eq!((now.skip_git, now.uid.as_str(), now.engine.as_str()), (true, cx.uid.as_str(), "codex"), "건너뜀만 바꾸면 세대 · 도구 그대로");
+    assert_eq!(chat::by_id(&conn, 1).unwrap().unwrap().session.as_deref(), Some("t1"), "세션 그대로");
+    let moved = agents::update(&conn, cx.id, "/d", "", None, false, false).unwrap().unwrap();
+    assert_eq!(moved.engine, "codex", "고쳐도 실행 도구 그대로");
+    assert_eq!(agents::ENGINES, ["claude", "codex"]);
 }
 
 fn legacy_root(base: &std::path::Path) -> PathBuf {
