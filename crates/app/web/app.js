@@ -31,8 +31,12 @@ import {
   previewZoom,
   PREVIEW_MSGS,
   settingsTree,
-  settingsGroupSections,
-  convCopy,
+  diagText,
+  logLines,
+  fileSize,
+  draftOf,
+  pruneDrafts,
+  formatClock,
   convClosed,
   convMenuItems,
   LEAVE_CONFIRM,
@@ -266,7 +270,6 @@ const state = {
   railGroup: null, // 레일에서 고른 그룹(#1i — 고르면 railPeer = null)
   groups: [], // 레일 그룹(`GET /api/groups` — 이 PC 에만, 레일 순서)
   current: null, // 열린 대화(요약)
-  open: new Set(), // 펼쳐 둔 연결 · 에이전트(다시 그려도 유지)
   unseen: 0, // 안 본 내 활동 — 고른 타일 범위(사이드바 내비)
   unseenAll: 0, // 안 본 내 활동 — 전부(종 점)
   reqWaiting: 0, // 받은 요청 중 대기 — 고른 타일 범위(사이드바 '요청')
@@ -361,6 +364,7 @@ async function showStatus() {
   try {
     const s = await api("GET", "/api/status");
     for (const k of KEYS) $(k).textContent = s[k];
+    $("top_version").textContent = `v${s.version}`; // 상단 바 wordmark 뒤(#1z-8)
   } catch (e) {
     for (const k of KEYS) $(k).textContent = "오류: " + e.message;
   }
@@ -970,58 +974,89 @@ $("tile_form").addEventListener("submit", (ev) => {
     "tile_msg",
   );
 });
-/// 설정 화면의 한 절로(`#settings/{절}`) — 그린 뒤 `focus` 칸에 초점.
+/// 설정 화면의 한 화면으로(`#settings/{화면 · 별칭}` — #1z-8) — 그린 뒤 `focus` 칸에 초점.
 function goSettings(id, focus = null) {
   state.focusAfter = focus;
   go(`#settings/${id}`);
 }
 
-// 레일 + (#1k) — 새로 만들기 "초대 수락" 과 같게 초대 수락 칸을 펼쳐 바로 붙여 넣게(#1r — 칸은 라우터가 펼친다).
+// 레일 + (#1k) — 새로 만들기 "초대 수락" 과 같게 초대 수락 칸을 열어 바로 붙여 넣게(#1r — 칸은 라우터가 연다).
 $("rail_add").addEventListener("click", () => goSettings("invite_accept", "invite_text"));
+$("rail_settings").addEventListener("click", () => go("#settings"));
 
-/// 페어링 카드 "초대 수락"(#1k) — 붙여 넣기 칸을 펼치고 접는다.
+// ---- 설정 목록 · 상세(#1z-8 시안 B) ----
+
+/// 설정 목록에서 고른 항목 — `conn` 사용자 id · `"invite"`(초대 생성) · `"accept"`(초대 수락), `groups` 그룹 id, `agents` 에이전트 id · `"new"`(등록).
+/// null = 안 고름(상세 = 안내). 다시 그려도(5초 새로 고침) 그대로.
+const pick = { conn: null, groups: null, agents: null };
+
+/// 고름을 바꾸고 그 화면을 다시 그린다.
+function setPick(page, id) {
+  pick[page] = id;
+  if (page === "agents") renderAgentList(true);
+  else renderPeerList(true);
+}
+
+function mdRowId(page, id) {
+  return `md_${page}_${id}`;
+}
+
+/// 상세 닫기(✕ · 닫기 — #1z-8) = 고름 풀기, 초점은 그 상세를 연 곳(목록 줄 · 머리 단추)으로 — 숨은 칸에 초점이 남지 않게.
+function closePick(page) {
+  const was = pick[page];
+  setPick(page, null);
+  const opener = { invite: "window_btn", accept: "accept_btn", new: "agent_new_btn" }[was];
+  $(opener ?? mdRowId(page, was))?.focus();
+}
+
+/// 목록 줄(#1z-8) — 누르면 그 항목을 고른다(상세가 오른쪽에). `face` = 타일, `end` = 줄 끝(상태 · 표시).
+function mdRow(page, id, face, name, sub, ...end) {
+  return el(
+    "li",
+    {},
+    el(
+      "button",
+      { type: "button", id: mdRowId(page, id), class: "md-row", "aria-pressed": String(pick[page] === id), onclick: () => setPick(page, id) },
+      face,
+      el("span", { class: "md-row-text" }, el("strong", { text: name }), sub ? el("span", { class: "hint", text: sub }) : ""),
+      ...end,
+    ),
+  );
+}
+
+/// 상세 머리 — 타일 · 이름 · 부제 · ✕(상세 닫기).
+function mdHead(page, face, name, sub = "") {
+  return el(
+    "div",
+    { class: "md-head" },
+    face,
+    el("span", { class: "md-title" }, el("strong", { text: name }), sub),
+    el("button", { type: "button", class: "icon-btn md-x", title: "닫기", "aria-label": "상세 닫기", onclick: () => closePick(page) }, ico("x")),
+  );
+}
+
+/// 상세 아래 단추 줄 — 작업들 · 끝에 닫기.
+function mdFoot(page, ...actions) {
+  return el("div", { class: "md-foot" }, ...actions, el("span", { class: "grow" }), button("닫기", () => closePick(page)));
+}
+
+// 정적 상세(초대 생성 · 초대 수락 · 새 에이전트)의 ✕ · 닫기.
+for (const b of document.querySelectorAll("#settings [data-close]")) b.addEventListener("click", () => closePick(b.dataset.close));
+
+/// 연결 "초대 수락"(#1k · #1z-8) — 상세 칸에 붙여 넣기 폼을 연다 · 닫는다.
 function showAccept(on) {
-  $("invite_accept").hidden = !on;
-  $("accept_btn").setAttribute("aria-expanded", String(on));
+  if (on) setPick("conn", "accept");
+  else if (pick.conn === "accept") setPick("conn", null);
 }
 $("accept_btn").addEventListener("click", () => {
-  const on = $("invite_accept").hidden;
+  const on = pick.conn !== "accept";
   showAccept(on);
   if (on) $("invite_text").focus({ preventScroll: true });
 });
-$("rail_settings").addEventListener("click", () => go("#settings"));
-
-/// 관리 줄(#1k — 디자인 캔버스 ④) — 머리(타일 · 이름 · 부제 · 단추) + 연필 단추("{이름} 관리", #1r)로 여닫는 상세. 펼침은 `state.open`(다시 그려도 유지).
-function manageItem(key, label, head, ...body) {
-  const open = state.open.has(key);
-  const detail = el("div", { class: "item-body", id: `detail_${key}`, hidden: !open }, ...body);
-  // 연필 단추(#1r — 바꾸기 · 고치기는 연필 하나로).
-  const btn = el("button", {
-    type: "button",
-    id: `${key}_manage`,
-    class: "icon-btn manage-btn",
-    title: `${label} 관리`,
-    "aria-expanded": String(open),
-    "aria-controls": detail.id,
-    "aria-label": `${label} 관리`,
-    onclick: () => {
-      const on = detail.hidden;
-      detail.hidden = !on;
-      btn.setAttribute("aria-expanded", String(on));
-      if (on) state.open.add(key);
-      else state.open.delete(key);
-    },
-  }, ico("pencil"));
-  return el("div", { class: "manage-item" }, el("div", { class: "manage-head" }, ...head, btn), detail);
-}
 
 /// 줄 타일(#1k) — 상대 사람 모양(그림이 있으면 그림), 그룹은 사람 + 그림자. 내 에이전트는 `agentTile`(#1z-7).
 function rowTile(cls, icon, group = false) {
   return el("span", { class: `pa ${cls}`, "aria-hidden": "true" }, tileFace(icon, group));
-}
-
-function kvTable(rows) {
-  return el("table", { class: "kv" }, el("tbody", {}, ...rows.map(([k, v, cls]) => el("tr", {}, el("th", { scope: "row", text: k }), el("td", {}, el("span", { class: cls, text: v }))))));
 }
 
 let uid = 0;
@@ -1039,7 +1074,7 @@ function unchanged(box, sig) {
   return false;
 }
 
-/// 목록을 다시 그려도 되나 — 같은 값이면 건너뛰고, 사용자가 그 안 입력칸에서 입력 중이면(배경 새로 고침) 미룬다. 저장 · 필터는 `force`.
+/// 목록을 다시 그려도 되나 — 같은 값이면 건너뛰고, 사용자가 그 안 입력칸에서 입력 중이면(배경 새로 고침) 미룬다. 저장 · 필터 · 고르기는 `force`.
 /// 입력칸만 본다 — 상대별 절 머리(`summary`)를 눌러 초점이 남아도 목록은 계속 새로 고친다(#1g).
 function needsRender(box, sig, force) {
   const typing = box.contains(document.activeElement) && holdsRender(document.activeElement.tagName);
@@ -1053,204 +1088,86 @@ function peerSub(p) {
   return [p.alias ? `${p.name} · ${p.host}` : p.host, p.paired ? presence(p).text : peerState(p)].join(" · ");
 }
 
-/// 그룹설정 대화 줄을 끄는 중(#1z-2) — 그동안 `renderPeerList` 는 건너뛴다(캡처한 줄이 DOM 에서 빠지지 않게, 레일 타일 끌기와 같은 이유).
-let gsDragging = false;
+/// 대화 서명 — 설정 목록 · 상세가 쓰는 칸만.
+function convSig() {
+  return state.convs.map((c) => [c.id, c.peer_id, c.pos, c.title, c.agent, c.dir, convClosed(c)]);
+}
 
+/// 설정 연결 · 그룹설정(#1z-8 — 옛 그룹설정 카드의 사용자 표는 연결로, 그룹은 그룹설정으로).
 function renderPeerList(force = false) {
-  // 접속 상태(`online` · `focus`)는 이 목록에 그리지 않는다 — 30초 Ping 이 저장 전 입력을 지우지 않게 서명에서 뺀다.
+  renderConnPage(force);
+  renderGroupPage(force);
+}
+
+/// 연결(#1z-8 시안 B) — 왼쪽 사용자 목록(검색 = 이름 · PC · 지문 · 대화 제목), 오른쪽 상세(사용자 · 초대 생성 · 초대 수락).
+function renderConnPage(force) {
+  const box = $("conn");
+  // 접속 상태(`online` · `focus`)는 서명에 넣지 않는다 — 30초 Ping 이 저장 전 입력을 지우지 않게. 시각이 흘러 바뀌는 글자 · 점만 제자리에서 고친다(#1k 라운드 2 · #1z R2).
   const shown = state.peers.map(({ online, focus, ...p }) => p);
-  const groupSig = state.groups.map((g) => [g.id, g.name, g.icon, g.convs]);
-  const convSig = state.convs.map((c) => [c.id, c.peer_id, c.pos, c.title, c.agent, c.dir, convClosed(c)]);
-  const sig = JSON.stringify([shown, groupSig, convSig, $("peer_q").value, state.settings.claude_model, state.settings.claude_effort]);
-  // 접속 상태 글자 · 점은 시각이 흐르면 바뀐다(#1k 라운드 2 · #1z R2) — 줄을 다시 만들지 않고(편집 중인 모델 · effort 를 지키게) 그것만 고친다.
-  for (const n of $("peer_groups").querySelectorAll("[data-peer-sub]")) {
+  const sig = JSON.stringify([shown, convSig(), $("peer_q").value, pick.conn, state.settings.claude_model, state.settings.claude_effort]);
+  for (const n of box.querySelectorAll("[data-peer-sub]")) {
     const p = state.peers.find((x) => x.id === Number(n.dataset.peerSub));
     if (p) n.textContent = peerSub(p);
   }
-  for (const n of $("peer_groups").querySelectorAll("[data-peer-dot]")) {
+  for (const n of box.querySelectorAll("[data-peer-dot]")) {
     const p = state.peers.find((x) => x.id === Number(n.dataset.peerDot));
     if (p) n.replaceWith(gsDot(p));
   }
-  if (gsDragging || !needsRender($("peer_groups"), sig, force)) return;
+  if (!needsRender(box, sig, force)) return;
+  if (typeof pick.conn === "number" && !state.peers.some((p) => p.id === pick.conn)) pick.conn = null; // 지운 사용자
+  pruneDrafts(gsDrafts, state.peers.map((p) => p.id));
   const q = $("peer_q").value;
   const convs = sortByPos(state.convs);
-  // 그룹설정(#1z-2 — 시안 B): 위 = 그룹 카드 격자(누르면 카드 안 대화 전체), 아래 = 사용자 표(줄을 누르면 아래로 관리 · 대화). 대화 줄을 카드에 끌어 놓으면 넣기(복사).
-  const list = groupSettingsList(state.groups, state.peers, convs, q, state.peerNames);
-  const secs = settingsGroupSections(state.groups, convs, state.peerNames);
-  $("peer_groups").replaceChildren(gsGroupsEl(list, secs, q), gsUsersEl(list, convs, q));
+  const users = groupSettingsList([], state.peers, convs, q, state.peerNames).users.map((u) => state.peers.find((p) => p.id === u.id));
+  $("conn_list").replaceChildren(
+    ...users.map((p) => mdRow("conn", p.id, rowTile(`small ${tileColor(p)}`, p.icon), displayName(p), p.host, gsDot(p))),
+    ...(users.length ? [] : [el("li", { class: "hint md-none", text: q ? "맞는 사용자 없음" : "연결 없음 — 초대 생성 · 초대 수락" })]),
+  );
+  const mode = pick.conn;
+  $("conn_empty").hidden = mode != null;
+  $("invite_make").hidden = mode !== "invite";
+  $("invite_accept").hidden = mode !== "accept";
+  $("accept_btn").setAttribute("aria-expanded", String(mode === "accept"));
+  const p = typeof mode === "number" ? state.peers.find((x) => x.id === mode) : null;
+  $("conn_user").hidden = !p;
+  $("conn_user").replaceChildren(...(p ? userDetail(p, convs) : []));
 }
 
-/// 그룹설정 사용자 접속 점 · 글자(#1z) — 서명에 접속 상태가 없어(입력 중 다시 그리지 않게) `renderPeerList` 가 매번 이것만 고친다(R2 — 시간이 흘러 끊김이 돼도 녹색이 남지 않게).
+/// 사용자 접속 점 · 글자(#1z) — 서명에 접속 상태가 없어(입력 중 다시 그리지 않게) `renderConnPage` 가 매번 이것만 고친다(R2 — 시간이 흘러 끊김이 돼도 녹색이 남지 않게).
 function gsDot(p, pr = presence(p)) {
   const text = p.paired ? pr.text : peerState(p);
   return el("span", { class: "gs-state", "data-peer-dot": String(p.id) }, el("span", { class: `gs-dot ${pr.key}`, "aria-hidden": "true" }), el("span", { text }));
 }
 
-/// 펼침 단추(#1z-2 — 그룹 카드 · 사용자 줄) — 누르면 `body` 를 보이고 숨기고 `state.open` 에 기억한다(5초 새로 고침으로 다시 그려도 그대로).
-/// 같은 열쇠의 접힘 때만 보이는 요소(`data-gs-shut`)는 반대로.
-function gsToggle(key, body, label, ...face) {
-  const open = state.open.has(key);
-  body.hidden = !open;
-  const b = el(
-    "button",
-    {
-      type: "button",
-      class: "gs-toggle",
-      "aria-expanded": String(open),
-      "aria-controls": body.id,
-      title: label,
-      onclick: (ev) => {
-        ev.stopPropagation();
-        const on = body.hidden;
-        body.hidden = !on;
-        b.setAttribute("aria-expanded", String(on));
-        if (on) state.open.add(key);
-        else state.open.delete(key);
-        for (const x of $("peer_groups").querySelectorAll(`[data-gs-shut="${key}"]`)) x.hidden = on;
-      },
-    },
-    ...face,
-  );
-  return b;
-}
-
-/// 그룹 카드 격자(#1z-2 — 시안 B) — 카드 = 타일 · 이름 · 대화 수 · 이름 바꾸기 · 삭제 + 대화 3개 · "+n 더 보기"(접힘) / 대화 전체 · 그룹에서 빼기(펼침).
-/// 카드가 대화 줄을 놓는 자리(`data-drag="group"` — `convGrab` 넣기).
-function gsGroupsEl(list, secs, q) {
-  const none = q ? "맞는 대화 없음" : "대화 없음 — 끌어 놓으세요";
-  const cards = list.groups.map((g) => {
-    const s = secs.find((x) => x.group === g.id);
-    const rows = (s?.rows ?? []).filter((r) => g.convs.includes(r.id)); // 검색 중이면 맞는 대화(`groupSettingsList`)
-    const key = `gsg${g.id}`;
-    const full = el(
-      "div",
-      { class: "gs-card-full", id: `gs_card_${g.id}` },
-      rows.length
-        ? el("ol", { class: "rows settings-convs" }, ...rows.map((r) => settingsConvRow(state.convs.find((c) => c.id === r.id), r, g.id)))
-        : el("p", { class: "hint", text: none }),
-    );
-    const toggle = gsToggle(
-      key,
-      full,
-      `그룹 ${g.name} 대화 펼치기`,
-      rowTile(`small ${colorOf(g.id)}`, g.icon, true),
-      el("strong", { class: "gs-card-name", text: g.name }),
-      el("span", { class: "hint", text: `대화 ${rows.length}` }),
-    );
-    const peek = el(
-      "div",
-      { class: "gs-card-peek", "data-gs-shut": key, hidden: state.open.has(key) },
-      rows.length ? el("ul", { class: "gs-peek" }, ...rows.slice(0, 3).map((r) => el("li", { text: `· ${r.title}` }))) : el("p", { class: "hint", text: none }),
-      rows.length > 3 ? el("button", { type: "button", class: "link-btn", text: `+${rows.length - 3} 더 보기`, onclick: () => toggle.click() }) : "",
-    );
-    return el(
-      "article",
-      { class: "gs-card", "data-drag": "group", "data-id": String(g.id), "aria-label": `그룹 ${g.name}` },
-      el(
-        "div",
-        { class: "gs-card-head" },
-        toggle,
-        svgButton(PENCIL_SVG, `그룹 ${g.name} 이름 바꾸기`, (ev) => openGroupRename(g.id, ev.currentTarget)),
-        svgButton(TRASH_SVG, `그룹 ${g.name} 삭제`, (ev) => openFloat(ev.currentTarget, "dialog", "그룹 삭제", [groupDeleteForm(g.id)]), "danger-text"),
-      ),
-      peek,
-      full,
-    );
-  });
-  return el(
-    "section",
-    { class: "gs-block", "aria-label": "그룹" },
-    el("div", { class: "gs-block-head" }, el("strong", { text: "그룹" }), el("span", { class: "hint", text: `${list.groups.length} · 대화를 카드에 끌어 놓으면 넣기` })),
-    cards.length ? el("div", { class: "gs-cards" }, ...cards) : el("p", { class: "hint", text: q ? "맞는 그룹 없음" : "그룹 없음 — + 그룹 추가" }),
-  );
-}
-
-/// 사용자 표(#1z-2 — 시안 B) — 사용자 · PC · 상태 · 모델 · effort · 대화 · 관리, 줄(또는 이름 · 연필)을 누르면 바로 아래 줄에 관리 + 그 사용자 대화(끌어 그룹 카드에 넣기).
-function gsUsersEl(list, convs, q) {
-  const rows = list.users.flatMap((u) => {
-    const p = state.peers.find((x) => x.id === u.id);
-    const more = el("tr", { class: "gs-more", id: `gs_user_${p.id}` }, el("td", { colspan: "7" }, userDetail(p, convs)));
-    const toggle = gsToggle(`gsu${p.id}`, more, `${displayName(p)} 설정 · 대화 펼치기`, rowTile(`small ${tileColor(p)}`, p.icon), el("span", { text: displayName(p) }));
-    const tr = el(
-      "tr",
-      { class: "gs-user", onclick: (ev) => !ev.target.closest("button, a, select, input") && toggle.click() },
-      el("td", {}, toggle),
-      el("td", { class: "hint", text: p.host }),
-      el("td", {}, gsDot(p)),
-      el("td", { class: "hint", text: p.model || "기본값" }),
-      el("td", { class: "hint", text: p.effort || "기본값" }),
-      el("td", { text: String(u.count) }),
-      el("td", {}, svgButton(PENCIL_SVG, `${displayName(p)} 관리`, () => toggle.click())),
-    );
-    return [tr, more];
-  });
-  return el(
-    "section",
-    { class: "gs-block", "aria-label": "사용자" },
-    el("div", { class: "gs-block-head" }, el("strong", { text: "사용자" }), el("span", { class: "hint", text: `${list.users.length} · 줄을 누르면 아래로 펼쳐 설정 · 대화` })),
-    rows.length
-      ? el(
-          "div",
-          { class: "gs-table-box" },
-          el(
-            "table",
-            { class: "gs-table" },
-            el(
-              "thead",
-              {},
-              el("tr", {}, ...["사용자", "PC", "상태", "모델", "effort", "대화"].map((h) => el("th", { scope: "col", text: h })), el("th", { scope: "col" }, el("span", { class: "sr-only", text: "관리" }))),
-            ),
-            el("tbody", {}, ...rows),
-          ),
-        )
-      : el("p", { class: "hint", text: q ? "맞는 사용자 없음" : "연결 없음" }),
-  );
-}
-
-/// 설정 대화 줄(#1w · #1z-2) — 끌기 손잡이(포인터 — 그룹 카드에 놓으면 넣기) · (그룹 카드 안이면) 상대 타일 · 제목 · 부제 · 닫힌 대화 태그 · (그룹 카드 안이면) "그룹에서 빼기".
-function settingsConvRow(c, label, group) {
-  const p = state.peers.find((x) => x.id === c.peer_id);
+/// 설정 상세의 대화 줄(#1z-8) — 상대 타일 · 제목 · 부제 · 닫힌 대화 태그 + 끝 단추.
+function convLine(c, end = "") {
+  const label = convLabel(c, state.peerNames);
   const closed = convClosed(c);
+  const p = state.peers.find((x) => x.id === c.peer_id);
   return el(
     "li",
-    { class: "settings-conv", "data-drag": "conv", "data-id": String(c.id) },
-    el(
-      "button",
-      {
-        type: "button",
-        class: "drag-handle",
-        title: "끌어서 그룹 카드에 놓으면 그룹에",
-        "aria-label": `${label.title} 끌어 그룹에 넣기`,
-        onpointerdown: (ev) => convGrab(ev, ev.currentTarget.parentElement, { join: true }),
-      },
-      ico("grip"),
-    ),
-    group == null ? "" : rowTile(`small ${colorOf(c.peer_id)}`, p?.icon),
-    el("span", { class: "manage-name" }, el("strong", { text: label.title }), el("span", { class: "hint", text: label.sub })),
+    { class: "md-conv" },
+    rowTile(`small ${colorOf(c.peer_id)}`, p?.icon),
+    el("span", { class: "md-row-text" }, el("strong", { text: label.title }), el("span", { class: "hint", text: label.sub })),
     closed ? el("span", { class: "chip", text: closed }) : "",
-    group == null
-      ? ""
-      : el("button", {
-          type: "button",
-          class: "small",
-          text: "그룹에서 빼기",
-          "aria-label": `${label.title} 그룹에서 빼기`,
-          onclick: async () => {
-            const g = state.groups.find((x) => x.id === group);
-            if (await changeGroup(group, [], [c.id])) $("peer_msg").textContent = `그룹 ${g?.name ?? ""} 에서 뺐습니다`;
-          },
-        }),
+    end,
   );
 }
 
-/// 그룹설정 사용자 펼침의 저장 전 모델 · effort(#1z-2 R1) — 여러 사용자를 펼친 채 한 사람을 저장하면 목록을 다시 그리므로, 다른 줄의 고친 값을 상대 id 별로 들고 있다가 되살린다.
+/// 상세 줄 끝 작은 단추(넣기 · 빼기) — 읽는 이름에 대화 제목.
+function convAct(label, title, fn) {
+  return el("button", { type: "button", class: "small", text: label, "aria-label": `${title} ${label}`, onclick: fn });
+}
+
+/// 사용자 상세의 저장 전 모델 · effort(#1z-2 R1) — 다른 사용자를 골랐다 돌아와도(다시 그려도) 상대 id 별로 들고 있다가 되살린다.
 const gsDrafts = new Map();
 
-/// 그룹설정 사용자 펼침(#1z-2) — 부제 · 지문 · 주소 · 모델 · effort · 단추(옛 관리 줄의 상세) + "대화 n" 줄(끌어 그룹 카드에 넣기).
+/// 연결 사용자 상세(#1z-8 — 옛 그룹설정 사용자 펼침) — 머리(타일 · 이름 · 부제 · ✕) · 모델 · effort · 상태 · 지문 · 주소 · 대화 목록 · 단추(저장 · 승인 / 다시 알리기 / 연결 확인 ·
+/// 내 에이전트 편집 · 삭제 · 닫기).
 function userDetail(p, convs) {
   const peerAct = (label, fn) => act(label, fn, "peer_msg", () => loadPeers(true));
   const defaults = state.settings;
-  const draft = gsDrafts.get(p.id);
+  const draft = draftOf(gsDrafts, p.id, p.fingerprint);
   const model = el(
     "select",
     {},
@@ -1265,11 +1182,10 @@ function userDetail(p, convs) {
     ...EFFORTS.map((e) => el("option", { value: e, text: e })),
   );
   effort.value = draft?.effort ?? p.effort ?? "";
-  const keep = () => gsDrafts.set(p.id, { model: model.value, effort: effort.value });
+  const keep = () => gsDrafts.set(p.id, { owner: p.fingerprint, model: model.value, effort: effort.value });
   model.addEventListener("change", keep);
   effort.addEventListener("change", keep);
-  const actions = el("div", { class: "actions" });
-  actions.append(
+  const acts = [
     button(
       "저장",
       () =>
@@ -1280,66 +1196,153 @@ function userDetail(p, convs) {
         }),
       "primary",
     ),
-  );
-  if (!p.my_ok) actions.append(button("승인", () => peerAct("승인", () => api("POST", `/api/peers/${p.id}/approve`))));
-  if (p.my_ok && !p.paired) actions.append(button("다시 알리기", () => peerAct("승인 재통지", () => api("POST", `/api/peers/${p.id}/approve`))));
-  if (p.paired) actions.append(button("연결 확인", () => peerAct("연결 확인", () => api("POST", `/api/peers/${p.id}/ping`))));
-  actions.append(
+  ];
+  if (!p.my_ok) acts.push(button("승인", () => peerAct("승인", () => api("POST", `/api/peers/${p.id}/approve`))));
+  if (p.my_ok && !p.paired) acts.push(button("다시 알리기", () => peerAct("승인 재통지", () => api("POST", `/api/peers/${p.id}/approve`))));
+  if (p.paired) acts.push(button("연결 확인", () => peerAct("연결 확인", () => api("POST", `/api/peers/${p.id}/ping`))));
+  acts.push(
     button("내 에이전트 편집", () => goSettings("agents")),
     button(
       "삭제",
       () =>
         peerAct("삭제", async () => {
           const r = await api("DELETE", `/api/peers/${p.id}`);
+          gsDrafts.delete(p.id);
           if (!r.notified) throw new Error("삭제했지만 상대에게 알리지 못했습니다. 상대 목록에는 남아 있습니다.");
         }),
       "danger",
     ),
   );
   const mine = convs.filter((c) => c.peer_id === p.id);
-  return el(
-    "div",
-    { class: "gs-user-detail" },
-    el("p", { class: "hint", "data-peer-sub": String(p.id), text: peerSub(p) }),
-    kvTable([
-      ["지문", p.fingerprint, "mono"],
-      ["주소", p.addr, "mono"],
-    ]),
-    el("div", { class: "form-grid" }, ...field("모델", model), ...field("effort", effort)),
-    actions,
-    el("strong", { class: "gs-convs-head", text: `대화 ${mine.length}` }),
-    mine.length
-      ? el("ol", { class: "rows settings-convs" }, ...mine.map((c) => settingsConvRow(c, convLabel(c, state.peerNames), null)))
-      : el("p", { class: "hint", text: "대화 없음" }),
-  );
+  return [
+    mdHead("conn", rowTile(tileColor(p), p.icon), displayName(p), el("span", { class: "hint", "data-peer-sub": String(p.id), text: peerSub(p) })),
+    el(
+      "div",
+      { class: "md-body" },
+      el(
+        "div",
+        { class: "form-grid" },
+        ...field("모델", model),
+        ...field("effort", effort),
+        el("span", { class: "label", text: "상태" }),
+        gsDot(p),
+        el("span", { class: "label", text: "지문" }),
+        el("span", { class: "mono", text: p.fingerprint }),
+        el("span", { class: "label", text: "주소" }),
+        el("span", { class: "mono", text: p.addr ?? "" }),
+      ),
+      el("strong", { class: "md-sec", text: `대화 ${mine.length}` }),
+      mine.length ? el("ul", { class: "md-convs" }, ...mine.map((c) => convLine(c))) : el("p", { class: "hint", text: "대화 없음" }),
+    ),
+    mdFoot("conn", ...acts),
+  ];
 }
 
-$("peer_q").addEventListener("input", () => renderPeerList(true));
+$("peer_q").addEventListener("input", () => renderConnPage(true));
+
+/// 그룹설정(#1z-8 시안 B) — 왼쪽 그룹 목록(검색 = 그룹 이름 · 그 그룹 대화 제목 · 사용자), 오른쪽 상세(이 그룹의 대화 · 넣을 수 있는 대화).
+function renderGroupPage(force) {
+  const box = $("groups");
+  const groupSig = state.groups.map((g) => [g.id, g.name, g.icon, g.convs]);
+  const peerSig = state.peers.map((p) => [p.id, displayName(p), p.host, p.icon]);
+  const sig = JSON.stringify([groupSig, peerSig, convSig(), $("group_q").value, pick.groups]);
+  if (!needsRender(box, sig, force)) return;
+  if (pick.groups != null && !state.groups.some((g) => g.id === pick.groups)) pick.groups = null; // 지운 그룹
+  const q = $("group_q").value;
+  const convs = sortByPos(state.convs);
+  const list = groupSettingsList(state.groups, state.peers, convs, q, state.peerNames);
+  $("group_list").replaceChildren(
+    ...list.groups.map((g) => mdRow("groups", g.id, rowTile(`small ${colorOf(g.id)}`, g.icon, true), g.name, `대화 ${g.count}`)),
+    ...(list.groups.length ? [] : [el("li", { class: "hint md-none", text: q ? "맞는 그룹 없음" : "그룹 없음 — 그룹 추가" })]),
+  );
+  const g = state.groups.find((x) => x.id === pick.groups);
+  $("group_detail").replaceChildren(...(g ? groupDetail(g, convs) : [el("p", { class: "md-empty", text: "그룹을 고르세요" })]));
+}
+
+/// 그룹 상세(#1z-8) — 이 그룹의 대화(빼기) · 넣을 수 있는 대화(사용자별 · 넣기) · 이름 바꾸기 · 삭제 · 닫기. 넣기는 복사(다른 그룹 · 원래 자리 그대로 — #1w).
+function groupDetail(g, convs) {
+  const inside = convs.filter((c) => g.convs.includes(c.id));
+  const byUser = state.peers
+    .map((p) => [p, convs.filter((c) => c.peer_id === p.id && !g.convs.includes(c.id))])
+    .filter(([, cs]) => cs.length);
+  const say = (t) => ($("group_msg").textContent = t);
+  const title = (c) => convLabel(c, state.peerNames).title;
+  return [
+    mdHead("groups", rowTile(colorOf(g.id), g.icon, true), g.name, el("span", { class: "hint", text: `대화 ${inside.length}` })),
+    el(
+      "div",
+      { class: "md-body md-cols" },
+      el(
+        "section",
+        { class: "md-col", "aria-label": "이 그룹의 대화" },
+        el("strong", { class: "md-sec", text: "이 그룹의 대화" }),
+        inside.length
+          ? el(
+              "ul",
+              { class: "md-convs" },
+              ...inside.map((c) =>
+                convLine(
+                  c,
+                  convAct("빼기", title(c), async () => {
+                    if (await changeGroup(g.id, [], [c.id])) say(`그룹 ${g.name} 에서 뺐습니다`);
+                  }),
+                ),
+              ),
+            )
+          : el("p", { class: "hint", text: "대화 없음 — 넣을 수 있는 대화에서 넣기" }),
+      ),
+      el(
+        "section",
+        { class: "md-col", "aria-label": "넣을 수 있는 대화" },
+        el("strong", { class: "md-sec", text: "넣을 수 있는 대화" }),
+        ...(byUser.length
+          ? byUser.map(([p, cs]) =>
+              el(
+                "div",
+                { class: "md-user-convs" },
+                el("span", { class: "md-user", text: displayName(p) }),
+                el(
+                  "ul",
+                  { class: "md-convs" },
+                  ...cs.map((c) =>
+                    convLine(
+                      c,
+                      convAct("넣기", title(c), async () => {
+                        if (await changeGroup(g.id, [c.id], [])) say(`그룹 ${g.name} 에 넣었습니다`);
+                      }),
+                    ),
+                  ),
+                ),
+              ),
+            )
+          : [el("p", { class: "hint", text: "넣을 대화 없음" })]),
+      ),
+    ),
+    mdFoot(
+      "groups",
+      button("이름 바꾸기", (ev) => openGroupRename(g.id, ev.currentTarget)),
+      button("삭제", (ev) => openFloat(ev.currentTarget, "dialog", "그룹 삭제", [groupDeleteForm(g.id)]), "danger"),
+    ),
+  ];
+}
+
+$("group_q").addEventListener("input", () => renderGroupPage(true));
 $("peer_group_add").addEventListener("click", (ev) =>
   openGroupNew(ev.currentTarget, (g) => {
-    state.open.add(`gsg${g.id}`); // 만든 그룹 카드를 펼친다
-    $("peer_msg").textContent = `그룹 ${g.name} 을 만들었습니다`;
+    setPick("groups", g.id); // 만든 그룹을 고른다
+    $("group_msg").textContent = `그룹 ${g.name} 을 만들었습니다`;
   }),
 );
 
-/// 설정 대화 줄을 그룹 카드에 넣기(#1w · #1z-2) — 복사(원래 자리 그대로), 이미 있으면 안내만.
-async function gsJoin(to, id) {
-  const op = convCopy(id, to, state.groups);
-  const g = state.groups.find((x) => x.id === to);
-  if (!op) {
-    $("peer_msg").textContent = `이미 그룹 ${g?.name ?? ""} 에 있습니다`;
-    return;
-  }
-  if (await changeGroup(to, op.add, [])) $("peer_msg").textContent = `그룹 ${g?.name ?? ""} 에 넣었습니다`;
-}
-
-// 초대 생성 — 한 번에 하나(단추 · 트리 · 새로 만들기 모두 이 단추를 누른다). 도는 동안 온 누름은 버려 겹친 요청이 서버 코드를 바꿔
+// 초대 생성 — 한 번에 하나(머리 단추 · 새로 만들기 모두 이 단추를 누른다). 도는 동안 온 누름은 버려 겹친 요청이 서버 코드를 바꿔
 // 화면 초대와 어긋나는 일이 없다(적대적 평가 R1). `disabled` 가 아니라 `aria-disabled` — 새로 만들기가 이 단추에 주는 초점을 잃지 않게(R2).
+// 만든 초대는 연결 상세 칸(#1z-8).
 let inviteBusy = false;
 $("window_btn").addEventListener("click", () => {
   if (inviteBusy) return;
   inviteBusy = true;
   $("window_btn").setAttribute("aria-disabled", "true");
+  setPick("conn", "invite");
   act(
     "초대 생성",
     async () => {
@@ -1406,104 +1409,148 @@ async function loadAgents() {
   if (route(location.hash).view === "agents") renderAgentsView();
 }
 
+/// 에이전트 상세의 저장 전 값(#1z-8 — 다른 줄을 골랐다 돌아와도 남게, 저장 성공이면 지운다). 에이전트 id → `{folder, prompt, parent_read, shell, color}`.
+const agentDrafts = new Map();
+
+/// 에이전트(#1z-8 시안 B) — 왼쪽 목록(로봇 타일 · 이름 · 폴더 · 상위 탐색 · 셸 표시 — 검색 칸 없음, #1l), 오른쪽 상세(한 격자 — #1z-7) · 새 에이전트 폼.
 function renderAgentList(force = false) {
-  const sig = JSON.stringify(state.agents);
-  if (!needsRender($("agent_groups"), sig, force)) return;
-  // 평평한 목록(#1j — 에이전트 그룹 칸 · 묶기 없음, 옛 값 `agents.grp` 는 서버에 그대로).
+  const box = $("agents");
+  const sig = JSON.stringify([state.agents, pick.agents]);
+  if (!needsRender(box, sig, force)) return;
+  if (typeof pick.agents === "number" && !state.agents.some((a) => a.id === pick.agents)) pick.agents = null; // 지운 에이전트
+  pruneDrafts(agentDrafts, state.agents.map((a) => a.id));
   const shown = state.agents;
   $("agent_groups").replaceChildren(
-    ...shown.map((a) => {
-      const folder = el("input", { value: a.folder, class: "mono" });
-      const parent = el("input", { type: "checkbox", checked: a.parent_read, title: PARENT_NOTE });
-      const shell = el("input", { type: "checkbox", checked: a.shell, title: SHELL_NOTE });
-      const prompt = el("textarea", { rows: "3" });
-      prompt.value = a.prompt;
-      const promptBox = el("div", { class: "field" }, prompt);
-      // 아이콘 색(#1z-7) — 고르면 단추 표시만, 저장 때 보낸다.
-      let color = agentColor(a.color);
-      const swatches = el(
-        "span",
-        { class: "swatches", role: "group", "aria-label": "아이콘 색" },
-        ...AGENT_COLORS.map((c) =>
-          el("button", {
-            type: "button",
-            class: `swatch ${c}`,
-            title: `아이콘 색 ${c}`,
-            "aria-label": `아이콘 색 ${c}`,
-            "aria-pressed": String(c === color),
-            onclick: (ev) => {
-              color = c;
-              for (const b of swatches.children) b.setAttribute("aria-pressed", String(b === ev.currentTarget));
-            },
-          }),
-        ),
-      );
-      const checkLine = (box, hint) => el("span", { class: "check-line" }, box, el("span", { class: "hint", text: hint }));
-      // 한 격자(#1z-7 — 이름도 같은 라벨 열에, 값 열이 한 줄로 맞는다).
-      return manageItem(
-        "agent" + a.id,
+    ...shown.map((a) =>
+      mdRow(
+        "agents",
+        a.id,
+        agentTile(a.color, "small"),
         a.name,
-        [agentTile(a.color), el("span", { class: "manage-name" }, el("strong", { text: a.name }), el("span", { class: "hint mono", text: a.folder }))],
-        el(
-          "div",
-          { class: "form-grid" },
-          el("span", { class: "label", text: "이름" }),
-          el("span", { class: "check-line" }, el("strong", { text: a.name }), el("span", { class: "hint", text: "등록 뒤 바꿀 수 없음" })),
-          el("span", { class: "label", text: "아이콘 색" }),
-          swatches,
-          ...field("폴더(절대 경로)", folder),
-          ...field("상위 한단계 탐색 허용", parent, checkLine(parent, PARENT_HINT)),
-          ...(a.parent_read
-            ? [el("span", { class: "label hint", text: "읽는 위 폴더" }), el("span", { class: "hint mono", text: a.parent_dir ?? "열지 않음(드라이브 루트 · 사용자 홈 · 데이터 폴더를 품음)" })]
-            : []),
-          ...field("셸 명령 실행 허용", shell, checkLine(shell, SHELL_HINT)),
-          ...(a.shell ? [el("span", { class: "label hint", text: "셸" }), el("span", { class: "hint shell-on", text: SHELL_ON })] : []),
-          el("span", { class: "label", text: "도구" }),
-          el("span", { class: "hint", text: TOOLS_NOTE }),
-          ...field("추가 지시", prompt, promptBox),
-        ),
-        el(
-          "div",
-          { class: "actions" },
-          button(
-            "저장",
-            () => {
-              // 셸을 켤 때 한 번 위험 확인(#05-3) — 취소면 보내지 않는다.
-              if (shellConfirmNeeded(a.shell, shell.checked) && !window.confirm(SHELL_WARN)) return;
-              const body = agentPatch(a, { folder: folder.value, prompt: prompt.value, parent_read: parent.checked, shell: shell.checked, color });
-              act("에이전트 저장", () => api("PATCH", `/api/agents/${a.id}`, body), "agent_msg", loadAgents);
-            },
-            "primary",
-          ),
-          button("삭제", () => act("삭제", () => api("DELETE", `/api/agents/${a.id}`), "agent_msg", loadAgents), "danger"),
-          // 닫기(#1z-7) = 연필 단추와 같은 접기, 초점은 연필로(숨은 칸에 남지 않게).
-          button("닫기", () => {
-            const pen = $(`agent${a.id}_manage`);
-            pen.click();
-            pen.focus();
-          }),
-        ),
-      );
-    }),
+        a.folder,
+        ...(a.parent_read ? [el("span", { class: "chip", text: "상위 탐색" })] : []),
+        ...(a.shell ? [el("span", { class: "chip", text: "셸" })] : []),
+      ),
+    ),
+    ...(shown.length ? [] : [el("li", { class: "hint md-none", text: "등록된 에이전트 없음" })]),
   );
-  if (!shown.length) $("agent_groups").append(el("p", { class: "hint", text: "등록된 에이전트 없음" }));
+  const mode = pick.agents;
+  $("agent_empty").hidden = mode != null;
+  $("agent_new").hidden = mode !== "new";
+  $("agent_new_btn").setAttribute("aria-expanded", String(mode === "new"));
+  const a = typeof mode === "number" ? state.agents.find((x) => x.id === mode) : null;
+  $("agent_pane").hidden = !a;
+  $("agent_pane").replaceChildren(...(a ? agentDetail(a) : []));
 }
 
-/// "에이전트 등록"(#1l) — 목록 끝 '새 에이전트' 줄(#1r)을 보이고 숨긴다(보이면 이름 칸에 초점, 등록 · 취소면 닫는다).
+/// 에이전트 상세(#1z-7 한 격자 · #1z-8 오른쪽 칸) — 이름(읽기 전용) · 아이콘 색 · 폴더 · 상위 탐색 · 셸(스위치) · 도구 · 추가 지시, 저장 · 삭제 · 닫기.
+function agentDetail(a) {
+  const d = draftOf(agentDrafts, a.id, a.uid) ?? {};
+  const folder = el("input", { value: d.folder ?? a.folder, class: "mono" });
+  const parent = el("input", { type: "checkbox", role: "switch", title: PARENT_NOTE });
+  parent.checked = d.parent_read ?? a.parent_read;
+  const shell = el("input", { type: "checkbox", role: "switch", title: SHELL_NOTE });
+  shell.checked = d.shell ?? a.shell;
+  const prompt = el("textarea", { rows: "5" });
+  prompt.value = d.prompt ?? a.prompt;
+  const promptBox = el("div", { class: "field" }, prompt);
+  // 아이콘 색(#1z-7) — 고르면 단추 표시만, 저장 때 보낸다.
+  let color = agentColor(d.color ?? a.color);
+  const keep = () => agentDrafts.set(a.id, { owner: a.uid, folder: folder.value, prompt: prompt.value, parent_read: parent.checked, shell: shell.checked, color });
+  folder.addEventListener("input", keep);
+  prompt.addEventListener("input", keep);
+  parent.addEventListener("change", keep);
+  shell.addEventListener("change", keep);
+  const swatches = el(
+    "span",
+    { class: "swatches", role: "group", "aria-label": "아이콘 색" },
+    ...AGENT_COLORS.map((c) =>
+      el("button", {
+        type: "button",
+        class: `swatch ${c}`,
+        title: `아이콘 색 ${c}`,
+        "aria-label": `아이콘 색 ${c}`,
+        "aria-pressed": String(c === color),
+        onclick: (ev) => {
+          color = c;
+          for (const b of swatches.children) b.setAttribute("aria-pressed", String(b === ev.currentTarget));
+          keep();
+        },
+      }),
+    ),
+  );
+  const checkLine = (box, hint) => el("span", { class: "check-line" }, box, el("span", { class: "hint", text: hint }));
+  return [
+    mdHead("agents", agentTile(a.color), a.name, el("span", { class: "hint mono", text: a.folder })),
+    el(
+      "div",
+      { class: "form-grid md-body" },
+      el("span", { class: "label", text: "이름" }),
+      el("span", { class: "check-line" }, el("strong", { text: a.name }), el("span", { class: "hint", text: "등록 뒤 바꿀 수 없음" })),
+      el("span", { class: "label", text: "아이콘 색" }),
+      swatches,
+      ...field("폴더(절대 경로)", folder),
+      ...field("상위 한단계 탐색 허용", parent, checkLine(parent, PARENT_HINT)),
+      ...(a.parent_read
+        ? [el("span", { class: "label hint", text: "읽는 위 폴더" }), el("span", { class: "hint mono", text: a.parent_dir ?? "열지 않음(드라이브 루트 · 사용자 홈 · 데이터 폴더를 품음)" })]
+        : []),
+      ...field("셸 명령 실행 허용", shell, checkLine(shell, SHELL_HINT)),
+      ...(a.shell ? [el("span", { class: "label hint", text: "셸" }), el("span", { class: "hint shell-on", text: SHELL_ON })] : []),
+      el("span", { class: "label", text: "도구" }),
+      el("span", { class: "hint", text: TOOLS_NOTE }),
+      ...field("추가 지시", prompt, promptBox),
+    ),
+    mdFoot(
+      "agents",
+      button(
+        "저장",
+        () => {
+          // 셸을 켤 때 한 번 위험 확인(#05-3) — 취소면 보내지 않는다.
+          if (shellConfirmNeeded(a.shell, shell.checked) && !window.confirm(SHELL_WARN)) return;
+          const body = agentPatch(a, { folder: folder.value, prompt: prompt.value, parent_read: parent.checked, shell: shell.checked, color });
+          act(
+            "에이전트 저장",
+            async () => {
+              const sent = agentDrafts.get(a.id); // 응답을 기다리는 사이 또 고치면 새 객체라 남는다(#1z-2 R2 와 같은 규칙)
+              await api("PATCH", `/api/agents/${a.id}`, body);
+              if (agentDrafts.get(a.id) === sent) agentDrafts.delete(a.id);
+            },
+            "agent_msg",
+            loadAgents,
+          );
+        },
+        "primary",
+      ),
+      button(
+        "삭제",
+        () =>
+          act(
+            "삭제",
+            async () => {
+              await api("DELETE", `/api/agents/${a.id}`);
+              agentDrafts.delete(a.id);
+            },
+            "agent_msg",
+            loadAgents,
+          ),
+        "danger",
+      ),
+    ),
+  ];
+}
+
+/// "에이전트 등록"(#1l · #1z-8) — 오른쪽 상세 칸에 새 에이전트 폼(보이면 이름 칸에 초점, 등록 · 취소면 닫는다).
 function showAgentNew(on) {
-  $("agent_new").hidden = !on;
-  $("agent_new_btn").setAttribute("aria-expanded", String(on));
+  if (on) setPick("agents", "new");
+  else if (pick.agents === "new") setPick("agents", null);
 }
 $("agent_new_btn").addEventListener("click", () => {
-  const on = $("agent_new").hidden;
+  const on = pick.agents !== "new";
   showAgentNew(on);
   if (on) $("agent_name").focus();
 });
 
-$("agent_new_cancel").addEventListener("click", () => {
-  showAgentNew(false);
-  $("agent_new_btn").focus();
-});
+$("agent_new_cancel").addEventListener("click", () => closePick("agents"));
 
 $("agent_tools").textContent = TOOLS_NOTE;
 
@@ -1521,13 +1568,16 @@ $("agent_form").addEventListener("submit", (ev) => {
   act(
     "등록",
     async () => {
-      await api("POST", "/api/agents", body);
+      const made = await api("POST", "/api/agents", body);
       $("agent_form").reset();
-      showAgentNew(false);
-      $("agent_new_btn").focus(); // 숨긴 칸에 초점이 남지 않게(적대적 평가 R1)
+      pick.agents = made?.id ?? null; // 등록한 에이전트를 고른다(목록은 loadAgents 가 다시 그린다)
+      state.focusAfter = null;
     },
     "agent_msg",
-    loadAgents,
+    async () => {
+      await loadAgents();
+      $(pick.agents != null ? mdRowId("agents", pick.agents) : "agent_new_btn")?.focus(); // 숨긴 폼에 초점이 남지 않게(적대적 평가 R1)
+    },
   );
 });
 
@@ -1969,7 +2019,7 @@ function previewCardEl(c) {
       ...(!cached
         ? [el("span", { class: "hint", text: "글을 읽지 못했습니다" })]
         : bubbles.length
-          ? bubbles.map((b) => el("div", { class: `pv-msg side-${b.side} ${b.tone}` }, b.who !== "나" ? el("b", { text: b.who }) : "", b.text))
+          ? bubbles.map((b) => el("div", { class: `pv-msg side-${b.side} ${b.tone}` }, el("span", { class: "pv-text" }, b.who !== "나" ? el("b", { text: b.who }) : "", b.text)))
           : [el("span", { class: "hint", text: "글 없음" })]),
     ),
     el(
@@ -1985,10 +2035,9 @@ function previewCardEl(c) {
 /// 개요 미리보기 크기(#1z-6) — 카드 폭 · 본문 높이 · 말풍선 줄 수(글자 크기는 그대로). 카드가 넓어져 한 줄 열 수가 바뀌면 그 수로 다시 그린다.
 /// 값은 시작할 때(`showSettings`)와 고를 때만 — 다른 설정 저장의 늦은 응답(`fillPrefs`)이 막 고른 배율을 되돌리지 않게(#1z-6 R1, `ui_home_view` 와 같은 규칙).
 function applyHomeZoom(z) {
-  const { scale, lines } = previewZoom(z);
+  const { scale } = previewZoom(z);
   const box = $("home_preview");
   box.style.setProperty("--pv-scale", String(scale));
-  box.style.setProperty("--pv-lines", String(lines));
   $("ui_home_zoom").value = String(Math.round(scale * 100));
   refitPreview();
 }
@@ -2164,8 +2213,7 @@ async function render() {
   if (r.view === "new") openCompose();
   if (r.view === "peer") await loadPeerMessages(r.id);
   // 초대 수락 칸 — 트리 · 새로 만들기 "초대 수락" · 레일 + 로 오면 펼치고, 다른 설정 항목 · 다른 화면으로 가면 접는다(#1r).
-  showAccept(r.view === "settings" && r.focus === "invite_accept");
-  if (r.view === "settings" && r.focus) $(r.focus).scrollIntoView({ block: "start" });
+  if (r.view === "settings") openSettings(r);
   applyFocus();
 }
 
@@ -3525,11 +3573,11 @@ function renderAgentsView() {
   );
 }
 
-/// 내 에이전트 편집(#1k) — 설정 '내 에이전트' 로 가서 그 에이전트 상세를 펼치고 "관리" 단추에 초점.
+/// 내 에이전트 편집(#1k · #1z-8) — 설정 '에이전트' 로 가서 그 에이전트를 고르고(오른쪽 상세) 목록의 그 줄에 초점.
 function editAgent(id) {
-  state.open.add("agent" + id);
+  pick.agents = id;
   renderAgentList(true);
-  goSettings("agents", `agent${id}_manage`);
+  goSettings("agents", mdRowId("agents", id));
 }
 
 /// 주고받은 메시지(#1q, '나' 에만) — 상대별 절(레일 순서) 처음 접힘, 머리 = 타일 · 이름 · 건수 · 마지막 메시지 한 줄 · 시각. 펼치면 그 상대 글을
@@ -4151,13 +4199,11 @@ function joinGroup(groupId, convId) {
 
 /// 대화 줄 끌기(포인터, #1x) — 손잡이를 누른 채 움직이면 줄 사본이 따라오고, 같은 절 줄 위 = 앞 · 뒤 표시, 그룹 타일 위 = 넣기 표시. 떼면 `moveItem` · `joinGroup`.
 /// HTML 끌어 놓기(`draggable`)는 브라우저 끌기 확장이 가로챈다(요청 보드와 같다 — 사용자 2026-10-19).
-/// `join` = 넣기만(#1z-2 — 그룹설정 대화 줄): 놓는 곳 = 포인터 아래 가장 가까운 그룹(카드 안 대화 줄 위여도 그 카드), 대화 순서는 바꾸지 않는다, 끄는 동안 그룹설정을 다시 그리지 않는다.
-function convGrab(ev, li, { join = false } = {}) {
+function convGrab(ev, li) {
   if (ev.button !== 0) return;
   ev.preventDefault();
   const grip = ev.currentTarget;
   grip.setPointerCapture(ev.pointerId);
-  if (join) gsDragging = true;
   const d = dragInfo(li);
   const box = li.getBoundingClientRect();
   const dx = ev.clientX - box.left;
@@ -4171,7 +4217,7 @@ function convGrab(ev, li, { join = false } = {}) {
   const move = (e) => {
     ghost.style.transform = `translate(${e.clientX - dx}px, ${e.clientY - dy}px)`;
     const under = document.elementFromPoint(e.clientX, e.clientY);
-    const t = dragInfo(join ? under?.closest?.('[data-drag="group"]') : under);
+    const t = dragInfo(under);
     const how = t && t.node !== li ? dropKind(d, t) : null;
     clearDrop();
     drop = null;
@@ -4192,12 +4238,6 @@ function convGrab(ev, li, { join = false } = {}) {
     ghost.remove();
     li.classList.remove("dragging");
     clearDrop();
-    if (join) {
-      gsDragging = false;
-      if (e.type === "pointerup" && drop?.how === "join") gsJoin(drop.t.id, d.id);
-      else renderPeerList(); // 끄는 동안 미룬 다시 그리기
-      return;
-    }
     if (e.type !== "pointerup" || !drop) return;
     if (drop.how === "join") joinGroup(drop.t.id, d.id);
     else moveItem(d.kind, d.id, drop.t.id, drop.after);
@@ -4317,6 +4357,7 @@ function stepMove(d, dir) {
 
 // ---- 설정(트리 · 실행 · 화면 · 알림) ----
 
+/// 설정 왼쪽 메뉴(#1z-8 — 평평한 8개). 고른 화면은 `openSettings` 가 `aria-current="page"` 로 표시한다.
 function renderTree() {
   const item = (n) =>
     el(
@@ -4326,19 +4367,92 @@ function renderTree() {
         "a",
         {
           href: `#settings/${n.id}`,
+          "data-page": n.id,
           onclick: (ev) => {
             ev.preventDefault();
             goSettings(n.id);
-            if (n.press) $(n.press).click();
           },
         },
         ico(n.icon),
         el("span", { text: n.label }),
       ),
-      n.children ? el("ul", {}, ...n.children.map(item)) : "",
     );
   $("settings_tree").replaceChildren(el("ul", {}, ...settingsTree().map(item)));
 }
+
+/// 설정 화면(#1z-8) — 고른 메뉴 화면만 보이고 그 메뉴에 `aria-current`. 진입 이름(`sub`): 초대 수락 = 상세에 붙여 넣기 폼(다른 진입이면 닫음),
+/// 새 에이전트 = 상세에 등록 폼. 초대 생성은 새로 만들기가 단추를 누른다(해시로 다시 올 때는 누르지 않는다 — #1r).
+function openSettings(r) {
+  for (const n of settingsTree()) $(n.id).hidden = n.id !== r.page;
+  for (const a of $("settings_tree").querySelectorAll("a")) a.setAttribute("aria-current", a.dataset.page === r.page ? "page" : "false");
+  showAccept(r.sub === "invite_accept");
+  if (r.sub === "agent_new") showAgentNew(true);
+  if (r.page === "debug") loadDebug();
+}
+
+// ---- 디버깅(#1z-8) ----
+
+/// 디버깅 정보(`GET /api/debug`) — 진단 정보 복사가 쓴다.
+let debugInfo = null;
+
+/// 디버깅 화면 — 파일 카드(버전 · 데이터 폴더 · DB · 로그: 경로 · 크기 · 복사)와 로그 끝 200줄. 화면을 열 때 · 새로 고침 때 읽는다.
+async function loadDebug() {
+  try {
+    const [info, log] = await Promise.all([api("GET", "/api/debug"), api("GET", "/api/debug/log")]);
+    debugInfo = info;
+    const file = (k) => info.files.find((f) => f.key === k);
+    const card = (label, path, size, copyLabel) =>
+      el(
+        "div",
+        { class: "set-tile debug-file" },
+        el("span", { class: "set-tile-label" }, el("strong", { text: label }), el("span", { class: "hint mono", text: path })),
+        size !== null ? el("span", { class: "hint", text: size }) : "",
+        el("button", { type: "button", class: "small", text: "복사", "aria-label": copyLabel, onclick: () => debugCopy(path, `${label} 복사`) }),
+      );
+    $("debug_files").replaceChildren(
+      card("버전", `${info.version} (${info.os} ${info.arch})`, null, "버전 복사"),
+      card("데이터 폴더", info.data_dir, null, "데이터 폴더 경로 복사"),
+      card("DB", file("db").path, fileSize(file("db").size), "DB 경로 복사"),
+      card("로그", file("log").path, fileSize(file("log").size), "로그 경로 복사"),
+    );
+    debugLog = log.lines;
+    $("debug_log_path").textContent = log.path;
+    renderDebugLog();
+    $("debug_msg").textContent = "";
+  } catch (e) {
+    $("debug_msg").textContent = "디버깅 정보 오류: " + e.message;
+  }
+}
+
+/// 마지막으로 읽은 로그 줄.
+let debugLog = [];
+
+/// 로그 상자 — 고른 수준만, 줄 앞 유닉스 초는 이 PC 시각(월-일 시:분:초)으로. 끝(최신)이 보이게 아래로.
+function renderDebugLog() {
+  const day = (at) => {
+    const d = new Date(at * 1000);
+    return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${formatClock(at)}`;
+  };
+  const rows = logLines(debugLog, $("debug_level").value);
+  $("debug_log").textContent = rows.length ? rows.map((x) => (x.at != null ? `${day(x.at)} ${x.level} ${x.rest}` : x.rest)).join("\n") : "로그 없음";
+  $("debug_log").scrollTop = $("debug_log").scrollHeight;
+}
+
+/// 디버깅 복사 — 글을 클립보드로, 결과는 디버깅 상태 줄.
+async function debugCopy(text, label) {
+  await act(label, async () => {
+    await navigator.clipboard.writeText(text);
+    return `${label} 했습니다`;
+  }, "debug_msg");
+}
+
+$("debug_level").addEventListener("change", renderDebugLog);
+$("debug_refresh").addEventListener("click", loadDebug);
+// 진단 정보 복사 — 버전 · OS · 경로 · 크기 · 포트 · 열린 연결 수(신원 키 · 토큰 · 지문 없음 — `diagText`).
+$("debug_copy").addEventListener("click", async () => {
+  if (!debugInfo) await loadDebug();
+  if (debugInfo) await debugCopy(diagText(debugInfo, state.me), "진단 정보 복사");
+});
 
 /// 설정 입력 — 입력 id = 설정 이름.
 const PREFS = [
@@ -4728,7 +4842,6 @@ $("new_menu").replaceChildren(
         role: "menuitem",
         onclick: () => {
           closeMenus();
-          if (i.focus === "agent_name") showAgentNew(true);
           state.focusAfter = i.focus;
           go(i.href);
           if (i.press) $(i.press).click();
@@ -4843,9 +4956,24 @@ function closeSearch() {
   $("search_box").hidden = true;
 }
 
+/// 결과 상자 — 머리(나간 대화 포함 스위치 · 안내, #1z-8)는 그대로 두고 결과만 바꾼다(스위치 초점이 남게).
 function showSearch(children) {
-  $("search_box").replaceChildren(...children);
+  $("search_results").replaceChildren(...children);
   $("search_box").hidden = false;
+}
+
+/// 검색 줄 앞 칩(#1z-8 시안 S1) — 메시지 = 말풍선 · 대화 = 유형 아이콘(둘 다 대화 유형 색, 공유 사본은 점선 빈 칩), 사람 = 그 타일, 에이전트 = 로봇(내 것 = 고른 아이콘 색 · 상대 것 = 그 상대 타일 색).
+function searchMark(m) {
+  if (m.type === "msg" || m.type === "conv") {
+    const n = m.type === "msg" ? "chat" : convKindIcon({ dir: m.kind });
+    return el("span", { class: "s-mark kind-chip", "data-kind": m.kind, "aria-hidden": "true" }, n ? ico(n) : "");
+  }
+  if (m.type === "peer") {
+    const p = state.peers.find((x) => x.id === m.peer);
+    return rowTile(`small ${colorOf(m.peer)}`, p?.icon);
+  }
+  if (m.owner === "me") return agentTile(state.agents.find((a) => a.name === m.name)?.color, "small");
+  return el("span", { class: `pa small ${colorOf(m.owner)}`, "aria-hidden": "true" }, ico("bot"));
 }
 
 async function runSearch() {
@@ -4857,13 +4985,13 @@ async function runSearch() {
   }
   let r;
   try {
-    r = await api("GET", `/api/search?q=${encodeURIComponent(q)}`);
+    r = await api("GET", `/api/search?q=${encodeURIComponent(q)}&closed=${$("search_closed").checked}`);
   } catch (e) {
     if (searchAsk.is(ticket)) showSearch([el("p", { class: "hint", text: "검색 실패: " + e.message })]);
     return;
   }
   if (!searchAsk.is(ticket)) return; // 그 사이 더 쳤다
-  const groups = searchGroups(r, state.peerNames);
+  const groups = searchGroups(r, state.peerNames, state.convs);
   if (!groups.length) {
     showSearch([el("p", { class: "hint", text: "맞는 것 없음" })]);
     return;
@@ -4878,13 +5006,26 @@ async function runSearch() {
           "ul",
           {},
           ...g.rows.map((row) =>
-            el("li", {}, el("button", { type: "button", onclick: () => searchGo(row) }, el("span", { text: row.label }), el("span", { class: "sub", text: row.sub }))),
+            el(
+              "li",
+              {},
+              el(
+                "button",
+                { type: "button", class: "s-row", onclick: () => searchGo(row) },
+                searchMark(row.mark),
+                el("span", { class: "s-text" }, el("span", { text: row.label }), el("span", { class: "sub", text: row.sub })),
+                row.tag ? el("span", { class: "chip", text: row.tag }) : "",
+              ),
+            ),
           ),
         ),
       ),
     ),
   );
 }
+
+// 나간 대화 포함(#1z-8) — 이 탭이 열린 동안만 기억(설정 아님), 바꾸면 같은 검색어로 다시.
+$("search_closed").addEventListener("change", () => runSearch());
 
 /// 검색 결과로 — 메시지 = 그 글 위치, 대화 = 그 대화, 사람 = 그 타일, 상대 에이전트 = 세션 생성 채움, 내 에이전트 = 설정.
 function searchGo(row) {

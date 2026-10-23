@@ -122,6 +122,9 @@ struct SearchQuery {
     /// 메시지 묶음 건수(그 밖 묶음은 [`chat::SEARCH_OTHERS`]).
     #[serde(default)]
     limit: Option<i64>,
+    /// 닫힌 대화(나감 · 상대가 나감 · 끝난 공유 사본)도 찾는가(#1z-8 — 웹UI "나간 대화 포함", 기본 뺌).
+    #[serde(default)]
+    closed: Option<bool>,
 }
 
 /// `GET /api/conversations/{id}/messages` — `limit` 이면 마지막 N 개만(개요 미리보기 #1z-4, 1 ~ [`MESSAGES_MAX`]).
@@ -390,6 +393,7 @@ fn to_of(to: &Option<String>) -> Result<(), &'static str> {
     }
 }
 
+/// `uid` = 등록 세대(같은 이름 · 같은 id 로 다시 등록해도 다름 — 웹UI 저장 전 값의 주인, #1z-8 R2).
 /// `parent_dir` = 상위 읽기로 실제 여는 폴더(끔 · 막힌 곳이면 `null` — 웹UI 가 생략 사유를 보인다).
 fn agent_json(a: Agent) -> Value {
     let up = a
@@ -397,7 +401,7 @@ fn agent_json(a: Agent) -> Value {
         .then(|| an_core::paths::parent_read_dir(std::path::Path::new(&a.folder)))
         .flatten()
         .map(|p| p.display().to_string());
-    json!({ "id": a.id, "name": a.name, "folder": a.folder, "prompt": a.prompt, "group": a.group, "parent_read": a.parent_read, "parent_dir": up, "shell": a.shell, "color": a.color })
+    json!({ "id": a.id, "name": a.name, "folder": a.folder, "prompt": a.prompt, "group": a.group, "parent_read": a.parent_read, "parent_dir": up, "shell": a.shell, "color": a.color, "uid": a.uid })
 }
 
 /// 폴더는 있는 절대 경로만 — 상대 경로는 앱의 현재 폴더 기준이 되어 의도와 달라진다. 데이터 루트를 품거나 네트워크 경로면 거부
@@ -1123,8 +1127,9 @@ async fn search(State(chat): State<Arc<Chat>>, Query(q): Query<SearchQuery>) -> 
         return bad(&format!("limit 은 1 ~ {SEARCH_MAX}"));
     }
     let db = chat.db();
+    let closed = q.closed.unwrap_or(false);
     let (found, sums) =
-        match chat::search(&db, text, limit).and_then(|f| Ok((f, summary_map(&db)?))) {
+        match chat::search(&db, text, limit, closed).and_then(|f| Ok((f, summary_map(&db)?))) {
             Ok(v) => v,
             Err(e) => return db_fail(e),
         };

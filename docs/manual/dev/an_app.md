@@ -22,7 +22,7 @@
   `POST /api/pairing-window`(초대 생성) → `{seconds, code, invite}`. 오류 404 · 400 · 502, JSON 아닌 본문 415.
 - `chat_api::routes(chat)` — `GET/POST /api/agents`(이름 1 ~ 64자 · 폴더는 있는 절대 경로 · 데이터 루트를 품거나 네트워크 경로면 400(`an_core::paths::agent_folder_problem`, #1a) · 같은 이름 409 · 도구 칸 없음 — `tools` 를 주면 422(#1d)) ·
   `PATCH /api/agents/{id} {folder?, prompt?, group?, parent_read?, shell?, color?}`(이름은 바꾸지 않는다 — 주면 400 · `color` 는 `agents::ICON_COLORS` 밖이면 400 "color 는 …", #1z-7) ·
-  에이전트 JSON 에 `color`(#1z-7) · 에이전트 JSON 에 `group`(#1j 웹UI 는 쓰지 않는다) ·
+  에이전트 JSON 에 `color`(#1z-7) · `uid`(#1z-8 R2 — 등록 세대: 같은 이름 · 같은 id 로 다시 등록하면 다름, 폴더 · 상위 · 셸이 바뀌면 새 값 — 웹UI 저장 전 값의 주인) · 에이전트 JSON 에 `group`(#1j 웹UI 는 쓰지 않는다) ·
   등록 `parent_read`(없으면 끔) · 에이전트 JSON `parent_read` · `parent_dir`(#05-2 — 실제 여는 위 폴더, 끔 · 막힌 곳이면 `null`) ·
   등록 · 수정 `shell`(#05-3 — 없으면 끔 · 그대로) · 에이전트 JSON `shell` — 웹UI 는 끔 → 켬으로 보낼 때만 `window.confirm(SHELL_WARN)`(`view.js` `shellConfirmNeeded`, 취소 = 보내지 않음) ·
   `DELETE /api/agents/{id}` · `GET /api/peers/{id}/agents` → `{names}` · `GET/POST /api/conversations`(목록 = 요약 `title` · `last_state` · `last_at` · `last{text, author, mine, agent, via}|null`(#1j — 마지막 글, `text` 앞 120자);
@@ -51,7 +51,7 @@
   `tx: null`). `GET /api/tx/{id}` → `{tx, key, state, conversation, message, reply, progress, outbox, stalled}`(`state` = `sending` · `sent` ·
   `queued` · `running` · `answered` · `failed` · `stalled` — 조회가 감시도 띄운다, `Chat::tx_view`) · `POST /api/tx/{id}/resume`(멈춤을 풀고 지금
   상태 — `wait`). 없는 트랜잭션 404.
-  작업 화면(#17, 이 PC 에만): `GET /api/search?q=&limit=` → `{messages, conversations, peers, agents}`(1 ~ 100자) · `GET /api/activity?peer=&kind=all|human|
+  작업 화면(#17, 이 PC 에만): `GET /api/search?q=&limit=&closed=` → `{messages, conversations, peers, agents}`(1 ~ 100자 — `closed` 기본 거짓 = 닫힌 대화(나감 · 상대가 나감 · 끝난 공유 사본)의 글 · 제목 뺌, #1z-8) · `GET /api/activity?peer=&kind=all|human|
   agent|relay|failed&q=&limit=` → `{items, unseen, unseen_all, upto{message, event}}`(`limit=0` = 수만) · `POST /api/activity/seen {peer?, message, event}`
   (받은 `upto` 까지) · `GET /api/saved?peer=&conversation=&limit=` · `PATCH /api/messages/{id} {saved}` · `PATCH /api/conversations/{id} {title?, starred?}` ·
   `POST /api/conversations/{id}/read {upto}`(받은 마지막 글 id — 그 대화 글이 아니면 400). 요약 JSON 에 `starred` · `unread`, 메시지에 `model` · `effort` · `saved`.
@@ -98,7 +98,9 @@
   401) → `Authorization: Bearer` 만(쿠키 읽지 않음 · `/api/events` 만 `?t=` 도) 401. 모든 응답(401 · 403 포함)에 `server::CSP` · `X-Frame-Options:
   DENY` · `X-Content-Type-Options: nosniff` · `Referrer-Policy: no-referrer`, `GET /` 는 `Cache-Control: no-store`. 웹UI 는 `view::entryToken` 으로
   주소의 `t` 를 sessionStorage 로 옮기고 주소창에서 지운다 · 401 이면 `#disconnected` 안내. 경로 `/` · `/app.js` · `/view.js` · `/app.css` · `/favicon.ico` · `/fonts/{파일}`(#1p — `server::FONTS`
-  에 있는 이름만 토큰 없이, IBM Plex Sans KR woff2 3 · `LICENSE.txt` · `Cache-Control: public, max-age=31536000, immutable`, 그 밖 이름은 토큰 없으면 401 · 있으면 404) · `/api/status`(`version` · `data_dir` · `db` · `cli_api` = `server::CLI_API`(1) — CLI 가 보내기 전 확인) · `POST /api/open`.
+  에 있는 이름만 토큰 없이, IBM Plex Sans KR woff2 3 · `LICENSE.txt` · `Cache-Control: public, max-age=31536000, immutable`, 그 밖 이름은 토큰 없으면 401 · 있으면 404) · `/api/status`(`version` · `data_dir` · `db` · `cli_api` = `server::CLI_API`(1) — CLI 가 보내기 전 확인) · `POST /api/open` ·
+  디버깅(#1z-8, 토큰 필요): `GET /api/debug` → `{version, os, arch, data_dir, files: [{key: db|log, path, size|null}]}`(경로 = `Paths::under(data_dir)` — 신원 키 · `instance.json` · 지문 칸 없음) ·
+  `GET /api/debug/log` → `{path, lines}` = 로그 파일 끝 `LOG_TAIL_BYTES`(64 KiB) 안의 마지막 `LOG_TAIL_LINES`(200) 줄(`server::tail_lines` — 중간에서 시작하면 잘린 첫 줄 버림, 파일 없으면 빈 목록).
 - `POST /api/open` — `open_browser()` 가 `Err` 면 500, 아니면 204. 두 번째 실행은 5xx 를 재시도 없이 실패 종료.
 - `notify::Notifier::new(conn, attention)` — 기본 OFF(`settings` `notify_inbound`). 켜짐 · 세부 설정(`Prefs`) · 건수가 한 잠금:
   `on_event`(켜져 있고 `Prefs` 가 허락하면 건수 +1 → `attention(n)` · broadcast 전송, 막히지 않음 — 걸러진 것은 건수에도 안 든다) ·

@@ -152,11 +152,17 @@ async fn agents_crud_api() {
     let sh = serde_json::json!({ "name": "sh", "folder": folder, "shell": true }).to_string();
     let (code, s) = call(port, &h, "POST", "/api/agents", &sh).await;
     assert_eq!((code, s["shell"].as_bool()), (201, Some(true)), "{s}");
+    let first = s.clone();
     let spath = format!("/api/agents/{}", s["id"]);
     let (_, s) = call(port, &h, "PATCH", &spath, r#"{"prompt":"x"}"#).await;
     assert_eq!(s["shell"].as_bool(), Some(true), "{s}");
     let (code, s) = call(port, &h, "PATCH", &spath, r#"{"shell":false}"#).await;
     assert_eq!((code, s["shell"].as_bool()), (200, Some(false)), "{s}");
+    assert_eq!(call(port, &h, "DELETE", &spath, "").await.0, 204);
+    // 같은 이름으로 다시 등록(#1z-8 R2) — 가장 큰 id 를 지운 뒤라 id 는 다시 쓰여도 등록 세대 `uid` 는 다르다(웹UI 저장 전 값의 주인).
+    let (code, again) = call(port, &h, "POST", "/api/agents", &sh).await;
+    assert_eq!((code, &again["id"]), (201, &first["id"]), "{again}");
+    assert!(again["uid"].as_str().is_some_and(|u| !u.is_empty()) && again["uid"] != first["uid"], "{first} {again}");
     assert_eq!(call(port, &h, "DELETE", &spath, "").await.0, 204);
     // 아이콘 색(#1z-7) — 기본 agent-tile, 목록 안 값은 바뀌고 다시 읽어도 남음, 목록 밖 400 · 그대로.
     assert_eq!(made["color"].as_str(), Some("agent-tile"));

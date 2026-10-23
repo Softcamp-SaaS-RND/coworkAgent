@@ -7,6 +7,8 @@ use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use axum::Json;
+use serde_json::json;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
@@ -103,6 +105,8 @@ pub fn router_control(
         .route("/favicon.ico", get(favicon))
         .route("/fonts/{file}", get(font))
         .route("/api/status", get(api_status))
+        .route("/api/debug", get(api_debug))
+        .route("/api/debug/log", get(api_debug_log))
         .route("/api/open", post(api_open))
         .with_state(state.clone())
         .merge(extra)
@@ -283,6 +287,61 @@ async fn api_status(State(s): State<Arc<AppState>>) -> impl IntoResponse {
         s.mode
     );
     ([(header::CONTENT_TYPE, "application/json")], body)
+}
+
+/// 디버깅 화면 로그 끝(#1z-8) — 줄 수 · 파일 끝에서 읽는 바이트 상한.
+pub const LOG_TAIL_LINES: usize = 200;
+pub const LOG_TAIL_BYTES: u64 = 64 * 1024;
+
+/// `GET /api/debug`(#1z-8 디버깅) — 버전 · OS · 데이터 폴더 · DB · 로그 파일의 경로와 크기(없으면 null).
+/// 신원 키 · 토큰(`instance.json`) · 지문은 내지 않는다.
+async fn api_debug(State(s): State<Arc<AppState>>) -> Response {
+    let paths = an_core::paths::Paths::under(&s.status.data_dir);
+    let file = |key: &str, p: std::path::PathBuf| {
+        json!({ "key": key, "path": p.display().to_string(), "size": std::fs::metadata(&p).ok().map(|m| m.len()) })
+    };
+    Json(json!({
+        "version": s.status.version,
+        "os": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+        "data_dir": s.status.data_dir,
+        "files": [file("db", paths.db_file()), file("log", paths.log_file())],
+    }))
+    .into_response()
+}
+
+/// `GET /api/debug/log`(#1z-8) — 로그 파일 끝 [`LOG_TAIL_BYTES`] 안의 마지막 [`LOG_TAIL_LINES`] 줄. 파일이 없으면 빈 목록.
+async fn api_debug_log(State(s): State<Arc<AppState>>) -> Response {
+    let path = an_core::paths::Paths::under(&s.status.data_dir).log_file();
+    match tail_lines(&path, LOG_TAIL_BYTES, LOG_TAIL_LINES) {
+        Ok(lines) => Json(json!({ "path": path.display().to_string(), "lines": lines })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("로그를 읽지 못했습니다: {e}") })),
+        )
+            .into_response(),
+    }
+}
+
+/// 파일 끝 `max_bytes` 안의 마지막 `max_lines` 줄 — 중간에서 시작했으면 잘린 첫 줄은 버린다(UTF-8 이 아닌 바이트는 대체 문자).
+pub fn tail_lines(path: &std::path::Path, max_bytes: u64, max_lines: usize) -> std::io::Result<Vec<String>> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
+    let start = f.metadata()?.len().saturating_sub(max_bytes);
+    f.seek(SeekFrom::Start(start))?;
+    let mut buf = Vec::new();
+    f.take(max_bytes).read_to_end(&mut buf)?;
+    let text = String::from_utf8_lossy(&buf);
+    let mut lines: Vec<&str> = text.lines().collect();
+    if start > 0 && !lines.is_empty() {
+        lines.remove(0);
+    }
+    let skip = lines.len().saturating_sub(max_lines);
+    Ok(lines[skip..].iter().map(|l| l.to_string()).collect())
 }
 
 async fn api_open(State(s): State<Arc<AppState>>) -> StatusCode {

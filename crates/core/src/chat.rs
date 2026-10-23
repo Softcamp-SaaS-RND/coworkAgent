@@ -1042,15 +1042,28 @@ pub struct FoundAgent {
 /// 통합 검색의 메시지 밖 묶음 상한.
 pub const SEARCH_OTHERS: usize = 10;
 
+/// 닫힌 대화(#1z-8 — 웹UI `convClosed` 와 같은 규칙)의 SQL 식 — 내가 나감 · 상대가 나감 · 끝난 공유 사본. `c` = `conversations` 표 별칭.
+fn closed_sql(c: &str) -> String {
+    format!("({c}.left_at IS NOT NULL OR {c}.peer_left_at IS NOT NULL OR ({c}.dir = 'shared' AND coalesce({c}.share_ended, 0) = 1))")
+}
+
 /// 통합 검색 — 메시지 본문(양쪽 글, 최신 `limit` 건) · 대화 제목 · 사람(이름 · 표시 이름 · 호스트) · 에이전트(내 것의 이름 ·
 /// 폴더, 대화에 나온 상대 것의 이름). 글자 그대로 부분 일치(영문은 대소문자 무시), 메시지 밖은 묶음마다 [`SEARCH_OTHERS`] 건.
-pub fn search(conn: &Connection, q: &str, limit: i64) -> rusqlite::Result<Found> {
+/// `closed` 가 거짓이면 닫힌 대화([`closed_sql`])의 메시지 · 대화를 뺀다(#1z-8 — 웹UI "나간 대화 포함" 스위치, 지운 대화는 DB 에 없다).
+pub fn search(conn: &Connection, q: &str, limit: i64, closed: bool) -> rusqlite::Result<Found> {
     let ql = q.to_lowercase();
     let has = |s: &str| s.to_lowercase().contains(&ql);
-    let messages = messages_across(conn, None, Scope::All, None, None, Some(q), limit)?;
+    let messages = search_messages(conn, q, limit, closed)?;
+    let shut: std::collections::HashSet<i64> = if closed {
+        Default::default()
+    } else {
+        conn.prepare(&format!("SELECT c.id FROM conversations c WHERE {}", closed_sql("c")))?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?
+    };
     let conversations = summaries(conn)?
         .into_iter()
-        .filter(|s| has(&s.title))
+        .filter(|s| has(&s.title) && !shut.contains(&s.conversation.id))
         .take(SEARCH_OTHERS)
         .collect();
     let peers = crate::peers::list(conn)?
@@ -1086,6 +1099,19 @@ pub fn search(conn: &Connection, q: &str, limit: i64) -> rusqlite::Result<Found>
         peers,
         agents,
     })
+}
+
+/// 검색의 메시지 묶음 — 본문 부분 일치(글자 그대로) · 최신 `limit` 건, `context` 글 제외. `closed` 가 거짓이면 닫힌 대화의 글을 뺀다.
+fn search_messages(conn: &Connection, q: &str, limit: i64, closed: bool) -> rusqlite::Result<Vec<Message>> {
+    conn.prepare(&format!(
+        "SELECT {} FROM messages m JOIN conversations c ON c.id = m.conversation_id
+         WHERE m.author <> 'context' AND m.text LIKE ?1 ESCAPE '\\' AND (?3 OR NOT {})
+         ORDER BY m.created_at DESC, m.id DESC LIMIT ?2",
+        prefixed(MSG_COLS, "m"),
+        closed_sql("c")
+    ))?
+    .query_map(params![like_pattern(q), limit, closed], msg_row)?
+    .collect()
 }
 
 /// 글의 출처 표시(`cli` 만 남긴다 — 그 밖 값은 표시 없음).

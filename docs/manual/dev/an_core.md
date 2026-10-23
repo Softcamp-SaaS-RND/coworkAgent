@@ -72,7 +72,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   작업 화면(이 PC 에만): `set_starred(id, on)` · `marks(id)`(제목 · ★) · `mark_read(id, upto)`(화면이 받은 마지막 글까지 — 뒤로 가지 않음, 그 대화
   글이 아니면 거짓) · `set_saved(msg, on)` · `saved(peer?, conversation?, limit)`(저장 순) · `add_relay_event(conv, RelayMark, detail)` ·
   `activity(peer?, ActivityFilter, q?, limit)`(상대 쪽 글 · 실패한 내 글 · 자동 왕복 기록, 최신순) · `activity_unseen(peer?)` · `activity_upto()` ·
-  `mark_activity_seen(peer?, (message, event))`(받은 범위까지 — 뒤로 가지 않고 지금 마지막 항목을 넘지 않음) · `search(q, limit)`(메시지 · 대화 ·
+  `mark_activity_seen(peer?, (message, event))`(받은 범위까지 — 뒤로 가지 않고 지금 마지막 항목을 넘지 않음) · `search(q, limit, closed)`(#1z-8 — `closed` 거짓이면 닫힌 대화(`closed_sql` = 웹UI `convClosed` 와 같은 규칙: 내가 나감 · 상대가 나감 · 끝난 공유 사본)의 글 · 제목을 뺀다; 메시지 · 대화 ·
   사람 · 에이전트 묶음) · `set_run(id, turns, duration_ms, model, effort)`. `set_state` · `set_flags` 는 내 글이 `error` 로 바뀌는 순간을 `relay_events`
   `failed` 로 남긴다 — 본 뒤 실패로 바뀐 글도 다시 안 본 것으로 센다(글 id 는 그대로라). `Summary` 에 `starred` · `unread`, `Message` 에 `saved_at` · `model` · `effort`.
   자동 왕복: `Conversation.relay: Option<Relay{agent, cap, count, on}>` · `relay_blocked`, `set_relay(id, agent, cap)` ·

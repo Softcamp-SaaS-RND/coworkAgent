@@ -237,7 +237,7 @@ export function unlinkedReplies(messages) {
 }
 
 /// 화면 위치(해시) — `#c/{id}` 대화(`/m/{글}` = 그 글 위치) · `#s/{id}` 그 대화 상대에게 보낸 글 · `#p/{id}` 상대와 주고받은 글 ·
-/// `#activity` 내 활동 · `#requests` 요청 목록 · `#starred` 즐겨찾기(#1j) · `#saved` 북마크 항목 · `#agents` 에이전트 · `#settings`(`/{절}` = 그 절, 모르는 절은 처음) ·
+/// `#activity` 내 활동 · `#requests` 요청 목록 · `#starred` 즐겨찾기(#1j) · `#saved` 북마크 항목 · `#agents` 에이전트 · `#settings`(`/{화면}` = 그 화면 · `/{별칭}` = `SETTINGS_ALIAS`, 빈 · 모르는 = 연결 — #1z-8) ·
 /// `#new` 세션 생성(#1x). 그 밖은 안내 화면.
 export function route(hash) {
   const h = (hash ?? "").replace(/^#/, "");
@@ -251,8 +251,8 @@ export function route(hash) {
   if (["activity", "requests", "starred", "saved", "agents", "new"].includes(h)) return { view: h };
   m = /^settings(?:\/(\w+))?$/.exec(h);
   if (m) {
-    const known = settingsTree().some((n) => n.id === m[1] || (n.children ?? []).some((c) => c.id === m[1]));
-    return { view: "settings", focus: known ? m[1] : null };
+    if (SETTINGS_ALIAS[m[1]]) return { view: "settings", page: SETTINGS_ALIAS[m[1]], sub: m[1] };
+    return { view: "settings", page: settingsTree().some((n) => n.id === m[1]) ? m[1] : "conn", sub: null };
   }
   return { view: "home" };
 }
@@ -373,27 +373,24 @@ export class OneAtATime {
 
 // ---- 설정 트리 ----
 
-/// 설정 화면 왼쪽 트리 — 항목 `id` = 그 절의 요소 id(누르면 그 절로), `icon` = `.ico-{이름}`(#1l). 내 정보는 프로필 메뉴 "사용자 정보" 팝업(#1l).
-/// `press` = 누르면 그 절로 간 뒤 함께 누를 단추 id(#1r — "초대 생성" 은 초대를 만든다, 해시로 다시 올 때는 누르지 않는다).
+/// 설정 화면 왼쪽 메뉴(#1z-8 — 평평한 8개, 사용자 seed 글자 그대로) — 항목 `id` = 그 화면(`<section id>`), `icon` = `.ico-{이름}`. 고르면 그 화면만 보인다.
+/// 내 정보는 프로필 메뉴 "사용자 정보" 팝업(#1l).
 export function settingsTree() {
   return [
-    {
-      id: "conn",
-      label: "연결",
-      icon: "link",
-      children: [
-        { id: "invite_make", label: "초대 생성", icon: "plus", press: "window_btn" },
-        { id: "invite_accept", label: "초대 수락", icon: "enter" },
-        { id: "peers", label: "그룹설정", icon: "users" },
-      ],
-    },
-    { id: "agents", label: "내 에이전트", icon: "bot" },
+    { id: "conn", label: "연결", icon: "link" },
+    { id: "groups", label: "그룹설정", icon: "users" },
+    { id: "agents", label: "에이전트", icon: "bot" },
     { id: "run", label: "실행", icon: "play" },
     { id: "screen", label: "화면", icon: "monitor" },
     { id: "startup", label: "시작", icon: "power" },
     { id: "notify", label: "알림", icon: "bell" },
+    { id: "debug", label: "디버깅", icon: "bug" },
   ];
 }
+
+/// 설정 해시의 옛 · 진입 이름(#1z-8) → 그 화면. `invite_make` = 초대 생성(새로 만들기가 단추를 누른다) · `invite_accept` = 초대 수락 칸 · `peers` = 사용자 표(옛 그룹설정 카드 —
+/// 검색 결과 · 페어링 전 사람) · `agent_new` = 새 에이전트 폼(새로 만들기 "에이전트 등록").
+export const SETTINGS_ALIAS = { invite_make: "conn", invite_accept: "conn", peers: "conn", agent_new: "agents" };
 
 // ---- 검색 · 그룹설정의 그룹(#1j) ----
 
@@ -401,22 +398,6 @@ export function settingsTree() {
 export function searchItems(items, q, fields) {
   const needle = (q ?? "").trim().toLowerCase();
   return needle ? items.filter((it) => fields.some((f) => String(it[f] ?? "").toLowerCase().includes(needle))) : items;
-}
-
-/// 설정 그룹설정의 끝 절 이름(#1w — 사용자 목록: 관리 줄 + 그 사용자와의 대화 트리).
-export const USER_LIST = "사용자 목록";
-
-/// 설정 그룹설정 절(#1w — 그룹 = 대화만, D37 개정) — 레일 그룹 순서대로 그 그룹 대화 줄(`{id, peer, title, sub}` — `convs` 순서, 비어도 둔다 — 놓을 자리),
-/// 끝에 "사용자 목록"(줄은 부르는 쪽이 상대마다 그린다).
-export function settingsGroupSections(groups, convs, peerNames) {
-  return [
-    ...groups.map((g) => ({
-      group: g.id,
-      title: g.name,
-      rows: inGroup(convs, g).map((c) => ({ id: c.id, peer: c.peer_id, ...convLabel(c, peerNames) })),
-    })),
-    { group: null, title: USER_LIST },
-  ];
 }
 
 /// 그룹설정 왼쪽 목록(#1z — 시안 A) — 검색(`q`)에 맞는 그룹 · 사용자와 각 대화 수. 사용자 = 이름 · 별칭 · PC · 지문 또는 그 사용자 대화 제목이 맞으면,
@@ -454,12 +435,6 @@ export function railSlot(centers, pos) {
   let i = 0;
   for (let k = 1; k < centers.length; k++) if (Math.abs(centers[k] - pos) < Math.abs(centers[i] - pos)) i = k;
   return { index: i, after: pos > centers[i] };
-}
-
-/// 대화 줄을 그룹 절에 놓기(#1w) — 복사: 그 그룹에 넣기만(원래 자리 — 사용자 목록 · 다른 그룹 — 그대로). 이미 있거나 모르는 그룹이면 `null`.
-export function convCopy(convId, to, groups) {
-  const g = groups.find((x) => x.id === to);
-  return g && !(g.convs ?? []).includes(convId) ? { add: [convId] } : null;
 }
 
 /// 받침에 맞춘 조사 — 한글로 끝나면 받침 있음 `withB` · 없음 `withoutB`, 그 밖(영문 · 숫자 등)은 `withB(withoutB)`.
@@ -597,7 +572,7 @@ export function newMenu() {
     { label: SESSION_NEW, href: "#new", focus: "chat_peer", icon: "chat" },
     { label: "초대 생성", href: "#settings/invite_make", focus: "window_btn", icon: "plus", press: "window_btn" },
     { label: "초대 수락", href: "#settings/invite_accept", focus: "invite_text", icon: "enter" },
-    { label: "에이전트 등록", href: "#settings/agents", focus: "agent_name", icon: "bot" },
+    { label: "에이전트 등록", href: "#settings/agent_new", focus: "agent_name", icon: "bot" },
   ];
 }
 
@@ -718,6 +693,48 @@ export function portText(me) {
       ? `${me.port}(임의 — 47100 사용 중: ${holder.name}, PID ${holder.pid})`
       : `${me.port}(임의)`;
   return { ui: me.ui_port != null ? String(me.ui_port) : "알 수 없음", peer, conns: String(me.open_connections ?? 0) };
+}
+
+/// 저장 전 값 꺼내기(#1z-8 R1) — 초안은 그 id 의 주인(`owner` — 에이전트 등록 세대 `uid` · 상대 지문)과 함께 둔다. 주인이 다르면(지운 뒤 새 프로필이 같은 id · 같은 이름을 다시 씀 — #1z-8 R2) 버리고 없다고 본다.
+export function draftOf(drafts, id, owner) {
+  const d = drafts.get(id);
+  if (d && d.owner !== owner) drafts.delete(id);
+  return d?.owner === owner ? d : undefined;
+}
+
+/// 목록에 없는 id 의 저장 전 값을 버린다(#1z-8 R1 — 지운 항목).
+export function pruneDrafts(drafts, ids) {
+  for (const id of drafts.keys()) if (!ids.includes(id)) drafts.delete(id);
+}
+
+/// 파일 크기(#1z-8 디버깅) — 바이트 → "123 B" · "12.4 KB" · "1.2 MB"(1024 단위), 없으면 "없음".
+export function fileSize(n) {
+  if (n == null) return "없음";
+  if (n < 1024) return `${n} B`;
+  const [v, u] = n < 1024 * 1024 ? [n / 1024, "KB"] : [n / 1024 / 1024, "MB"];
+  return `${v.toFixed(1)} ${u}`;
+}
+
+/// 로그 줄(#1z-8) — `{유닉스 초} {수준} {나머지}` → `{at, level, rest}`(그 꼴이 아니면 `at`·`level` null, `rest` = 줄 그대로). `level` 을 주면 그 수준만.
+export function logLines(lines, level = "") {
+  return lines
+    .map((l) => {
+      const m = /^(\d{9,})\s+([A-Z]+)\s+(.*)$/.exec(l);
+      return m ? { at: Number(m[1]), level: m[2], rest: m[3] } : { at: null, level: null, rest: l };
+    })
+    .filter((x) => !level || x.level === level);
+}
+
+/// 진단 정보 복사 글(#1z-8) — 버전 · OS · 경로 · 크기 · 포트 · 열린 연결 수. 신원 키 · 토큰 · 지문은 넣지 않는다(`me` 의 다른 칸을 읽지 않는다).
+export function diagText(info, me) {
+  const ports = me ? portText(me) : null;
+  const file = (k) => info.files.find((f) => f.key === k);
+  return [
+    `coworkAgent ${info.version} (${info.os} ${info.arch})`,
+    `데이터 폴더: ${info.data_dir}`,
+    ...["db", "log"].map((k) => `${k === "db" ? "DB" : "로그"}: ${file(k)?.path ?? "?"} (${fileSize(file(k)?.size)})`),
+    ...(ports ? [`웹UI 포트: ${ports.ui}`, `피어 포트: ${ports.peer}`, `열린 피어 연결: ${ports.conns}`] : []),
+  ].join("\n");
 }
 
 /// 입력 중인 멘션 — 커서(`caret`) 바로 앞이 `@…`(앞이 글 머리 · 공백, 그 뒤에 공백 없음)면 `{start: @ 자리, query: @ 뒤 글자}`, 아니면 `null`.
@@ -1104,10 +1121,10 @@ export const PREVIEW_MSGS = 12;
 /// 개요 미리보기 배율(%, #1z-6 — 설정 `ui_home_zoom`, 서버 `HOME_ZOOMS`) — 첫 값이 기본(지금 크기). 축소 없음(사용자 — 처음 화면이 이미 작다).
 export const HOME_ZOOMS = [100, 125, 150, 175, 200];
 
-/// 배율 → 카드 폭 · 본문 높이 배수 · 말풍선 줄 수(글자 크기는 그대로). 목록 밖 값은 100%.
+/// 배율 → 카드 폭 · 본문 높이 배수(글자 크기 · 말풍선 2줄은 그대로 — #1z-8 사용자 "2줄까지만", #1z-6 의 줄 수 늘림 개정). 목록 밖 값은 100%.
 export function previewZoom(z) {
   const pct = HOME_ZOOMS.includes(Number(z)) ? Number(z) : HOME_ZOOMS[0];
-  return { scale: pct / 100, lines: pct >= 175 ? 4 : pct >= 125 ? 3 : 2 };
+  return { scale: pct / 100 };
 }
 
 /// 개요 미리보기 절(#1z-5 2차 시안 A) — 상대마다 절, 카드 = 그 상대 대화(최근 활동 순 — `last_at` 큰 것부터, 없으면 뒤). '나' · 그룹은 한 줄(`cols` = 폭에 맞춘 열 수)만 —
@@ -1352,8 +1369,10 @@ export function lastRun(messages, mine) {
 }
 
 /// 통합 검색 결과(`GET /api/search`) → 묶음(메시지 · 대화 · 사람 · 에이전트 — 빈 묶음 없음). 행 = `{label, sub}` + 가는 곳: `href` · `tile`(그 타일
-/// 선택 — 페어링된 사람) · `chat`(세션 생성에 상대 · 에이전트 채움 — 상대 에이전트).
-export function searchGroups(r, peerNames) {
+/// 선택 — 페어링된 사람) · `chat`(세션 생성에 상대 · 에이전트 채움 — 상대 에이전트). `mark` = 줄 앞 칩(#1z-8 시안 S1 — 메시지 · 대화 `{type, kind: dir}`,
+/// 사람 `{type: "peer", peer}`, 에이전트 `{type: "agent", owner, name}`), `tag` = 닫힌 대화 문구(`convClosed` — 공유 끝남은 검색 응답에 없어 `convs` 의 같은 대화로, 없으면 "").
+export function searchGroups(r, peerNames, convs = []) {
+  const closed = (c) => convClosed(convs.find((x) => x.id === c.id) ?? c);
   const groups = [
     {
       title: "메시지",
@@ -1362,29 +1381,33 @@ export function searchGroups(r, peerNames) {
         .map((m) => {
           const conv = m.conversation;
           const who = authorLabel(conv, m, peerNames.get(conv.peer_id));
-          return { label: preview(m.text), sub: `${who} · ${convLabel(conv, peerNames).title}`, href: `#c/${conv.id}/m/${m.id}` };
+          return { label: preview(m.text), sub: `${who} · ${convLabel(conv, peerNames).title}`, href: `#c/${conv.id}/m/${m.id}`, mark: { type: "msg", kind: conv.dir }, tag: closed(conv) };
         }),
     },
     {
       title: "대화",
       rows: (r.conversations ?? []).map((c) => {
         const l = convLabel(c, peerNames);
-        return { label: l.title, sub: l.sub, href: `#c/${c.id}` };
+        return { label: l.title, sub: l.sub, href: `#c/${c.id}`, mark: { type: "conv", kind: c.dir }, tag: closed(c) };
       }),
     },
     {
       title: "사람",
-      rows: (r.peers ?? []).map((p) =>
-        p.paired ? { label: displayName(p), sub: p.host, tile: p.id } : { label: displayName(p), sub: `${p.host} · ${peerState(p)}`, href: "#settings/peers" },
-      ),
+      rows: (r.peers ?? []).map((p) => ({
+        ...(p.paired ? { label: displayName(p), sub: p.host, tile: p.id } : { label: displayName(p), sub: `${p.host} · ${peerState(p)}`, href: "#settings/peers" }),
+        mark: { type: "peer", peer: p.id },
+        tag: "",
+      })),
     },
     {
       title: "에이전트",
-      rows: (r.agents ?? []).map((a) =>
-        a.owner === "me"
+      rows: (r.agents ?? []).map((a) => ({
+        ...(a.owner === "me"
           ? { label: a.name, sub: "내 에이전트", href: "#settings/agents" }
-          : { label: a.name, sub: `${shortName(peerNames.get(a.owner))} 의 에이전트`, chat: { peer: a.owner, agent: a.name } },
-      ),
+          : { label: a.name, sub: `${shortName(peerNames.get(a.owner))} 의 에이전트`, chat: { peer: a.owner, agent: a.name } }),
+        mark: { type: "agent", owner: a.owner, name: a.name },
+        tag: "",
+      })),
     },
   ];
   return groups.filter((g) => g.rows.length);

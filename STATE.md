@@ -3,23 +3,21 @@
 > **세션 시작 시 가장 먼저 읽는 문서.** 지금 어디서 재개하는지의 단일 좌표 — **매번 덮어쓴다.**
 > Task 목록은 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`), 미조치는 [overview/ledger.md](docs/overview/ledger.md).
 
-- **갱신**: 2026-10-23 / main `95dc790` — **v1.3.3 정식 릴리스(Latest)** 등록(소스 `95dc790` · 서명 Valid SOFTCAMP CO.,LTD. · SHA-256 `9de583c7…` 받은 파일 대조 · `real_github_latest` · `real_signed_release` ok). 앞서 #1z-7 종결 · main 반영(`0769a47`)
+- **갱신**: 2026-10-23 / 브랜치 `task/1z-8-settings-search`(작업 폴더 `../coworkAgent-1z-8`) — Task #1z-8 종결(archive) · main 반영 대기(선생님 승인)
 
 ## 현재 작업
 
-없음 — #1z-7 대화 유형 색 · 아이콘 + 내 에이전트 상세 정리 종결([report](docs/archive/1z-7.conv-type-look/report.md) — 시안 A: in 청록 · 로봇 / out 파랑 · 사람 / shared 회색 점선,
-상세 한 격자 · 아이콘 색(스키마 26) · 닫기, 버전 1.3.3, 적대적 평가 2/2 — R1 2건 반영 · R2 approve). origin/main `fbd7bad..0769a47` squash push, 로컬 main fast-forward.
+#1z-8 설정 화면 · 검색 · 미리보기 — **종결**([report](docs/archive/1z-8.settings-search/report.md) — 상단 바 버전 · 검색 "나간 대화 포함" 스위치 · 유형 칩 S1 · 미리보기 2줄 ·
+대화 정보 제목 줄 삭제 · 설정 시안 B(메뉴 8개 · 고른 화면만 · 처음 연결 · 목록 + 상세 · 스위치 · 2열 타일 · 디버깅), 버전 1.3.4, gate 8/8, 적대적 평가 2/2 — R1 high 1 · R2 medium 1 반영 · 미조치 없음).
 
-- **중단 지점**: 없음. 원 작업 폴더의 다른 세션 미커밋(PRODUCT.md 링크 2줄 · docs/tech/security-posture.md)은 그대로 보존(stash → fast-forward → pop) —
-  security-posture 2.2 절 "도구 = 읽기 전용 5개 · 셸 없음" 은 #05-3 뒤 사실과 다르다(그 문서 커밋 때 갱신).
-- **작업 메모**: `cargo fmt` 쓰지 않음. `cargo test` 는 PowerShell 로(링크 LNK1104 · LNK1201 은 다시 돌리면 통과 — 경합 추정).
+- **중단 지점**: main squash 반영 · origin push 는 선생님 승인 뒤. 시험 인스턴스(scratchpad `ui1z8\data`) 정지함.
+- **작업 메모**: 원 작업 폴더(main)의 다른 세션 미커밋(PRODUCT.md · docs/tech/security-posture.md)은 건드리지 않음 — main 반영 때 stash → 반영 → pop. `cargo fmt` 쓰지 않음, `cargo test` 는 PowerShell 로.
 
 ## 다음 행동
 
-1. 1.3.3 릴리스 완료(1.2.0 · 1.3.0 · 1.3.1 · 1.3.2 자동 업데이트 대상 — 1.3.2 도 이미 정식 릴리스였다). 선생님 확인: #05-3 라벨 "셸 명령 실행 허용"(intent 결정 8) · 세션 비움(7) · 압축 요약 셸 없이(9), #1z-7 구현자 해석(report — 아이콘 색 agent-tile ≈ peer-2 관찰).
-2. 19 acceptance TC(사용자) — 19 문서는 `task/19-prototype-acceptance` 브랜치에(main 병합 — 이후 main 은 일반 merge). 19 원장 재측정 · `tools/check_acceptance.py` 번호 형식(1a ~ 1z) 수정 필요.
-3. v1.0.0 · v1.0.1 · v1.1.0 · v1.3.0 macOS zip 첨부(보유한 Mac).
+1. main squash 반영 · push(선생님 승인) → 브랜치 · 작업 폴더 정리. 1.3.4 서명 릴리스 여부 결정(1.3.3 은 릴리스됨).
+2. 선생님 확인: #1z-8 구현자 해석(report — 검색 스위치 탭 동안만 · 960px · 로그 200줄 / 64 KiB · plan 개정 ② ③ · 로그 줄 자기 지문 · 다른 탭 저장이면 초안 버림).
+3. 19 acceptance TC(사용자) · macOS zip 첨부 — 이전 STATE 그대로.
 
-- **블로커 / 미해소**: 19 acceptance TC(사용자). 그룹 타일 묶음 머리 "에이전트 대화" vs 메뉴 "에이전트 응답"(#1z-2 report — 사용자 확인 필요). 구현자 해석(사용자 미확인 — 각 report): 1q 결정 7 · 15,
-  1r plan 해석 1 · 3 · 결정 3 · 11, 1s 결정 1 · 2, 1z-2 결정 2. D34 개정 문구 "편집 · 삭제는 CLI(· API)" 와 달리 CLI 에 편집 · 삭제 명령 없음(확인 필요).
-  #30 미조치 2행 원장 수용(사용자 "수용" — `#30 R2-1` · `#30 (#1y 이어받음)`). #1z-4 미조치 1행 원장 조건 대기(`#1z-4 R1-1` — #1z-5 가 이어받음).
+- **블로커 / 미해소**: 19 acceptance TC(사용자). 구현자 해석(사용자 미확인 — 각 report): 1q 결정 7 · 15, 1r plan 해석 1 · 3 · 결정 3 · 11, 1s 결정 1 · 2, 1z-2 결정 2,
+  #1z-7 구현자 해석, #1z-8 결정 11 · plan 승인 갈음. #30 미조치 2행 원장 수용. #1z-4 미조치 1행 원장 조건 대기.

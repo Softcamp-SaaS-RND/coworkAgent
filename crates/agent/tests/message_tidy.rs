@@ -183,7 +183,7 @@ async fn delete_mine_only_here() {
             .is_empty(),
         "저장된 항목"
     );
-    let found = chat::search(&db, "xyzzy", 50).unwrap().messages;
+    let found = chat::search(&db, "xyzzy", 50, true).unwrap().messages;
     assert!(found.iter().all(|m| m.id != q.id && m.id != r.id), "검색");
     let mine = chat::messages_across(
         &db,

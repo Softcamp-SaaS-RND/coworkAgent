@@ -1017,6 +1017,66 @@ async fn search_groups_messages_titles_peers_agents() {
     assert_eq!(r["agents"], json!([]), "{r}");
 }
 
+/// 검색 스위치(#1z-8) — 기본은 닫힌 대화(내가 나감 · 상대가 나감 · 끝난 공유 사본)의 글 · 제목을 빼고, `closed=true` 면 넣는다.
+#[tokio::test(flavor = "multi_thread")]
+async fn search_closed_switch() {
+    let (a, b) = (side("sc-a").await, side("sc-b").await);
+    let (pb, _) = pair(&a, &b).await;
+    agents::add(&b.db(), "review", ".", "").unwrap();
+    let open = ask(&a, pb, "닫힘시험 열린").await;
+    let left = ask(&a, pb, "닫힘시험 나감").await;
+    let gone = ask(&a, pb, "닫힘시험 상대").await;
+    let ended = ask(&a, pb, "닫힘시험 공유").await;
+    for c in [open, left, gone, ended] {
+        wait_messages(&a, c, 2).await;
+    }
+    chat::leave(&a.db(), left).unwrap();
+    chat::set_peer_left(&a.db(), gone).unwrap();
+    a.db()
+        .execute(
+            "UPDATE conversations SET dir = 'shared', share_ended = 1 WHERE id = ?1",
+            [ended],
+        )
+        .unwrap();
+    let found = |extra: &'static str| {
+        let a = &a;
+        async move {
+            let (code, r) = a
+                .call(
+                    "GET",
+                    &format!("/api/search?q={}{extra}", enc("닫힘시험")),
+                    Value::Null,
+                )
+                .await;
+            assert_eq!(code, 200, "{r}");
+            let mut ms: Vec<i64> = r["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|m| m["conversation"]["id"].as_i64().unwrap())
+                .collect();
+            ms.sort();
+            ms.dedup();
+            let mut cs: Vec<i64> = r["conversations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| c["id"].as_i64().unwrap())
+                .collect();
+            cs.sort();
+            (ms, cs)
+        }
+    };
+    let all = {
+        let mut v = vec![open, left, gone, ended];
+        v.sort();
+        v
+    };
+    assert_eq!(found("").await, (vec![open], vec![open]), "기본 = 닫힌 대화 뺌");
+    assert_eq!(found("&closed=false").await, (vec![open], vec![open]));
+    assert_eq!(found("&closed=true").await, (all.clone(), all), "켬 = 전부");
+}
+
 /// 검색어의 % · _ · \ 는 글자 그대로(LIKE 와일드카드 아님) — 메시지 · 대화 제목 둘 다.
 #[tokio::test(flavor = "multi_thread")]
 async fn search_treats_like_wildcards_literally() {

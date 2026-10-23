@@ -33,14 +33,17 @@ import {
   settingsTree,
   searchItems,
   josa,
-  USER_LIST,
   SESSION_NEW,
   LEAVE_CONFIRM,
   sideSub,
   composeDefaults,
   requestNotice,
-  settingsGroupSections,
-  convCopy,
+  SETTINGS_ALIAS,
+  fileSize,
+  logLines,
+  diagText,
+  draftOf,
+  pruneDrafts,
   convMenuItems,
   convClosed,
   reqResend,
@@ -285,9 +288,9 @@ test("화면 위치", () => {
   assert.deepEqual(route("#starred"), { view: "starred" }, "즐겨찾기(#1j)");
   assert.deepEqual(route("#agents"), { view: "agents" });
   assert.deepEqual(route("#me"), { view: "home" }, "내 정보는 프로필 메뉴 팝업(#1l) — 경로 없음");
-  assert.deepEqual(route("#settings"), { view: "settings", focus: null });
-  assert.deepEqual(route("#settings/invite_accept"), { view: "settings", focus: "invite_accept" });
-  assert.deepEqual(route("#settings/nope"), { view: "settings", focus: null }, "모르는 절 = 설정 처음");
+  assert.deepEqual(route("#settings"), { view: "settings", page: "conn", sub: null });
+  assert.deepEqual(route("#settings/invite_accept"), { view: "settings", page: "conn", sub: "invite_accept" });
+  assert.deepEqual(route("#settings/nope"), { view: "settings", page: "conn", sub: null }, "모르는 = 연결(#1z-8)");
   assert.deepEqual(route("#new"), { view: "new" });
   assert.deepEqual(route(""), { view: "home" });
   assert.deepEqual(route("#c/abc"), { view: "home" });
@@ -356,26 +359,51 @@ test("CLI 출처 — 보는 쪽 기준 라벨 · 글 종류 · 타임라인", ()
   assert.equal(items[1].steps[0].title, "요청");
 });
 
-test("settings_tree — 설정 항목 전부(한 열 순서 — 내 정보 없음, #1l) · 연결 아래 초대 생성 · 초대 수락 · 그룹설정(#1z — 옛 연결 목록)", () => {
+test("settings_tree — 설정 메뉴 8개 평평하게(#1z-8 사용자 seed 글자 그대로 — 내 정보 없음, #1l) · 화면마다 section 하나 · 처음 숨김", () => {
   const tree = settingsTree();
-  const flat = tree.flatMap((n) => [n, ...(n.children ?? [])]);
   assert.deepEqual(
-    flat.map((n) => n.label),
-    ["연결", "초대 생성", "초대 수락", "그룹설정", "내 에이전트", "실행", "화면", "시작", "알림"],
+    tree.map((n) => [n.id, n.label, n.icon]),
+    [
+      ["conn", "연결", "link"],
+      ["groups", "그룹설정", "users"],
+      ["agents", "에이전트", "bot"],
+      ["run", "실행", "play"],
+      ["screen", "화면", "monitor"],
+      ["startup", "시작", "power"],
+      ["notify", "알림", "bell"],
+      ["debug", "디버깅", "bug"],
+    ],
   );
-  assert.equal(new Set(flat.map((n) => n.id)).size, flat.length, "id 는 절 요소 id — 겹치지 않는다");
+  assert.ok(tree.every((n) => !n.children && !n.press), "하위 · 누름 없음");
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
-  for (const n of flat) assert.ok(html.includes(`<section id="${n.id}"`), `index.html 에 절 ${n.id}`);
+  const order = [...html.matchAll(/<section id="(\w+)" class="set-page" aria-labelledby="\w+" hidden>/g)].map((m) => m[1]);
+  assert.deepEqual(order, tree.map((n) => n.id), "화면 순서 = 메뉴 순서, 모두 처음 숨김");
   assert.ok(!html.includes(`<section id="me"`), "설정에 내 정보 카드 없음(#1l)");
-  const order = [...html.matchAll(/<section id="(\w+)" class="card/g)].map((m) => m[1]);
-  assert.deepEqual(order, ["conn", "peers", "agents", "run", "screen", "startup", "notify"], "카드 한 열 순서 = 트리 순서");
+  assert.ok(!html.includes('class="card'), "옛 카드 한 열 없음(#1z-8 — 고른 화면만)");
+  for (const [alias, page] of Object.entries(SETTINGS_ALIAS)) assert.ok(tree.some((n) => n.id === page), `${alias} → ${page}`);
+});
+
+test("settings_route — 설정 해시(#1z-8): 화면 · 별칭 · 빈 · 모르는 = 연결(첫 화면)", () => {
+  assert.deepEqual(route("#settings"), { view: "settings", page: "conn", sub: null }, "빈 = 연결");
+  assert.deepEqual(route("#settings/nope"), { view: "settings", page: "conn", sub: null }, "모르는 = 연결");
+  for (const id of ["conn", "groups", "agents", "run", "screen", "startup", "notify", "debug"])
+    assert.deepEqual(route(`#settings/${id}`), { view: "settings", page: id, sub: null }, id);
+  assert.deepEqual(
+    Object.keys(SETTINGS_ALIAS).map((a) => [a, route(`#settings/${a}`)]),
+    [
+      ["invite_make", { view: "settings", page: "conn", sub: "invite_make" }],
+      ["invite_accept", { view: "settings", page: "conn", sub: "invite_accept" }],
+      ["peers", { view: "settings", page: "conn", sub: "peers" }],
+      ["agent_new", { view: "settings", page: "agents", sub: "agent_new" }],
+    ],
+  );
 });
 
 test("menu_icons — 사이드바 · 설정 트리 · 새로 만들기 항목마다 아이콘, 모두 app.css 에 정의(#1l)", () => {
   const css = readFileSync(new URL("./app.css", import.meta.url), "utf8");
   const items = [
     ...[null, 3, "group"].flatMap((t) => sideNav(t).filter((n) => !n.sep)),
-    ...settingsTree().flatMap((n) => [n, ...(n.children ?? [])]),
+    ...settingsTree(),
     ...newMenu(),
   ];
   for (const i of items) {
@@ -720,20 +748,14 @@ test("preview_sections — 개요 미리보기(#1z-5 2차 시안 A): 상대마�
   );
 });
 
-test("preview_zoom — 개요 미리보기 크기(#1z-6): 100 ~ 200 25 단계(축소 없음) → 본문 배수 · 말풍선 줄 수, 목록 밖은 100%", () => {
+test("preview_zoom — 개요 미리보기 크기(#1z-6): 100 ~ 200 25 단계(축소 없음) → 본문 배수만(#1z-8 — 말풍선은 모든 크기 2줄, 줄 수 없음), 목록 밖은 100%", () => {
   assert.deepEqual(HOME_ZOOMS, [100, 125, 150, 175, 200]);
   assert.deepEqual(
-    HOME_ZOOMS.map((z) => [z, previewZoom(z).scale, previewZoom(z).lines]),
-    [
-      [100, 1, 2],
-      [125, 1.25, 3],
-      [150, 1.5, 3],
-      [175, 1.75, 4],
-      [200, 2, 4],
-    ],
+    HOME_ZOOMS.map((z) => previewZoom(z)),
+    [{ scale: 1 }, { scale: 1.25 }, { scale: 1.5 }, { scale: 1.75 }, { scale: 2 }],
   );
-  assert.deepEqual(previewZoom("150"), { scale: 1.5, lines: 3 }, "select 값(글자)도");
-  for (const z of [75, 110, 250, undefined, null, "x"]) assert.deepEqual(previewZoom(z), { scale: 1, lines: 2 }, String(z));
+  assert.deepEqual(previewZoom("150"), { scale: 1.5 }, "select 값(글자)도");
+  for (const z of [75, 110, 250, undefined, null, "x"]) assert.deepEqual(previewZoom(z), { scale: 1 }, String(z));
 });
 
 test("preview_bubbles — 미리보기 말풍선(#1z-4): 마지막 n 개 · 요약 글 뺌 · 쪽 · 이름 · 글자만 · 상태 색", () => {
@@ -825,9 +847,9 @@ test("new_menu — 네 항목이 각 화면으로, 초점 칸까지(자동 왕�
   assert.deepEqual(items.map((i) => i.label), ["세션 생성", "초대 생성", "초대 수락", "에이전트 등록"]);
   assert.deepEqual(items.map((i) => route(i.href)), [
     { view: "new" },
-    { view: "settings", focus: "invite_make" },
-    { view: "settings", focus: "invite_accept" },
-    { view: "settings", focus: "agents" },
+    { view: "settings", page: "conn", sub: "invite_make" },
+    { view: "settings", page: "conn", sub: "invite_accept" },
+    { view: "settings", page: "agents", sub: "agent_new" },
   ]);
   assert.deepEqual(items.map((i) => i.focus), ["chat_peer", "window_btn", "invite_text", "agent_name"]);
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
@@ -851,7 +873,7 @@ test("profile_menu — 상태(받기 가능 · 집중 고르기 · 앱과 연결
   const pause = (m) => m.find((i) => i.key === "pause").checked;
   assert.equal(pause(profileMenu(true, false)), true);
   assert.equal(pause(profileMenu(undefined, undefined)), false, "설정을 못 읽었으면 꺼짐");
-  assert.deepEqual(route(profileMenu(false, false).at(-1).href), { view: "settings", focus: null });
+  assert.deepEqual(route(profileMenu(false, false).at(-1).href), { view: "settings", page: "conn", sub: null }, "설정 첫 화면 = 연결(#1z-8)");
 });
 
 test("profile_menu_radio — 받기 가능 · 집중은 하나만 켜짐(menuitemradio), 끊김은 고를 수 없는 표시 · 색 열쇠는 presenceOf 와 같다", () => {
@@ -1114,7 +1136,42 @@ test("search_groups — 메시지 · 대화 · 사람 · 에이전트 묶음, �
     ],
     "상대 에이전트 = 새 대화 채움, 내 것 = 설정",
   );
+  assert.deepEqual(
+    groups.map((g) => g.rows.map((r) => r.mark)),
+    [
+      [{ type: "msg", kind: "out" }],
+      [{ type: "conv", kind: "out" }],
+      [
+        { type: "peer", peer: 2 },
+        { type: "peer", peer: 4 },
+      ],
+      [
+        { type: "agent", owner: 2, name: "guide" },
+        { type: "agent", owner: "me", name: "review" },
+      ],
+    ],
+    "줄 앞 칩(#1z-8 S1) — 메시지 · 대화 = 대화 유형, 사람 = 그 상대, 에이전트 = 주인",
+  );
+  assert.deepEqual(groups.flatMap((g) => g.rows.map((r) => r.tag)), ["", "", "", "", "", ""], "열린 대화 = 태그 없음");
   assert.deepEqual(searchGroups({ messages: [], conversations: [], peers: [], agents: [] }, names), []);
+});
+
+test("search_groups_closed — 닫힌 대화 태그(#1z-8): 나감 · 상대가 나감 · 끝난 공유 사본(응답에 공유 정보가 없으면 convs 의 같은 대화로)", () => {
+  const names = new Map([[2, "이도윤 · DYOON"]]);
+  const left = { id: 5, peer_id: 2, agent: "guide", dir: "out", title: "나간 대화", left_at: 10, peer_left_at: null };
+  const gone = { id: 6, peer_id: 2, agent: "guide", dir: "in", title: "상대 나감", left_at: null, peer_left_at: 11 };
+  const shared = { id: 7, peer_id: 2, agent: "guide", dir: "shared", title: "공유", left_at: null, peer_left_at: null };
+  const r = {
+    messages: [{ id: 1, author: "human", mine: true, text: "글", conversation: shared }],
+    conversations: [left, gone, shared],
+    peers: [],
+    agents: [],
+  };
+  const convs = [{ ...shared, share: { ended: true } }];
+  const g = searchGroups(r, names, convs);
+  assert.deepEqual(g[0].rows.map((x) => [x.tag, x.mark]), [["공유 해제됨", { type: "msg", kind: "shared" }]]);
+  assert.deepEqual(g[1].rows.map((x) => x.tag), ["나감", "상대가 나감", "공유 해제됨"]);
+  assert.deepEqual(searchGroups(r, names)[1].rows.map((x) => x.tag), ["나감", "상대가 나감", ""], "convs 없으면 응답 그대로");
 });
 
 test("ask_marks — 요청 태그(상태) · 상태 바꾸기 작업(받은 요청만) · 내 활동 · 보낸 메시지 라벨", () => {
@@ -1196,7 +1253,7 @@ test("shell_confirm — 셸 위험 확인은 끔 → 켬일 때만 · 안내 글
   assert.equal(shellConfirmNeeded(false, false), false);
   assert.equal(shellConfirmNeeded(undefined, true), true, "옛 응답(칸 없음) = 끔");
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
-  assert.ok(html.includes(`<input type="checkbox" id="agent_shell" title="${SHELL_NOTE}">`), "등록 칸 title");
+  assert.ok(html.includes(`<input type="checkbox" id="agent_shell" role="switch" title="${SHELL_NOTE}">`), "등록 칸 title");
   for (const risk of ["workflow", "허용하지 않습니다", "사람 승인 없이", "폴더 · 상위 읽기 제한이 적용되지 않습니다", "신원 키", "~/.claude", "~/.ssh", "막는 장치가 아닙니다", "자동 왕복", "환경 변수", "프록시"]) {
     assert.ok(SHELL_WARN.includes(risk), risk);
   }
@@ -2009,9 +2066,8 @@ test("ui_polish_menu_icons — 프로필 메뉴(상태 셋 빼고) · 내 활동
   }
 });
 
-test("ui_polish_invite_press — 설정 트리 · 새로 만들기의 '초대 생성' 만 초대 생성 단추를 누른다(#1r)", () => {
-  const flat = settingsTree().flatMap((n) => [n, ...(n.children ?? [])]);
-  assert.deepEqual(flat.filter((n) => n.press).map((n) => [n.id, n.press]), [["invite_make", "window_btn"]]);
+test("ui_polish_invite_press — 새로 만들기의 '초대 생성' 만 초대 생성 단추를 누른다(#1r — 설정 메뉴는 하위 없음, #1z-8)", () => {
+  assert.deepEqual(settingsTree().filter((n) => n.press), []);
   assert.deepEqual(newMenu().filter((i) => i.press).map((i) => [i.label, i.press]), [["초대 생성", "window_btn"]]);
 });
 
@@ -2357,45 +2413,12 @@ test("req_moves_closed — 닫힌 대화의 받은 요청은 읽기 전용(상�
   assert.equal(canDrop(open, "accepted"), true);
 });
 
-test("settings_group_sections — 설정 연결 목록: 그룹 순서의 대화 줄 절(빈 그룹도) + 끝 '사용자 목록'", () => {
-  const names = new Map([[2, "이준호 · QA"], [3, "최유나 · DEV"]]);
-  const convs = [
-    { id: 1, peer_id: 2, agent: "review", dir: "out", title: "빌드" },
-    { id: 2, peer_id: 3, agent: "guide", dir: "in", title: "" },
-    { id: 3, peer_id: 2, agent: "review", dir: "out", title: "배포" },
-  ];
-  const groups = [
-    { id: 7, name: "결제", convs: [3, 1, 99] },
-    { id: 5, name: "빈 그룹", convs: [] },
-  ];
-  const s = settingsGroupSections(groups, convs, names);
-  assert.deepEqual(s.map((x) => [x.group, x.title]), [[7, "결제"], [5, "빈 그룹"], [null, USER_LIST]]);
-  assert.equal(USER_LIST, "사용자 목록");
-  assert.deepEqual(s[0].rows.map((r) => [r.id, r.peer, r.title]), [[1, 2, "빌드"], [3, 2, "배포"]], "convs 순서 · 모르는 대화 id 는 없음");
-  assert.equal(s[0].rows[0].sub, "이준호 · QA 의 review");
-  assert.deepEqual(s[1].rows, []);
-  assert.deepEqual(s.at(-1), { group: null, title: USER_LIST });
-  assert.deepEqual(settingsGroupSections([], convs, names), [{ group: null, title: USER_LIST }]);
-});
-
-test("conv_copy — 대화 줄을 그룹 절에 놓으면 복사(넣기만 · 원래 자리 그대로), 이미 있거나 모르는 그룹이면 없음", () => {
-  const groups = [
-    { id: 1, convs: [5] },
-    { id: 2, convs: [] },
-  ];
-  assert.deepEqual(convCopy(5, 2, groups), { add: [5] });
-  assert.equal(convCopy(5, 1, groups), null, "이미 있음");
-  assert.equal(convCopy(5, 9, groups), null, "모르는 그룹");
-  assert.equal(convCopy(5, null, groups), null, "사용자 목록에 놓기");
-  assert.deepEqual(groups[0].convs, [5], "원래 그룹은 그대로");
-});
-
 test("screen_settings_1x — 설정 '타일 크기'(크게 · 작게 — #1z 표시 이름) · 알림 '효과음' 칸, 작은 타일 CSS(넓은 화면 · 레일 폭 토큰)", () => {
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
   const sel = html.slice(html.indexOf('<select id="ui_tile_size">'), html.indexOf("</select>", html.indexOf('<select id="ui_tile_size">')));
   assert.deepEqual([...sel.matchAll(/<option value="(\w+)">([^<]*)</g)].map((m) => [m[1], m[2]]), [["normal", "크게"], ["small", "작게 — 작은 아이콘 + 이름 한 줄"]]);
   assert.ok(html.includes('<label for="ui_tile_size">타일 크기</label>'));
-  assert.match(html, /<label for="notify_sound">효과음<\/label>\s*<input type="checkbox" id="notify_sound"/);
+  assert.match(html, /<label for="notify_sound">효과음<\/label>.*?<input type="checkbox" id="notify_sound" role="switch">/);
   const css = readFileSync(new URL("./app.css", import.meta.url), "utf8");
   assert.ok(css.includes("--rail-w-small:"), "레일 폭 토큰");
   assert.match(css, /@media \(min-width: 721px\) \{\s*#app\.tile-small \{ --rail-w: var\(--rail-w-small\); \}/);
@@ -2548,4 +2571,48 @@ test("avatar_kind — 주고받은 메시지 아바타(#1z-2): 에이전트 · �
   assert.equal(avatarKind("agent", false), "agent");
   assert.equal(avatarKind("human", true), "me");
   assert.equal(avatarKind("human", false), "peer");
+});
+
+test("debug_text — 디버깅(#1z-8): 파일 크기 글자 · 로그 줄 나누기(수준 거르기) · 진단 글(신원 키 · 토큰 · 지문 없음)", () => {
+  assert.deepEqual([null, 0, 1023, 1024, 1536, 12.4 * 1024 * 1024].map(fileSize), ["없음", "0 B", "1023 B", "1.0 KB", "1.5 KB", "12.4 MB"]);
+  const lines = ["1792714855 INFO coworkAgent: 시작 — 127.0.0.1:55612", "1792714856 WARN 상대 응답 없음", "그 밖 줄"];
+  assert.deepEqual(logLines(lines), [
+    { at: 1792714855, level: "INFO", rest: "coworkAgent: 시작 — 127.0.0.1:55612" },
+    { at: 1792714856, level: "WARN", rest: "상대 응답 없음" },
+    { at: null, level: null, rest: "그 밖 줄" },
+  ]);
+  assert.deepEqual(logLines(lines, "WARN").map((x) => x.rest), ["상대 응답 없음"]);
+  const info = {
+    version: "1.3.4",
+    os: "windows",
+    arch: "x86_64",
+    data_dir: "C:\\Users\\u\\AppData\\Local\\coworkAgent",
+    files: [
+      { key: "db", path: "C:\\d\\coworkAgent.db", size: 2048 },
+      { key: "log", path: "C:\\d\\logs\\coworkAgent.log", size: null },
+    ],
+  };
+  const me = { port: 47100, peer_port_fixed: true, ui_port: 55612, open_connections: 3, fingerprint: "06A7 9531", name: "u", host: "PC" };
+  const text = diagText(info, me);
+  assert.deepEqual(text.split("\n"), [
+    "coworkAgent 1.3.4 (windows x86_64)",
+    "데이터 폴더: C:\\Users\\u\\AppData\\Local\\coworkAgent",
+    "DB: C:\\d\\coworkAgent.db (2.0 KB)",
+    "로그: C:\\d\\logs\\coworkAgent.log (없음)",
+    "웹UI 포트: 55612",
+    "피어 포트: 47100(고정)",
+    "열린 피어 연결: 3",
+  ]);
+  assert.ok(!text.includes("06A7") && !/token|identity|지문/i.test(text), "지문 · 토큰 · 신원 키 없음");
+  assert.equal(diagText(info, null).split("\n").length, 4, "내 정보가 없으면 포트 줄 없음");
+});
+
+test("draft_owner — 저장 전 값(#1z-8 R1): 주인이 다른 같은 id(지운 뒤 다시 씀)에는 되살리지 않고 버림, 목록에 없는 id 는 버림", () => {
+  const drafts = new Map([[3, { owner: "coder", folder: "C:/old", parent_read: true }]]);
+  assert.equal(draftOf(drafts, 3, "coder").folder, "C:/old");
+  assert.equal(draftOf(drafts, 3, "writer"), undefined);
+  assert.equal(drafts.has(3), false);
+  drafts.set(1, { owner: "a" }).set(2, { owner: "b" });
+  pruneDrafts(drafts, [2]);
+  assert.deepEqual([...drafts.keys()], [2]);
 });
