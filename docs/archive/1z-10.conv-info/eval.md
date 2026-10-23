@@ -7,7 +7,7 @@
      WEAK 줄은 기계가 매 실행 다시 단다 — 약한 gate 를 셀 수 있게 하는 표시이며
      판정에는 영향이 없다. -->
 
-측정 커밋: 7238b9b26322960e6a2f6dc91d538fd06d3543c3
+측정 커밋: 34320922a878e155ccc9b1104044130a449bf3b7
 
 - [x] E1: A5 — 워크스페이스 테스트 전부 통과
   CHECK: cargo test --workspace
@@ -17,7 +17,7 @@
 - [x] E2: A5 — clippy 경고 0
   CHECK: cargo clippy --workspace --all-targets -- -D warnings
   EXPECT: Finished
-  EVIDENCE: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.25s
+  EVIDENCE: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.28s
 
 - [x] E3: A1 — 웹UI 로직 시험(대화 정보 줄 · 받은 / 보낸 / 공유)
   CHECK: node --test --test-reporter=tap "crates/app/web/*.test.mjs"
@@ -27,17 +27,17 @@
 - [x] E4: A2 — 실행 명령(따옴표 · 한 곳에서 만든 인자 · 대화 실행이 남김 · 다시 실행 · 실패)
   CHECK: cargo test -p an-agent --test runner --test conv_cmd
   EXPECT: /test result: ok\. [1-9][0-9]* passed; 0 failed/
-  EVIDENCE: test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.46s
+  EVIDENCE: test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.15s
 
 - [x] E5: A1·A3 — 대화 정보 API(in · out · shared · 404 · 목록에 명령 없음)
   CHECK: cargo test -p coworkagent-app --test chat_api conv_info
   EXPECT: /test result: ok\. [1-9] passed; 0 failed/
-  EVIDENCE: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.29s
+  EVIDENCE: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.31s
 
 - [x] E6: A1·A4·A6 — 화면 원본 literal(대화 정보 · 아이콘 자리 · 설정 제목 강조 · 단추 줄 규칙) · CSS 토큰
   CHECK: cargo test -p coworkagent-app --test ux_literals --test css_tokens
   EXPECT: /test result: ok\. [1-9][0-9]* passed; 0 failed/
-  EVIDENCE: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+  EVIDENCE: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
 
 - [x] E7: A5 — 문서 규약 · 크레이트 경계 · 스키마 · 매뉴얼 반영
   CHECK: python tools/check_ddd_docs.py && python tools/check_crates.py && python -c "import pathlib as P;r=lambda f:P.Path(f).read_text(encoding='utf-8');print('schema=%d app=%d core=%d web=%d guide=%d'%(r('crates/core/src/db.rs').count('SCHEMA_VERSION: i64 = 28'),r('docs/manual/dev/an_app.md').count('/info'),r('docs/manual/dev/an_core.md').count('cmd_at'),r('docs/manual/dev/web-ui.md').count('info_rows'),r('docs/manual/user/user-guide.md').count('실행 명령')))"
