@@ -3,7 +3,7 @@
 > **세션 시작 시 가장 먼저 읽는 문서.** 지금 어디서 재개하는지의 단일 좌표 — **매번 덮어쓴다.**
 > Task 목록은 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`), 미조치는 [overview/ledger.md](docs/overview/ledger.md).
 
-- **갱신**: 2026-10-23 / 브랜치 `main` — Task #1z-8 종결(archive) · main squash 반영(`838e4b2`) · origin push · 브랜치 · 작업 폴더 정리 끝
+- **갱신**: 2026-10-23 / main `0e5d88d` — **v1.3.4 정식 릴리스(Latest)** 등록(소스 `0e5d88d` · 서명 Valid SOFTCAMP CO.,LTD. · SHA-256 `46f5dc54…` 받은 파일 대조 · `real_github_latest` · `real_signed_release` ok). 앞서 Task #1z-8 종결 · main squash 반영(`838e4b2`) · 브랜치 · 작업 폴더 정리
 
 ## 현재 작업
 
@@ -15,7 +15,7 @@
 
 ## 다음 행동
 
-1. 1.3.4 서명 릴리스 여부 결정(1.3.3 은 릴리스됨).
+1. 1.3.4 릴리스 완료(1.2.0 · 1.3.0 ~ 1.3.3 자동 업데이트 대상, 스키마 26 · 통신 형식 1.3.3 과 같음).
 2. 선생님 확인: #1z-8 구현자 해석(report — 검색 스위치 탭 동안만 · 960px · 로그 200줄 / 64 KiB · plan 개정 ② ③ · 로그 줄 자기 지문 · 다른 탭 저장이면 초안 버림).
 3. 19 acceptance TC(사용자) · macOS zip 첨부 — 이전 STATE 그대로.
 
