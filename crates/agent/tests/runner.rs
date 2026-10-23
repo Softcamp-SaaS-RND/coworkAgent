@@ -458,11 +458,8 @@ fn launch_line_matches_spawn_args() {
     let args: Vec<String> = ["-p", "a b", "it's", r#"say "hi""#, "줄1\n줄2", "", "k=v,x", r"C:\a/b.c:d=e"].map(String::from).to_vec();
     assert_eq!(
         shell_line(std::path::Path::new(r"C:\Program Files\claude.exe"), &args, true),
-        format!(
-            "{} & 'C:\\Program Files\\claude.exe' -p 'a b' 'it''s' 'say \"hi\"' '줄1\n줄2' '' 'k=v,x' C:\\a/b.c:d=e",
-            an_agent::runner::PS_MIN_GUARD
-        ),
-        "PowerShell — 7.3 아래 멈춤 · 작은따옴표 · 안의 ' 는 '' · 쉼표(배열)는 따옴표 · 역슬래시는 그대로"
+        "& 'C:\\Program Files\\claude.exe' -p 'a b' 'it''s' 'say \"hi\"' '줄1\n줄2' '' 'k=v,x' C:\\a/b.c:d=e",
+        "PowerShell — 확인 줄 없음 · 작은따옴표 · 안의 ' 는 '' · 쉼표(배열)는 따옴표 · 역슬래시는 그대로"
     );
     // R1 — 둥근 따옴표도 PowerShell 작은따옴표라 두 번(인용 탈출 → 명령 주입 막음).
     let smart: Vec<String> = vec!["don\u{2019}t".into(), "p\u{2018}; Write-Output X; #".into()];
@@ -480,7 +477,7 @@ fn launch_line_matches_spawn_args() {
 }
 
 /// R1 — 복사한 명령을 실제 PowerShell 7 에서 돌리면 실행 파일이 받는 인자가 원래 인자와 같다(argv 왕복 — 둥근 따옴표 주입 · 큰따옴표 · 빈 인자 · 줄바꿈 · `$` `@` `%`),
-/// Windows PowerShell 5.1 은 실행 전에 멈춘다. 실행 파일 대역 = node(인자를 JSON 으로 찍음). pwsh · node 가 없으면 건너뜀.
+/// Windows PowerShell 5.1 도 인용을 빠져나가지 않는다(인자 손실은 사용자 몫). 실행 파일 대역 = node(인자를 JSON 으로 찍음). pwsh · node 가 없으면 건너뜀.
 #[cfg(windows)]
 #[test]
 fn powershell_line_roundtrip() {
@@ -532,25 +529,18 @@ fn powershell_line_roundtrip() {
     let line = out.lines().rev().find(|l| l.starts_with('[')).unwrap_or_else(|| panic!("node 출력 없음: {out} {err}"));
     let got: Vec<String> = serde_json::from_str(line).unwrap();
     assert_eq!(got, args[2..].to_vec(), "PowerShell 7 = 인자 그대로");
-    // R2 — 7.3+ 라도 인자 전달이 Legacy 면 큰따옴표 · 빈 인자를 잃으니 멈춘다(Standard 는 통과).
-    for (mode, pass) in [("Legacy", false), ("Standard", true)] {
-        let o = Command::new(&pwsh)
-            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command"])
-            .arg(format!("$PSNativeCommandArgumentPassing = '{mode}'; & '{}'", script.display()))
-            .output()
-            .unwrap();
-        let out = String::from_utf8_lossy(&o.stdout);
-        let line = out.lines().rev().find(|l| l.starts_with('['));
-        if pass {
-            let got: Vec<String> = serde_json::from_str(line.unwrap_or_else(|| panic!("{mode}: node 출력 없음 {out}"))).unwrap();
-            assert_eq!(got, args[2..].to_vec(), "{mode} = 인자 그대로");
-        } else {
-            assert!(line.is_none() && String::from_utf8_lossy(&o.stderr).contains("Legacy"), "{mode} 는 멈춤: {out}");
-        }
-    }
+    // 인자 전달 Standard 도 그대로. 5.1 · Legacy 는 인자를 잃지만 확인 줄 없이 사용자 몫(2026-10-24 사용자 결정) — 인용 탈출만 없는지 본다.
+    let o = Command::new(&pwsh)
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command"])
+        .arg(format!("$PSNativeCommandArgumentPassing = 'Standard'; & '{}'", script.display()))
+        .output()
+        .unwrap();
+    let out = String::from_utf8_lossy(&o.stdout);
+    let line = out.lines().rev().find(|l| l.starts_with('[')).unwrap_or_else(|| panic!("Standard: node 출력 없음 {out}"));
+    assert_eq!(serde_json::from_str::<Vec<String>>(line).unwrap(), args[2..].to_vec(), "Standard = 인자 그대로");
     if let Some(ps) = which("powershell") {
-        let (ok, out, err) = run(&ps);
-        assert!(!ok && !out.contains('[') && err.contains("7.3"), "5.1 은 멈춤: {out} {err}");
+        let (_, out, _) = run(&ps);
+        assert!(!out.lines().any(|l| l.trim() == "INJECTED"), "5.1 도 인용 탈출 없음: {out}");
     }
     let _ = std::fs::remove_dir_all(&dir);
 }

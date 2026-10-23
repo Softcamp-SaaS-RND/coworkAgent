@@ -639,12 +639,9 @@ pub fn launch_line(input: &RunInput) -> String {
 /// PowerShell 이 작은따옴표로 읽는 글자 — ASCII `'` 와 둥근 따옴표 ‘ ’ ‚ ‛(R1 — 하나만 바꾸면 둥근 따옴표로 인용을 빠져나가 뒤 글이 명령이 된다).
 const PS_QUOTES: [char; 5] = ['\'', '\u{2018}', '\u{2019}', '\u{201A}', '\u{201B}'];
 
-/// PowerShell 7.3 아래(Windows PowerShell 5.1)와 7.3+ 의 `Legacy` 인자 전달은 네이티브 인자 안 큰따옴표 · 빈 인자를 잃는다(R1 · R2 실측) — 붙여 넣으면 다른 명령이
-/// 되므로 그때는 실행 파일을 띄우기 전에 멈춘다(`Windows` · `Standard` 모드만 통과).
-pub const PS_MIN_GUARD: &str = "if ($PSVersionTable.PSVersion -lt [version]'7.3' -or $PSNativeCommandArgumentPassing -eq 'Legacy') { throw 'PowerShell 7.3 이상(pwsh) · 인자 전달 Windows/Standard 에 붙여 넣으세요 — 낮은 버전 · Legacy 는 인자 안 큰따옴표 · 빈 인자를 잃습니다' };";
-
-/// 실행 파일 + 인자를 셸에 붙여 넣을 한 줄로 — `powershell` 이면 [`PS_MIN_GUARD`] + `& '<실행 파일>' …`(작은따옴표 안 [`PS_QUOTES`] 는 두 번, 역슬래시 그대로 —
-/// PowerShell 7.3+ 인자 전달 기준), 아니면 POSIX 셸(`'…'`, 안 `'` = `'\''`). 따옴표 없이 두는 인자 = 글자 · 숫자 · `_-./:=`(PowerShell 은 `\` 도) —
+/// 실행 파일 + 인자를 셸에 붙여 넣을 한 줄로 — `powershell` 이면 `& '<실행 파일>' …`(작은따옴표 안 [`PS_QUOTES`] 는 두 번, 역슬래시 그대로 —
+/// PowerShell 7.3+ 인자 전달 `Windows` · `Standard` 기준. 5.1 · `Legacy` 는 인자 안 큰따옴표 · 빈 인자를 잃는다 — 확인 줄은 붙이지 않고 사용자 몫, 2026-10-24 사용자 결정),
+/// 아니면 POSIX 셸(`'…'`, 안 `'` = `'\''`). 따옴표 없이 두는 인자 = 글자 · 숫자 · `_-./:=`(PowerShell 은 `\` 도) —
 /// 쉼표(PowerShell 배열) · `@` · 공백 · 따옴표 · 줄바꿈이 든 것은 감싼다.
 pub fn shell_line(program: &Path, args: &[String], powershell: bool) -> String {
     let wrap = |a: &str| {
@@ -669,11 +666,7 @@ pub fn shell_line(program: &Path, args: &[String], powershell: bool) -> String {
         if plain { a.to_string() } else { wrap(a) }
     };
     let program = wrap(&program.to_string_lossy());
-    let head = if powershell {
-        format!("{PS_MIN_GUARD} & {program}")
-    } else {
-        program
-    };
+    let head = if powershell { format!("& {program}") } else { program };
     std::iter::once(head)
         .chain(args.iter().map(|a| quote(a)))
         .collect::<Vec<_>>()
