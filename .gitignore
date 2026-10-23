@@ -2,5 +2,6 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 target/
+dist/
 graphify-out/
 .superdesign/

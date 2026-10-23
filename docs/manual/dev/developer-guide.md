@@ -98,10 +98,14 @@ python tools/check_crates.py
 ```text
 1) crates/*/Cargo.toml 의 version 을 올린다(태그 v{X.Y.Z} 와 같은 값) → squash push(origin/main 에 그 코드)
 2) cargo build --release -p coworkagent-app
-3) target/release/coworkAgent.exe 에 회사 인증서(SOFTCAMP CO.,LTD.) Authenticode 서명 — 그 자리에 서명한 파일을 둔다
-4) 서명 · 버전 확인 — Get-AuthenticodeSignature = Valid · 서명자 CN = SOFTCAMP CO.,LTD. · 파일 속성 버전 = X.Y.Z
-5) gh release create v{X.Y.Z} target/release/coworkAgent.exe -R Softcamp-SaaS-RND/coworkAgent --target <origin/main 전체 SHA> --latest
+3) 사용자가 target/release/coworkAgent.exe 에 회사 인증서(SOFTCAMP CO.,LTD.) Authenticode 서명을 더해 dist\coworkAgent.exe 로 복사(손으로)
+4) 서명 · 버전 확인(dist\coworkAgent.exe) — Get-AuthenticodeSignature = Valid · 서명자 CN = SOFTCAMP CO.,LTD. · 파일 속성 버전 = X.Y.Z · SHA-256
+5) gh release create v{X.Y.Z} dist/coworkAgent.exe -R Softcamp-SaaS-RND/coworkAgent --target <origin/main 전체 SHA> --latest
+6) 받은 자산 SHA-256 대조 · cargo test -p coworkagent-app --test update -- --ignored real_   (real_github_latest · real_signed_release)
 ```
+
+- **게시는 `dist\` 의 exe**(1.3.3 뒤 — 사용자 결정) — 빌드 · `tools/rebuild_run.py` 는 지금처럼 `target\release\` 에 만든다. 그 자리의 서명본은 다음 `cargo build`(다시 링크하지
+  않아도)가 서명 전 파일로 되돌린다(1.3.3 릴리스 뒤 관측 — cargo 가 `deps\` 산출물을 다시 옮겨 놓는 것으로 추정, 확인 필요). 그래서 서명본은 `dist\` 에 두고 거기서 올린다. `dist/` 는 `.gitignore`.
 
 - **서명 확인**(#30) — 업데이터는 받은 파일을 `{exe}.new` 로 쓴 뒤 `update::authenticode`(WinVerifyTrust · 신뢰 루트 · 코드 서명 용도 · 인증서 폐기 확인)가
   통과하고 서명 인증서 이름(CN)이 `update::SIGNER`(`SOFTCAMP CO.,LTD.`)이며, 서명이 덮는 버전 리소스가 `ProductName` = `coworkAgent`(`update::PRODUCT`) · 파일 버전 = 태그일 때만
