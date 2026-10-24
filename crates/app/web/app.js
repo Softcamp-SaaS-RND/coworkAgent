@@ -2061,18 +2061,16 @@ function refitPreview() {
 }
 new ResizeObserver(refitPreview).observe($("home_preview"));
 
-/// 미리보기 절 하나 — 머리(상대 아이콘 · 이름 · 접속 · 대화 수 · 안 읽음 · 대기 요청) + 카드 한 줄(끝 칸 "+n개" = 그 상대 개요 — 머리 "{이름} 개요 →" 는 사용자 지시로 뺌).
-/// 대화 없는 상대 = 점선 한 줄 + "+ 새 세션"(페어링된 상대만).
+/// 미리보기 절 하나 — 머리(이름 · 접속 · 대화 수 · 안 읽음 · 대기 요청 — 상대 아이콘은 #1z-11 시안 C 로 뺌) + 카드 한 줄(끝 칸 "+n개 더 보기" = 그 상대 개요 —
+/// 머리 "{이름} 개요 →" 는 사용자 지시로 뺌). 대화 없는 상대 = 머리 한 줄 + "세션 생성"(페어링된 상대만).
 function previewSectionEl(s, p) {
   const pres = presence(p);
   const head = [
-    rowTile(`small ${colorOf(s.peer)}`, p?.icon),
     el("strong", { text: s.name }),
-    el("span", { class: `st-dot st-${pres.key}`, "aria-hidden": "true" }),
-    el("span", { text: p ? pres.text : "페어링 해제" }),
+    el("span", { class: "pv-pres" }, el("span", { class: `st-dot st-${pres.key}`, "aria-hidden": "true" }), el("span", { text: p ? pres.text : "페어링 해제" })),
     el("span", { text: s.convs ? `· 대화 ${s.convs}` : "· 대화 없음" }),
-    s.unread ? el("span", { class: "stat", text: `안 읽음 ${s.unread}` }) : "",
-    s.waiting ? el("span", { class: "stat", text: `대기 요청 ${s.waiting}` }) : "",
+    s.unread ? el("span", { class: "stat", text: `· 안 읽음 ${s.unread}` }) : "",
+    s.waiting ? el("span", { class: "stat pv-wait", text: `· 대기 요청 ${s.waiting}` }) : "",
   ];
   if (!s.cards.length) return el("section", { class: "pv-sec pv-none" }, el("div", { class: "pv-head" }, ...head, p?.paired ? button(SESSION_NEW, () => newChat(s.peer), "small") : ""));
   return el(
@@ -2084,13 +2082,13 @@ function previewSectionEl(s, p) {
       { class: "pv-cards" },
       ...s.cards.map(previewCardEl),
       s.more
-        ? el("button", { type: "button", class: "pv-more", title: `${s.name} 대화방 ${s.convs}개 모두 보기`, onclick: () => pickTile(s.peer), text: `+${s.more}개` })
+        ? el("button", { type: "button", class: "pv-more", title: `${s.name} 대화방 ${s.convs}개 모두 보기`, onclick: () => pickTile(s.peer), text: `+${s.more}개 더 보기` })
         : "",
     ),
   );
 }
 
-/// 미리보기 카드 하나(누르면 그 대화) — 머리(대화 제목 · 상태) · 본문(마지막 글 말풍선, 최신이 아래) · 바닥(에이전트 · 시각 · 안 읽음).
+/// 미리보기 카드 하나(누르면 그 대화) — 머리(유형 아이콘 · 대화 제목 · "새 글 n") · 본문(마지막 글 말풍선, 최신이 아래) · 바닥("에이전트 · 시각" · 상태 점 + 글자 — #1z-11 시안 C).
 /// 본문은 글자로만 — 상대가 쓴 글을 HTML · 마크다운으로 해석하지 않는다.
 function previewCardEl(c) {
   const title = convLabel(c, state.peerNames).title;
@@ -2104,7 +2102,7 @@ function previewCardEl(c) {
       { class: "pv-card-head" },
       kindChip(c, "pv-kind"),
       el("strong", { text: title }),
-      c.last_state ? el("span", { class: `pv-state st-${c.last_state}`, text: stateText(c.last_state) }) : "",
+      c.unread ? el("span", { class: "pv-new", text: `새 글 ${c.unread}` }) : "",
     ),
     el(
       "div",
@@ -2118,9 +2116,8 @@ function previewCardEl(c) {
     el(
       "div",
       { class: "pv-card-foot" },
-      el("span", { class: "home-agent" }, speakerEl("agent"), el("span", { text: convMeta(c).agent })),
-      c.last_at != null ? el("span", { text: `· ${formatTime(c.last_at)}` }) : "",
-      c.unread ? el("span", { class: "pv-unread", text: `안 읽음 ${c.unread}` }) : "",
+      el("span", { class: "pv-who", text: [convMeta(c).agent, c.last_at != null ? formatTime(c.last_at) : ""].filter(Boolean).join(" · ") }),
+      c.last_state ? el("span", { class: `pv-state st-${c.last_state}`, text: stateText(c.last_state) }) : "",
     ),
   );
 }
