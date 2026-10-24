@@ -1,5 +1,5 @@
 :root {
-  /* 시안 A 먹선(Task #1p) — 색 · 글꼴 · 크기 · 굵기 · 줄높이 · 간격 · 둥글기의 유일한 정본(docs/tasks/…/design/tokens.json 과 같다). 이 블록 밖에서는
+  /* 디자인 토큰 — 색 · 글꼴 · 크기 · 굵기 · 줄높이 · 간격 · 둥글기의 유일한 정본. 이 블록 밖에서는
      리터럴을 쓰지 않는다(tests/css_tokens.rs). 이름 그대로가 라이트, 다크는 --dark-* 를 아래 블록이 대입한다. */
   --bg: #F4F6F8;
   --topbar: #FFFFFF;
@@ -16,7 +16,7 @@
   --accent-soft: #E8F1FE;
   --on-accent: #FFFFFF;
   --agent: #0C6C68;
-  --agent-soft: #F2F9F8; /* 에이전트 줄 바탕(#1z-2 — 주고받은 메시지 시안 Peer) */
+  --agent-soft: #F2F9F8; /* 에이전트 줄 바탕(주고받은 메시지) */
   --run: #935A11;
   --ok: #21763C;
   --danger: #B6322D;
@@ -25,8 +25,8 @@
   --sent: #104A97;
   --recv-bg: #FDF1E0;
   --recv: #804D0C;
-  --answer-bg: #E0F1EF; /* 내 활동 '받은 답' 칩 바탕(#1z-3 시안 A — 글자는 --agent) */
-  --danger-soft: #FBE9E7; /* 내 활동 '실패' 칩 바탕(#1z-3 시안 A — 글자는 --danger) */
+  --answer-bg: #E0F1EF; /* 내 활동 '받은 답' 칩 바탕(글자는 --agent) */
+  --danger-soft: #FBE9E7; /* 내 활동 '실패' 칩 바탕(글자는 --danger) */
   --rail: #20252A;
   --rail-2: #383E43;
   --rail-text: #BABEC3;
@@ -36,14 +36,14 @@
   --peer-4: #905A3A;
   --peer-5: #24738E;
   --agent-tile: #0C6C68; /* 에이전트 줄 타일 — 두 테마 같음(흰 아이콘) */
-  --conv-in: var(--agent); /* 대화 유형 색(#1z-7 시안 A) — 내 에이전트 응답(다크는 --agent 를 따라감) */
+  --conv-in: var(--agent); /* 대화 유형 색 — 내 에이전트 응답(다크는 --agent 를 따라감) */
   --conv-out: var(--accent); /* 내가 문의 */
   --conv-shared: var(--faint); /* 공유 사본(점선) */
   --on-dark: #FFFFFF; /* 레일 · 타일 · 아바타 글자 — 두 테마 모두 어두운 바탕 위 */
   --on-danger: #FFFFFF;
   --backdrop: rgb(0 0 0 / 0.35);
   --shadow: 0 4px 16px rgba(16,20,28,.10);
-  --shadow-sm: 0 1px 3px rgba(16,20,28,.08); /* 입력창 · 세그먼트(#1v — 시안 A) */
+  --shadow-sm: 0 1px 3px rgba(16,20,28,.08); /* 입력창 · 세그먼트 */
 
   --dark-bg: #0F1112;
   --dark-topbar: #0B0C0E;
@@ -80,8 +80,6 @@
 
   --font: 'IBM Plex Sans KR', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
   --mono: Consolas, 'SF Mono', Menlo, monospace;
-  --fs-3xs: 10px; /* 개요 미리보기 말풍선 이름(사용자 지시 — 축소) */
-  --fs-2xs: 11px; /* 개요 미리보기 말풍선 글자(사용자 지시 — 축소) */
   --fs-xs: 12px;
   --fs-sm: 13px;
   --fs-md: 14px;
@@ -105,15 +103,15 @@
   --radius-bubble: 12px;
   --radius-pill: 999px;
   --control-h: 32px;
-  --rail-w-small: 168px; /* 작은 타일 레일 폭(#1x) */
-  --rail-w-normal: 72px; /* 큰 타일 레일 폭(#1z — 끌기 기준 72 · 168) */
-  --chat-gutter: max(48px, 8%); /* 말풍선 영역 · 입력창 좌우(#1z — 창이 넓을수록 넓게, % 는 쓰는 곳 기준) */
+  --rail-w-small: 168px; /* 작은 타일 레일 폭 */
+  --rail-w-normal: 72px; /* 큰 타일 레일 폭(끌기 기준 72 · 168) */
+  --chat-gutter: max(48px, 8%); /* 말풍선 영역 · 입력창 좌우(창이 넓을수록 넓게, % 는 쓰는 곳 기준) */
   --gap: 12px;
   --bubble-mine-alpha: 0.1; /* 말풍선 층 — 내 글 강조색 · 상대 글 타일 색(0 = 층 없음) */
   --bubble-theirs-alpha: 0.0;
-  --pv-scale: 1; /* 개요 미리보기 카드 폭 · 본문 높이 배수(#1z-6 — 스크립트가 `#home_preview` 에 1 ~ 2, 글자 크기는 그대로) */
-  /* 개요 미리보기 전용(#1z-11 시안 C "편안함 · 종이 톤" — 절 15% 확대는 뺌, 결정 5) */
-  --pv-bg: #F9F7F3; /* 시안 C #F5F3EE 보다 연하게(사용자 지시 — Task 밖) */
+  --pv-scale: 1; /* 개요 미리보기 카드 폭 · 본문 높이 배수(스크립트가 `#home_preview` 에 1 ~ 2, 글자 크기는 그대로) */
+  /* 개요 미리보기 전용 */
+  --pv-bg: #F9F7F3;
   --pv-card: #FBFAF7;
   --pv-line: #E3DED5;
   --pv-line-soft: #EEEAE2;
@@ -266,8 +264,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 h1 { font-size: var(--fs-xl); font-weight: var(--fw-bold); margin: 0 0 var(--sp-4); }
 h2 { font-size: var(--fs-lg); font-weight: var(--fw-bold); margin: 0 0 var(--gap); }
 .hint { color: var(--muted); font-size: var(--fs-sm); }
-.muted { color: var(--muted); }
-.mono, .fp { font-family: var(--mono); }
+.mono { font-family: var(--mono); }
 .pad { padding: var(--sp-4) var(--sp-5); }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
@@ -296,7 +293,7 @@ kbd, .kbd { font-family: var(--mono); font-size: var(--fs-xs); }
 /* 5영역 — 상단 바 / 레일 · 사이드바 · 끌기 손잡이 · 메인 · 실행 상세. 숨긴 영역(설정 화면의 사이드바 · 닫은 실행 상세)은 칸 폭이 0 이 된다. */
 #app {
   position: relative; /* 레일 손잡이(#rail_resize) 자리 */
-  --rail-w: var(--rail-w-normal); /* 레일 폭 — 작은 타일은 --rail-w-small, 끄는 동안은 그 폭(#1z) */
+  --rail-w: var(--rail-w-normal); /* 레일 폭 — 작은 타일은 --rail-w-small, 끄는 동안은 그 폭 */
   display: grid;
   height: 100vh;
   grid-template-columns: var(--rail-w) auto auto minmax(0, 1fr) auto;
@@ -307,7 +304,7 @@ kbd, .kbd { font-family: var(--mono); font-size: var(--fs-xs); }
 /* 상단 바 */
 #topbar { grid-area: top; display: flex; align-items: center; gap: var(--sp-4); padding: 0 var(--sp-4); background: var(--topbar); border-bottom: 1px solid var(--border); min-width: 0; }
 .wordmark { font-size: var(--fs-lg); font-weight: var(--fw-bold); white-space: nowrap; }
-.wordmark-ver { margin-left: var(--sp-2); font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--muted); } /* 실행 중 버전(#1z-8) */
+.wordmark-ver { margin-left: var(--sp-2); font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--muted); } /* 실행 중 버전 */
 .search { position: relative; flex: 1 1 auto; max-width: 600px; margin: 0 auto; display: flex; align-items: center; min-width: 0; }
 .search input { width: 100%; padding: 0 calc(var(--sp-7) + var(--sp-5)) 0 var(--sp-6); font-size: var(--fs-sm); }
 .search-ico { position: absolute; left: 10px; color: var(--muted); pointer-events: none; }
@@ -329,7 +326,7 @@ kbd, .kbd { font-family: var(--mono); font-size: var(--fs-xs); }
 .search-box button:hover, .search-box button:focus-visible { background: var(--surface-2); outline: 0; }
 .search-box .sub { font-size: var(--fs-xs); color: var(--muted); }
 .search-box .hint { padding: var(--sp-2) var(--sp-3); margin: 0; }
-/* 검색 머리(#1z-8) — 나간 대화 포함 스위치 · 안내, 결과 줄 = 칩 · 글자 · 닫힌 대화 태그(시안 S1) */
+/* 검색 머리 — 나간 대화 포함 스위치 · 안내, 결과 줄 = 칩 · 글자 · 닫힌 대화 태그 */
 .search-opts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); padding: 0 var(--sp-3) var(--sp-2); border-bottom: 1px solid var(--border); }
 .search-opts .hint { margin-left: auto; padding: 0; font-size: var(--fs-xs); }
 .search-box button.s-row { flex-direction: row; align-items: center; gap: var(--sp-3); }
@@ -337,7 +334,7 @@ kbd, .kbd { font-family: var(--mono); font-size: var(--fs-xs); }
 .s-mark { width: 26px; height: 26px; flex: none; border-radius: var(--radius); display: inline-flex; align-items: center; justify-content: center; }
 .s-mark .ico { width: 14px; height: 14px; }
 .s-mark[data-kind="shared"] { background: transparent; border: 1.5px dashed var(--kind); }
-/* 스위치(#1z-8) — 체크박스 그대로(값 · 이벤트 · 키보드 Space), 모양만 트랙 · 손잡이 */
+/* 스위치 — 체크박스 그대로(값 · 이벤트 · 키보드 Space), 모양만 트랙 · 손잡이 */
 input[type="checkbox"][role="switch"] { appearance: none; position: relative; flex: none; width: 36px; height: 20px; margin: 0; padding: 0; border: 0; border-radius: var(--radius-pill); background: var(--faint); cursor: pointer; transition: background .15s; }
 input[type="checkbox"][role="switch"]::before { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--surface); box-shadow: var(--shadow-sm); transition: transform .15s; }
 input[type="checkbox"][role="switch"]:checked { background: var(--accent); }
@@ -374,7 +371,7 @@ input[type="checkbox"][role="switch"]:disabled { opacity: .5; cursor: default; }
 
 /* 사이드바 */
 #sidebar { grid-area: side; width: var(--side-w, 272px); min-width: 0; min-height: 0; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
-/* 대화 목록 폭 — 끌어서 조절(app.js 가 --side-w 를 바꾼다) */
+/* 대화 목록 폭 — 끌어서 조절(sidebar.js 가 --side-w 를 바꾼다) */
 #side_resize { grid-area: grip; width: 4px; cursor: col-resize; touch-action: none; }
 #side_resize:hover, #side_resize:focus-visible { background: var(--accent); outline: 0; }
 .side-head { padding: var(--sp-4) var(--sp-4); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--sp-1); }
@@ -418,14 +415,12 @@ input[type="checkbox"][role="switch"]:disabled { opacity: .5; cursor: default; }
 .side-list.agents a { flex-direction: row; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
 .agent-dot { width: 8px; height: 8px; border-radius: var(--radius-sm); background: var(--agent); flex: 0 0 8px; }
 .agent-name { color: var(--agent); }
-.unread-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: 0 0 6px; }
 
 /* 태그 · 칩 · 상태 */
 .tag { display: inline-block; font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: var(--lh-tight); padding: 0 var(--sp-2); border-radius: var(--radius-sm); background: var(--sent-bg); color: var(--sent); white-space: nowrap; }
-.tag.recv { background: var(--recv-bg); color: var(--recv); }
 .tag.ask { background: var(--subtle); color: var(--run); }
 .tag.ask.done { color: var(--ok); }
-/* 내 활동 종류 색(#1z-3 시안 A) — 줄 칩 = 옅은 바탕 + 진한 글자, 거르기 탭 = 아이콘 · 이름 그 색 · 고른 탭은 그 바탕. 받은 요청 = 받은 글 · 내 요청 = 보낸 글 ·
+/* 내 활동 종류 색 — 줄 칩 = 옅은 바탕 + 진한 글자, 거르기 탭 = 아이콘 · 이름 그 색 · 고른 탭은 그 바탕. 받은 요청 = 받은 글 · 내 요청 = 보낸 글 ·
    받은 답 = 에이전트 · 실패 = 오류 색. */
 .tag.act-request { background: var(--recv-bg); color: var(--recv); }
 .tag.act-mine { background: var(--sent-bg); color: var(--sent); }
@@ -440,7 +435,7 @@ input[type="checkbox"][role="switch"]:disabled { opacity: .5; cursor: default; }
 #act_tabs a[data-kind="mine"][aria-current="page"] { background: var(--sent-bg); }
 #act_tabs a[data-kind="answer"][aria-current="page"] { background: var(--answer-bg); }
 #act_tabs a[data-kind="failed"][aria-current="page"] { background: var(--danger-soft); }
-/* 요청 의견 칸(#1z) — 3줄 · 칸 폭 전부, 아래 줄 = 글자 수 · 취소 · 확인(44px) */
+/* 요청 의견 칸 — 3줄 · 칸 폭 전부, 아래 줄 = 글자 수 · 취소 · 확인(44px) */
 .req-note { display: flex; flex-direction: column; gap: var(--sp-2); align-items: stretch; }
 .req-note textarea { width: 100%; box-sizing: border-box; min-height: 88px; resize: vertical; }
 .req-note-bar { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
@@ -454,9 +449,6 @@ input[type="checkbox"][role="switch"]:disabled { opacity: .5; cursor: default; }
 .st-sent, .st-queued { color: var(--wait); }
 .spin { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--run); border-right-color: transparent; animation: spin 1s linear infinite; flex: 0 0 9px; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.ro { font-size: var(--fs-xs); color: var(--faint); }
-.dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; background: var(--faint); }
-.dot.ok { background: var(--ok); }
 
 /* 메인 */
 #main { grid-area: main; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
@@ -480,7 +472,7 @@ input[type="checkbox"][role="switch"]:disabled { opacity: .5; cursor: default; }
 .filters input { flex: 1 1 200px; }
 .filters input[type="checkbox"] { flex: none; }
 
-/* 목록 행(내 활동 · 저장된 항목 · 에이전트 · 주고받은 글 · 보낸 메시지) */
+/* 목록 행(내 활동 · 북마크 · 에이전트 · 주고받은 메시지) */
 .rows { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
 .rows li { border-bottom: 1px solid var(--border); }
 .rows a, .rows button.row { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; height: auto; padding: var(--sp-3) var(--sp-5); border: 0; border-radius: 0; background: transparent; color: var(--text); text-decoration: none; text-align: left; font-size: var(--fs-md); }
@@ -489,11 +481,11 @@ input[type="checkbox"][role="switch"]:disabled { opacity: .5; cursor: default; }
 .rows .meta { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; font-size: var(--fs-sm); color: var(--muted); }
 .rows .meta strong { color: var(--text); }
 .rows li.hint { padding: var(--sp-4) var(--sp-5); border: 0; }
-/* 상대별 절(#1g) — '나' 목록 · 대화 요약 · 사이드바 */
+/* 상대별 절 — '나' 목록 · 대화 요약 · 사이드바 */
 .rows li.fold { border-bottom: 0; }
 .peer-fold > summary { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; padding: var(--sp-3) var(--sp-4); cursor: pointer; font-size: var(--fs-sm); color: var(--muted); background: var(--surface-2); border-bottom: 1px solid var(--border); }
 .peer-fold > summary strong { color: var(--text); }
-/* 한글이 든 숫자 표시(안 읽음 n · 대기 요청 n) — 본문 글꼴 + 고정폭 숫자(.count 는 숫자만, plan 해석 11) */
+/* 한글이 든 숫자 표시(안 읽음 n · 대기 요청 n) — 본문 글꼴 + 고정폭 숫자(.count 는 숫자만) */
 .stat { font-size: var(--fs-xs); font-weight: var(--fw-regular); font-variant-numeric: tabular-nums; color: var(--text); }
 .peer-fold > summary .count, .peer-fold > summary .stat { color: var(--accent); }
 details.side-section > summary.side-title { cursor: pointer; justify-content: flex-start; gap: var(--sp-2); }
@@ -502,9 +494,9 @@ details.side-section > summary.side-title .side-add { margin-left: auto; }
 .peer-fold > summary::-webkit-details-marker, details.side-section > summary::-webkit-details-marker { display: none; }
 .peer-fold > summary::before, details.side-section > summary::before { content: "▸"; font-size: var(--fs-xs); }
 .peer-fold[open] > summary::before, details.side-section[open] > summary::before { content: "▾"; }
-/* 접이식 들여쓰기(#1r) — 절 몸(머리 아닌 것)을 한 단 들인다. 겹친 절은 단계마다 한 단씩 더. 세로선은 없다(#1s — 행 구분선과 격자로 보였다). */
+/* 접이식 들여쓰기 — 절 몸(머리 아닌 것)을 한 단 들인다. 겹친 절은 단계마다 한 단씩 더. 세로선은 없다(행 구분선과 격자로 보인다). */
 .peer-fold > :not(summary) { margin-left: var(--sp-5); }
-/* 요청 개요(#1q) — 바깥 절(받은 요청 · 보낸 요청) 머리는 한 단계 크게, 안 상대별 절은 들여 쓴다. 상태 바꾸기는 본문 바로 아래 글자 단추. */
+/* 요청 개요 — 바깥 절(받은 요청 · 보낸 요청) 머리는 한 단계 크게, 안 상대별 절은 들여 쓴다. 상태 바꾸기는 본문 바로 아래 글자 단추. */
 .req-box > summary { padding: var(--sp-3) var(--sp-5); font-size: var(--fs-md); background: var(--bg); }
 .req-box > summary strong { font-size: var(--fs-lg); }
 .req-box > summary .stat { color: var(--muted); }
@@ -516,7 +508,7 @@ button.text-btn:hover { border: 0; text-decoration: underline; }
 button.text-btn.ok { color: var(--ok); }
 button.text-btn.no { color: var(--danger); }
 button.text-btn.wait { color: var(--run); }
-/* 주고받은 메시지(#1q) — 상대 절 머리 한 줄 요약(타일 · 이름 · 건수 · 마지막 메시지 · 시각), 행 오른쪽 북마크, 끝 줄 더 보기. */
+/* 주고받은 메시지 — 상대 절 머리 한 줄 요약(타일 · 이름 · 건수 · 마지막 메시지 · 시각), 행 오른쪽 북마크, 끝 줄 더 보기. */
 .peer-msgs > summary { flex-wrap: nowrap; }
 .peer-msgs > summary > .row-tile { flex: none; width: 24px; height: 24px; border-radius: var(--radius); display: inline-flex; align-items: center; justify-content: center; color: var(--on-dark); overflow: hidden; }
 .peer-msgs > summary > .row-tile svg { width: 16px; height: 16px; }
@@ -537,7 +529,7 @@ button.text-btn.wait { color: var(--run); }
 .msg-meta { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; font-size: var(--fs-xs); color: var(--faint); }
 .msg-meta strong { color: var(--text); font-size: var(--fs-md); }
 .msg-meta .run { font-variant-numeric: tabular-nums; }
-/* 작업 막대 — 숨겨도 키보드(Tab)로 닿는다(투명 · 클릭 막음), 마우스를 올리거나 그 글에 초점이 있으면 보인다 */
+/* 작업 막대 */
 .msg-actions { position: absolute; right: 48px; top: -14px; display: flex; opacity: 0; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
 .msg:hover .msg-actions, .msg:focus-within .msg-actions { opacity: 1; pointer-events: auto; }
 .msg:focus-visible { outline: 2px solid var(--accent); outline-offset: 6px; }
@@ -545,7 +537,7 @@ button.text-btn.wait { color: var(--run); }
 .msg-actions button { height: 30px; border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: var(--fs-xs); }
 .msg-actions button + button { border-left: 1px solid var(--border); }
 .msg-actions button:hover { color: var(--text); background: var(--surface-2); }
-/* 복사 · 편집 아이콘(#1f) — 머리줄 오른쪽 끝, 늘 보인다. 작업 막대는 그 왼쪽에 뜬다. */
+/* 북마크 · 복사 아이콘 */
 .msg-icons { margin-left: auto; display: inline-flex; gap: var(--sp-1); }
 .msg-icon { width: 26px; height: 26px; }
 .msg-icon.copied { color: var(--accent); }
@@ -554,7 +546,7 @@ button.text-btn.wait { color: var(--run); }
 /* 원문 보기(머리글 버튼 하나) — 켜면 대화의 모든 본문이 원문 */
 #conversation:not(.show-raw) .raw, #conversation.show-raw .body-view { display: none; }
 .html-doc { width: 100%; height: 360px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); resize: vertical; }
-/* 입력창(#1v — 시안 A): 창 폭에 맞춰 늘어남(좌우 = 말풍선 영역과 같은 여백) · 옅은 그림자, 바 = 서식 | 빈칸 | 질의 · 요청 세그먼트 | 키 안내 | 보내기. 색은 테마 토큰 그대로. */
+/* 입력창: 창 폭에 맞춰 늘어남(좌우 = 말풍선 영역과 같은 여백) · 옅은 그림자, 바 = 서식 | 빈칸 | 질의 · 요청 세그먼트 | 키 안내 | 보내기. 색은 테마 토큰 그대로. */
 .composer { margin: var(--sp-5) var(--chat-gutter) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 0; }
 .composer:focus-within { border-color: var(--accent); }
 .composer textarea { border: 0; border-radius: var(--radius-lg) var(--radius-lg) 0 0; background: transparent; padding: var(--sp-3) var(--sp-4); min-height: 44px; max-height: 200px; resize: none; }
@@ -575,7 +567,7 @@ button.text-btn.wait { color: var(--run); }
 .mention-box li { padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); font-size: var(--fs-sm); cursor: pointer; }
 .mention-box li[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
 
-/* 요청 의견 말풍선(#1v) — 요청 바로 아래, 받은 쪽 사람 쪽. 상태를 크게, 메모는 본문. */
+/* 요청 의견 말풍선 — 요청 바로 아래, 받은 쪽 사람 쪽. 상태를 크게, 메모는 본문. */
 .msg.feedback .bubble { padding-right: var(--sp-4); }
 .feedback-note { white-space: pre-wrap; }
 .feedback-state { font-size: var(--fs-md); padding: var(--sp-1) var(--sp-3); }
@@ -584,7 +576,7 @@ button.text-btn.wait { color: var(--run); }
 .feedback-state.req-rejected { color: var(--danger); }
 .feedback-note { margin: var(--sp-2) 0 0; font-size: var(--fs-lg); line-height: var(--lh-body); white-space: pre-wrap; word-break: break-word; }
 
-/* 요청 보드(#1v — D39 ①) — 열 = 상태, 열 위 띠 = 상태 색, 놓을 수 있는 열은 강조색 테두리. 좁으면 가로 스크롤. */
+/* 요청 보드 — 열 = 상태, 열 위 띠 = 상태 색, 놓을 수 있는 열은 강조색 테두리. 좁으면 가로 스크롤. */
 .req-board { display: grid; grid-template-columns: repeat(4, minmax(220px, 1fr)); gap: var(--sp-3); padding: var(--sp-3) var(--sp-4) var(--sp-5); overflow-x: auto; }
 .board-col { display: flex; flex-direction: column; gap: var(--sp-2); min-height: 240px; padding: var(--sp-2); border: 1px solid var(--border); border-top: 3px solid var(--muted); border-radius: var(--radius); background: var(--surface-2); }
 .board-col.req-wait { border-top-color: var(--run); }
@@ -655,7 +647,7 @@ button.drag-handle:active { cursor: grabbing; }
 .info { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-2) var(--sp-3); padding: var(--sp-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); font-size: var(--fs-sm); }
 .info dt { color: var(--faint); }
 .info dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
-/* 대화 정보(#1z-10) — 실행 명령 = 한 줄 말줄임 + 복사, 안내는 두 칸 전체. */
+/* 대화 정보 — 실행 명령 = 한 줄 말줄임 + 복사, 안내는 두 칸 전체. */
 .info-cmd { display: flex; justify-content: flex-end; align-items: center; gap: var(--sp-2); min-width: 0; }
 .info-cmd code { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 var(--sp-1); background: var(--subtle); border-radius: var(--radius); }
 .info-cmd button { flex: none; }
@@ -670,7 +662,7 @@ button.drag-handle:active { cursor: grabbing; }
 .saved-list .sub { font-size: var(--fs-xs); color: var(--faint); }
 .saved-list .text { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* 새 대화 · 폼 */
+/* 세션 생성 · 폼 */
 form { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; margin: 0; }
 form.grid, .form-grid { display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr); gap: var(--sp-2) var(--gap); align-items: center; }
 form.grid > button { grid-column: 2; justify-self: start; }
@@ -680,10 +672,8 @@ form.stack > button { align-self: flex-start; }
 .form-grid label, .form-grid .label, form.grid label, form.grid .label { color: var(--muted); font-size: var(--fs-md); }
 .field { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
 .field textarea { width: 100%; }
-.checks { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); font-size: var(--fs-md); }
-.checks label { display: flex; align-items: center; gap: var(--sp-1); color: var(--text); }
 #new form.grid { max-width: 760px; }
-/* 새 대화 줄 아이콘 · 내 응답 에이전트의 하위 줄 '최대 응답 횟수'(#1r — 한 단 들이고 왼쪽 안내선) */
+/* 세션 생성 줄 아이콘 · 내 응답 에이전트의 하위 줄 '최대 응답 횟수'(한 단 들이고 왼쪽 안내선) */
 #chat_form > label, #chat_form > .label { display: inline-flex; align-items: center; gap: var(--sp-2); }
 #chat_form > .sub-label { margin-left: var(--sp-2); padding-left: var(--sp-3); border-left: 1px solid var(--border); }
 
@@ -693,10 +683,10 @@ form.stack > button { align-self: flex-start; }
 #settings_tree ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
 #settings_tree a { display: block; padding: var(--sp-2) var(--sp-2); border-radius: var(--radius-sm); color: var(--text); text-decoration: none; }
 #settings_tree a:hover { background: var(--surface-2); }
-#settings_tree a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: var(--fw-bold); } /* 고른 메뉴(#1z-8 — 첫 화면 = 연결) */
-/* position: relative — 안의 sr-only 라벨(절대 위치)이 이 스크롤 칸 기준이 되어 문서 전체를 스크롤 가능하게 만들지 않는다(절로 가기 scrollIntoView 가 상단 바를 밀어 올렸다). */
+#settings_tree a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: var(--fw-bold); } /* 고른 메뉴(첫 화면 = 연결) */
+/* position: relative — 안의 sr-only 라벨(절대 위치)이 이 스크롤 칸 기준이 되어 문서 전체를 스크롤 가능하게 만들지 않는다(없으면 절로 가기 scrollIntoView 가 상단 바를 밀어 올린다). */
 .settings-body { position: relative; flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: var(--sp-5); display: flex; flex-direction: column; }
-/* ---- 설정 화면(#1z-8 — 고른 메뉴 화면만 · 시안 B: 머리 · 목록 / 상세 2단 · 2열 타일) ---- */
+/* ---- 설정 화면 — 고른 메뉴 화면만: 머리 · 목록 / 상세 2단 · 2열 타일 ---- */
 .set-page { display: flex; flex-direction: column; gap: var(--sp-3); min-height: 0; flex: 1 1 auto; }
 .set-page[hidden] { display: none; }
 .set-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
@@ -725,7 +715,7 @@ form.stack > button { align-self: flex-start; }
 .md-empty { margin: auto; padding: var(--sp-6); color: var(--muted); text-align: center; }
 .md-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .md-pane[hidden] { display: none; }
-/* 상세를 고르면 상자 높이 = 내용(#1z-10 결정 8 — 단추 줄이 내용 바로 아래 · 상자 바닥), 칸보다 길면 칸 높이까지 · 본문만 스크롤. 고르기 전 빈 안내는 칸 전체. */
+/* 상세를 고르면 상자 높이 = 내용(단추 줄이 내용 바로 아래 · 상자 바닥), 칸보다 길면 칸 높이까지 · 본문만 스크롤. 고르기 전 빈 안내는 칸 전체. */
 .md-detail:has(> .md-pane:not([hidden]), > .md-head) { align-self: start; max-height: 100%; }
 #group_detail > .md-head, #group_detail > .md-foot { flex: none; }
 .md-head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
@@ -767,8 +757,6 @@ details { margin: var(--sp-2) 0; }
 .item > summary { padding: var(--sp-3) var(--sp-3); display: flex; align-items: center; gap: var(--gap); flex-wrap: wrap; }
 .item > summary .hint { font-size: var(--fs-sm); }
 .actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); justify-content: flex-end; }
-.state-ok { color: var(--ok); font-size: var(--fs-sm); }
-.state-wait { color: var(--recv); font-size: var(--fs-sm); }
 
 /* 줄어들지 않는다 — 글이 있을 때 눌려 넘치면 메인이 창보다 커져 문서가 스크롤된다 */
 #status_msg { flex: 0 0 auto; margin: 0; padding: var(--sp-2) var(--sp-5); font-size: var(--fs-xs); color: var(--muted); min-height: 1.5em; border-top: 1px solid var(--border); }
@@ -790,10 +778,10 @@ details { margin: var(--sp-2) 0; }
   .peer-fold > :not(summary) { margin-left: var(--sp-3); }
 }
 
-/* 토큰 없음 · 거절 — 다시 열기 안내(1a) */
+/* 토큰 없음 · 거절 — 다시 열기 안내 */
 .disconnected { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; padding: var(--sp-3) var(--sp-4); background: var(--danger); color: var(--on-danger); font-weight: var(--fw-bold); text-align: center; }
 
-/* ---- 레일 그룹(#1i) ---- */
+/* ---- 레일 그룹 ---- */
 .rail-sep { width: 28px; margin: 0; border: 0; border-top: 1px solid var(--rail-text); opacity: 0.4; }
 .rail-groups { display: flex; flex-direction: column; gap: var(--sp-3); }
 .rail-btn.add-text { font-size: var(--fs-xs); line-height: var(--lh-tight); padding: 0 var(--sp-1); word-break: keep-all; }
@@ -804,7 +792,7 @@ details { margin: var(--sp-2) 0; }
 .float button[aria-checked="true"]::before { background: var(--accent); border-color: var(--accent); }
 .float .menu-head { margin: var(--sp-1) var(--sp-2) var(--sp-1); font-size: var(--fs-xs); color: var(--muted); }
 .float .hint { margin: var(--sp-1) var(--sp-2); }
-/* 하위 메뉴 항목(#1x — 기록 삭제 ▸) — 머리 아래 들여 쓴다 */
+/* 하위 메뉴 항목(기록 삭제 ▸) — 머리 아래 들여 쓴다 */
 .float button.menu-sub { padding-left: var(--sp-6); }
 .float button[aria-expanded="true"] .kbd { transform: rotate(90deg); }
 .float .danger-text { color: var(--danger); }
@@ -829,13 +817,12 @@ details { margin: var(--sp-2) 0; }
 .pick-list label > span:not(.tag):not(.hint) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pick-list label .hint { flex: 0 1 auto; min-width: 0; max-width: 40%; }
 
-/* ---- 안정화(#1h) ---- */
-/* 사이드바 메뉴 절 구분선 — 상단 개요 / 중단 / 하단 북마크 항목 · 에이전트 */
+/* 사이드바 메뉴 절 구분선 — 상단 개요 / 중단 / 하단 즐겨찾기 · 북마크 · 에이전트 */
 .side-nav .nav-sep { height: 1px; margin: var(--sp-2) var(--sp-3); background: var(--border); }
-/* 에이전트 머리 · 하위(#1v) — 머리는 링크 없음, 하위는 들여쓴다. */
+/* 에이전트 머리 · 하위 — 머리는 링크 없음, 하위는 들여쓴다. */
 .side-nav .nav-head { display: flex; align-items: center; height: 32px; padding: 0 var(--sp-3); color: var(--muted); }
 .side-nav .nav-sub a { padding-left: calc(var(--sp-3) + var(--sp-5)); }
-/* 프로필 단추 = 알약 — 아이콘(없으면 사람 모양) + 이름 한 번, 이름은 약 12자에서 말줄임 · 전체는 title. 테두리 · 점 = 내 상태(#1j) */
+/* 프로필 단추 = 알약 — 아이콘(없으면 사람 모양) + 이름 한 번, 이름은 약 12자에서 말줄임 · 전체는 title. 테두리 · 점 = 내 상태 */
 .avatar-btn { width: auto; height: 36px; display: inline-flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3) 0 var(--sp-1); border: 1px solid var(--border); border-radius: var(--radius-pill); overflow: visible; }
 .avatar-btn .avatar-face { position: relative; width: 28px; height: 28px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--rail); box-shadow: 0 0 0 2px var(--st); }
 .avatar-btn .avatar-face img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
@@ -843,10 +830,10 @@ details { margin: var(--sp-2) 0; }
 .avatar-dot { position: absolute; bottom: -2px; right: -2px; width: 10px; height: 10px; border-radius: 50%; background: var(--st); border: 2px solid var(--rail-2); }
 .avatar-name { max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ---- 메신저형 대화 · 대화방 줄(#1j) ---- */
-/* 말풍선 영역 좌우 = 입력창 좌우(#1z — 창이 넓을수록 여백도 넓게), 아래 패딩 없음 — 입력창과의 24px 는 스크롤 밖(.composer 위 여백)이라 스크롤해도 말풍선이 입력창에 붙지 않는다. */
+/* ---- 메신저형 대화 · 대화방 줄 ---- */
+/* 말풍선 영역 좌우 = 입력창 좌우(창이 넓을수록 여백도 넓게), 아래 패딩 없음 — 입력창과의 24px 는 스크롤 밖(.composer 위 여백)이라 스크롤해도 말풍선이 입력창에 붙지 않는다. */
 #messages { gap: var(--sp-4); padding: var(--sp-5) var(--chat-gutter) 0; }
-.msg { gap: var(--sp-3); max-width: 90%; } /* 긴 답도 말풍선 — 창의 90% 까지(좌 · 우 붙음으로 구별, 사용자 지시) */
+.msg { gap: var(--sp-3); max-width: 90%; } /* 긴 답도 말풍선 — 창의 90% 까지(좌 · 우 붙음으로 구별) */
 .msg.side-mine { align-self: flex-end; flex-direction: row-reverse; }
 .msg.side-theirs { align-self: flex-start; }
 .msg .avatar { flex: 0 0 32px; height: 32px; border-radius: 50%; color: var(--on-dark); border: 0; }
@@ -888,7 +875,7 @@ details { margin: var(--sp-2) 0; }
 .star-btn.on svg { fill: currentColor; }
 .star-btn:hover { background: var(--surface-2); }
 .side-list li[data-conv] { position: relative; display: flex; align-items: flex-start; gap: var(--sp-1); padding-left: var(--sp-5); }
-/* 대화 줄 손잡이(#1x) — 요청 보드 손잡이 그대로, 줄에 올리거나 초점이 오면 진하게 */
+/* 대화 줄 손잡이 — 요청 보드 손잡이 그대로, 줄에 올리거나 초점이 오면 진하게 */
 .side-list li[data-conv] > .drag-handle { top: var(--sp-3); color: var(--faint); }
 .side-list li[data-conv]:hover > .drag-handle, .side-list li[data-conv] > .drag-handle:focus-visible { color: var(--text); }
 .side-list li[data-conv].dragging { opacity: .5; }
@@ -901,11 +888,10 @@ details { margin: var(--sp-2) 0; }
 .side-list li.unread .title .room-title { font-weight: var(--fw-bold); }
 .side-list li.unread .title .room-time { font-weight: var(--fw-regular); }
 .side-list li[data-conv] .sub { font-family: inherit; }
-.room-preview { overflow: hidden; text-overflow: ellipsis; }
 .unread-n { margin-left: auto; }
 .rows .meta .chip { font-size: var(--fs-xs); }
 
-/* ---- 메뉴 · 상태 색 · 레일 아이콘 A안 · 즐겨찾기(#1j) ---- */
+/* ---- 메뉴 · 상태 색 · 레일 아이콘 · 즐겨찾기 ---- */
 /* 내 상태 색 — 받기 가능 초록 · 집중 주황 · 앱과 연결 끊김 붉음 */
 .st-online { --st: var(--ok); }
 .st-focus { --st: var(--run); }
@@ -922,13 +908,13 @@ details { margin: var(--sp-2) 0; }
 .menu button[role="menuitemradio"][aria-checked="true"]::after { content: "✓"; background: none; }
 .menu button .kbd { margin-left: auto; color: var(--faint); }
 .menu button:disabled { opacity: 0.45; }
-/* 레일 A안 — 모양(사람 · 사람 + 그림자) + 아래 이름 11px, 레일 72px */
+/* 레일 — 모양(사람 · 사람 + 그림자) + 아래 이름, 레일 72px */
 #rail { gap: var(--sp-6); padding-bottom: var(--sp-5); }
 #rail_pcs, .rail-groups { gap: var(--sp-6); }
 .rail-btn .tile-shape { display: flex; align-items: center; justify-content: center; }
 .rail-btn .tile-name { position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); width: 64px; font-size: var(--fs-xs); font-weight: var(--fw-medium); line-height: var(--lh-tight); color: var(--rail-text); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .rail-btn[aria-pressed="true"] .tile-name { color: var(--on-dark); font-weight: var(--fw-bold); }
-/* 작은 타일(#1x — 설정 "타일 크기") — 아이콘 24px + 오른쪽 이름 한 줄, 레일이 넓어진다(넓은 화면만) */
+/* 작은 타일(설정 "타일 크기") — 아이콘 24px + 오른쪽 이름 한 줄, 레일이 넓어진다(넓은 화면만) */
 @media (min-width: 721px) {
   #app.tile-small { --rail-w: var(--rail-w-small); }
   #app.tile-small #rail { align-items: flex-start; gap: var(--sp-3); padding-left: var(--sp-4); }
@@ -943,7 +929,7 @@ details { margin: var(--sp-2) 0; }
 /* 즐겨찾기 화면 — 대화방 줄 그대로 */
 .starred-list { padding: var(--sp-3) var(--sp-5); max-width: 760px; overflow-y: auto; }
 
-/* ---- 다듬기(#1k) — 설정 두 열(디자인 캔버스 ④) · 관리 줄 · 줄 타일 · 주고받은 글 타일 · 에이전트 연필 ---- */
+/* ---- 관리 줄 · 줄 타일 · 주고받은 글 타일 · 에이전트 연필 ---- */
 .new-tile { border: 1px dashed var(--border); color: var(--muted); }
 .pa { width: 36px; height: 36px; border-radius: var(--radius-lg); flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--on-dark); overflow: hidden; }
 .pa.small { width: 26px; height: 26px; border-radius: var(--radius); }
@@ -951,14 +937,14 @@ details { margin: var(--sp-2) 0; }
 .pa img { width: 100%; height: 100%; object-fit: cover; }
 .pa .tile-shape { display: flex; }
 .agent-tile { background: var(--agent-tile); }
-#agents_list li.has-edit { display: flex; align-items: center; gap: var(--sp-1); padding-right: var(--sp-5); } /* 단추 · 연필이 화면 끝에 붙지 않게 — 줄 왼쪽 여백과 같게(#1z-3) */
+#agents_list li.has-edit { display: flex; align-items: center; gap: var(--sp-1); padding-right: var(--sp-5); } /* 단추 · 연필이 화면 끝에 붙지 않게 — 줄 왼쪽 여백과 같게 */
 .share-tools { display: flex; gap: var(--sp-2); align-items: center; margin-top: var(--sp-2); }
 .share-tools select { flex: 1 1 auto; min-width: 0; }
 .share-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-1) 0; }
 #agents_list li.has-edit > a { flex: 1 1 auto; min-width: 0; }
 #agents_list .agent-edit svg { display: block; }
 
-/* ---- 아이콘 · 말풍선 색 · 설정 도움말 · 사용자 정보(#1l) ---- */
+/* ---- 아이콘 · 말풍선 색 · 설정 도움말 · 사용자 정보 ---- */
 /* 아이콘 한 벌 — 크기 16px 하나(메뉴 · 사이드바 · 설정 트리 · 화면 제목 · 단추 모두), 색은 글자색(`currentColor` 를 SVG 모양으로 가린다). */
 .ico { display: inline-block; flex: none; width: 16px; height: 16px; background-color: currentColor; -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat; }
 .ico-home { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 10.5 12 3l9 7.5'/%3E%3Cpath d='M5 9.5V21h14V9.5'/%3E%3Cpath d='M10 21v-6h4v6'/%3E%3C/svg%3E"); }
@@ -1031,17 +1017,17 @@ details { margin: var(--sp-2) 0; }
 .menu-head { display: flex; align-items: center; gap: var(--sp-2); }
 .tool-btn .ico, .set-actions .ico { margin-right: var(--sp-2); }
 .me-dialog h2 .ico { margin-right: var(--sp-2); vertical-align: -2px; }
-/* 라벨 · 제목 · 단추 앞 아이콘(#1z-10 결정 4) — 글자색 16px · 글자와 한 칸, 설정 화면 제목만 메뉴 아이콘 + 강조색. */
+/* 라벨 · 제목 · 단추 앞 아이콘 — 글자색 16px · 글자와 한 칸, 설정 화면 제목만 메뉴 아이콘 + 강조색. */
 .ico.lead { margin-right: var(--sp-2); vertical-align: -3px; }
 .set-head h2 .ico.lead { color: var(--accent); }
-/* 말풍선(#1o 시안 Ⓐ) — 내 글 = 강조색을 연하게 + 오른쪽 띠, 상대 글 = 그 상대 타일 색을 더 연하게 + 왼쪽 띠(사람 · 에이전트 같음). */
+/* 말풍선 — 내 글 = 강조색을 연하게. */
 .msg[data-tone="peer-1"] { --tone: var(--peer-1); }
 .msg[data-tone="peer-2"] { --tone: var(--peer-2); }
 .msg[data-tone="peer-3"] { --tone: var(--peer-3); }
 .msg[data-tone="peer-4"] { --tone: var(--peer-4); }
 .msg[data-tone="peer-5"] { --tone: var(--peer-5); }
-/* 연한 바탕 = 색 층(내 글 강조색 · 상대 글 타일 색, 불투명도 = --bubble-*-alpha)을 글 뒤에 깐다 — 옆 띠 없음(#1p). 색 섞기 함수(color-mix)는
-   macOS 12 Safari 15 에 없어 쓰지 않는다(#1l 라운드 2). */
+/* 연한 바탕 = 색 층(내 글 강조색 · 상대 글 타일 색, 불투명도 = --bubble-*-alpha)을 글 뒤에 깐다 — 옆 띠 없음. 색 섞기 함수(color-mix)는
+   macOS 12 Safari 15 에 없어 쓰지 않는다. */
 .msg.side-theirs .bubble { isolation: isolate; background: var(--surface); }
 .msg.side-theirs .bubble::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--tone, var(--wait)); opacity: var(--bubble-theirs-alpha); pointer-events: none; }
 .msg.side-mine .bubble { isolation: isolate; background: var(--surface); color: var(--text); }
@@ -1052,9 +1038,9 @@ details { margin: var(--sp-2) 0; }
 .help { width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: 1; cursor: help; }
 .tip { display: none; position: absolute; left: 0; top: calc(100% + 6px); z-index: 40; width: max-content; max-width: 380px; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-size: var(--fs-sm); font-weight: var(--fw-regular); line-height: var(--lh-body); white-space: normal; text-align: left; }
 .help-wrap:hover .tip, .help:focus + .tip { display: block; }
-/* 화면 아래쪽 칸(알림 '자동 왕복', #1r)은 위로 연다. */
+/* 화면 아래쪽 칸(알림 '자동 왕복')은 위로 연다. */
 .tip.up { top: auto; bottom: calc(100% + 6px); }
-/* 초대 생성 중(#1r R2) — 누름은 버리되 초점은 받는다. */
+/* 초대 생성 중 — 누름은 버리되 초점은 받는다. */
 #window_btn[aria-disabled="true"] { opacity: 0.6; cursor: progress; }
 .tip-line { display: block; }
 .label-row { display: inline-flex; align-items: center; }
@@ -1063,7 +1049,7 @@ details { margin: var(--sp-2) 0; }
 .me-dialog h2 { margin: 0 0 var(--sp-3); font-size: var(--fs-md); }
 .me-dialog .actions { display: flex; justify-content: flex-end; margin-top: var(--sp-3); }
 
-/* ---- 사람 ↔ 에이전트 구분(#1z — 시안 A) ---- */
+/* ---- 사람 ↔ 에이전트 구분 ---- */
 /* 말풍선: 사람 글 = 색 면(내 글 강조색 층 · 상대 글 --recv-bg), 에이전트 글 = 흰 면 + 에이전트 색 테두리, 좌 · 우 어느 쪽이든 */
 .msg.side-theirs:not(.agent) .bubble { background: var(--recv-bg); }
 .msg.agent .bubble { background: var(--surface); border: 1.5px solid var(--agent); }
@@ -1089,32 +1075,30 @@ details { margin: var(--sp-2) 0; }
   .composer { margin-left: var(--sp-4); margin-right: var(--sp-4); }
 }
 
-/* ---- 레일 타일 포인터 끌기(#1z — 사용자 · 그룹 순서) ---- */
+/* ---- 레일 타일 포인터 끌기(사용자 · 그룹 순서) ---- */
 .rail-btn[data-drag] { touch-action: none; }
 .rail-ghost { position: fixed; top: 0; left: 0; z-index: 1000; margin: 0; pointer-events: none; opacity: 0.85; }
 .rail-ghost .tile-name { display: none; }
 
-.link-btn { height: auto; padding: 0; border: 0; background: transparent; color: var(--accent); font-size: var(--fs-xs); font-weight: var(--fw-regular); }
 .gs-state { display: inline-flex; align-items: center; gap: var(--sp-1); white-space: nowrap; }
 .gs-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--wait); }
 .gs-dot.online { background: var(--ok); }
 .gs-dot.focus { background: var(--run); }
 
-/* ---- 화면 다듬기(#1z-2) ---- */
 /* 레일: 끌 때 글자가 잡히지 않게 */
 #rail { user-select: none; }
 /* 대화 목록 한 줄: 손잡이 · 로봇 아이콘 · 제목 · 실행 중 점 · 안 읽음 수 · 시각 */
 .room-av.agent-av { width: 24px; height: 24px; background: var(--kind); color: var(--surface); }
 .room-av.agent-av .ico { width: 14px; height: 14px; }
 .side-list li[data-conv] > .drag-handle { top: 50%; transform: translateY(-50%); }
-/* 행 ⋯ 은 줄 끝 제자리(사용자 지시 — 떠 있으면 시각을 가린다), 안 보일 때도 자리는 둔다 */
+/* 행 ⋯ 은 줄 끝 제자리(떠 있으면 시각을 가린다), 안 보일 때도 자리는 둔다 */
 .side-list li[data-conv] > .row-more { position: static; flex: none; align-self: center; margin-right: var(--sp-1); }
 .side-list li[data-conv] .title { justify-content: flex-start; align-items: center; gap: var(--sp-2); }
 .side-list li[data-conv] .room-title { flex: 1 1 auto; min-width: 0; white-space: nowrap; }
 .side-list li[data-conv] .unread-n { margin-left: 0; }
 /* 개요 아코디언: 머리 사용자 아이콘 · 줄 에이전트 아이콘 */
 .home-agent { display: inline-flex; align-items: center; gap: var(--sp-1); }
-/* 개요 미리보기(#1z-5 2차 시안 A → #1z-11 시안 C "편안함 · 종이 톤") — 상대마다 절(머리 + 대화방 카드 격자, 절 사이 가는 선), 넘치면 세로 스크롤. 카드 열 수 = 폭(카드 최소 256px — 좁으면 한 열,
+/* 개요 미리보기 — 상대마다 절(머리 + 대화방 카드 격자, 절 사이 가는 선), 넘치면 세로 스크롤. 카드 열 수 = 폭(카드 최소 256px — 좁으면 한 열,
    스크립트가 이 격자의 실제 열을 재서 '나' · 그룹은 한 줄만). 카드 본문 높이 고정 — 최신 글이 아래, 넘친 옛 글은 위에서 잘린다(flex-end + overflow hidden). 색 · 크기 = `--pv-*`. */
 .pv-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: var(--pv-list-pad); background: var(--pv-bg); color: var(--pv-text); line-height: var(--pv-lh); }
 .pv-sec { flex: none; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--pv-sec-pad); }
@@ -1133,10 +1117,10 @@ details { margin: var(--sp-2) 0; }
 .pv-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(256px * var(--pv-scale))), 1fr)); gap: var(--pv-gap-cards); }
 .pv-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--pv-card); border: 1px solid var(--pv-line); border-radius: var(--pv-radius); color: var(--pv-text); text-decoration: none; }
 .pv-card:hover { color: var(--pv-text); border-color: var(--pv-line-hover); }
-.pv-card.unseen { border-color: var(--pv-unseen); } /* 안 읽음 = 테두리 색 + 머리 "새 글 n"(#1z-11 결정 6 — #1z-7 바깥 윤곽선 대신) */
+.pv-card.unseen { border-color: var(--pv-unseen); } /* 안 읽음 = 테두리 색 + 머리 "새 글 n" */
 .pv-card-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--pv-card-head-pad); }
 .pv-card-head strong { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--pv-fs-title); font-weight: var(--fw-medium); }
-/* 유형 = 아이콘 색만(#1z-11 결정 6 — 채운 칩 · 유형 색 테두리 없음, 공유 사본은 아이콘 없음 · 점선 그대로) */
+/* 유형 = 아이콘 색만(채운 칩 · 유형 색 테두리 없음, 공유 사본은 아이콘 없음 · 점선 그대로) */
 .pv-kind { width: 18px; height: 18px; flex: none; display: inline-flex; align-items: center; justify-content: center; }
 .pv-kind.kind-chip { background: transparent; }
 .pv-kind .ico { width: 15px; height: 15px; }
@@ -1146,11 +1130,11 @@ details { margin: var(--sp-2) 0; }
 .pv-new::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--pv-new-dot); }
 .pv-body { height: calc(132px * var(--pv-scale)); box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--sp-3); padding: var(--pv-body-pad); overflow: hidden; }
 .pv-msg { flex: none; max-width: 88%; padding: var(--pv-msg-pad); border-radius: var(--radius-lg); font-size: var(--fs-xs); line-height: var(--pv-lh-msg); overflow-wrap: anywhere; }
-/* 말풍선 2줄(#1z-8 — 모든 크기) · 자르기는 안쪽 글자 칸에(말풍선 안쪽 여백에 다음 줄이 비치지 않게) */
+/* 말풍선 2줄(모든 크기) · 자르기는 안쪽 글자 칸에(말풍선 안쪽 여백에 다음 줄이 비치지 않게) */
 .pv-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pv-msg.side-mine { align-self: flex-end; background: var(--pv-mine); }
 .pv-msg.side-theirs { align-self: flex-start; background: var(--pv-theirs); border: 1px solid var(--pv-theirs-line); }
-/* 실행 중 = 에이전트 말풍선 색(#1z-11 — 시안 C 에 실행 중 말풍선 없음) */
+/* 실행 중 = 에이전트 말풍선 색 */
 .pv-msg.agent, .pv-msg.running { background: var(--pv-agent-bg); border: 0; color: var(--pv-agent); }
 .pv-msg.error { background: var(--pv-err-bg); border: 0; color: var(--pv-err); }
 .pv-msg b { margin-right: var(--pv-gap-who); color: var(--pv-muted); font-size: var(--pv-fs-who); font-weight: var(--fw-medium); }
@@ -1168,7 +1152,7 @@ details { margin: var(--sp-2) 0; }
 .pv-state.st-error::before, .pv-state.st-undelivered::before { background: var(--pv-err-dot); }
 .pv-more { min-height: calc(132px * var(--pv-scale)); border: 1px dashed var(--pv-more-line); border-radius: var(--pv-radius); background: transparent; color: var(--pv-link); font-size: var(--fs-md); font-weight: var(--fw-medium); }
 .pv-more:hover { border-color: var(--pv-line-hover); background: var(--pv-card); }
-/* 주고받은 메시지 줄(시안 Peer): 원형 아바타 · 메타 · 본문 · 시각, 에이전트 줄 바탕 */
+/* 주고받은 메시지 줄: 원형 아바타 · 메타 · 본문 · 시각, 에이전트 줄 바탕 */
 .rows li.pm-agent { background: var(--agent-soft); }
 .rows a.pm-link { flex-direction: row; align-items: flex-start; gap: var(--sp-3); }
 .pm-av { flex: none; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
@@ -1183,7 +1167,7 @@ details { margin: var(--sp-2) 0; }
 .pm-body { overflow-wrap: anywhere; }
 .pm-time { flex: none; font-size: var(--fs-xs); color: var(--faint); }
 
-/* 대화 유형 색(#1z-7 시안 A) — 둘레(`data-kind` = 대화 `dir`)가 색을 정하고 줄 · 카드 · 머리 · 아이콘 칩이 그 색을 쓴다.
+/* 대화 유형 색 — 둘레(`data-kind` = 대화 `dir`)가 색을 정하고 줄 · 카드 · 머리 · 아이콘 칩이 그 색을 쓴다.
    내 에이전트 응답 = 청록, 내가 문의 = 파랑, 공유 사본 = 회색 점선(아이콘 없음). */
 [data-kind="in"] { --kind: var(--conv-in); --kind-soft: var(--answer-bg); }
 [data-kind="out"] { --kind: var(--conv-out); --kind-soft: var(--accent-soft); }
@@ -1200,13 +1184,13 @@ details { margin: var(--sp-2) 0; }
 .rows li[data-kind] > a { flex-direction: row; align-items: center; gap: var(--sp-3); }
 /* 공유 사본 점선 — 위 테두리 규칙들보다 뒤(같은 우선순위에서 이기게) */
 .side-list li[data-kind="shared"], .rows li[data-kind="shared"], .pv-card[data-kind="shared"] { border-style: dashed; }
-.conv-head[data-kind="shared"] { border-bottom-style: dashed; } /* 머리는 아래 선만(R1 — 네 방향 점선이 켜지지 않게) */
+.conv-head[data-kind="shared"] { border-bottom-style: dashed; } /* 머리는 아래 선만(네 방향 점선이 켜지지 않게) */
 
-/* 내 에이전트 상세(#1z-7) — 로봇 타일(고른 색) · 아이콘 색 단추 · 체크박스 옆 한 줄 설명 */
+/* 내 에이전트 상세 — 로봇 타일(고른 색) · 아이콘 색 단추 · 체크박스 옆 한 줄 설명 */
 .agent-pa .ico { width: 20px; height: 20px; }
 .agent-pa.small .ico { width: 16px; height: 16px; }
 .check-line { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-/* 실행 도구(#1z-9 시안 B) — 1단계 타일 · 칩 · 2단계 좌우 옵션 블록(안 고른 쪽 = 점선 · 비활성). */
+/* 실행 도구 — 1단계 타일 · 칩 · 2단계 좌우 옵션 블록(안 고른 쪽 = 점선 · 비활성). */
 .engine-q { margin: 0; font-size: var(--fs-lg); }
 .engine-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4); }
 .engine-tile { height: auto; display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-3); padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); text-align: left; font-weight: var(--fw-regular); }

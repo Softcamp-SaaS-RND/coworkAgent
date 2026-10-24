@@ -1,5 +1,5 @@
-//! 인바운드 알림(S9) — 기본 OFF(D29). 두 OS 같은 UI/UX(D30): 웹UI 탭이 열려 있으면 브라우저 알림(이벤트 스트림 →
-//! `Notification`, OS 알림 정책은 브라우저 · OS 가 따른다 — D27), 탭과 무관하게 트레이 "새 요청" 표시.
+//! 인바운드 알림 — 기본 OFF. 두 OS 같은 UI/UX(D30): 웹UI 탭이 열려 있으면 브라우저 알림(이벤트 스트림 →
+//! `Notification`, OS 알림 정책은 브라우저 · OS 가 따른다), 탭과 무관하게 트레이 "새 요청" 표시.
 use an_agent::chat::{MAX_RELAY_CAP, RELAY_CAP_KEY, default_relay_cap};
 use an_core::db::{Connection, db_err};
 use an_core::run_opts;
@@ -28,13 +28,13 @@ pub const BACKLOG: usize = 64;
 /// 웹UI 로 가는 알림 한 건. 원격 이름이 들어 있다 — 웹UI 는 텍스트로만 쓴다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Notice {
-    /// `pair_request` · `approved`
+    /// `request` · `pair_request` · `auto_paired` · `approved` · `message` · `relay`(`change` 는 알림이 아니라 보내지 않는다)
     pub kind: &'static str,
     pub title: String,
     pub body: String,
 }
 
-/// 웹UI 변경 신호 한 건(SSE `event: change`) — 알림과 별개, 알림 설정 · 집중과 무관하게 항상 간다(D39 ②).
+/// 웹UI 변경 신호 한 건(SSE `event: change`) — 알림과 별개, 알림 설정 · 집중과 무관하게 항상 간다.
 /// `res` 가 비면 전체 다시 읽기(뒤처져 놓쳤을 때).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Change {
@@ -96,7 +96,7 @@ pub struct Prefs {
     pub notify_relay: String,
     /// 끄면 알림 본문에 글 앞부분을 넣지 않는다.
     pub notify_preview: bool,
-    /// 받은 요청 알림 효과음(#1x, 기본 켜짐) — 웹UI 가 낸다(집중 중에는 알림 자체가 없다).
+    /// 받은 요청 알림 효과음(기본 켜짐) — 웹UI 가 낸다(집중 중에는 알림 자체가 없다).
     pub notify_sound: bool,
     /// 알림 일시 중지(기본 꺼짐) — 켜 있는 동안 브라우저 알림 · 트레이 표시 · 이벤트를 내지 않는다. `notify_inbound` 와 별개라 풀면 그 설정대로.
     pub notify_paused: bool,
@@ -466,27 +466,27 @@ impl Notifier {
         Ok((model, effort, run_opts::theme(&db).map_err(db_err)?))
     }
 
-    /// 레일 타일 크기(#1x) — `normal` · `small`.
+    /// 레일 타일 크기 — `normal` · `small`.
     pub fn tile_size(&self) -> io::Result<String> {
         run_opts::tile_size(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
 
-    /// 개요 보기(#1z-4) — `preview` · `list`.
+    /// 개요 보기 — `preview` · `list`.
     pub fn home_view(&self) -> io::Result<String> {
         run_opts::home_view(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
 
-    /// 개요 미리보기 배율(%, #1z-6) — 100 · 125 · 150 · 175 · 200.
+    /// 개요 미리보기 배율(%) — 100 · 125 · 150 · 175 · 200.
     pub fn home_zoom(&self) -> io::Result<i64> {
         run_opts::home_zoom(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
 
-    /// 주고받은 메시지 보기 기간(주, #1y) — 1 ~ 12.
+    /// 주고받은 메시지 보기 기간(주) — 1 ~ 12.
     pub fn peer_weeks(&self) -> io::Result<i64> {
         run_opts::peer_weeks(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
 
-    /// 받은 요청 알림 본문 재료(#1x) — 최근 대기 요청(상대 표시 이름 · 본문) 최대 [`REQUEST_LINES`] 건과 대기 전체 수. 못 읽으면 `None`(보통 알림으로).
+    /// 받은 요청 알림 본문 재료 — 최근 대기 요청(상대 표시 이름 · 본문) 최대 [`REQUEST_LINES`] 건과 대기 전체 수. 못 읽으면 `None`(보통 알림으로).
     fn waiting(&self) -> Option<(Vec<(String, String)>, i64)> {
         let db = an_core::sync::lock(&self.db);
         let (rows, total) = an_core::chat::waiting_requests(&db, REQUEST_LINES as i64)
@@ -517,7 +517,7 @@ impl Notifier {
         Ok((run_opts::side_width(&db).map_err(db_err)?, alias, icon))
     }
 
-    /// 접은 절 열쇠 목록(#1g).
+    /// 접은 절 열쇠 목록.
     pub fn folded(&self) -> io::Result<Vec<String>> {
         run_opts::folded(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
@@ -543,7 +543,7 @@ impl Notifier {
         st.pending += 1;
         (self.attention)(st.pending);
         drop(st);
-        // 받은 요청(#1x — B안) — 대기 요청 묶음 한 장. 상태 잠금을 놓고 읽는다(DB 잠금과 겹치지 않게).
+        // 받은 요청 — 대기 요청 묶음 한 장. 상태 잠금을 놓고 읽는다(DB 잠금과 겹치지 않게).
         let ask = matches!(e, PeerEvent::Message { kind: MessageKind::Ask, .. })
             .then(|| self.waiting())
             .flatten()
@@ -576,10 +576,10 @@ impl Notifier {
     }
 }
 
-/// 받은 요청 알림 본문 줄 수(#1x — B안).
+/// 받은 요청 알림 본문 줄 수.
 pub const REQUEST_LINES: usize = 3;
 
-/// 받은 요청 알림(#1x — B안) — 종류 `request`, 제목 "받은 요청 {대기 수}", 본문 = 최근 대기 요청 줄(최대 [`REQUEST_LINES`] — 미리보기 켜짐
+/// 받은 요청 알림 — 종류 `request`, 제목 "받은 요청 {대기 수}", 본문 = 최근 대기 요청 줄(최대 [`REQUEST_LINES`] — 미리보기 켜짐
 /// `{이름} · {첫 줄 앞부분}`, 꺼짐 `{이름}`) + 넘으면 "외 {n}건". 웹UI 는 같은 tag 로 앞 알림을 바꾼다.
 pub fn request_notice(rows: &[(String, String)], total: i64, preview_on: bool) -> Notice {
     let mut lines: Vec<String> = rows
@@ -650,9 +650,9 @@ pub fn notice_with(e: &PeerEvent, preview_on: bool) -> Notice {
                 }
                 MessageKind::Ask => ("message", format!("요청 받음 — {agent}")),
                 MessageKind::AskState => ("message", format!("요청 상태 — {agent}")),
-                // 상대가 내 대화를 공유했다(#1o) — 본문 = "관람자 n"(이름 없음).
+                // 상대가 내 대화를 공유했다 — 본문 = "관람자 n"(이름 없음).
                 MessageKind::Share => ("message", format!("관람자 — {agent}")),
-                // 상대가 대화 기록을 모두 지웠다(#1x) — 본문 = 사유(미리보기와 무관).
+                // 상대가 대화 기록을 모두 지웠다 — 본문 = 사유(미리보기와 무관).
                 MessageKind::Clear => {
                     return Notice {
                         kind: "message",
@@ -701,7 +701,7 @@ pub struct SettingsPatch {
     pub notify_reply: Option<bool>,
     pub notify_relay: Option<String>,
     pub notify_preview: Option<bool>,
-    /// 받은 요청 알림 효과음(#1x).
+    /// 받은 요청 알림 효과음.
     pub notify_sound: Option<bool>,
     /// 알림 일시 중지(이 PC 에만).
     pub notify_paused: Option<bool>,
@@ -713,26 +713,26 @@ pub struct SettingsPatch {
     pub claude_effort: Option<String>,
     /// 화면 테마 — `light` · `dark`.
     pub ui_theme: Option<String>,
-    /// 레일 타일 순서(#1l) — `peers_first` · `groups_first`.
+    /// 레일 타일 순서 — `peers_first` · `groups_first`.
     pub ui_rail_order: Option<String>,
-    /// 레일 타일 크기(#1x) — `normal` · `small`.
+    /// 레일 타일 크기 — `normal` · `small`.
     pub ui_tile_size: Option<String>,
-    /// 개요 보기(#1z-4) — `preview` · `list`.
+    /// 개요 보기 — `preview` · `list`.
     pub ui_home_view: Option<String>,
-    /// 개요 미리보기 배율(%, #1z-6) — [`run_opts::HOME_ZOOMS`].
+    /// 개요 미리보기 배율(%) — [`run_opts::HOME_ZOOMS`].
     pub ui_home_zoom: Option<i64>,
-    /// 주고받은 메시지 보기 기간(주, #1y) — 1 ~ 12.
+    /// 주고받은 메시지 보기 기간(주) — 1 ~ 12.
     pub ui_peer_weeks: Option<i64>,
     /// 사이드바(대화 목록) 폭(px, [`run_opts::SIDE_WIDTHS`]).
     pub ui_side_width: Option<i64>,
-    /// 접은 절 열쇠 목록(#1g, [`run_opts::clean_folded`]) — 통째로 바꾼다.
+    /// 접은 절 열쇠 목록([`run_opts::clean_folded`]) — 통째로 바꾼다.
     pub ui_folded: Option<Vec<String>>,
     /// '나' 타일 — 표시 이름 · 아이콘(PNG data URL). 빈 문자열 = 지움.
     pub me_alias: Option<String>,
     pub me_icon: Option<String>,
     /// 로그인 때 자동 시작(이 PC).
     pub autostart: Option<bool>,
-    /// 자동 압축(#1m, 이 PC) — 이 PC 에서 돈 세션이 컨텍스트 80% 를 넘으면 요약 후 새 세션.
+    /// 자동 압축(이 PC) — 이 PC 에서 돈 세션이 컨텍스트 80% 를 넘으면 요약 후 새 세션.
     pub auto_compact: Option<bool>,
 }
 

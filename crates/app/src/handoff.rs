@@ -1,4 +1,4 @@
-//! 두 번째 실행 → 주 인스턴스에 "웹UI 열기" 를 넘긴다(D14). CLI(`cli`)도 같은 경로로 주 인스턴스 로컬 API 를 부른다.
+//! 두 번째 실행 → 주 인스턴스에 "웹UI 열기" 를 넘긴다. CLI(`cli`)도 같은 경로로 주 인스턴스 로컬 API 를 부른다.
 use an_core::instance::InstanceInfo;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpStream};

@@ -1,4 +1,4 @@
-//! 프로세스 다루기(#1n) — 부모 PID · 살아 있음 · 부모 끝 지켜보기 · 강제 종료 · 떼어 띄우기. 두 OS 같은 동작(D30): Windows Toolhelp ·
+//! 프로세스 다루기 — 부모 PID · 살아 있음 · 부모 끝 지켜보기 · 강제 종료 · 떼어 띄우기. 두 OS 같은 동작(D30): Windows Toolhelp ·
 //! `OpenProcess` ↔ Unix `getppid` · `kill`.
 use std::ffi::OsStr;
 use std::io;
@@ -250,7 +250,7 @@ pub fn spawn_detached<K: AsRef<OsStr>, V: AsRef<OsStr>>(
         use std::os::windows::process::CommandExt;
         use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
         no_inherit_std_handles();
-        // 숨은 콘솔 — 디버그(콘솔) 빌드에서 감시가 띄우는 앱이 새 콘솔 창을 만들지 않게(plan 개정: DETACHED_PROCESS 대신).
+        // 숨은 콘솔(`DETACHED_PROCESS` 아님) — 디버그(콘솔) 빌드에서 감시가 띄우는 앱이 새 콘솔 창을 만들지 않게.
         cmd.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
     }
     #[cfg(unix)]

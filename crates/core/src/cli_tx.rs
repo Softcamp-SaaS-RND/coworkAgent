@@ -1,4 +1,4 @@
-//! CLI 트랜잭션(#1c) — `ask` 하나 = 보낸 실행 요청 글 하나. 앱이 주인이고 CLI 는 상태를 본다: 중복 키(같은 키는 새로 보내지 않음) · 이어 받기
+//! CLI 트랜잭션 — `ask` 하나 = 보낸 실행 요청 글 하나. 앱이 주인이고 CLI 는 상태를 본다: 중복 키(같은 키는 새로 보내지 않음) · 이어 받기
 //! (`wait <tx>`) · 닿지 않음 판정(`unreachable_since` → `stalled_at`).
 use rusqlite::{Connection, OptionalExtension, Row, params};
 

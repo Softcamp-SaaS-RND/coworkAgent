@@ -364,9 +364,9 @@ async fn conversation_summaries_and_message_meta() {
         "웹UI 글 — CLI 출처 아님(라운드 2 `via`)"
     );
     // 화면 로직 모듈도 같은 guard 뒤에서 나간다.
-    let (code, raw) = common::send(port, "GET", "/view.js", &h[..3]).await;
+    let (code, raw) = common::send(port, "GET", "/js/logic/message.js", &h[..3]).await;
     assert_eq!(code, 200);
-    assert!(raw.contains("export function timeline"), "view.js 본문");
+    assert!(raw.contains("export function timeline"), "logic/message.js 본문");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -529,6 +529,28 @@ async fn relay_cap_default_from_settings() {
     assert_eq!(r["conversation"]["relay_cap"], 10, "{r}");
     an_core::settings::set(&a_db, an_agent::chat::RELAY_CAP_KEY, "4").unwrap();
     let (_, r) = call(port_a, &ha, "POST", "/api/conversations", &start).await;
+    assert_eq!(r["conversation"]["relay_cap"], 4, "{r}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn session_relay_cap_default_from_settings() {
+    let (a, b) = (side("sd-a").await, side("sd-b").await);
+    let code = b.node.open_window(PAIRING_WINDOW);
+    let pb = a.node.add(b.addr, Some(code)).await.unwrap();
+    let pa = b.node.peers().unwrap().remove(0);
+    a.node.approve(pb.id).await.unwrap();
+    b.node.approve(pa.id).await.unwrap();
+    let a_db = db::open(&a.paths.db_file()).unwrap();
+    agents::add(&a_db, "mine", ".", "").unwrap();
+    let (port_a, ha) = web(a.chat.clone()).await;
+    // 글 없는 세션 생성도 같은 기본값 — 설정이 없으면 10, 있으면 그 값.
+    let start = serde_json::json!({ "peer_id": pb.id, "agent": "review", "relay_agent": "mine" }).to_string();
+    let (s, r) = call(port_a, &ha, "POST", "/api/conversations", &start).await;
+    assert_eq!(s, 201, "{r}");
+    assert_eq!(r["conversation"]["relay_cap"], 10, "{r}");
+    an_core::settings::set(&a_db, an_agent::chat::RELAY_CAP_KEY, "4").unwrap();
+    let (s, r) = call(port_a, &ha, "POST", "/api/conversations", &start).await;
+    assert_eq!(s, 201, "{r}");
     assert_eq!(r["conversation"]["relay_cap"], 4, "{r}");
 }
 

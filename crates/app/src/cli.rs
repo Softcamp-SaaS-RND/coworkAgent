@@ -1,4 +1,4 @@
-//! 사용자 AI 에이전트용 CLI(D14 보강) — `peers` · `ask` · `wait` · `status` · `history`. `ask` 하나 = 앱의 CLI 트랜잭션 하나(#1c) — 앱이 주인이고
+//! 사용자 AI 에이전트용 CLI — `peers` · `ask` · `wait` · `status` · `history`. `ask` 하나 = 앱의 CLI 트랜잭션 하나 — 앱이 주인이고
 //! CLI 는 그 상태를 본다(중복 키 · 이어 받기 · 닿지 않음 멈춤). 떠 있는 주 인스턴스의 로컬 API 를
 //! `instance.json` 의 bearer 토큰으로 부른다(웹UI 와 같은 신뢰 경계). 앱을 띄우지 않는다 — 실행 중이 아니면 종료 코드 3.
 //! CLI 로 쓴 글은 `via = "cli"` 로 양쪽 이력에 남는다. 파이프로 부르는 것을 전제한다(릴리스는 콘솔 없는 서브시스템).
@@ -22,18 +22,18 @@ pub const EXIT_API: i32 = 4;
 pub const EXIT_REPLY_FAILED: i32 = 5;
 /// 답 대기 시간 초과(안전판 — 앱 판정이 먼저 끝낸다).
 pub const EXIT_TIMEOUT: i32 = 6;
-/// 상대에 정해진 시간 닿지 않아 멈춤(#1c) — 트랜잭션은 남는다, `wait <tx>` 로 이어 받는다.
+/// 상대에 정해진 시간 닿지 않아 멈춤 — 트랜잭션은 남는다, `wait <tx>` 로 이어 받는다.
 pub const EXIT_STALLED: i32 = 7;
-/// `start` · `open` 이 앱을 띄우지 못했다(#1n) — 사유는 표준 오류.
+/// `start` · `open` 이 앱을 띄우지 못했다 — 사유는 표준 오류.
 pub const EXIT_START_FAILED: i32 = 8;
 
-/// CLI 자체 대기 안전판(#1c) — 끝은 앱의 트랜잭션 판정(답 · 실패 · 멈춤)이 정한다. 상대가 대기 · 실행 중으로 확인되는 동안은 기다린다.
+/// CLI 자체 대기 안전판 — 끝은 앱의 트랜잭션 판정(답 · 실패 · 멈춤)이 정한다. 상대가 대기 · 실행 중으로 확인되는 동안은 기다린다.
 pub const WAIT_LIMIT: Duration = Duration::from_secs(24 * 3600);
 /// 답 확인 간격.
 const POLL: Duration = Duration::from_secs(1);
 /// 로컬 API 요청 한 번의 상한 — 새 대화는 상대에 닿을 때까지 기다린다.
 const REQUEST_DEADLINE: Duration = Duration::from_secs(60);
-/// CLI 로 쓴 글의 발화자(웹UI `view.js` 와 같은 문구).
+/// CLI 로 쓴 글의 발화자(웹UI `logic/author.js` 와 같은 문구).
 const CLI_LABEL: &str = "AI 에이전트(CLI)";
 
 pub const USAGE: &str = "사용법:
@@ -50,12 +50,12 @@ pub const USAGE: &str = "사용법:
 <상대> = 피어 표시 이름 또는 지문 앞자리(4자 이상). 본문이 -- 로 시작하면 앞에 -- 를 둔다(그 뒤는 전부 인자)
 start · open 은 트레이 아이콘 없이 띄우고 부모 프로세스(기본 = 부른 프로세스)가 끝나면 함께 끝난다. stop 은 끝날 때까지(최대 10초) 기다린다. 종료 코드 8 = 시작 실패.";
 
-/// 도움말 인자(#1q) — `/?`(Windows 관례) · `-h` · `--help`. 첫 인자일 때만 — 다른 자리의 `/?` 는 묻는 본문일 수 있다.
+/// 도움말 인자 — `/?`(Windows 관례) · `-h` · `--help`. 첫 인자일 때만 — 다른 자리의 `/?` 는 묻는 본문일 수 있다.
 pub fn is_help(arg: &str) -> bool {
     matches!(arg, "/?" | "-h" | "--help")
 }
 
-/// `coworkAgent /?` 의 머리 · 꼬리(#1q) — 사이에 [`USAGE`]. 다른 AI 도구가 읽고 연동하도록 출력 형식 · 종료 코드까지.
+/// `coworkAgent /?` 의 머리 · 꼬리 — 사이에 [`USAGE`]. 다른 AI 도구가 읽고 연동하도록 출력 형식 · 종료 코드까지.
 const HELP_HEAD: &str = "coworkAgent — 같은 사내망 동료 PC 의 Claude Code 에이전트에게 묻고 답을 받는 앱.
 인자 없이 실행하면 트레이 앱이다. 아래 명령은 CLI — start · open · stop 밖의 명령은 앱이 떠 있어야 한다(아니면 종료 코드 3).";
 const HELP_TAIL: &str = "출력:
@@ -72,7 +72,7 @@ const HELP_TAIL: &str = "출력:
 도움말:
   coworkAgent /?   (-h · --help 도 같다)";
 
-/// `coworkAgent /?` 출력 전체(#1q) — 앱이 꺼져 있어도 나온다.
+/// `coworkAgent /?` 출력 전체 — 앱이 꺼져 있어도 나온다.
 pub fn help() -> String {
     format!("{HELP_HEAD}
 
@@ -94,7 +94,7 @@ pub fn main(args: &[String]) -> i32 {
     };
     let (mut out, mut err) = (io::stdout().lock(), io::stderr().lock());
     let paths = Paths::under(root);
-    // 부모 툴 메뉴용(#1n) — 꺼져 있어도 동작한다(handshake 없음).
+    // 부모 툴 메뉴용 — 꺼져 있어도 동작한다(handshake 없음).
     let code = if args.first().is_some_and(|a| crate::control::is_command(a)) {
         match std::env::current_exe() {
             Ok(exe) => crate::control::run(args, &paths, &exe, &mut out, &mut err),
@@ -287,7 +287,7 @@ impl Cli {
                     "대화 {cid} 는 상대가 연 대화다 — 상대 에이전트에게 묻는 대화가 아니다"
                 )));
             }
-            // --agent 가 대화 에이전트가 아니면 멘션 — 자동 왕복 대화는 지금처럼 오류, 상대 PC 에 없는 이름은 사용법 오류(기록을 남기지 않게).
+            // --agent 가 대화 에이전트가 아니면 멘션 — 자동 왕복 대화는 오류, 상대 PC 에 없는 이름은 사용법 오류(기록을 남기지 않게).
             let mention = self.agent.as_deref().filter(|a| *a != text(&c["agent"]));
             if let Some(a) = mention {
                 if !c["relay_agent"].is_null() {
@@ -602,7 +602,7 @@ fn sole_agent(api: &Api, pid: i64, name: &str) -> Result<String, Fail> {
     }
 }
 
-/// 트랜잭션이 끝날 때까지(#1c) — 진행(보내는 중 · 대기 · 처리 중 + 단계)이 바뀔 때마다 `err` 에 한 줄. 끝: 답(돌려줌) · 실패(5) · 멈춤(7) ·
+/// 트랜잭션이 끝날 때까지 — 진행(보내는 중 · 대기 · 처리 중 + 단계)이 바뀔 때마다 `err` 에 한 줄. 끝: 답(돌려줌) · 실패(5) · 멈춤(7) ·
 /// 안전판(`limit` — 6). CLI 가 죽어도 트랜잭션은 앱에 남는다(`wait <tx>`).
 fn wait_tx(
     api: &Api,
@@ -720,13 +720,13 @@ fn progress_json(v: &Value) -> Option<Value> {
     }
 }
 
-/// 발화자 — 웹UI `view.js` `authorLabel` 과 같은 규칙(보는 쪽 기준).
+/// 발화자 — 웹UI `logic/author.js` `authorLabel` 과 같은 규칙(보는 쪽 기준).
 fn author_label(c: &Value, m: &Value, peer: &str) -> String {
     let mine = m["mine"] == true;
     // 답 발화자 = 실행한 에이전트(멘션이면 부른 이름).
     let agent = m["agent"].as_str().unwrap_or(text(&c["agent"]));
     let relay = c["relay_agent"].as_str().unwrap_or("에이전트");
-    // 공유 대화(#1o) — 초대한 사람(`peer`) 쪽 글(`owner`) · 원 상대(`share.other`) 글, 에이전트는 그 쪽 사람의 것(웹UI `sharedAuthor` 와 같다).
+    // 공유 대화 — 초대한 사람(`peer`) 쪽 글(`owner`) · 원 상대(`share.other`) 글, 에이전트는 그 쪽 사람의 것(웹UI `sharedAuthor` 와 같다).
     if c["dir"] == "shared" {
         let owner = m["owner"] == true;
         let who = if owner {
@@ -806,7 +806,7 @@ fn line(out: &mut dyn Write, s: impl std::fmt::Display) -> Result<(), Fail> {
         .map_err(|e| Fail(EXIT_API, format!("출력 실패: {e}")))
 }
 
-/// 터미널을 조작하는 제어 문자를 지운다 — C0(줄바꿈 · 탭 제외) · DEL · C1. 원격 답 · 이름이 화면 · 파이프로 나간다(1a A14).
+/// 터미널을 조작하는 제어 문자를 지운다 — C0(줄바꿈 · 탭 제외) · DEL · C1. 원격 답 · 이름이 화면 · 파이프로 나간다.
 pub fn printable(s: &str) -> String {
     s.chars()
         .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
@@ -817,7 +817,7 @@ pub fn printable(s: &str) -> String {
 mod tests {
     use super::*;
 
-    /// 공유 대화(#1o) 발화자 — 초대한 사람 · 원 상대 · 각자의 에이전트.
+    /// 공유 대화 발화자 — 초대한 사람 · 원 상대 · 각자의 에이전트.
     #[test]
     fn share_author_label() {
         let c = serde_json::json!({ "dir": "shared", "agent": "review", "share": { "other": "user-c", "owner_dir": "out" } });

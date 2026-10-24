@@ -1,5 +1,5 @@
-//! 레일 그룹(#1i) — 이 PC 에만 있는 대화 묶음(한 대화는 여러 그룹에) · 상대 · 그룹 · 대화의 손으로 놓은 자리(`pos`).
-//! 그룹에는 대화만 하나씩(`group_convs`) 넣는다(#1w — D37 개정, 상대 단위 소속은 스키마 21 이 대화로 옮겼다).
+//! 레일 그룹 — 이 PC 에만 있는 대화 묶음(한 대화는 여러 그룹에) · 상대 · 그룹 · 대화의 손으로 놓은 자리(`pos`).
+//! 그룹에는 대화만 하나씩(`group_convs`) 넣는다.
 //! 상대 PC 에 알리지 않는다. 외래 키를 켜지 않는 DB 라 그룹을 지우면 소속도 여기서 함께 지운다.
 use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashSet;
@@ -190,7 +190,7 @@ pub fn reorder(
     kind: Order,
     ids: &[i64],
 ) -> rusqlite::Result<Result<(), String>> {
-    // 개수 상한은 두지 않는다 — 웹UI 는 전체 순서를 보내고 대화는 지워지지 않아 늘기만 한다(라운드 2). 요청 크기는 서버 본문 상한(2 MiB)이 막는다.
+    // 개수 상한은 두지 않는다 — 웹UI 는 전체 순서를 보낸다. 요청 크기는 서버 본문 상한(2 MiB)이 막는다.
     let mut seen = HashSet::new();
     if let Some(d) = ids.iter().find(|id| !seen.insert(**id)) {
         return Ok(Err(format!("겹친 id {d}")));

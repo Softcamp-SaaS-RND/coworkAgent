@@ -47,7 +47,7 @@ pub fn backup_path(path: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// `log` 파사드를 파일로 받는다 — Windows 릴리스는 콘솔이 없어 이것이 유일한 진단 수단(T3).
+/// `log` 파사드를 파일로 받는다 — Windows 릴리스는 콘솔이 없어 이것이 유일한 진단 수단.
 pub struct FileLogger {
     file: Mutex<RotatingFile>,
 }
@@ -59,7 +59,7 @@ impl FileLogger {
         };
         log::set_boxed_logger(Box::new(logger)).map_err(io::Error::other)?;
         log::set_max_level(level);
-        // 패닉도 로그에 — 콘솔 없는 릴리스에서 비정상 종료 근거가 남는 곳은 여기뿐(#1e). 기본 훅(stderr)도 그대로 부른다.
+        // 패닉도 로그에 — 콘솔 없는 릴리스에서 비정상 종료 근거가 남는 곳은 여기뿐. 기본 훅(stderr)도 그대로 부른다.
         let default = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
             let at = info

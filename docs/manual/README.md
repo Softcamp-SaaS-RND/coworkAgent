@@ -29,7 +29,7 @@
 - [dev/an_core.md](dev/an_core.md) — base: 데이터 경로 · SQLite · 로그 회전 · 단일 인스턴스 · 실행 옵션 · 화면 설정 검증 · 보내기 보관(outbox) ·
   CLI 트랜잭션 표
 - [dev/an_net.md](dev/an_net.md) — comm: 신원 · RPK TLS · 피어 프로토콜 · 페어링 노드 · 접속 상태(통신 때만) · 초대 텍스트
-- [dev/an_agent.md](dev/an_agent.md) — domain: `claude -p` 실행기(단계 요약) · 대화 왕복 조율 · DB 대기열 · 보내기 줄 · 상태 질의 · CLI 트랜잭션
+- [dev/an_agent.md](dev/an_agent.md) — domain: 에이전트 실행기(`claude -p` · `codex exec` — 단계 요약) · 대화 왕복 조율 · DB 대기열 · 보내기 줄 · 상태 질의 · CLI 트랜잭션
 - [dev/an_app.md](dev/an_app.md) — app: 로컬 웹UI 서버 · 핸드오프 · 트레이 · 브라우저 · 에이전트 · 대화 API · AI 에이전트용 CLI · 시작 순서
 - [dev/developer-guide.md](dev/developer-guide.md) — 절차·운영(모듈 매뉴얼 형식의 예외): 빌드 · 개발 검증 · 통신 구성 · 피어 프로토콜 · 생성되는
   프로세스 · 서비스 역할 · `claude -p` 세션 관리 · 보내기 보관 · 저장소(코드 · 데이터 · Claude Code 기록) · 워크플로우 — 모듈을 가로지른 실행 구조

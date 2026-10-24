@@ -40,9 +40,9 @@ flowchart LR
 |---|---|---|---|
 | `crates/core` | `an-core` | base | 데이터 경로 · SQLite 스키마와 표 접근(보내기 보관 `outbox` · CLI 트랜잭션 `cli_tx` 포함) · 로그 회전 · 단일 인스턴스 · 실행 옵션 · 화면 설정 검증 |
 | `crates/net` | `an-net` | comm | 신원(ed25519) · TLS 1.3 raw public key · 피어 프레임 · 피어 노드(수신 · 발신 · 페어링 · 시작 알림 · 통신 때 접속 시각) · 초대 |
-| `crates/agent` | `an-agent` | domain | `claude -p` 실행기(`runner` — stream-json 단계 요약) · 대화 조율(`chat` — 대기열 · 보내기 보관 · 상대별 보내기 줄 · 세션 · 자동 왕복 · 멘션 · 완료 · CLI 트랜잭션) |
+| `crates/agent` | `an-agent` | domain | 에이전트 실행기(`runner` — `claude -p` · `codex exec`, 단계 요약) · 대화 조율(`chat` — 대기열 · 보내기 보관 · 상대별 보내기 줄 · 세션 · 자동 왕복 · 멘션 · 완료 · CLI 트랜잭션) |
 | `crates/app` | `coworkagent-app`(lib `an_app` · bin `coworkAgent`) | app | 시작 순서(`main.rs`) · 로컬 웹 서버 · API · CLI · 트레이 · 브라우저 열기 · 알림 |
-| `crates/app/web` | 실행 파일에 임베드 | app | 빌드 없는 웹UI — `index.html` · `app.js`(조립) · `view.js`(판단 로직, `node --test`) · `app.css` |
+| `crates/app/web` | 실행 파일에 임베드 | app | 빌드 없는 웹UI — `index.html` · `js/`(ES 모듈 — 진입 `app.js` · `core/` · 도메인 · `settings/` 는 조립, `logic/` 은 판단 로직 · `node --test`, 목록 = `server::SCRIPTS`) · `app.css` |
 | `tools/` | Python | — | 문서 규약 · gate · 크레이트 경계 · README(`check_readme.py`) 체커 · 개발 PC 재빌드 실행(`rebuild_run.py`) · 포트 풀림 실측(`port_check.py`) |
 | `docs/` | Markdown | — | DDD 문서 체계(masterPlan · Task · 매뉴얼 · 원장) |
 
@@ -437,7 +437,7 @@ claude -p --output-format stream-json --verbose --permission-prompts none --perm
 - **웹UI** — 실행마다 새 토큰(32바이트 hex). 트레이 "열기" URL `/?t={토큰}` → 페이지가 토큰을 **탭 메모리**(sessionStorage)로 가져가고
   주소창에서 지운다(`history.replaceState`). `/api/*` 는 `Authorization: Bearer` 로만, 알림 스트림 `/api/events` 만 `?t=` 도 받는다(`EventSource`
   는 헤더를 못 싣는다). **쿠키는 쓰지 않는다** — 쿠키는 포트를 가리지 않아 같은 PC 의 다른 `127.0.0.1` 포트로도 실린다(1a). 정적 자산(`/` ·
-  `app.js` · `view.js` · `app.css` · `favicon.ico` · `/fonts/` 의 `server::FONTS` 이름 — #1p)은 토큰 없이(Host 검사만). 탭을 닫거나 새 탭을 손으로 열거나 앱을 다시 켜면 "연결이 끊겼습니다"
+  `/js/` 의 `server::SCRIPTS` 이름 · `app.css` · `favicon.ico` · `/fonts/` 의 `server::FONTS` 이름 — #1p)은 토큰 없이(Host 검사만, 표 밖 이름은 토큰이 있어도 404). 탭을 닫거나 새 탭을 손으로 열거나 앱을 다시 켜면 "연결이 끊겼습니다"
   안내 — 트레이 "열기" 로 다시 연다.
 - **CLI** — `instance.json` 의 포트 · 토큰을 `Authorization: Bearer` 로. 보내기 전 `GET /api/status` 의 `cli_api` 로 출처 표시를 아는
   인스턴스인지 확인한다. 앱이 꺼져 파일이 없으면 종료 코드 3.

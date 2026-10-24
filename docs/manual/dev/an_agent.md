@@ -2,9 +2,27 @@
 
 ## 개요
 
-`an-agent`(`crates/agent`) — domain Layer. 에이전트 왕복: `claude -p` 실행기(`runner`)와 대화 조율(`chat`). 원격 메시지는 신뢰하지
+`an-agent`(`crates/agent`) — domain Layer. 에이전트 왕복: 에이전트 실행기(`runner` — `claude -p` · `codex exec`)와 대화 조율(`chat`). 원격 메시지는 신뢰하지
 않는 입력 — 텍스트는 표준 입력으로만, 도구는 읽기 전용 3개(`READ_ONLY_TOOLS` — #1d, 프로필과 무관)만. 의존: `an-core`(프로필 · 대화 · 메시지 표) · `an-net`(노드).
 Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세스 그룹과 같은 동작).
+
+`chat` 은 도메인별 하위 모듈(`crates/agent/src/chat/`)로 나뉜다 — 모듈마다 `impl Chat`, 공개 경로는 `an_agent::chat::Chat` 그대로.
+
+| 하위 모듈 | 담는 것 |
+| --- | --- |
+| `chat/mod.rs` | `Chat` · 생성 · 공통 상수 · 도우미 |
+| `chat/queue.rs` | 실행 큐 · 동시 실행 상한 · 진행 |
+| `chat/tx.rs` | CLI 트랜잭션 · 감시 |
+| `chat/delivery.rs` | 보낼 함 · 전달 · 재시도 · 상태 묻기 |
+| `chat/send.rs` | 질의 · 요청 보내기 · 세션 열기 |
+| `chat/inbound.rs` | 받은 프레임 분기 · 받은 글 · 알림 |
+| `chat/request.rs` | 요청 상태 |
+| `chat/tidy.rs` | 글 고치기 · 지우기 동기화 |
+| `chat/relay.rs` | 자동 왕복 |
+| `chat/execute.rs` | 에이전트 실행 · 실패 기록 |
+| `chat/context.rs` | 압축 · 비우기 요청 · 요약 |
+| `chat/sharing.rs` | 공유 사본 · 관람자 |
+| `chat/lifecycle.rs` | 나가기 · 지우기 · 비우기 |
 
 ## 공개 계약
 

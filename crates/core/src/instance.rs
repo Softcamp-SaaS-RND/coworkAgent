@@ -12,7 +12,7 @@ pub enum Acquired {
     Secondary,
 }
 
-/// 단일 인스턴스 잠금(D14). 보유 중에만 유효하고, 프로세스가 죽으면 OS 가 푼다.
+/// 단일 인스턴스 잠금. 보유 중에만 유효하고, 프로세스가 죽으면 OS 가 푼다.
 pub struct InstanceLock {
     _file: File,
 }
@@ -90,7 +90,7 @@ impl InstanceInfo {
         })
     }
 
-    /// 토큰이 든 파일 — Unix 는 0600 으로 만든다(Windows 는 데이터 루트의 소유자 전용 DACL 을 물려받는다, 1a A1).
+    /// 토큰이 든 파일 — Unix 는 0600 으로 만든다(Windows 는 데이터 루트의 소유자 전용 DACL 을 물려받는다).
     pub fn write(&self, path: &Path) -> io::Result<()> {
         #[cfg(unix)]
         {

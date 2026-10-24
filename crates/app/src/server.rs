@@ -1,6 +1,6 @@
 //! 로컬 웹UI 서버(D9) — 127.0.0.1 전용 · 실행마다 바뀌는 토큰 · Host/Origin 검사.
-//! 토큰은 `Authorization: Bearer` 로만(탭 메모리 — 쿠키는 포트를 가리지 않아 같은 PC 의 다른 포트로도 실린다, 1a A2).
-//! 정적 자산은 공개(헤더를 못 싣는 `<script src>` · `import`), 모든 응답에 보안 헤더(A3).
+//! 토큰은 `Authorization: Bearer` 로만(탭 메모리 — 쿠키는 포트를 가리지 않아 같은 PC 의 다른 포트로도 실린다).
+//! 정적 자산은 공개(헤더를 못 싣는 `<script src>` · `import`), 모든 응답에 보안 헤더.
 use axum::Router;
 use axum::extract::{Path, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
@@ -16,10 +16,10 @@ use tokio::net::TcpListener;
 /// `base-uri` · `form-action` 은 넣지 않는다 — `srcdoc` 이 물려받아 본문의 `<base target="_top">` 을 막는다.
 pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; object-src 'none'";
 
-/// 상태 페이지(T2)에 보이는 값.
 /// CLI 가 기대하는 로컬 API 판(`/api/status` 의 `cli_api`) — CLI 출처 표시(`via`)를 아는 주 인스턴스만 이 값을 낸다.
 pub const CLI_API: u32 = 1;
 
+/// 상태 페이지에 보이는 값.
 pub struct Status {
     pub version: String,
     pub data_dir: String,
@@ -32,7 +32,7 @@ struct AppState {
     origin: String,
     status: Status,
     open_browser: Box<dyn Fn() -> std::io::Result<()> + Send + Sync>,
-    /// `/api/status` 의 `mode` — `"tray"` · `"headless"`(#1n).
+    /// `/api/status` 의 `mode` — `"tray"` · `"headless"`.
     mode: &'static str,
     /// `POST /api/quit` 이 부른다 — 트레이 "종료" 와 같은 정상 종료.
     quit: Option<Quit>,
@@ -74,7 +74,7 @@ pub fn router_with(
     router_control(port, token, status, open_browser, "tray", None, extra)
 }
 
-/// `router_with` + 실행 모드 · 종료 API(#1n). `quit` 이 있을 때만 `POST /api/quit` 을 둔다.
+/// `router_with` + 실행 모드 · 종료 API. `quit` 이 있을 때만 `POST /api/quit` 을 둔다.
 pub fn router_control(
     port: u16,
     token: String,
@@ -99,8 +99,7 @@ pub fn router_control(
         base = base.route("/api/quit", post(api_quit));
     }
     base.route("/", get(index))
-        .route("/app.js", get(app_js))
-        .route("/view.js", get(view_js))
+        .route("/js/{*file}", get(script))
         .route("/app.css", get(app_css))
         .route("/favicon.ico", get(favicon))
         .route("/fonts/{file}", get(font))
@@ -113,10 +112,62 @@ pub fn router_control(
         .layer(middleware::from_fn_with_state(state, guard))
 }
 
-/// 토큰 없이 주는 정적 자산(실행 파일에 박힌 상수 — 비밀 없음). `/fonts/` 는 `FONTS` 의 이름만.
-const PUBLIC: [&str; 5] = ["/", "/app.js", "/view.js", "/app.css", "/favicon.ico"];
+/// 토큰 없이 주는 정적 자산(실행 파일에 박힌 상수 — 비밀 없음). `/fonts/` 는 `FONTS`, `/js/` 는 `SCRIPTS` 의 이름과 정확히 같을 때만.
+const PUBLIC: [&str; 3] = ["/", "/app.css", "/favicon.ico"];
 
-/// 화면 글꼴(#1p) — IBM Plex Sans KR(SIL OFL 1.1, IBM 배포 woff2 그대로 · 완성형 한글)과 그 라이선스. 파일을 바꾸면 이름도 바꾼다(1년 캐시).
+/// 화면 모듈 — `/js/<이름>`(진입 `app.js` · `core/` · 도메인 · `settings/` · DOM 없는 `logic/`). `web/js/` 의 파일과 같아야 한다(시험 `web_assets`).
+pub const SCRIPTS: &[(&str, &str)] = &[
+    ("app.js", include_str!("../web/js/app.js")),
+    ("core/token.js", include_str!("../web/js/core/token.js")),
+    ("core/api.js", include_str!("../web/js/core/api.js")),
+    ("core/dom.js", include_str!("../web/js/core/dom.js")),
+    ("core/widgets.js", include_str!("../web/js/core/widgets.js")),
+    ("core/state.js", include_str!("../web/js/core/state.js")),
+    ("core/float.js", include_str!("../web/js/core/float.js")),
+    ("shell.js", include_str!("../web/js/shell.js")),
+    ("events.js", include_str!("../web/js/events.js")),
+    ("rail.js", include_str!("../web/js/rail.js")),
+    ("tiles.js", include_str!("../web/js/tiles.js")),
+    ("sidebar.js", include_str!("../web/js/sidebar.js")),
+    ("home.js", include_str!("../web/js/home.js")),
+    ("conv.js", include_str!("../web/js/conv.js")),
+    ("conv-menu.js", include_str!("../web/js/conv-menu.js")),
+    ("composer.js", include_str!("../web/js/composer.js")),
+    ("detail.js", include_str!("../web/js/detail.js")),
+    ("activity.js", include_str!("../web/js/activity.js")),
+    ("requests.js", include_str!("../web/js/requests.js")),
+    ("agents.js", include_str!("../web/js/agents.js")),
+    ("peers.js", include_str!("../web/js/peers.js")),
+    ("compose.js", include_str!("../web/js/compose.js")),
+    ("drag.js", include_str!("../web/js/drag.js")),
+    ("search.js", include_str!("../web/js/search.js")),
+    ("settings/index.js", include_str!("../web/js/settings/index.js")),
+    ("settings/conn.js", include_str!("../web/js/settings/conn.js")),
+    ("settings/groups.js", include_str!("../web/js/settings/groups.js")),
+    ("settings/agents.js", include_str!("../web/js/settings/agents.js")),
+    ("settings/prefs.js", include_str!("../web/js/settings/prefs.js")),
+    ("settings/debug.js", include_str!("../web/js/settings/debug.js")),
+    ("logic/format.js", include_str!("../web/js/logic/format.js")),
+    ("logic/conv.js", include_str!("../web/js/logic/conv.js")),
+    ("logic/message.js", include_str!("../web/js/logic/message.js")),
+    ("logic/context.js", include_str!("../web/js/logic/context.js")),
+    ("logic/markdown.js", include_str!("../web/js/logic/markdown.js")),
+    ("logic/peer.js", include_str!("../web/js/logic/peer.js")),
+    ("logic/inbox.js", include_str!("../web/js/logic/inbox.js")),
+    ("logic/author.js", include_str!("../web/js/logic/author.js")),
+    ("logic/order.js", include_str!("../web/js/logic/order.js")),
+    ("logic/rail.js", include_str!("../web/js/logic/rail.js")),
+    ("logic/home.js", include_str!("../web/js/logic/home.js")),
+    ("logic/request.js", include_str!("../web/js/logic/request.js")),
+    ("logic/activity.js", include_str!("../web/js/logic/activity.js")),
+    ("logic/settings.js", include_str!("../web/js/logic/settings.js")),
+    ("logic/agent.js", include_str!("../web/js/logic/agent.js")),
+    ("logic/shell.js", include_str!("../web/js/logic/shell.js")),
+    ("logic/sync.js", include_str!("../web/js/logic/sync.js")),
+    ("logic/search.js", include_str!("../web/js/logic/search.js")),
+];
+
+/// 화면 글꼴 — IBM Plex Sans KR(SIL OFL 1.1, IBM 배포 woff2 그대로 · 완성형 한글)과 그 라이선스. 파일을 바꾸면 이름도 바꾼다(1년 캐시).
 const FONTS: [(&str, &str, &[u8]); 4] = [
     (
         "IBMPlexSansKR-Regular.woff2",
@@ -145,6 +196,9 @@ fn is_public(path: &str) -> bool {
         || path
             .strip_prefix("/fonts/")
             .is_some_and(|f| FONTS.iter().any(|(name, ..)| *name == f))
+        || path
+            .strip_prefix("/js/")
+            .is_some_and(|f| SCRIPTS.iter().any(|(name, _)| *name == f))
 }
 
 /// 차례로: Host(DNS rebinding) → Origin(교차 출처) → 토큰. 응답에는 늘 보안 헤더.
@@ -233,19 +287,15 @@ async fn index() -> impl IntoResponse {
     )
 }
 
-async fn app_js() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
-        include_str!("../web/app.js"),
-    )
-}
-
-/// 화면 로직 모듈(DOM 없음) — `app.js` 가 import, `node --test` 가 시험.
-async fn view_js() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
-        include_str!("../web/view.js"),
-    )
+async fn script(Path(file): Path<String>) -> Response {
+    match SCRIPTS.iter().find(|(name, _)| *name == file) {
+        Some((_, body)) => (
+            [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+            *body,
+        )
+            .into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 async fn app_css() -> impl IntoResponse {
@@ -289,11 +339,11 @@ async fn api_status(State(s): State<Arc<AppState>>) -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "application/json")], body)
 }
 
-/// 디버깅 화면 로그 끝(#1z-8) — 줄 수 · 파일 끝에서 읽는 바이트 상한.
+/// 디버깅 화면 로그 끝 — 줄 수 · 파일 끝에서 읽는 바이트 상한.
 pub const LOG_TAIL_LINES: usize = 200;
 pub const LOG_TAIL_BYTES: u64 = 64 * 1024;
 
-/// `GET /api/debug`(#1z-8 디버깅) — 버전 · OS · 데이터 폴더 · DB · 로그 파일의 경로와 크기(없으면 null).
+/// `GET /api/debug`(디버깅 화면) — 버전 · OS · 데이터 폴더 · DB · 로그 파일의 경로와 크기(없으면 null).
 /// 신원 키 · 토큰(`instance.json`) · 지문은 내지 않는다.
 async fn api_debug(State(s): State<Arc<AppState>>) -> Response {
     let paths = an_core::paths::Paths::under(&s.status.data_dir);
@@ -310,7 +360,7 @@ async fn api_debug(State(s): State<Arc<AppState>>) -> Response {
     .into_response()
 }
 
-/// `GET /api/debug/log`(#1z-8) — 로그 파일 끝 [`LOG_TAIL_BYTES`] 안의 마지막 [`LOG_TAIL_LINES`] 줄. 파일이 없으면 빈 목록.
+/// `GET /api/debug/log` — 로그 파일 끝 [`LOG_TAIL_BYTES`] 안의 마지막 [`LOG_TAIL_LINES`] 줄. 파일이 없으면 빈 목록.
 async fn api_debug_log(State(s): State<Arc<AppState>>) -> Response {
     let path = an_core::paths::Paths::under(&s.status.data_dir).log_file();
     match tail_lines(&path, LOG_TAIL_BYTES, LOG_TAIL_LINES) {

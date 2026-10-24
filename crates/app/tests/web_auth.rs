@@ -50,9 +50,26 @@ async fn entry_wrong_token_401() {
 #[tokio::test]
 async fn static_assets_public() {
     let r = start().await;
-    for path in ["/", "/app.js", "/view.js", "/app.css", "/favicon.ico"] {
+    for path in ["/", "/app.css", "/favicon.ico"] {
         let (code, _) = send(r.port, "GET", path, &[host(r.port)]).await;
         assert_eq!(code, 200, "{path}");
+    }
+    for (name, _) in server::SCRIPTS {
+        let (code, raw) = send(r.port, "GET", &format!("/js/{name}"), &[host(r.port)]).await;
+        assert_eq!(code, 200, "{name}");
+        assert!(raw.to_ascii_lowercase().contains("content-type: text/javascript"), "{name}");
+    }
+}
+
+/// 화면 모듈은 `SCRIPTS` 이름과 정확히 같을 때만 토큰 없이 — 표 밖 `/js/…` · 옛 경로는 토큰이 있어도 404.
+#[tokio::test]
+async fn scripts_exact_names_only() {
+    let r = start().await;
+    for path in ["/js/nope.js", "/js/core/", "/js/logic/../app.js", "/app.js", "/view.js"] {
+        let (code, _) = send(r.port, "GET", path, &[host(r.port)]).await;
+        assert_eq!(code, 401, "토큰 없이 {path}");
+        let (code, _) = send(r.port, "GET", path, &[host(r.port), bearer(&r.token)]).await;
+        assert_eq!(code, 404, "토큰으로 {path}");
     }
 }
 
@@ -166,7 +183,7 @@ async fn other_api_rejects_query_token() {
 #[tokio::test]
 async fn wrong_host_403_even_public() {
     let r = start().await;
-    for path in ["/", "/app.js", "/api/status"] {
+    for path in ["/", "/js/app.js", "/api/status"] {
         let headers = [
             ("Host", format!("evil.example:{}", r.port)),
             bearer(&r.token),
@@ -196,7 +213,7 @@ async fn security_headers_on_every_response() {
     let r = start().await;
     let cases = [
         ("GET", "/", vec![host(r.port)], 200),
-        ("GET", "/app.js", vec![host(r.port)], 200),
+        ("GET", "/js/app.js", vec![host(r.port)], 200),
         ("GET", "/api/status", vec![host(r.port)], 401),
         (
             "GET",

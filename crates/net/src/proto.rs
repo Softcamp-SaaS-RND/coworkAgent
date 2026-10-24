@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-/// 실행 중 단계 요약(#1c) — 받는 쪽이 `claude -p` 실시간 이벤트에서 센다. 받은 쪽은 이름을 다시 거른다([`StepDetail::cleaned`]).
+/// 실행 중 단계 요약 — 받는 쪽이 에이전트 실행(`claude -p` · `codex exec`) 실시간 이벤트에서 센다. 받은 쪽은 이름을 다시 거른다([`StepDetail::cleaned`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StepDetail {
     pub turns: u32,
@@ -40,7 +40,7 @@ impl StepDetail {
 
 /// 이보다 긴 프레임은 본문을 읽지 않고 끊는다.
 pub const MAX_FRAME: usize = 64 * 1024;
-/// 원격 메시지 본문 상한(바이트, R4).
+/// 원격 메시지 본문 상한(바이트).
 pub const MAX_TEXT: usize = 16 * 1024;
 /// 원격에서 온 이름 · 호스트의 최대 글자 수.
 pub const MAX_NAME_CHARS: usize = 64;
@@ -64,7 +64,7 @@ pub enum Request {
     },
     Remove,
     /// 연결 확인 — 보낸 쪽 피어 수신 포트(`port`)를 싣는다. 받는 쪽은 페어링된 키면 (연결 출처 IP, `port`) 로 저장 주소를 맞춘다
-    /// (임의 포트 · 바뀐 IP 를 승인 초기화 없이 따라감, 1b). 0 = 주소를 바꾸지 않음.
+    /// (임의 포트 · 바뀐 IP 를 승인 초기화 없이 따라감). 0 = 주소를 바꾸지 않음.
     Ping {
         #[serde(default)]
         port: u16,
@@ -116,17 +116,17 @@ pub enum Request {
         model: Option<String>,
         #[serde(default)]
         effort: Option<String>,
-        /// 그 답을 낸 세션의 창 사용량(토큰, #1m) — 이전 버전 상대는 싣지 않는다(크기 모름).
+        /// 그 답을 낸 세션의 창 사용량(토큰) — 이전 버전 상대는 싣지 않는다(크기 모름).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ctx: Option<i64>,
     },
-    /// 실행 없이 상대 이력에 남기는 글(D18 · D23) — `author = "human"` 사람 글(`exec` = 보낸 쪽 에이전트에게 한 실행 요청인가),
-    /// `author = "agent"` 보낸 쪽 에이전트의 답(`reply_to` = 그 실행 요청 사람 글 uuid). 페어링된 상대만.
     /// 자동 왕복 켜기 · 끄기 알림(D24) — 받은 쪽 → 연 쪽 `on = false`(멈춤), 연 쪽 → 받은 쪽 `on`(재개 = 거절 해제 · 멈춤).
     Relay {
         conv: String,
         on: bool,
     },
+    /// 실행 없이 상대 이력에 남기는 글 — `author = "human"` 사람 글(`exec` = 보낸 쪽 에이전트에게 한 실행 요청인가),
+    /// `author = "agent"` 보낸 쪽 에이전트의 답(`reply_to` = 그 실행 요청 사람 글 uuid). 페어링된 상대만.
     Post {
         conv: String,
         msg: String,
@@ -159,7 +159,7 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ctx: Option<i64>,
     },
-    /// 실행 진행 — 받는 쪽이 상대가 보낸 실행 요청 글(`msg`)의 차례를 알린다(1b). `state` = `queued`(실행 문에서 기다림, `ahead` = 앞 사람 수) |
+    /// 실행 진행 — 받는 쪽이 상대가 보낸 실행 요청 글(`msg`)의 차례를 알린다. `state` = `queued`(실행 문에서 기다림, `ahead` = 앞 사람 수) |
     /// `running`(실행 시작). 페어링된 상대만.
     Progress {
         conv: String,
@@ -167,16 +167,16 @@ pub enum Request {
         state: String,
         #[serde(default)]
         ahead: u32,
-        /// 실행 중 단계 요약(#1c) — 턴 · 도구 이름별 횟수 · 경과 초만(입력 · 경로 · 모델 글 없음).
+        /// 실행 중 단계 요약 — 턴 · 도구 이름별 횟수 · 경과 초만(입력 · 경로 · 모델 글 없음).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         detail: Option<StepDetail>,
     },
-    /// 상태 질의(#1c) — 보낸 쪽이 자기 실행 요청 글(`msg`)의 지금 상태를 묻는다. 답 `Response::Status`. 페어링된 상대만.
+    /// 상태 질의 — 보낸 쪽이 자기 실행 요청 글(`msg`)의 지금 상태를 묻는다. 답 `Response::Status`. 페어링된 상대만.
     Status {
         conv: String,
         msg: String,
     },
-    /// 요청 상태(#1d) — 요청 글을 받은 쪽 사람이 바꾸고 쓴 쪽에 보낸다(쓴 쪽은 자기 요청 글에만 받는다). `state` = `wait` · `accepted` ·
+    /// 요청 상태 — 요청 글을 받은 쪽 사람이 바꾸고 쓴 쪽에 보낸다(쓴 쪽은 자기 요청 글에만 받는다). `state` = `wait` · `accepted` ·
     /// `rejected` · `done`, `note` = 한 줄 메모. 페어링된 상대만.
     ReqState {
         conv: String,
@@ -184,20 +184,20 @@ pub enum Request {
         state: String,
         note: Option<String>,
     },
-    /// 이력 정리(#1f) — 쓴 쪽 사람이 자기 사람 글(`msg`)의 본문을 고쳤다. 받는 쪽은 그 상대가 쓴 사람 글에만 적용한다(실행 · 알림 없음).
+    /// 이력 정리 — 쓴 쪽 사람이 자기 사람 글(`msg`)의 본문을 고쳤다. 받는 쪽은 그 상대가 쓴 사람 글에만 적용한다(실행 · 알림 없음).
     /// 페어링된 상대만.
     Edit {
         conv: String,
         msg: String,
         text: String,
     },
-    /// 이력 정리(#1f) — 쓴 쪽 사람이 자기 사람 글(`msg`)을 지웠다. 받는 쪽은 그 상대가 쓴 사람 글만 지운다(이미 없으면 `Ok`).
+    /// 이력 정리 — 쓴 쪽 사람이 자기 사람 글(`msg`)을 지웠다. 받는 쪽은 그 상대가 쓴 사람 글만 지운다(이미 없으면 `Ok`).
     /// 페어링된 상대만.
     Delete {
         conv: String,
         msg: String,
     },
-    /// 컨텍스트(#1m) — 대화의 Claude 세션 압축 · 비우기. `op` = `compact` · `auto_compact` · `clear`(해 달라 — 받은 쪽은 자기 세션을 처리하고 다시
+    /// 컨텍스트 — 대화의 Claude 세션 압축 · 비우기. `op` = `compact` · `auto_compact` · `clear`(해 달라 — 받은 쪽은 자기 세션을 처리하고 다시
     /// 넘기지 않는다) · `done`(처리했다 — `text` = 요약, 비우기는 빈 값) · `failed`(`text` = 사유 코드). `msg` = 양쪽 같은 구분선 글 uuid(멱등).
     /// 이 종류를 모르는 상대(0.4.0)는 연결을 끊으므로 보내기 전에 `Pong.ctx` 를 본다. 페어링된 상대만.
     Context {
@@ -207,7 +207,7 @@ pub enum Request {
         #[serde(default)]
         text: String,
     },
-    /// 공유 대화(#1o) 시작 · 다시 초대 — 대화를 가진 PC(A)가 관람자(C)에게. C 는 같은 uuid 의 읽기 전용 사본을 만들고(있으면 글을 비우고) 이어
+    /// 공유 대화 시작 · 다시 초대 — 대화를 가진 PC(A)가 관람자(C)에게. C 는 같은 uuid 의 읽기 전용 사본을 만들고(있으면 글을 비우고) 이어
     /// `SharePost` 로 이력을 받는다. `owner_dir` = A 쪽 대화 방향(`out` · `in`), `other` = A 대화의 원 상대 이름. 이 종류를 모르는 상대(0.5.0)는
     /// 연결을 끊으므로 보내기 전에 `Pong.share` 를 본다. 페어링된 상대만.
     Share {
@@ -217,31 +217,31 @@ pub enum Request {
         owner_dir: String,
         other: String,
     },
-    /// 공유 대화 글 하나(#1o — 글 하나 = 프레임 하나) — 같은 uuid 면 고친 글로 덮어쓴다.
+    /// 공유 대화 글 하나(글 하나 = 프레임 하나) — 같은 uuid 면 고친 글로 덮어쓴다.
     SharePost {
         conv: String,
         msg: ShareMsg,
     },
-    /// 공유 대화 글 지움(#1o).
+    /// 공유 대화 글 지움.
     ShareDelete {
         conv: String,
         msg: String,
     },
-    /// 공유 끝(#1o) — A → C 빼기 · C → A 나가기. C 의 사본은 읽기 전용으로 남는다.
+    /// 공유 끝 — A → C 빼기 · C → A 나가기. C 의 사본은 읽기 전용으로 남는다.
     ShareEnd {
         conv: String,
     },
-    /// 원 상대(B)에게 그 대화의 관람자 수(#1o) — 이름은 싣지 않는다.
+    /// 원 상대(B)에게 그 대화의 관람자 수 — 이름은 싣지 않는다.
     ShareNotice {
         conv: String,
         n: u32,
     },
-    /// 대화 나가기(#1w) — 보낸 쪽이 그 대화를 끝냈다. 받은 쪽은 그 대화를 읽기 전용("상대가 나감")으로. 이 종류를 모르는 상대(0.8.0)는 연결을
+    /// 대화 나가기 — 보낸 쪽이 그 대화를 끝냈다. 받은 쪽은 그 대화를 읽기 전용("상대가 나감")으로. 이 종류를 모르는 상대(0.8.0)는 연결을
     /// 끊으므로 보내기 전에 `Pong.leave` 를 본다(모르면 보내지 않는다 — 그쪽은 보낼 때 `left` 를 받는다). 페어링된 상대만.
     Leave {
         conv: String,
     },
-    /// 대화 기록 모두 지우기(#1x — 기록 삭제 › 모든 사용자 글 삭제) — 보낸 쪽이 그 대화 글을 비웠다. 받은 쪽도 그 대화 글을 비운다(대화는 남는다).
+    /// 대화 기록 모두 지우기(기록 삭제 › 모든 사용자 글 삭제) — 보낸 쪽이 그 대화 글을 비웠다. 받은 쪽도 그 대화 글을 비운다(대화는 남는다).
     /// 그 대화의 참여 상대가 보낸 것만 받는다(나간 대화 = `left`, 실행 중 = `retry`). 이 종류를 모르는 상대(1.0.1)는 연결을 끊으므로 보내기 전에
     /// `Pong.clear` 를 본다. 페어링된 상대만. `id` = 이 지우기의 uuid — 받는 쪽은 적용한 `id` 를 남겨 다시 온 같은 지우기를 두 번 적용하지 않는다.
     Clear {
@@ -250,7 +250,7 @@ pub enum Request {
     },
 }
 
-/// 공유 대화 글(#1o) — `Post` 필드 관례. `owner` = 대화를 가진 PC(A) 쪽 글, `ok` 거짓 = 실패 글(없음 = 끝난 글), `at` = A 에 남은 시각(유닉스 초).
+/// 공유 대화 글 — `Post` 필드 관례. `owner` = 대화를 가진 PC(A) 쪽 글, `ok` 거짓 = 실패 글(없음 = 끝난 글), `at` = A 에 남은 시각(유닉스 초).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShareMsg {
     pub uuid: String,
@@ -272,7 +272,7 @@ pub struct ShareMsg {
     pub edited: bool,
 }
 
-/// `Request::Context` 의 `op` 값(#1m).
+/// `Request::Context` 의 `op` 값.
 pub const CTX_OPS: [&str; 5] = ["compact", "auto_compact", "clear", "done", "failed"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -290,16 +290,16 @@ pub enum Response {
     Pong {
         #[serde(default)]
         focus: bool,
-        /// `Request::Context` 를 아는가(#1m) — 이전 버전은 싣지 않는다(거짓).
+        /// `Request::Context` 를 아는가 — 이전 버전은 싣지 않는다(거짓).
         #[serde(default)]
         ctx: bool,
-        /// 공유 대화(`Request::Share*`, #1o)를 아는가 — 이전 버전은 싣지 않는다(거짓).
+        /// 공유 대화(`Request::Share*`)를 아는가 — 이전 버전은 싣지 않는다(거짓).
         #[serde(default)]
         share: bool,
-        /// 대화 나가기(`Request::Leave`, #1w)를 아는가 — 이전 버전은 싣지 않는다(거짓).
+        /// 대화 나가기(`Request::Leave`)를 아는가 — 이전 버전은 싣지 않는다(거짓).
         #[serde(default)]
         leave: bool,
-        /// 대화 기록 모두 지우기(`Request::Clear`, #1x)를 아는가 — 이전 버전은 싣지 않는다(거짓).
+        /// 대화 기록 모두 지우기(`Request::Clear`)를 아는가 — 이전 버전은 싣지 않는다(거짓).
         #[serde(default)]
         clear: bool,
     },
@@ -314,7 +314,8 @@ pub enum Response {
     },
     /// `not_paired` · `unknown` · `stale`(이전 세대 승인) · `busy` · `closed`(페어링 받기 창이 닫혔거나 초대 코드 불일치) ·
     /// `bad_request` · `unknown_agent` · `unsupported`(받는 쪽에 처리기가 없음) · `focus`(받는 쪽이 집중 중 — 새 실행 요청 거부) ·
-    /// `invalid`(대화 요청의 id 가 [`is_uuid`] 꼴이 아님) · `left`(받는 쪽이 그 대화를 나갔거나 지웠다, #1w)
+    /// `invalid`(대화 요청의 id 가 [`is_uuid`] 꼴이 아님) · `left`(받는 쪽이 그 대화를 나갔거나 지웠다) ·
+    /// `retry`(받는 쪽이 잠시 처리하지 못했다 — 거절 아님, 보낸 쪽이 다시 보낸다)
     Error {
         code: String,
     },
@@ -394,7 +395,6 @@ pub fn is_uuid(s: &str) -> bool {
 }
 
 impl Request {
-    /// 대화 요청의 id(`conv` · `msg` · `reply_to`)가 모두 [`is_uuid`] 꼴인가 — 처리기에 넘기기 전에 본다(원격 입력 총량 · 형식, 1a A8).
     /// 요청이 닿는 대화 uuid — 대화 없는 요청은 `None`.
     pub fn conv(&self) -> Option<&str> {
         match self {
@@ -419,6 +419,7 @@ impl Request {
         }
     }
 
+    /// 대화 요청의 id(`conv` · `msg` · `reply_to`)가 모두 [`is_uuid`] 꼴인가 — 처리기에 넘기기 전에 본다(원격 입력 총량 · 형식).
     pub fn ids_ok(&self) -> bool {
         match self {
             Request::Message { conv, msg, .. }

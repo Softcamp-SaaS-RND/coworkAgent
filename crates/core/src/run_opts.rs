@@ -5,29 +5,29 @@ use rusqlite::Connection;
 
 pub const DEFAULT_MODEL: &str = "sonnet";
 pub const DEFAULT_EFFORT: &str = "high";
-/// 고를 수 있는 모델 — Claude Code 별칭(#1d, 웹UI 드롭다운과 같다).
+/// 고를 수 있는 모델 — Claude Code 별칭(웹UI 드롭다운과 같다).
 pub const MODELS: [&str; 3] = ["opus", "sonnet", "haiku"];
 /// `claude --effort <level>` 이 받는 값(2.1.296 `--help`).
 pub const EFFORTS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 pub const MODEL_KEY: &str = "claude_model";
 pub const EFFORT_KEY: &str = "claude_effort";
-/// 화면 테마 — `light`(기본, #1x) · `dark`.
+/// 화면 테마 — `light`(기본) · `dark`.
 pub const THEME_KEY: &str = "ui_theme";
 pub const THEMES: [&str; 2] = ["light", "dark"];
-/// 레일 타일 순서(#1l) — `peers_first`(기본, 상대 → 그룹) · `groups_first`.
+/// 레일 타일 순서 — `peers_first`(기본, 상대 → 그룹) · `groups_first`.
 pub const RAIL_ORDER_KEY: &str = "ui_rail_order";
 pub const RAIL_ORDERS: [&str; 2] = ["peers_first", "groups_first"];
-/// 레일 타일 크기(#1x) — `normal`(기본, 아이콘 + 아래 이름) · `small`(작은 아이콘 + 오른쪽 이름 한 줄).
+/// 레일 타일 크기 — `small`(기본, 작은 아이콘 + 오른쪽 이름 한 줄) · `normal`(아이콘 + 아래 이름).
 pub const TILE_SIZE_KEY: &str = "ui_tile_size";
-/// 주고받은 메시지 보기 기간(주, #1y) — 1 ~ [`PEER_WEEKS_MAX`], 없으면 [`PEER_WEEKS_DEFAULT`].
+/// 주고받은 메시지 보기 기간(주) — 1 ~ [`PEER_WEEKS_MAX`], 없으면 [`PEER_WEEKS_DEFAULT`].
 pub const PEER_WEEKS_KEY: &str = "ui_peer_weeks";
 pub const PEER_WEEKS_DEFAULT: i64 = 4;
 pub const PEER_WEEKS_MAX: i64 = 12;
 pub const TILE_SIZES: [&str; 2] = ["small", "normal"];
-/// 개요 보기(#1z-4) — `preview`(기본, 상대별 작은 대화 창) · `list`(상대별 접는 절).
+/// 개요 보기 — `preview`(기본, 상대별 작은 대화 창) · `list`(상대별 접는 절).
 pub const HOME_VIEW_KEY: &str = "ui_home_view";
 pub const HOME_VIEWS: [&str; 2] = ["preview", "list"];
-/// 개요 미리보기 카드 본문 배율(%, #1z-6) — 첫 값이 기본(지금 크기). 글자는 그대로, 말풍선 칸 높이 · 줄 수만.
+/// 개요 미리보기 카드 본문 배율(%) — 첫 값이 기본(지금 크기). 글자는 그대로, 말풍선 칸 높이 · 줄 수만.
 pub const HOME_ZOOM_KEY: &str = "ui_home_zoom";
 pub const HOME_ZOOMS: [i64; 5] = [100, 125, 150, 175, 200];
 /// 그룹 이름 · 표시 이름(별칭) 최대 글자 수.
@@ -42,7 +42,7 @@ pub const MAX_ICON_CHARS: usize = 65_536;
 pub const SIDE_WIDTH_KEY: &str = "ui_side_width";
 pub const SIDE_WIDTHS: std::ops::RangeInclusive<i64> = 200..=560;
 pub const DEFAULT_SIDE_WIDTH: i64 = 272;
-/// 접은 절(#1g) — 웹UI 상대별 절 열쇠 `{화면}:{상대 id}`('내 에이전트' = `{화면}:me`)를 쉼표로 이은 한 값, 이 개수 · 글자 수까지.
+/// 접은 절 — 웹UI 상대별 절 열쇠 `{화면}:{상대 id}`('내 에이전트' = `{화면}:me`)를 쉼표로 이은 한 값, 이 개수 · 글자 수까지.
 pub const FOLDED_KEY: &str = "ui_folded";
 pub const MAX_FOLDED: usize = 300;
 pub const MAX_FOLD_CHARS: usize = 32;
@@ -121,7 +121,7 @@ pub fn resolve(conn: &Connection, peer: Option<&Peer>) -> rusqlite::Result<(Stri
     ))
 }
 
-/// 화면 테마 — 없거나 틀리면 `light`(#1x).
+/// 화면 테마 — 없거나 틀리면 `light`.
 pub fn theme(conn: &Connection) -> rusqlite::Result<String> {
     Ok(settings::get(conn, THEME_KEY)?
         .filter(|t| THEMES.contains(&t.as_str()))

@@ -1,4 +1,4 @@
-//! 자동 시작(S7 · D13, #1e) — 로그인 때 이 실행 파일을 인자 없이(= 감시 프로세스) 띄운다. 사용자 권한 자리만 쓴다: Windows
+//! 자동 시작 — 로그인 때 이 실행 파일을 인자 없이(= 감시 프로세스) 띄운다. 사용자 권한 자리만 쓴다: Windows
 //! `HKCU\…\Run` 값 · macOS `~/Library/LaunchAgents` plist. 다시 띄우기는 감시 프로세스가 맡아 두 OS 같은 동작(D30 — `KeepAlive` 없음).
 use std::io;
 use std::path::Path;

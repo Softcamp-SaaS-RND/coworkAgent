@@ -15,17 +15,17 @@ pub fn focus(conn: &Connection) -> rusqlite::Result<bool> {
     Ok(get(conn, FOCUS_KEY)?.as_deref() == Some("1"))
 }
 
-/// 로그인 때 자동 시작(S7 · D13) — 없으면 켜짐(D13 기본 ON), 값 `0` 만 꺼짐.
+/// 로그인 때 자동 시작 — 없으면 켜짐, 값 `0` 만 꺼짐.
 pub const AUTOSTART_KEY: &str = "autostart";
 
 pub fn autostart(conn: &Connection) -> rusqlite::Result<bool> {
     Ok(get(conn, AUTOSTART_KEY)?.as_deref() != Some("0"))
 }
 
-/// 자동 압축(#1m) — 이 PC 에서 돈 실행의 창 사용량이 [`AUTO_COMPACT_AT`] 이상이면 그 대화 세션을 요약 후 새 세션으로. 없으면 켜짐, 값 `0` 만 꺼짐.
+/// 자동 압축 — 이 PC 에서 돈 실행의 창 사용량이 [`AUTO_COMPACT_AT`] 이상이면 그 대화 세션을 요약 후 새 세션으로. 없으면 켜짐, 값 `0` 만 꺼짐.
 pub const AUTO_COMPACT_KEY: &str = "auto_compact";
 
-/// 컨텍스트 상한(토큰) · 자동 압축 문턱(80%) — 상한은 1M 고정(#1m 결정).
+/// 컨텍스트 상한(토큰) · 자동 압축 문턱(80%) — 상한은 1M 고정.
 pub const CONTEXT_LIMIT: i64 = 1_000_000;
 pub const AUTO_COMPACT_AT: i64 = CONTEXT_LIMIT / 10 * 8;
 

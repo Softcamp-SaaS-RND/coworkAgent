@@ -1,5 +1,5 @@
-//! 실행 문(1b) — PC 전체 `claude -p` 동시 실행 상한. 넘는 실행은 거절하지 않고 닿은 순서(FIFO)로 기다린다.
-//! 대화 안 직렬(D19)은 대화 작업이 지키고, 이 문은 **대화 사이**를 묶는다.
+//! 실행 문 — PC 전체 에이전트 실행(`claude -p` · `codex exec`) 동시 실행 상한. 넘는 실행은 거절하지 않고 닿은 순서(FIFO)로 기다린다.
+//! 대화 안 직렬은 대화 작업이 지키고, 이 문은 **대화 사이**를 묶는다.
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;

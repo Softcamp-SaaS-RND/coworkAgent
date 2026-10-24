@@ -1,6 +1,6 @@
-//! 감시 프로세스(#1e) — 인자 없는 실행은 앱(트레이 + 수신 · 실행)을 자식으로 띄우고 지켜본다. 자식이 0 으로 끝나면(트레이 "종료" · "열기"
+//! 감시 프로세스 — 인자 없는 실행은 앱(트레이 + 수신 · 실행)을 자식으로 띄우고 지켜본다. 자식이 0 으로 끝나면(트레이 "종료" · "열기"
 //! 넘기고 끝) 함께 끝나고, 비정상 종료면 다시 띄운다. 짧은 시간에 거듭 죽으면 멈춘다(무한 재시작 없음). 앱이 시작에 실패하면([`START_FAILED`])
-//! 다시 띄우지 않는다. 감시는 로거 · DB 를 쓰지 않고, 감시 잠금(`supervisor.lock`, #1n) 하나로 감시가 하나만 돈다.
+//! 다시 띄우지 않는다. 감시는 로거 · DB 를 쓰지 않고, 감시 잠금(`supervisor.lock`) 하나로 감시가 하나만 돈다.
 use an_core::instance::{Acquired, InstanceLock, write_pid};
 use an_core::paths::Paths;
 use std::collections::VecDeque;
@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 /// 감시가 자식에 붙이는 환경 변수 — 값 = 다시 띄운 횟수(처음 `0`). 없으면 감시 프로세스, 있으면 앱.
 pub const ENV: &str = "COWORKAGENT_SUPERVISED";
-/// 트레이 없는 모드(#1n) — 값 = 지켜볼 부모 PID. `start` · `open` 이 감시에 붙이고, 감시가 앱에 물려준다(사용자 literal 아님).
+/// 트레이 없는 모드 — 값 = 지켜볼 부모 PID. `start` · `open` 이 감시에 붙이고, 감시가 앱에 물려준다(사용자 literal 아님).
 pub const PARENT_ENV: &str = "COWORKAGENT_PARENT";
 /// 앱의 시작 실패 종료 코드 — 사유 파일을 쓴 뒤. 감시는 다시 띄우지 않는다.
 pub const START_FAILED: i32 = 3;

@@ -1,7 +1,7 @@
-//! 자동 업데이트(S6 · D12 · D36 개정, #1y) — 트레이 모드 감시 프로세스가 앱을 띄우기 전에 GitHub 정식 릴리스를 한 번 본다.
+//! 자동 업데이트(D12) — 트레이 모드 감시 프로세스가 앱을 띄우기 전에 GitHub 정식 릴리스를 한 번 본다.
 //! 더 새 버전이면 실행 파일을 받아 묻지 않고 바꾼다(지금 exe → `.old`, 새 파일 → 제자리). 받은 파일은 회사 인증서 Authenticode 서명이 유효하고 서명자가
-//! [`SIGNER`] 일 때만 바꾼다(#30 — 저장소를 빼앗겨도 서명 없는 exe 는 깔리지 않는다). 어떤 실패든 바꾸지 않고 지금 버전으로 뜬다. 버전 확인은 API 가 아닌
-//! 고정 주소(`releases/latest` 넘겨주기 — 사내 공용 IP 의 API 횟수 제한, D36 ⑤).
+//! [`SIGNER`] 일 때만 바꾼다(저장소를 빼앗겨도 서명 없는 exe 는 깔리지 않는다). 어떤 실패든 바꾸지 않고 지금 버전으로 뜬다. 버전 확인은 API 가 아닌
+//! 고정 주소(`releases/latest` 넘겨주기 — 사내 공용 IP 의 API 횟수 제한).
 
 use std::io;
 #[cfg(windows)]
@@ -9,13 +9,13 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-/// 배포처(#30 — 사용자 2026-10-21).
+/// 배포처.
 pub const RELEASES: &str = "https://github.com/Softcamp-SaaS-RND/coworkAgent/releases";
-/// 받은 exe 의 Authenticode 서명 인증서 이름(CN) — 회사 코드 서명 인증서(#30).
+/// 받은 exe 의 Authenticode 서명 인증서 이름(CN) — 회사 코드 서명 인증서.
 pub const SIGNER: &str = "SOFTCAMP CO.,LTD.";
 /// 받은 exe 의 버전 리소스 `ProductName`(`build.rs`) — 같은 회사가 서명한 다른 제품을 막는다.
 pub const PRODUCT: &str = "coworkAgent";
-/// 이 OS 의 릴리스 자산 — 없으면 확인하지 않는다(macOS 는 Phase 4, D25).
+/// 이 OS 의 릴리스 자산 — 없으면 확인하지 않는다(macOS 는 Phase 4).
 #[cfg(windows)]
 pub const ASSET: Option<&str> = Some("coworkAgent.exe");
 #[cfg(not(windows))]
@@ -167,7 +167,7 @@ pub fn swap(exe: &Path) -> io::Result<()> {
 }
 
 /// 받은 exe 를 바꿔도 되나 — 회사 인증서 서명([`authenticode`] · [`SIGNER`]) 다음, 서명이 덮는 버전 리소스가 이 제품 · 그 태그 버전인가([`identity`] · [`PRODUCT`]).
-/// 태그만 믿으면 저장소를 빼앗은 쪽이 회사 서명된 옛 버전(업데이터 없는 1.1.1 등)을 높은 태그에 붙여 내려 깔 수 있다(적대적 평가 R1).
+/// 태그만 믿으면 저장소를 빼앗은 쪽이 회사 서명된 옛 버전(업데이터 없는 1.1.1 등)을 높은 태그에 붙여 내려 깔 수 있다.
 pub fn verify(path: &Path, tag: &str) -> io::Result<()> {
     authenticode(path, SIGNER)?;
     identity(path, PRODUCT, tag)
@@ -281,7 +281,7 @@ pub fn pending(exe: &Path) -> bool {
 }
 
 /// 새 버전 앱이 준비됨 — 되돌릴 `.old` 를 지운다(앱 시작 끝). 바꾼 지난 감시가 아직 `.old` 이미지로 떠 있으면(새 감시를 최대 15초 지켜본다) Windows 는
-/// 실행 중 이미지를 지우지 못하므로, 그때는 1초마다 다시 지운다(최대 60번 — 남아 있으면 이 버전이 다음 시작 실패 때 되돌려진다, 적대적 평가 R2).
+/// 실행 중 이미지를 지우지 못하므로, 그때는 1초마다 다시 지운다(최대 60번 — 남아 있으면 이 버전이 다음 시작 실패 때 되돌려진다).
 pub fn settled(exe: &Path) {
     let old = sibling(exe, ".old");
     if std::fs::remove_file(&old).is_ok() || !old.exists() {

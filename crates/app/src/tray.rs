@@ -1,5 +1,5 @@
-//! 트레이 상주(S2) — 메뉴 "열기" · "종료", "새 요청" 표시(S9), 시작 실패 시 오류 모드(D30).
-//! 두 OS 공통 tray-icon 만 쓴다. macOS 는 Dock 아이콘 없이 메뉴 막대에만(T4).
+//! 트레이 상주 — 메뉴 "열기" · "종료", "새 요청" 표시, 시작 실패 시 오류 모드(D30).
+//! 두 OS 공통 tray-icon 만 쓴다. macOS 는 Dock 아이콘 없이 메뉴 막대에만.
 use crate::browser;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -14,11 +14,11 @@ pub enum TrayEvent {
     Menu(MenuEvent),
     /// 아직 보지 않은 알림 수(0 = 지움).
     Attention(usize),
-    /// 로컬 API 종료 요청(`POST /api/quit`, #1n) — 메뉴 "종료" 와 같은 길.
+    /// 로컬 API 종료 요청(`POST /api/quit`) — 메뉴 "종료" 와 같은 길.
     Quit,
 }
 
-/// 트레이 만들기를 다시 시도할 간격 — `n` 번째 실패 뒤(0부터). 합 60초, 그 뒤는 `None`(#1h — 로그인 직후 알림 영역이 아직 준비되지 않은 경우).
+/// 트레이 만들기를 다시 시도할 간격 — `n` 번째 실패 뒤(0부터). 합 60초, 그 뒤는 `None`(로그인 직후 알림 영역이 아직 준비되지 않은 경우).
 pub fn retry_after(n: u32) -> Option<Duration> {
     [1, 2, 4, 8, 15, 30]
         .get(n as usize)
@@ -35,7 +35,7 @@ pub struct Tray {
 pub struct Attention(Option<EventLoopProxy<TrayEvent>>);
 
 impl Attention {
-    /// 트레이 없는 모드(#1n) — 표시할 곳이 없다(브라우저 알림은 그대로).
+    /// 트레이 없는 모드 — 표시할 곳이 없다(브라우저 알림은 그대로).
     pub fn none() -> Self {
         Self(None)
     }
@@ -48,7 +48,7 @@ impl Attention {
 }
 
 /// 시작 실패 사유 파일 — 사용자 임시 폴더(데이터 경로 자체가 원인일 수 있다). 디버그 빌드의 시험용 데이터 루트(`COWORKAGENT_DATA_DIR`)가 있으면
-/// 그 안 — 시험이 실제 인스턴스의 사유 파일을 덮어쓰지 않게(#1n).
+/// 그 안 — 시험이 실제 인스턴스의 사유 파일을 덮어쓰지 않게.
 pub fn start_error_file() -> PathBuf {
     const NAME: &str = "coworkAgent-start-error.txt";
     if cfg!(debug_assertions)
@@ -65,7 +65,7 @@ pub fn start_error_by(pid: u32) -> bool {
     std::fs::read_to_string(start_error_file()).is_ok_and(|text| text.lines().any(|l| l == line))
 }
 
-/// 사유 파일의 "사유:" 줄 — `start` · 감시가 앱이 남긴 사유를 읽는다(#1n).
+/// 사유 파일의 "사유:" 줄 — `start` · 감시가 앱이 남긴 사유를 읽는다.
 pub fn read_start_error() -> Option<String> {
     let text = std::fs::read_to_string(start_error_file()).ok()?;
     text.lines()
@@ -116,7 +116,7 @@ impl Tray {
         (Self { event_loop }, Attention(Some(proxy)))
     }
 
-    /// 로컬 API 종료 요청을 이벤트 루프로 보내는 함수(#1n).
+    /// 로컬 API 종료 요청을 이벤트 루프로 보내는 함수.
     pub fn quitter(&self) -> crate::server::Quit {
         let proxy = std::sync::Mutex::new(self.event_loop.create_proxy());
         Box::new(move || {
@@ -140,10 +140,10 @@ impl Tray {
         let mut menu = Some((open, quit));
         let mut tray: Option<TrayIcon> = None;
         let mut on_quit = Some(on_quit);
-        // 트레이 만들기 실패 횟수 · 다음 시도 시각(#1h) — 기다리는 동안에도 다른 이벤트(새 요청 표시 등)는 돈다.
+        // 트레이 만들기 실패 횟수 · 다음 시도 시각 — 기다리는 동안에도 다른 이벤트(새 요청 표시 등)는 돈다.
         let mut failures = 0;
         let mut retry_at: Option<Instant> = None;
-        // 마지막 "새 요청" 수 — 트레이가 아직 없을 때(다시 시도 중) 온 값도 남겨 만들 때 그대로 그린다(라운드 1).
+        // 마지막 "새 요청" 수 — 트레이가 아직 없을 때(다시 시도 중) 온 값도 남겨 만들 때 그대로 그린다.
         let mut attention = 0;
 
         self.event_loop.run(move |event, _, control_flow| {
@@ -169,7 +169,7 @@ impl Tray {
                                 }
                                 None => {
                                     // 트레이 없이는 쓸 수 없다 — 사유를 보이고 정리 뒤 끝낸다(조용히 사라지지 않는다). 종료 코드 0 — 감시가 다시 띄우면
-                                    // 같은 다시 시도를 되풀이하며 사유 파일을 매번 연다(1h plan 해석 7).
+                                    // 같은 다시 시도를 되풀이하며 사유 파일을 매번 연다.
                                     show_failure(&format!("트레이 아이콘을 만들 수 없다: {e}"));
                                     if let Some(f) = on_quit.take() {
                                         f();
@@ -218,7 +218,7 @@ impl Tray {
         })
     }
 
-    /// 오류 모드 — 붉은 아이콘 · 툴팁에 사유, 메뉴 "오류 보기"(사유 파일을 OS 기본 앱으로) · "종료". 감시 잠금 안에서만 띄운다(#1n — 하나).
+    /// 오류 모드 — 붉은 아이콘 · 툴팁에 사유, 메뉴 "오류 보기"(사유 파일을 OS 기본 앱으로) · "종료". 감시 잠금 안에서만 띄운다(하나만).
     /// "오류 보기" 는 열기 전에 사유 파일을 다시 쓴다 — 다른 실행이 덮어쓴 사유를 보여 주지 않게.
     pub fn run_error(self, message: &str, file: &Path) -> ! {
         let show = MenuItem::new("오류 보기", true, None);
@@ -374,7 +374,7 @@ mod tests {
         assert!(long.ends_with('…'));
     }
 
-    /// 다시 시도 간격(#1h) — 1 · 2 · 4 · 8 · 15 · 30초(합 60초), 그 뒤 없음.
+    /// 다시 시도 간격 — 1 · 2 · 4 · 8 · 15 · 30초(합 60초), 그 뒤 없음.
     #[test]
     fn retry_after_schedule() {
         let secs: Vec<u64> = (0..10)

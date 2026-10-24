@@ -55,6 +55,9 @@
   증가 · 성능 이득 없음 · gRPC-Web 이 D10 과 충돌).
 - **D10** 프론트엔드 = 빌드 없는 정적 HTML/CSS/JS(ES modules)를 실행 파일에 임베드 — `cargo build` 하나로 산출. 기각안:
   React/Svelte + Vite.
+  (#1z-12 — 2026-10-24 사용자 "권장 방안 승인.") 웹 원본 = `crates/app/web/js/` 의 브라우저 ES 모듈(진입 `app.js` 가 맨 먼저 `core/token.js` — 토큰이 없으면
+  거기서 멈춤, 층 `core/` · UI 도메인 · `settings/` · `logic/`), 서버는 내장 표 `SCRIPTS` 로 `/js/{모듈}` 을 준다 — 표의 이름과 정확히 같을 때만 토큰 없이(D9 정적 자산),
+  그 밖은 401 · 토큰이 있어도 404. 번들러 · 빌드 단계 없음.
 - **D11** 대상 Windows 10/11 x64 · macOS 12+ universal(arm64+x64) 단일 파일. 제외: Windows ARM64 · Linux. mac 빌드는 보유한 Mac.
 - **D12** 자동 업데이트 형식 = HTTPS 매니페스트 + 업데이트 파일 서명 검증(앱 자체 ed25519) + 실행 파일 교체. 배포처 ·
   코드 서명(Authenticode · Developer ID)은 D36. (#30 개정 — 2026-10-21 사용자) Windows 검증 = **회사 코드 서명 인증서 Authenticode**(WinVerifyTrust 유효 · 폐기 확인 ·
@@ -354,7 +357,7 @@ Task 상태는 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`).
 Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 1b.inbound-capacity · 1c.durable-messaging · 1d.request-list ·
 1e.autostart-watchdog · 1f.message-edit · 1g.rail-scope · 1h.stabilization · 1i.rail-group · 1j.messenger-ui · 1k.ui-polish ·
 1l.ui-icons · 1m.context-compact · 1n.cli-start-stop · 1o.chat-list-split · 1p.project-tidy · 1q.request-overview · 1r.ui-polish ·
-1s.fold-line-readme · 1t.notion-ux · 1u.scoped-refresh · 1v.notion-design · 1w.conv-leave · 1x.session-ui · 1y.data-update · 1z.chat-look · 1z-2.ui-refine · 1z-3.activity-color · 1z-4.home-preview · 1z-5.home-thumb · 1z-6.home-zoom · 1z-7.conv-type-look · 1z-8.settings-search · 1z-9.agent-engine · 1z-10.conv-info · 1z-11.overview-calm. 남음:
+1s.fold-line-readme · 1t.notion-ux · 1u.scoped-refresh · 1v.notion-design · 1w.conv-leave · 1x.session-ui · 1y.data-update · 1z.chat-look · 1z-2.ui-refine · 1z-3.activity-color · 1z-4.home-preview · 1z-5.home-thumb · 1z-6.home-zoom · 1z-7.conv-type-look · 1z-8.settings-search · 1z-9.agent-engine · 1z-10.conv-info · 1z-11.overview-calm · 1z-12.code-tidy. 남음:
 - 후보(착수 전): 통계 메뉴(사이드바 상단 — 보여줄 숫자 미정 · 서버 집계 API 필요).
 - 후보(착수 전): outbox 정산 순서 점검 — 기존 종류(`req_state` 거절 등)도 "행을 지운 뒤 정산" 순서라 원자성 보강이 필요한지 판단(1f 평가의 범위 밖 관찰).
 - 후보(착수 전): 요청 보드 보기 설정(D39 ① · 1t U2 — U1 은 #1v 종결) — 보드의 그룹 · 정렬 · 거르기(이 PC 에만, 지금 보기 기억은 `ui_folded` 열쇠를 빌려 씀 → 전용 설정 키). 닿는 D·S: D35 · D39.
@@ -431,6 +434,7 @@ Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 
 - 2026-10-23 · Task #1z-10 · D26 보강(세부정보 '대화 정보' = 기간 · 컨텍스트 + 받은 대화 답하는 도구 · 읽는 폴더 · 실행 명령 복사 — 스키마 28) · S4 개정(글자 앞 아이콘 · 설정 화면 제목 강조색 · 레일 "+ 사용자" · "+ 그룹" 글자 → 아이콘 · 설정 상세 단추 줄 내용 아래)
 - 2026-10-24 · Task #1z-11 · D35 개정(개요 미리보기 = 시안 C 종이 톤 — 상대 이름 14px · 500 · 타일 없음, 15% 확대 뺌, 카드 안 말풍선 12px) · S4 #1z-7 개정(미리보기 카드 = 유형 아이콘 색만 · 한 색 테두리 · 안 읽음 테두리 색 + "새 글 n") — 사용자 결정(C 채택 · 질문 답 넷), 종결 목록에 1z-11
 - 2026-10-24 · S4 보강(개요 미리보기 바탕 `--pv-bg` #F5F3EE → #F9F7F3 — 더 연하게, 다크 그대로, 버전 그대로) — 사용자 지시(Task 밖 수정)
+- 2026-10-24 · Task #1z-12 · D10 보강(웹 원본 = ES 모듈 `js/` 48 · 서버 내장 표 `SCRIPTS` · `/js/{모듈}` 정확 이름만 토큰 없이) · 코드 정리(크레이트 안 도메인 모듈 · 죽은 코드 · 주석 = 왜 · 보안 · 함정만, 결정 이력은 문서 — 검증 명령 `tools/check_code_tidy.py`, 동작 · 버전 1.3.6 그대로) — 사용자 결정(질문 답 넷 · "권장 방안 승인." · 재개 "권장 방안으로 진행." — A2 예외 = 도메인을 가로지르는 화면 흐름, 동작 불변인 중복 지움), 종결 목록에 1z-12
 - 2026-10-19 · 1.0.0 배포 · D25 보강(보유한 Mac 의 macOS universal 실행 파일을 사전 배포에 첨부, 확인 · 서명은 Phase 4) — 사용자 지시(버전 1.0.0 · Mac 빌드 = 보유한 Mac)
 - 2026-10-19 · S1 개정(요청 상태 = 네 상태 사이 어디로든 — 되돌리기 포함) · S4 보강(요청 보드 손잡이 포인터 끌기 · 놓은 열로 옮김 · 요청 화면 "메모" → "피드백") — 사용자 지시(Task 밖 수정)
 - 2026-10-22 · D35 개정(메뉴 '주고받은 메시지' 뺌 — #1q 기각안 "주고받은 메시지 메뉴 없앰" 을 뒤집음, 상대 타일 메뉴 '개요' · '나' 개요에서 연 대화는 레일도 그 상대로 · 에이전트 응답 절 머리 대화 수 뺌 · 대화 줄 ⋯ 제자리) — 사용자 지시(Task 밖)

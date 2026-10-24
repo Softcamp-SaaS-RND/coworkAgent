@@ -18,7 +18,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
-/// 피어 수신 기본 포트(P3).
+/// 피어 수신 기본 포트.
 pub const PEER_PORT: u16 = 47100;
 /// 발신 연결 1개(TLS 포함 요청·응답 전체)의 상한.
 pub const IO_DEADLINE: Duration = Duration::from_secs(10);
@@ -32,7 +32,7 @@ pub const MAX_CONNS_PER_IP: usize = 4;
 pub const MAX_UNAPPROVED: i64 = 32;
 /// 웹UI "페어링 받기" 가 여는 창의 길이.
 pub const PAIRING_WINDOW: Duration = Duration::from_secs(300);
-/// 한 창에서 출처 IP 하나가 틀릴 수 있는 초대 코드 수(1a A5) — 넘으면 그 창 동안 그 IP 의 처음 보는 키 hello 를 거절한다.
+/// 한 창에서 출처 IP 하나가 틀릴 수 있는 초대 코드 수 — 넘으면 그 창 동안 그 IP 의 처음 보는 키 hello 를 거절한다.
 pub const MAX_CODE_MISSES: u32 = 10;
 
 /// 상대에게 알리는 나.
@@ -43,7 +43,7 @@ pub struct Me {
     pub port: u16,
 }
 
-/// 인바운드 이벤트 — 알림(S9) 같은 바깥 층이 받는다. 이름 · 호스트는 `clean_name` 을 거친 원격 문자열이다.
+/// 인바운드 이벤트 — 알림 같은 바깥 층이 받는다. 이름 · 호스트는 `clean_name` 을 거친 원격 문자열이다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PeerEvent {
     /// 페어링 요청이 받아들여졌다(처음 보는 키 · 다시 추가).
@@ -54,7 +54,7 @@ pub enum PeerEvent {
     },
     /// 상대 승인이 같은 세대에 반영됐다.
     Approved { name: String, host: String },
-    /// 초대 코드로 들어온 처음 보는 PC 를 승인 없이 등록했다(D8 개정 — 모르는 연결이면 바로 삭제).
+    /// 초대 코드로 들어온 처음 보는 PC 를 승인 없이 등록했다(D8 — 모르는 연결이면 바로 삭제).
     AutoPaired {
         name: String,
         host: String,
@@ -68,10 +68,10 @@ pub enum PeerEvent {
         agent: String,
         preview: String,
         kind: MessageKind,
-        /// 이 PC 대화 id — 웹UI 변경 신호(1u).
+        /// 이 PC 대화 id — 웹UI 변경 신호.
         conv: i64,
     },
-    /// 상대 요청을 처리했다 — 알림이 아닌 웹UI 변경 신호만(1u). 이 PC 대화 id, 못 찾으면 `None`.
+    /// 상대 요청을 처리했다 — 알림이 아닌 웹UI 변경 신호만. 이 PC 대화 id, 못 찾으면 `None`.
     Changed { conv: Option<i64> },
 }
 
@@ -88,18 +88,18 @@ pub enum MessageKind {
     RelayStep,
     /// 자동 왕복이 저절로 멈췄다(상한 · 실패 · 거절 · 상대 멈춤).
     RelayEnd,
-    /// 받은 요청(#1d — 실행 없음, 요청 목록).
+    /// 받은 요청(실행 없음, 요청 목록).
     Ask,
-    /// 내 요청의 상태가 바뀌었다(#1d — 상대가 수용 · 반려 · 완료).
+    /// 내 요청의 상태가 바뀌었다(상대가 수용 · 반려 · 완료).
     AskState,
-    /// 내 대화의 관람자 수가 바뀌었다(#1o — 상대가 그 대화를 공유했다).
+    /// 내 대화의 관람자 수가 바뀌었다(상대가 그 대화를 공유했다).
     Share,
-    /// 상대가 그 대화 기록을 모두 지웠다(#1x — 이 PC 쪽도 비웠다).
+    /// 상대가 그 대화 기록을 모두 지웠다(이 PC 쪽도 비웠다).
     Clear,
 }
 
 type EventSink = Box<dyn Fn(PeerEvent) + Send + Sync>;
-/// 페어링된 상대의 `agents` · `message` · `reply` 처리기 — 막히면 안 된다(느린 일은 큐로).
+/// 페어링된 상대의 요청 처리기(에이전트 목록 · 대화 요청) — 막히면 안 된다(느린 일은 큐로).
 type RequestHandler = Box<dyn Fn(&Peer, Request) -> Response + Send + Sync>;
 /// 페어링된 상대의 `Ping` 을 받았을 때(상대 id) — 막히면 안 된다.
 type SeenHandler = Box<dyn Fn(i64) + Send + Sync>;
@@ -109,17 +109,17 @@ pub struct Node {
     server: Arc<ServerConfig>,
     db: Mutex<Connection>,
     me: Me,
-    /// 처음 보는 키의 hello 를 1건 받아 줄 (마감 시각, 초대 코드). 코드가 맞는 hello 를 받으면 닫힌다(P8).
+    /// 처음 보는 키의 hello 를 1건 받아 줄 (마감 시각, 초대 코드). 코드가 맞는 hello 를 받으면 닫힌다.
     window: Mutex<Option<(Instant, String)>>,
-    /// 지금 창에서 출처 IP 별 틀린 초대 코드 수 — [`MAX_CODE_MISSES`] 에 닿으면 그 IP 는 창이 끝날 때까지 거절(1a A5).
+    /// 지금 창에서 출처 IP 별 틀린 초대 코드 수 — [`MAX_CODE_MISSES`] 에 닿으면 그 IP 는 창이 끝날 때까지 거절.
     misses: Mutex<HashMap<IpAddr, u32>>,
-    /// 피어 수신 전체 자리([`MAX_CONNS`]) — 쓰는 수 = 열린 연결 수(1b A9).
+    /// 피어 수신 전체 자리([`MAX_CONNS`]) — 쓰는 수 = 열린 연결 수.
     slots: Arc<Semaphore>,
     events: OnceLock<EventSink>,
     requests: OnceLock<RequestHandler>,
-    /// 페어링된 상대가 `Ping` 했다(돌아온 증거, #1c) — 바깥 층이 그 상대에 남은 글을 지금 보낸다.
+    /// 페어링된 상대가 `Ping` 했다(돌아온 증거) — 바깥 층이 그 상대에 남은 글을 지금 보낸다.
     seen: OnceLock<SeenHandler>,
-    /// 시작 때 피어 포트를 잡고 있던 프로세스(임의 포트로 열었을 때만, 1b A6).
+    /// 시작 때 피어 포트를 잡고 있던 프로세스(임의 포트로 열었을 때만).
     holder: OnceLock<Holder>,
 }
 
@@ -161,7 +161,7 @@ pub async fn bind_peer_port() -> io::Result<(TcpListener, Option<Holder>)> {
     bind_peer_port_on(PEER_PORT).await
 }
 
-/// 포트를 잡은 프로세스(1b A6). 찾지 못하면 이름 `알 수 없음` · PID 0.
+/// 포트를 잡은 프로세스. 찾지 못하면 이름 `알 수 없음` · PID 0.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Holder {
     pub name: String,
@@ -322,14 +322,14 @@ impl Node {
         })
     }
 
-    /// 페어링된 상대의 `agents` · `message` · `reply` 처리기 — 한 번만 설정된다. 설정 전에는 `unsupported`.
+    /// 페어링된 상대의 요청 처리기(에이전트 목록 · 대화 요청) — 한 번만 설정된다. 설정 전에는 `unsupported`.
     pub fn on_request(&self, f: impl Fn(&Peer, Request) -> Response + Send + Sync + 'static) {
         if self.requests.set(Box::new(f)).is_err() {
             log::warn!("요청 처리기는 한 번만 설정한다");
         }
     }
 
-    /// 페어링된 상대의 `Ping` 을 받을 때 부를 함수(#1c — 한 번만 설정).
+    /// 페어링된 상대의 `Ping` 을 받을 때 부를 함수(한 번만 설정).
     pub fn on_seen(&self, f: impl Fn(i64) + Send + Sync + 'static) {
         if self.seen.set(Box::new(f)).is_err() {
             log::warn!("Ping 처리기는 한 번만 설정한다");
@@ -351,7 +351,7 @@ impl Node {
         }
     }
 
-    /// 지금부터 `d` 동안, 돌려준 초대 코드를 담은 처음 보는 키의 hello 1건을 받는다(P8). 다시 부르면 새 코드로 바뀐다.
+    /// 지금부터 `d` 동안, 돌려준 초대 코드를 담은 처음 보는 키의 hello 1건을 받는다. 다시 부르면 새 코드로 바뀐다.
     pub fn open_window(&self, d: Duration) -> String {
         let code = new_code();
         // 창 잠금 안에서 셈을 비운다 — 진행 중인 `take_window` 가 옛 창의 셈을 새 창으로 넘기지 않게.
@@ -484,8 +484,8 @@ impl Node {
         s.shutdown().await
     }
 
-    /// 인가 — 상대 키로 피어 표를 본다. 미페어링 상대에게는 hello · approve · remove 만 허용(P5). 처음 보는 키의 hello 는
-    /// "페어링 받기" 창의 초대 코드가 맞을 때 1건만(P8). approve 는 같은 세대(`round`)에만.
+    /// 인가 — 상대 키로 피어 표를 본다. 미페어링 상대에게는 hello · approve · remove 만 허용. 처음 보는 키의 hello 는
+    /// "페어링 받기" 창의 초대 코드가 맞을 때 1건만. approve 는 같은 세대(`round`)에만.
     fn answer(
         &self,
         spki: &[u8],
@@ -518,7 +518,7 @@ impl Node {
             let resp = match (peer, self.requests.get()) {
                 (Some(p), _) if p.paired() && !req.ids_ok() => Response::error("invalid"),
                 (Some(p), Some(h)) if p.paired() => {
-                    // 받기도 통신 증거(#1c — 주기 확인 대신). 기록 실패는 받기를 막지 않는다.
+                    // 받기도 통신 증거(주기 확인 대신). 기록 실패는 받기를 막지 않는다.
                     if let Err(e) = peers::touch(&self.db(), spki) {
                         log::debug!("접속 시각 기록 실패: {e}");
                     }
@@ -558,7 +558,7 @@ impl Node {
                         &round,
                     )
                     .map_err(db_err)?;
-                    // 처음 보는 키가 여기 왔다 = 받기 창의 초대 코드가 맞았다 → 내 승인은 자동(D8 개정).
+                    // 처음 보는 키가 여기 왔다 = 받기 창의 초대 코드가 맞았다 → 내 승인은 자동(D8).
                     let auto = !known;
                     if auto {
                         peers::set_my_ok(&db, p.id).map_err(db_err)?;
@@ -612,13 +612,13 @@ impl Node {
                     .map_err(db_err)?
                     .filter(|p| p.paired());
                 if let Some(p) = peer {
-                    // 페어링된 키(TLS 인증) — 출처 IP · 알려 준 포트가 저장 주소와 다르면 따라간다(승인 그대로, 1b A7).
+                    // 페어링된 키(TLS 인증) — 출처 IP · 알려 준 포트가 저장 주소와 다르면 따라간다(승인 그대로).
                     let now = SocketAddr::new(ip, port).to_string();
                     if port != 0 && now != p.addr {
                         peers::set_addr(&db, p.id, &now).map_err(db_err)?;
                         log::info!("피어 {} 주소 {} → {now}", p.name, p.addr);
                     }
-                    // 받기도 통신 증거 · 돌아온 상대에 남은 글을 지금(#1c).
+                    // 받기도 통신 증거 · 돌아온 상대에 남은 글을 지금.
                     if let Err(e) = peers::touch(&db, spki) {
                         log::debug!("접속 시각 기록 실패: {e}");
                     }
@@ -674,7 +674,7 @@ impl Node {
         let got = self
             .exchange(addr, pinned.map_or(Pin::Any, Pin::Key), req)
             .await?;
-        // 응답을 받았다 = 통신 성공(#1c — 주기 확인 대신). 모르는 키면 아무 일도 없다 · 기록 실패는 보내기를 실패로 만들지 않는다.
+        // 응답을 받았다 = 통신 성공(주기 확인 대신). 모르는 키면 아무 일도 없다 · 기록 실패는 보내기를 실패로 만들지 않는다.
         if let Err(e) = peers::touch(&self.db(), &got.1) {
             log::debug!("접속 시각 기록 실패: {e}");
         }
@@ -855,7 +855,7 @@ impl Node {
         }
     }
 
-    /// 화면이 여는 연결 확인(#1c) — 마지막 통신이 `within` 초 안이면 보내지 않고 저장된 집중을, 아니면 [`ping`](Self::ping).
+    /// 화면이 여는 연결 확인 — 마지막 통신이 `within` 초 안이면 보내지 않고 저장된 집중을, 아니면 [`ping`](Self::ping).
     pub async fn refresh(&self, id: i64, within: i64) -> io::Result<bool> {
         let peer = self.peer(id)?;
         let now = std::time::SystemTime::now()
@@ -875,22 +875,22 @@ impl Node {
         self.pong(id).await.map(|(focus, ..)| focus)
     }
 
-    /// 상대가 `Request::Context` 를 아는가(#1m) — [`ping`](Self::ping) 처럼 접속 상태를 남긴다. 닿지 않으면 오류(보내는 줄은 다시 보낸다).
+    /// 상대가 `Request::Context` 를 아는가 — [`ping`](Self::ping) 처럼 접속 상태를 남긴다. 닿지 않으면 오류(보내는 줄은 다시 보낸다).
     pub async fn knows_context(&self, id: i64) -> io::Result<bool> {
         self.pong(id).await.map(|(_, ctx, ..)| ctx)
     }
 
-    /// 상대가 `Request::Share*` 를 아는가(#1o) — [`knows_context`](Self::knows_context) 와 같다.
+    /// 상대가 `Request::Share*` 를 아는가 — [`knows_context`](Self::knows_context) 와 같다.
     pub async fn knows_share(&self, id: i64) -> io::Result<bool> {
         self.pong(id).await.map(|(_, _, share, ..)| share)
     }
 
-    /// 상대가 `Request::Leave` 를 아는가(#1w) — [`knows_context`](Self::knows_context) 와 같다.
+    /// 상대가 `Request::Leave` 를 아는가 — [`knows_context`](Self::knows_context) 와 같다.
     pub async fn knows_leave(&self, id: i64) -> io::Result<bool> {
         self.pong(id).await.map(|(.., leave, _)| leave)
     }
 
-    /// 상대가 `Request::Clear` 를 아는가(#1x) — [`knows_context`](Self::knows_context) 와 같다.
+    /// 상대가 `Request::Clear` 를 아는가 — [`knows_context`](Self::knows_context) 와 같다.
     pub async fn knows_clear(&self, id: i64) -> io::Result<bool> {
         self.pong(id).await.map(|(.., clear)| clear)
     }
@@ -923,7 +923,7 @@ impl Node {
         }
     }
 
-    /// 시작 알림(#1c) — 페어링된 상대 모두에 [`ping`](Self::ping) 한 번(상대별 작업, 실패는 넘어간다). 내 수신 포트를 실어 상대가 바뀐 주소를
+    /// 시작 알림 — 페어링된 상대 모두에 [`ping`](Self::ping) 한 번(상대별 작업, 실패는 넘어간다). 내 수신 포트를 실어 상대가 바뀐 주소를
     /// 따라오게 하고 집중을 받는다. 주기 확인은 없다 — 접속 시각은 통신할 때만 갱신.
     pub async fn announce(self: Arc<Self>) {
         let Ok(peers) = self.peers() else {

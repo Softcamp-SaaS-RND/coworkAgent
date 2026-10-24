@@ -4,12 +4,12 @@ use std::path::{Path, PathBuf};
 pub const APP_DIR: &str = "coworkAgent";
 /// 시험용 데이터 루트 환경 변수 — 디버그 빌드만 읽는다(릴리스는 무시).
 pub const DATA_DIR_ENV: &str = "COWORKAGENT_DATA_DIR";
-/// 개명 전 이름(agentNetwork, 2026-10-11)의 데이터 폴더 · 파일 이름 — 첫 실행 때 새 이름으로 옮긴다.
+/// 개명 전 이름(agentNetwork)의 데이터 폴더 · 파일 이름 — 첫 실행 때 새 이름으로 옮긴다.
 pub const LEGACY_APP_DIR: &str = "agentNetwork";
 const LEGACY_DB: &str = "agentNetwork.db";
 const LEGACY_LOG: &str = "agentNetwork.log";
 
-/// 데이터 루트 아래 파일 배치(D15). 루트는 인자로 받는다 — 운영은 `default_root`, 테스트는 임시 폴더.
+/// 데이터 루트 아래 파일 배치. 루트는 인자로 받는다 — 운영은 `default_root`, 테스트는 임시 폴더.
 #[derive(Debug, Clone)]
 pub struct Paths {
     root: PathBuf,
@@ -17,7 +17,7 @@ pub struct Paths {
 
 impl Paths {
     /// Windows `%LOCALAPPDATA%\coworkAgent` · macOS `~/Library/Application Support/coworkAgent`.
-    /// 디버그 빌드만 [`DATA_DIR_ENV`] 가 있으면 그 경로 — 시험이 이 PC 의 실제 인스턴스 · 데이터를 건드리지 않게(#1n).
+    /// 디버그 빌드만 [`DATA_DIR_ENV`] 가 있으면 그 경로 — 시험이 이 PC 의 실제 인스턴스 · 데이터를 건드리지 않게.
     pub fn default_root() -> Option<PathBuf> {
         if let Some(dir) = test_root() {
             return Some(dir);
@@ -56,15 +56,15 @@ impl Paths {
     pub fn instance_pid_file(&self) -> PathBuf {
         self.root.join("instance.pid")
     }
-    /// 감시 프로세스가 남긴 자동 업데이트 결과 한 줄(#1y — 감시는 로거를 쓰지 않는다, 앱이 시작 때 로그에 옮기고 지운다).
+    /// 감시 프로세스가 남긴 자동 업데이트 결과 한 줄(감시는 로거를 쓰지 않는다, 앱이 시작 때 로그에 옮기고 지운다).
     pub fn update_note_file(&self) -> PathBuf {
         self.root.join("update.txt")
     }
-    /// 뜨지 못해 되돌린 업데이트 태그(#1y) — 그 태그는 다시 받지 않는다.
+    /// 뜨지 못해 되돌린 업데이트 태그 — 그 태그는 다시 받지 않는다.
     pub fn update_skip_file(&self) -> PathBuf {
         self.root.join("update-skip.txt")
     }
-    /// 감시 프로세스 단일 잠금(#1n) — 동시에 여러 번 실행해도 감시는 하나.
+    /// 감시 프로세스 단일 잠금 — 동시에 여러 번 실행해도 감시는 하나.
     pub fn supervisor_lock_file(&self) -> PathBuf {
         self.root.join("supervisor.lock")
     }
@@ -144,7 +144,7 @@ impl Paths {
         std::fs::create_dir_all(self.log_dir())
     }
 
-    /// 루트를 이 PC 사용자 전용 권한으로 맞춘다(매 시작 — 기존 설치도, 1a A1). 로그를 연 뒤 부른다 — 실패는 경고로 남기고 계속한다
+    /// 루트를 이 PC 사용자 전용 권한으로 맞춘다(매 시작 — 기존 설치도). 로그를 연 뒤 부른다 — 실패는 경고로 남기고 계속한다
     /// (데이터는 이미 상속 권한으로 있었다).
     pub fn restrict(&self) -> io::Result<()> {
         crate::owner_only::restrict(&self.root)
@@ -170,7 +170,7 @@ pub fn protected_roots() -> Vec<PathBuf> {
 }
 
 /// 에이전트 폴더로 쓸 수 없는 이유 — 원격 문의의 읽기 범위에 키 · 다른 상대와의 대화 DB 가 들어가거나(데이터 루트를 품음 · 그 안),
-/// 네트워크 경로(정규화가 로컬 경로와 맞지 않는다)면. 등록 · 수정 · 실행 직전에 같은 규칙(1a A7).
+/// 네트워크 경로(정규화가 로컬 경로와 맞지 않는다)면. 등록 · 수정 · 실행 직전에 같은 규칙.
 pub fn agent_folder_problem(folder: &Path) -> Option<&'static str> {
     use std::path::{Component, Prefix};
     let unc = |p: &Path| {
@@ -188,7 +188,7 @@ pub fn agent_folder_problem(folder: &Path) -> Option<&'static str> {
     None
 }
 
-/// 에이전트의 상위 한 단계 읽기(#05-2)로 `--add-dir` 에 줄 폴더 — `folder` 의 바로 위. 그 위가 원격 읽기 범위로 너무 넓거나 위험하면 `None`(폴더만):
+/// 에이전트의 상위 한 단계 읽기로 `--add-dir` 에 줄 폴더 — `folder` 의 바로 위. 그 위가 원격 읽기 범위로 너무 넓거나 위험하면 `None`(폴더만):
 /// 위가 없음(드라이브 루트 폴더) · 위가 드라이브 루트 · 위가 사용자 홈(`.ssh` · 다른 저장소) · 위가 [`agent_folder_problem`](데이터 루트를 품음 ·
 /// 네트워크 경로). 비교는 정규화(링크 · `..`) · 대소문자 무시, 돌려주는 값은 정규화 전 경로(`\\?\` 접두 없이 — `claude` 의 경로 비교와 맞게).
 pub fn parent_read_dir(folder: &Path) -> Option<PathBuf> {

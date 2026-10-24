@@ -96,7 +96,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.commit()?;
     }
     if v < 6 {
-        // 양쪽 발화(D18 · D23) — 이 PC 에서 쓴 글인가(`mine`) · 실행 요청인가(`exec`) · 양쪽 공통 순서(`lc`, 램포트 시계).
+        // 양쪽 발화 — 이 PC 에서 쓴 글인가(`mine`) · 실행 요청인가(`exec`) · 양쪽 공통 순서(`lc`, 램포트 시계).
         // 이전 이력은 방향 · id 로 채운다.
         let tx = conn.unchecked_transaction()?;
         for col in ["mine", "exec", "lc"] {
@@ -112,7 +112,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.commit()?;
     }
     if v < 7 {
-        // 자동 왕복(D24) — 연 쪽: 내 에이전트 · 상한 · 지금 왕복 · 켜짐, 받은 쪽: 에이전트발 실행 요청 거절.
+        // 자동 왕복 — 연 쪽: 내 에이전트 · 상한 · 지금 왕복 · 켜짐, 받은 쪽: 에이전트발 실행 요청 거절.
         let tx = conn.unchecked_transaction()?;
         for (col, ty) in [
             ("relay_agent", "TEXT"),
@@ -239,7 +239,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.commit()?;
     }
     if v < 13 {
-        // 보내는 쪽 보관(D7 — #1c): 상대에게 가는 대화 프레임을 먼저 적고 상대별 줄이 ack 까지 다시 보낸다. CLI 트랜잭션(중복 키 · 이어 받기 ·
+        // 보내는 쪽 보관: 상대에게 가는 대화 프레임을 먼저 적고 상대별 줄이 ack 까지 다시 보낸다. CLI 트랜잭션(중복 키 · 이어 받기 ·
         // 닿지 않음 판정).
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS outbox (
@@ -272,9 +272,9 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         )?;
     }
     if v < 14 {
-        // 요청 목록(#1d): 요청 글의 상태(`wait` · `accepted` · `rejected` · `done`) · 메모 · 바꾼 시각 — 완료 표시(`done_at`)는 `done` 으로 옮기고
+        // 요청 목록: 요청 글의 상태(`wait` · `accepted` · `rejected` · `done`) · 메모 · 바꾼 시각 — 완료 표시(`done_at`)는 `done` 으로 옮기고
         // 열은 읽지 않는다. 모델은 목록(`run_opts::MODELS`) 밖 값을 지운다(기본값). 아직 못 보낸 옛 완료 알림(`Request::Done`) 행은 같은 자리 · 순서 그대로
-        // `ReqState` 프레임(완료 → `done`, 취소 → `wait`)으로 바꾸고 그 요청 글에 잇는다 — 요청자가 꺼져 있는 동안 바꾼 상태를 잃지 않게(#1d R1).
+        // `ReqState` 프레임(완료 → `done`, 취소 → `wait`)으로 바꾸고 그 요청 글에 잇는다 — 요청자가 꺼져 있는 동안 바꾼 상태를 잃지 않게.
         let tx = conn.unchecked_transaction()?;
         for (col, ty) in [
             ("req_state", "TEXT"),
@@ -300,7 +300,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.commit()?;
     }
     if v < 15 {
-        // 이력 정리(#1f): 내 사람 글을 편집한 시각 — "(편집됨)" 표시.
+        // 이력 정리: 내 사람 글을 편집한 시각 — "(편집됨)" 표시.
         let tx = conn.unchecked_transaction()?;
         if !has_column(&tx, "messages", "edited_at")? {
             tx.execute_batch("ALTER TABLE messages ADD COLUMN edited_at INTEGER;")?;
@@ -309,7 +309,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.commit()?;
     }
     if v < 16 {
-        // 레일 그룹 · 손으로 놓는 순서(#1i): 그룹(이 PC 에만) · 소속, 상대 · 대화 자리. 첫 자리 = 지금 보이는 순서(상대 = id 순, 대화 = 최근 활동순).
+        // 레일 그룹 · 손으로 놓는 순서: 그룹(이 PC 에만) · 소속, 상대 · 대화 자리. 첫 자리 = 지금 보이는 순서(상대 = id 순, 대화 = 최근 활동순).
         // 외래 키는 켜지 않는다(이 DB 기본) — 그룹을 지울 때 소속은 `groups::remove` 가 함께 지운다.
         let tx = conn.unchecked_transaction()?;
         for table in ["peers", "conversations"] {
@@ -343,8 +343,8 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.commit()?;
     }
     if v < 17 {
-        // 상대 번호를 다시 쓰지 않는다(#1h — 원장 #17 S1-P): 가장 큰 번호의 상대를 지우면 다음 상대가 그 번호를 받아 남은 대화 · 보낼 글이 새 상대에
-        // 붙었다. SQLite 는 AUTOINCREMENT 를 제자리에서 못 붙인다 — 지금 정의(뒤에 붙인 열 포함)로 새 표 → 번호째 복사 → 옛 표 지움 → 이름 바꿈.
+        // 상대 번호를 다시 쓰지 않는다: 가장 큰 번호의 상대를 지우면 다음 상대가 그 번호를 받아 남은 대화 · 보낼 글이 새 상대에
+        // 붙는다. SQLite 는 AUTOINCREMENT 를 제자리에서 못 붙인다 — 지금 정의(뒤에 붙인 열 포함)로 새 표 → 번호째 복사 → 옛 표 지움 → 이름 바꿈.
         // 순번 시작 = 지운 상대가 남긴 대화 · 보낼 글 번호까지(이미 지운 상대의 번호도 다시 쓰지 않는다). 외래 키는 꺼져 있다(이 DB 기본).
         let tx = conn.unchecked_transaction()?;
         let sql: String = tx.query_row(
@@ -374,8 +374,8 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
                  ALTER TABLE peers_new RENAME TO peers;"
             ))?;
         }
-        // 접힘 설정 열쇠(`{화면}:{상대 번호}`)의 번호도 — 대화 없이 지운 상대의 남은 흔적이다(라운드 2, 남은 접힘이 새 상대에 붙지 않게).
-        // 흔적이 하나도 없는 지운 번호는 되살릴 수 없다 — 붙을 데이터도 없다(원장 #1h R1-M1).
+        // 접힘 설정 열쇠(`{화면}:{상대 번호}`)의 번호도 — 대화 없이 지운 상대의 남은 흔적이다(남은 접힘이 새 상대에 붙지 않게).
+        // 흔적이 하나도 없는 지운 번호는 되살릴 수 없다 — 붙을 데이터도 없다.
         let folded = crate::run_opts::folded(&tx)?
             .iter()
             .filter_map(|k| k.split_once(':')?.1.parse::<i64>().ok())
@@ -394,7 +394,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.commit()?;
     }
     if v < 18 {
-        // 상대 단위 그룹(#1j): 그룹에 상대를 넣으면 그 상대의 대화(뒤에 생긴 것도)가 그 그룹에 보인다. 옛 자유 입력 그룹(`peers.grp`)은 같은 이름
+        // 상대 단위 그룹: 그룹에 상대를 넣으면 그 상대의 대화(뒤에 생긴 것도)가 그 그룹에 보인다. 옛 자유 입력 그룹(`peers.grp`)은 같은 이름
         // 레일 그룹으로 옮긴다(없으면 만든다 — 이름은 `groups::fit_name`). `agents.grp` 는 읽지 않는다(열은 그대로 둔다).
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(
@@ -431,7 +431,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.commit()?;
     }
     if v < 19 {
-        // 컨텍스트(#1m): 답의 창 사용량(`ctx_tokens`) · 압축 · 비우기 구분선 글(`author = 'context'`, `ctx_op`) · 압축 요약(다음 새 세션 첫 실행에 한 번 —
+        // 컨텍스트: 답의 창 사용량(`ctx_tokens`) · 압축 · 비우기 구분선 글(`author = 'context'`, `ctx_op`) · 압축 요약(다음 새 세션 첫 실행에 한 번 —
         // `agent` 빈 글자 = 대화 에이전트).
         let tx = conn.unchecked_transaction()?;
         for (col, ty) in [("ctx_tokens", "INTEGER"), ("ctx_op", "TEXT")] {
@@ -451,7 +451,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.commit()?;
     }
     if v < 20 {
-        // 공유 대화(#1o): 대화를 가진 PC — 관람자 · 보낸 마지막 글 id(`shares`), 관람자 PC — 사본(`dir = 'shared'`)의 원 상대 이름 · 원 방향 ·
+        // 공유 대화: 대화를 가진 PC — 관람자 · 보낸 마지막 글 id(`shares`), 관람자 PC — 사본(`dir = 'shared'`)의 원 상대 이름 · 원 방향 ·
         // 빠짐(`share_ended`) · A 쪽 글(`messages.owner`), 원 상대 PC — 그 대화의 관람자 수(`watchers`).
         let tx = conn.unchecked_transaction()?;
         for (table, col, ty) in [
@@ -478,8 +478,8 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.commit()?;
     }
     if v < 21 {
-        // 대화 나가기 · 삭제(#1w — D40): 대화 번호를 다시 쓰지 않는다(지운 가장 큰 번호를 새 대화가 받아 남은 딸린 행 · 표시가 붙지 않게 — 스키마 17
-        // `peers` 와 같은 방법), 내가 · 상대가 나간 시각, 지운 대화의 묘비(같은 uuid 로 온 글이 대화를 되살리지 않게). 그룹 = 대화만(D37 개정) —
+        // 대화 나가기 · 삭제: 대화 번호를 다시 쓰지 않는다(지운 가장 큰 번호를 새 대화가 받아 남은 딸린 행 · 표시가 붙지 않게 — 스키마 17
+        // `peers` 와 같은 방법), 내가 · 상대가 나간 시각, 지운 대화의 묘비(같은 uuid 로 온 글이 대화를 되살리지 않게). 그룹 = 대화만 —
         // 상대 단위 소속은 그 상대의 지금 대화를 하나씩 넣어 옮기고 표를 지운다(뒤에 생긴 대화는 들어오지 않는다).
         let tx = conn.unchecked_transaction()?;
         let sql: String = tx.query_row(
@@ -561,7 +561,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.execute_batch("PRAGMA user_version = 21;")?;
         tx.commit()?;
     }
-    // 22(#1x 적대적 평가 R1) — 기록 삭제로 지운 글 · 받아 적용한 `Clear` 의 uuid. 같은 uuid 로 늦게 다시 온 글이 기록을 되살리거나 다시 실행되지 않고,
+    // 22 — 기록 삭제로 지운 글 · 받아 적용한 `Clear` 의 uuid. 같은 uuid 로 늦게 다시 온 글이 기록을 되살리거나 다시 실행되지 않고,
     // 같은 `Clear` 를 두 번 적용하지 않는다(그 사이 새 글을 지우지 않게).
     // 글 번호도 다시 쓰지 않는다 — 기록 삭제가 대화의 글을 통째로 지운 뒤 새 글이 지운 번호를 받으면 대화 작업(`wake` — 꺼낸 글 번호 집합)이
     // 새 글을 이미 꺼낸 글로 보고 실행하지 않는다(스키마 21 `conversations` 와 같은 방법).
@@ -616,7 +616,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         )?;
         tx.commit()?;
     }
-    // 23(#1y): 요청 archive 손 표시 — NULL = 자동(완료 7일 뒤) · 1 = 손으로 archive · 0 = 손으로 해제(자동 제외).
+    // 23: 요청 archive 손 표시 — NULL = 자동(완료 7일 뒤) · 1 = 손으로 archive · 0 = 손으로 해제(자동 제외).
     if v < 23 {
         let tx = conn.unchecked_transaction()?;
         if !has_column(&tx, "messages", "req_archived")? {
@@ -625,7 +625,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.execute_batch("PRAGMA user_version = 23;")?;
         tx.commit()?;
     }
-    // 24(#05-2): 에이전트 상위 한 단계 읽기 — 0 = 폴더만(지금까지와 같다) · 1 = 바로 위 폴더도(`--add-dir`).
+    // 24: 에이전트 상위 한 단계 읽기 — 0 = 폴더만(지금까지와 같다) · 1 = 바로 위 폴더도(`--add-dir`).
     if v < 24 {
         let tx = conn.unchecked_transaction()?;
         if !has_column(&tx, "agents", "parent_read")? {
@@ -634,7 +634,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.execute_batch("PRAGMA user_version = 24;")?;
         tx.commit()?;
     }
-    // 25(#05-3): 에이전트 셸 명령 실행 허용 — 0 = 읽기 전용 도구만(지금까지와 같다) · 1 = 셸 도구(`Bash` · `PowerShell`)도.
+    // 25: 에이전트 셸 명령 실행 허용 — 0 = 읽기 전용 도구만(지금까지와 같다) · 1 = 셸 도구(`Bash` · `PowerShell`)도.
     if v < 25 {
         let tx = conn.unchecked_transaction()?;
         if !has_column(&tx, "agents", "shell")? {
@@ -643,7 +643,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.execute_batch("PRAGMA user_version = 25;")?;
         tx.commit()?;
     }
-    // 26(#1z-7): 에이전트 아이콘 색 — 웹UI 타일 색 토큰 열쇠, 있던 에이전트는 기본(`agent-tile` — 지금까지와 같은 색).
+    // 26: 에이전트 아이콘 색 — 웹UI 타일 색 토큰 열쇠, 있던 에이전트는 기본(`agent-tile` — 지금까지와 같은 색).
     if v < 26 {
         let tx = conn.unchecked_transaction()?;
         if !has_column(&tx, "agents", "color")? {
@@ -652,7 +652,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.execute_batch("PRAGMA user_version = 26;")?;
         tx.commit()?;
     }
-    // 27(#1z-9): 에이전트 실행 도구(등록 뒤 고정) · Codex Git 확인 건너뜀 — 있던 에이전트는 Claude Code(지금까지와 같음).
+    // 27: 에이전트 실행 도구(등록 뒤 고정) · Codex Git 확인 건너뜀 — 있던 에이전트는 Claude Code(지금까지와 같음).
     if v < 27 {
         let tx = conn.unchecked_transaction()?;
         if !has_column(&tx, "agents", "engine")? {
@@ -664,7 +664,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.execute_batch("PRAGMA user_version = 27;")?;
         tx.commit()?;
     }
-    // 28(#1z-10): 대화의 마지막 에이전트 실행 명령(이 PC 가 띄운 실행 파일 + 인자 — 세부정보 '대화 정보' 복사) — 있던 대화는 없음.
+    // 28: 대화의 마지막 에이전트 실행 명령(이 PC 가 띄운 실행 파일 + 인자 — 세부정보 '대화 정보' 복사) — 있던 대화는 없음.
     if v < 28 {
         let tx = conn.unchecked_transaction()?;
         if !has_column(&tx, "conversations", "cmd")? {
@@ -679,10 +679,10 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
     Ok(conn)
 }
 
-/// [`vacuum_if_sparse`] 가 VACUUM 하는 빈 바이트 하한(#1y — 작은 DB 는 하지 않는다).
+/// [`vacuum_if_sparse`] 가 VACUUM 하는 빈 바이트 하한(작은 DB 는 하지 않는다).
 pub const VACUUM_MIN_FREE: i64 = 4 * 1024 * 1024;
 
-/// 빈 페이지가 [`VACUUM_MIN_FREE`] 이상이고 전체의 1/4 이상이면 `VACUUM` 하고 참(#1y — 지운 만큼 파일을 줄인다). 시작 때 한 번.
+/// 빈 페이지가 [`VACUUM_MIN_FREE`] 이상이고 전체의 1/4 이상이면 `VACUUM` 하고 참(지운 만큼 파일을 줄인다). 시작 때 한 번.
 pub fn vacuum_if_sparse(conn: &Connection) -> rusqlite::Result<bool> {
     let pragma = |name: &str| conn.query_row(&format!("PRAGMA {name}"), [], |r| r.get::<_, i64>(0));
     let (pages, free, size) = (pragma("page_count")?, pragma("freelist_count")?, pragma("page_size")?);
@@ -693,7 +693,7 @@ pub fn vacuum_if_sparse(conn: &Connection) -> rusqlite::Result<bool> {
     Ok(true)
 }
 
-/// 방향으로 정한 "이 PC 의 글" — 보낸 대화(`out`)의 사람 글 · 받은 대화(`in`)의 에이전트 답 · 공유 사본(`shared`, #1o)은 없음. `messages` 행
+/// 방향으로 정한 "이 PC 의 글" — 보낸 대화(`out`)의 사람 글 · 받은 대화(`in`)의 에이전트 답 · 공유 사본(`shared`)은 없음. `messages` 행
 /// 문맥의 SQL 식.
 pub const MINE_BY_DIR: &str =
     "(CASE (SELECT dir FROM conversations c WHERE c.id = messages.conversation_id)

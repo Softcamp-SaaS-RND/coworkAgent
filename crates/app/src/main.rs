@@ -18,14 +18,14 @@ use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
 fn main() {
-    // Unix: 이 프로세스가 만드는 파일 · 폴더는 소유자만(0600 · 0700) — DB · 사본 · 회전 로그가 만든 뒤 교정을 기다리지 않게(1a A1).
+    // Unix: 이 프로세스가 만드는 파일 · 폴더는 소유자만(0600 · 0700) — DB · 사본 · 회전 로그가 만든 뒤 교정을 기다리지 않게.
     #[cfg(unix)]
     // SAFETY: 인자 하나짜리 프로세스 설정 호출, 포인터 없음.
     unsafe {
         libc::umask(0o077);
     }
     // 이름만으로 부르는 `LoadLibrary`(tao · muda 의 uxtheme.dll 등)도 System32 에서만 — 실행 파일 폴더에 심은 DLL 을 올리지 않는다
-    // (정적 import 는 `.cargo/config.toml` 의 DependentLoadFlags, 1a A13). 어떤 초기화보다 먼저.
+    // (정적 import 는 `.cargo/config.toml` 의 DependentLoadFlags). 어떤 초기화보다 먼저.
     #[cfg(windows)]
     // SAFETY: 인자 하나짜리 프로세스 설정 호출, 포인터 없음.
     unsafe {
@@ -44,9 +44,9 @@ fn main() {
     if !args.is_empty() {
         std::process::exit(cli::main(&args));
     }
-    // 트레이 없는 모드(#1n) — `start` · `open` 이 지켜볼 부모 PID 를 붙여 띄운다. 감시 · 앱 모두 같은 값을 본다.
+    // 트레이 없는 모드 — `start` · `open` 이 지켜볼 부모 PID 를 붙여 띄운다. 감시 · 앱 모두 같은 값을 본다.
     let parent = watchdog::parent();
-    // 인자 없는 첫 실행 = 감시 프로세스 — 앱을 자식으로 띄우고 비정상 종료면 다시 띄운다(#1e). 감시는 로거 · DB 를 쓰지 않는다.
+    // 인자 없는 첫 실행 = 감시 프로세스 — 앱을 자식으로 띄우고 비정상 종료면 다시 띄운다. 감시는 로거 · DB 를 쓰지 않는다.
     let Some(restarts) = watchdog::restarts() else {
         std::process::exit(supervise(parent));
     };
@@ -94,7 +94,7 @@ fn main() {
         Err(e) => {
             log::error!("시작 실패: {e}");
             eprintln!("coworkAgent: {e}");
-            // 오류 표시는 감시가(#1n — 오류 트레이는 감시 잠금 안에서 하나). 앱은 사유 파일만 남기고 시작 실패 코드로 끝난다.
+            // 오류 표시는 감시가(오류 트레이는 감시 잠금 안에서 하나). 앱은 사유 파일만 남기고 시작 실패 코드로 끝난다.
             if let Err(we) = write_start_error(&e.to_string()) {
                 eprintln!("coworkAgent: 오류 파일 쓰기 실패: {we}");
             }
@@ -147,9 +147,9 @@ fn supervise(parent: Option<u32>) -> i32 {
         }
         Err(e) => return fail_unlocked(&format!("감시 잠금을 잡지 못했다: {e}")),
     };
-    // 자동 업데이트(#1y · #30) — 트레이 모드 · 릴리스 빌드만(트레이 없는 모드는 부른 쪽의 준비 확인이 끊긴다, plan 해석 2). 바꿨으면 잠금을 놓고 새 exe 로 다시.
+    // 자동 업데이트 — 트레이 모드 · 릴리스 빌드만(트레이 없는 모드는 부른 쪽의 준비 확인이 끊긴다). 바꿨으면 잠금을 놓고 새 exe 로 다시.
     let updater = (!headless && !cfg!(debug_assertions)).then_some(()).and(update::ASSET).zip(std::env::current_exe().ok());
-    // 결과 한 줄을 덧붙인다 — 바꾼 감시의 `Updated` 를 새 감시의 `UpToDate` 가 덮지 않게(적대적 평가 R1). 앱 `start` 가 줄마다 로그로 옮기고 지운다.
+    // 결과 한 줄을 덧붙인다 — 바꾼 감시의 `Updated` 를 새 감시의 `UpToDate` 가 덮지 않게. 앱 `start` 가 줄마다 로그로 옮기고 지운다.
     let note = |line: String| {
         use std::io::Write;
         let _ = std::fs::OpenOptions::new()
@@ -176,7 +176,7 @@ fn supervise(parent: Option<u32>) -> i32 {
         let outcome = update::check(update::RELEASES, asset, env!("CARGO_PKG_VERSION"), skip.as_deref().map(str::trim), exe, update::verify);
         note(format!("{outcome:?}\n"));
         if let update::Outcome::Updated(tag) = outcome {
-            // 새 감시가 잠금을 잡게 먼저 놓는다(적대적 평가 R2). 새 감시가 앱을 띄우기 전에 실패로 끝나면(로더 · 시작 전 오류) 그 감시는 되돌리지
+            // 새 감시가 잠금을 잡게 먼저 놓는다. 새 감시가 앱을 띄우기 전에 실패로 끝나면(로더 · 시작 전 오류) 그 감시는 되돌리지
             // 못하므로 여기서 [`NEW_SUPERVISOR_GRACE`] 동안 지켜보다 되돌린다 — 그 뒤의 실패(앱 시작 실패 · 거듭 죽음)는 새 감시가 되돌린다.
             drop(lock);
             let Ok(mut child) = std::process::Command::new(exe).spawn() else {
@@ -210,7 +210,7 @@ fn supervise(parent: Option<u32>) -> i32 {
     }
 }
 
-/// 자동 업데이트(#1y) 뒤 지난 감시가 새 감시를 지켜보는 시간 — 그 안에 실패로 끝나면 되돌린다.
+/// 자동 업데이트 뒤 지난 감시가 새 감시를 지켜보는 시간 — 그 안에 실패로 끝나면 되돌린다.
 const NEW_SUPERVISOR_GRACE: Duration = Duration::from_secs(15);
 
 /// 시작이 끝난 주 인스턴스 — 트레이에 넘길 것.
@@ -242,7 +242,7 @@ fn start(
     }
     paths.ensure()?;
     FileLogger::install(&paths.log_file(), log::LevelFilter::Info)?;
-    // 감시가 남긴 자동 업데이트 결과(#1y · #30 — 바꾼 감시 · 새 감시가 한 줄씩).
+    // 감시가 남긴 자동 업데이트 결과(바꾼 감시 · 새 감시가 한 줄씩).
     if let Ok(note) = std::fs::read_to_string(paths.update_note_file()) {
         for line in note.lines().filter(|l| !l.trim().is_empty()) {
             log::info!("자동 업데이트: {} (지금 {})", line.trim(), env!("CARGO_PKG_VERSION"));
@@ -265,7 +265,7 @@ fn start(
     }
 
     let conn = db::open(&paths.db_file())?;
-    // 지운 만큼 파일을 줄인다(#1y) — 못 해도 앱은 뜬다.
+    // 지운 만큼 파일을 줄인다 — 못 해도 앱은 뜬다.
     match db::vacuum_if_sparse(&conn) {
         Ok(true) => log::info!("DB 빈 공간 정리(VACUUM)"),
         Ok(false) => {}
@@ -303,7 +303,7 @@ fn start(
     }
     let note = node.peer_port_note();
     let notifier = Notifier::new(db::open(&paths.db_file())?, move |n| attention.set(n))?;
-    // 로그인 때 자동 시작(S7 · D13) — 시작마다 설정 값으로 맞춘다: 켜짐이면 등록 · 경로 고침, 꺼짐이면 지움(지난 실행에서 어긋난 것도 여기서
+    // 로그인 때 자동 시작 — 시작마다 설정 값으로 맞춘다: 켜짐이면 등록 · 경로 고침, 꺼짐이면 지움(지난 실행에서 어긋난 것도 여기서
     // 고친다). 실패해도 시작은 계속. 디버그 빌드는 개발 경로를 남기지 않게 건너뛴다.
     if !cfg!(debug_assertions) {
         notifier.set_autostart_hook(autostart::sync);
@@ -318,7 +318,7 @@ fn start(
     }
     let on_event = notifier.clone();
     node.on_event(move |e| on_event.on_event(&e));
-    // 원격 메시지 → 프로필 폴더에서 `claude -p`(D20 · D22). 실행 파일은 실행마다 찾는다 — 앱을 띄운 뒤 설치해도 된다.
+    // 원격 메시지 → 프로필 폴더에서 에이전트 실행(`claude -p` · `codex exec`). 실행 파일은 실행마다 찾는다 — 앱을 띄운 뒤 설치해도 된다.
     let chat = Chat::new(
         db::open(&paths.db_file())?,
         node.clone(),
@@ -334,7 +334,7 @@ fn start(
         }
     }
     runtime.spawn(node.clone().serve(peer_listener));
-    // 시작 알림(#1c) — 페어링된 상대마다 Ping 한 번(바뀐 주소 알림 · 집중). 주기 확인은 없다 — 접속 시각은 통신할 때만.
+    // 시작 알림 — 페어링된 상대마다 Ping 한 번(바뀐 주소 알림 · 집중). 주기 확인은 없다 — 접속 시각은 통신할 때만.
     runtime.spawn(node.clone().announce());
 
     let open_url = url.clone();
@@ -356,7 +356,7 @@ fn start(
     });
     InstanceInfo { port, token }.write(&paths.instance_file())?;
     log::info!("시작 — 127.0.0.1:{port}");
-    // 업데이트한 새 버전이 처음 준비됨(#1y) — 되돌릴 지난 버전을 지운다.
+    // 업데이트한 새 버전이 처음 준비됨 — 되돌릴 지난 버전을 지운다.
     if let Ok(exe) = std::env::current_exe() {
         update::settled(&exe);
     }
@@ -404,14 +404,14 @@ fn hand_off(paths: &Paths) -> Result<(), Box<dyn Error>> {
     Err(format!("기존 인스턴스에 전달 실패: {last}").into())
 }
 
-/// OS 사용자 이름(P7).
+/// OS 사용자 이름.
 fn user_name() -> String {
     std::env::var("USERNAME")
         .or_else(|_| std::env::var("USER"))
         .unwrap_or_else(|_| "?".into())
 }
 
-/// PC 이름(P7) — Windows `COMPUTERNAME`, 그 밖은 `hostname` 명령.
+/// PC 이름 — Windows `COMPUTERNAME`, 그 밖은 `hostname` 명령.
 fn host_name() -> String {
     if let Ok(name) = std::env::var("COMPUTERNAME") {
         return name;

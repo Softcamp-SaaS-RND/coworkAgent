@@ -1,4 +1,4 @@
-//! 공유 대화(#1o) — 대화를 가진 PC(A)의 관람자 · 보낸 커서, 관람자 PC(C)의 읽기 전용 사본(`dir = 'shared'`, 상대 = A), 원 상대 PC(B)의
+//! 공유 대화 — 대화를 가진 PC(A)의 관람자 · 보낸 커서, 관람자 PC(C)의 읽기 전용 사본(`dir = 'shared'`, 상대 = A), 원 상대 PC(B)의
 //! 관람자 수. 사본 글은 실행 · 요청 · 내 글이 아니다(`mine = 0 · exec = 0 · request = 0`).
 use crate::chat::{self, Author, Conversation, Dir};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -63,7 +63,7 @@ pub fn set_sent(
     .map(drop)
 }
 
-/// 상대를 지울 때(페어링 해제) — 그 상대가 관람자인 공유 · 그 상대 앞 공유 · 나가기(#1w) 프레임. 그 상대가 보낸 사본은 남긴다.
+/// 상대를 지울 때(페어링 해제) — 그 상대가 관람자인 공유 · 그 상대 앞 공유 · 나가기 프레임. 그 상대가 보낸 사본은 남긴다.
 pub fn forget_peer(conn: &Connection, peer_id: i64) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM shares WHERE peer_id = ?1", [peer_id])?;
     conn.execute(

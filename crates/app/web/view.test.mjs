@@ -1,9 +1,132 @@
-// node --test crates/app/web/ — 화면 로직(view.js) 시험. DOM 없음.
+// node --test crates/app/web/ — 화면 로직(js/logic/) 시험. DOM 없음.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import {
-  entryToken,
+  stateText,
+  dayKey,
+  dayLabel,
+  dayBreaks,
+  formatDuration,
+  formatTime,
+  josa,
+  fileSize,
+  displayName,
+} from "./js/logic/format.js";
+import {
+  convLabel,
+  filterByPeer,
+  roomPreview,
+  keepsConversation,
+  LEAVE_CONFIRM,
+  composeDefaults,
+  requestNotice,
+  convMenuItems,
+  convClosed,
+  convRows,
+  convSections,
+  splitByDir,
+  shareHead,
+  shareCandidates,
+  MAX_OBSERVERS,
+  convMeta,
+  convListParts,
+  visibleConvRows,
+  agentConvSections,
+  convInfoRows,
+  INFO_CMD_HINT,
+  convKindIcon,
+} from "./js/logic/conv.js";
+import {
+  relayText,
+  timeline,
+  unlinkedReplies,
+  messageActions,
+  editedTag,
+  insertMarkdown,
+  enterSends,
+  runSteps,
+  lastRun,
+  refusedText,
+  progressText,
+  outboxText,
+  stepText,
+  messagesSigOf,
+  mentionQuery,
+  mentionTarget,
+  hasMention,
+  mentionToken,
+  speakerIcon,
+  noteCount,
+  avatarKind,
+} from "./js/logic/message.js";
+import {
+  contextSize,
+  contextLabel,
+  contextBusy,
+  ctxMenu,
+  contextNote,
+  CONTEXT_LIMIT,
+} from "./js/logic/context.js";
+import {
+  isHtmlDoc,
+  htmlSrcdoc,
+  markdownBlocks,
+} from "./js/logic/markdown.js";
+import {
+  peerState,
+  presenceOf,
+  unreadByPeer,
+  presence,
+  peerWeeksOptions,
+  PEER_WEEKS,
+  peerGroups,
+  peerSummary,
+  colorOf,
+  waitingByPeer,
+  tileUnread,
+} from "./js/logic/peer.js";
+import {
+  inboxRows,
+  peerSummaryRows,
+  pageMore,
+  peerMsgsSig,
+  mergePage,
+  PEER_PAGE,
+} from "./js/logic/inbox.js";
+import {
+  authorLabel,
+  bubbleSide,
+  sharedAuthor,
+} from "./js/logic/author.js";
+import {
+  sortByPos,
+  moveInOrder,
+  withOrder,
+  movedText,
+  orderToApply,
+} from "./js/logic/order.js";
+import {
+  tileKeeps,
+  splitKey,
+  inGroup,
+  groupPeers,
+  scopeQuery,
+  groupNameError,
+  membershipDiff,
+  stepTarget,
+  dropKind,
+  groupLeaves,
+  groupUnread,
+  RAIL_W,
+  railSize,
+  groupSettingsList,
+  railSlot,
+  peerLeaves,
+  DRAG_SLOP,
+  pastSlop,
+} from "./js/logic/rail.js";
+import {
   previewSections,
   previewZoom,
   HOME_ZOOMS,
@@ -11,129 +134,41 @@ import {
   previewKey,
   previewStaleOf,
   PREVIEW_MSGS,
-  DISCONNECTED,
-  stateText,
-  peerState,
-  convLabel,
-  filterByPeer,
-  authorLabel,
-  roomPreview,
-  bubbleSide,
-  dayKey,
-  dayLabel,
-  dayBreaks,
-  relayText,
-  keepsConversation,
-  formatDuration,
-  formatTime,
-  timeline,
-  unlinkedReplies,
-  route,
-  Latest,
-  settingsTree,
-  searchItems,
-  josa,
-  SESSION_NEW,
-  LEAVE_CONFIRM,
-  sideSub,
-  composeDefaults,
-  requestNotice,
-  SETTINGS_ALIAS,
-  fileSize,
-  logLines,
-  diagText,
-  draftOf,
-  pruneDrafts,
-  convMenuItems,
-  convClosed,
+} from "./js/logic/home.js";
+import {
   reqResend,
-  inboxRows,
-  peerSummaryRows,
-  pageMore,
-  peerMsgsSig,
-  mergePage,
-  PEER_PAGE,
-  isHtmlDoc,
-  htmlSrcdoc,
-  markdownBlocks,
-  presenceOf,
-  starredSections,
-  displayName,
-  convRows,
-  tileKeeps,
-  sideNav,
-  newMenu,
-  profileMenu,
-  convSections,
-  splitByDir,
-  splitKey,
-  sharedAuthor,
-  shareHead,
-  shareCandidates,
-  MAX_OBSERVERS,
-  convMeta,
-  unreadByPeer,
-  activityRows,
-  ACT_KINDS,
-  messageActions,
-  editedTag,
-  convListParts,
-  visibleConvRows,
-  agentConvSections,
   boardColumns,
   canDrop,
   reqFeedback,
-  insertMarkdown,
-  enterSends,
-  runSteps,
-  searchGroups,
-  lastRun,
-  presence,
-  refusedText,
-  progressText,
-  outboxText,
-  stepText,
-  runsSummary,
-  portText,
-  messagesSigOf,
   askTag,
   reqMoves,
   requestRows,
   reqBoxes,
   reqHead,
   reqArchiveAction,
-  peerWeeksOptions,
-  PEER_WEEKS,
   REQ_BTN,
-  peerGroups,
-  peerSummary,
-  sortByPos,
-  inGroup,
-  groupPeers,
-  scopeQuery,
-  groupNameError,
-  membershipDiff,
-  colorOf,
-  moveInOrder,
-  stepTarget,
-  dropKind,
-  withOrder,
-  movedText,
-  groupLeaves,
-  groupUnread,
-  orderToApply,
-  waitingByPeer,
-  SendLatest,
-  holdsRender,
   REQ_STATES,
+} from "./js/logic/request.js";
+import {
+  activityRows,
+  ACT_KINDS,
+} from "./js/logic/activity.js";
+import {
+  settingsTree,
+  SETTINGS_ALIAS,
+  logLines,
+  diagText,
+  draftOf,
+  pruneDrafts,
+  portText,
   MODELS,
+} from "./js/logic/settings.js";
+import {
   TOOLS_NOTE,
   ENGINES,
   WEB_TOOLS,
   EDIT_TOOLS,
   engineLabel,
-  convInfoRows,
-  INFO_CMD_HINT,
   agentEngineBlocks,
   READ_ONLY_TOOLS,
   SHELL_NOTE,
@@ -142,34 +177,42 @@ import {
   agentPatch,
   AGENT_COLORS,
   agentColor,
-  convKindIcon,
-  mentionQuery,
-  mentionTarget,
-  hasMention,
-  mentionToken,
-  contextSize,
-  contextLabel,
-  contextBusy,
-  ctxMenu,
-  contextNote,
-  CONTEXT_LIMIT,
+} from "./js/logic/agent.js";
+import {
+  entryToken,
+  DISCONNECTED,
+  route,
+  SESSION_NEW,
+  sideSub,
+  starredSections,
+  sideNav,
+  newMenu,
+  profileMenu,
+  holdsRender,
+} from "./js/logic/shell.js";
+import {
+  Latest,
+  runsSummary,
+  SendLatest,
   CONV_LOADERS,
   loadersFor,
   mergeChanges,
   unionLoaders,
   OneAtATime,
-  speakerIcon,
-  RAIL_W,
-  railSize,
-  noteCount,
-  groupSettingsList,
-  railSlot,
-  peerLeaves,
-  tileUnread,
-  avatarKind,
-  DRAG_SLOP,
-  pastSlop,
-} from "./view.js";
+} from "./js/logic/sync.js";
+import {
+  searchItems,
+  searchGroups,
+} from "./js/logic/search.js";
+
+// 화면 원본 — `js/` 모듈을 이어 붙인 글(`logic` = DOM 없는 `js/logic/`, 아니면 그 밖 UI 모듈 전부).
+const source = (logic) =>
+  readdirSync(new URL("./js/", import.meta.url), { recursive: true })
+    .map((f) => f.replaceAll("\\", "/"))
+    .filter((f) => f.endsWith(".js") && f.startsWith("logic/") === logic)
+    .sort()
+    .map((f) => readFileSync(new URL(`./js/${f}`, import.meta.url), "utf8"))
+    .join("\n");
 
 test("상태 문구", () => {
   assert.equal(stateText("running"), "실행 중");
@@ -836,7 +879,7 @@ test("conv_sections_by_peer — '나' 사이드바: 상대별 절(★ 대화도 
 
 test("icons_defined — app.js ico(이름) · index.html ico-이름 으로 쓴 아이콘이 모두 app.css 에 있다(#1l — 빠진 아이콘은 빈 칸으로 보임)", () => {
   const css = readFileSync(new URL("./app.css", import.meta.url), "utf8");
-  const app = readFileSync(new URL("./app.js", import.meta.url), "utf8");
+  const app = source(false);
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
   const used = new Set([...app.matchAll(/ico\("([a-z-]+)"\)/g), ...html.matchAll(/class="ico ico-([a-z-]+)"/g)].map((m) => m[1]));
   for (const name of ["arrow-up", "arrow-down"]) used.add(name); // 삼항으로 고르는 이름
@@ -2318,7 +2361,7 @@ test("composer_a — 입력창: 질의 / 요청 라디오 2개 · 안내 문구 
   assert.ok(css.includes("--chat-gutter: max(48px, 8%);"), "좌우 여백 토큰");
   assert.match(css, /\.composer textarea \{[^}]*min-height: 44px; max-height: 200px;/);
   for (const id of ['id="edit_btn"', "edit_bar", "scope_dialog"]) assert.ok(!html.includes(id), id);
-  const app = readFileSync(new URL("./app.js", import.meta.url), "utf8");
+  const app = source(false);
   assert.ok(!app.includes('$("reply_text").placeholder'), "대화를 열 때 placeholder 를 덮어쓰지 않는다(적대적 평가 R2)");
 });
 
@@ -2376,8 +2419,7 @@ test("request_notice — 받은 요청은 한 tag(앞 알림을 바꿈) · 요�
 test("session_label — '새 대화' 라벨이 화면 원문에 없고 '세션 생성' 이다(#1x — 사용자 2026-10-20)", () => {
   assert.equal(SESSION_NEW, "세션 생성");
   assert.equal(newMenu()[0].label, SESSION_NEW);
-  for (const f of ["./index.html", "./app.js", "./view.js"]) {
-    const src = readFileSync(new URL(f, import.meta.url), "utf8");
+  for (const [f, src] of [["./index.html", readFileSync(new URL("./index.html", import.meta.url), "utf8")], ["js", source(false)], ["js/logic", source(true)]]) {
     const hits = [...src.matchAll(/["'`>][^"'`<\n]*새 대화/g)].map((m) => m[0]);
     assert.deepEqual(hits, [], f);
   }

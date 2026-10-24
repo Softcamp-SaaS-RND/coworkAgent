@@ -1,4 +1,4 @@
-//! 레일 그룹 · 손으로 놓는 순서 API(#1i) — 이 PC 에만(상대 PC 로 가는 프레임 없음). `chat_api::routes` 가 함께 붙인다.
+//! 레일 그룹 · 손으로 놓는 순서 API — 이 PC 에만(상대 PC 로 가는 프레임 없음). `chat_api::routes` 가 함께 붙인다.
 use an_agent::chat::Chat;
 use an_core::groups::{self, Group, Order};
 use an_core::run_opts;
@@ -157,7 +157,7 @@ async fn change(
     Json(req): Json<Membership>,
 ) -> Response {
     let db = chat.db();
-    // 넣기 · 빼기 모두 있는 대화여야 한다 — 그룹에 없는 대화를 빼는 것만 그대로 둔다(라운드 2).
+    // 넣기 · 빼기 모두 있는 대화여야 한다 — 그룹에 없는 대화를 빼는 것만 그대로 둔다.
     let all: Vec<i64> = req.add.iter().chain(&req.remove).copied().collect();
     match groups::unknown_conversations(&db, &all) {
         Ok(u) if !u.is_empty() => {

@@ -51,8 +51,8 @@ LocalAddress LocalPort
 | 쿠키 자동 첨부 | 쿠키를 쓰지 않는다 — 토큰은 탭 메모리에만 | 루트 `PRODUCT.md` "로컬 웹UI 인증" |
 | 화면을 남의 페이지에 숨겨 넣기(클릭재킹) · 형식 위장 | 모든 응답에 CSP(`frame-ancestors 'none'`) · `X-Frame-Options: DENY` · `nosniff` · `no-referrer` | `server.rs:15` `CSP` · `server.rs:125` `harden()` |
 
-토큰 없이 볼 수 있는 것은 실행 파일에 박힌 화면 파일 5개(`/` · `app.js` · `view.js` · `app.css` · `favicon.ico`)뿐이다 — 비밀이 없다
-(`server.rs:86` `PUBLIC`). 진입 주소 `/?t=` 에 틀린 토큰을 넣으면 401.
+토큰 없이 볼 수 있는 것은 실행 파일에 박힌 화면 파일뿐이다 — 비밀이 없다. (#1z-12 개정) `/` · `app.css` · `favicon.ico` 와 화면 모듈 `/js/{모듈}`(내장 표
+`SCRIPTS` 의 이름과 정확히 같을 때만 — 표 밖 이름은 토큰 없이 401, 토큰이 있어도 404)(`server.rs` `PUBLIC` · `SCRIPTS` · `is_public`). 진입 주소 `/?t=` 에 틀린 토큰을 넣으면 401.
 
 **실측**(개발 PC, 실행 중 앱에 `curl` — 읽기만):
 
@@ -104,7 +104,8 @@ no peer certificate available
 | 내 쪽 정보 새기 | 상대에게는 정해진 실패 문구만(경로 · stderr · DB 오류는 내 쪽만). 처리 경과는 턴 · 도구 이름별 횟수 · 초만 | 루트 `PRODUCT.md` "원격 실패 · 프롬프트" · "실행 한도" |
 | 데이터 폴더(키 · DB) | 시작마다 소유자 전용 권한(Windows 보호 DACL) · 데이터 폴더를 품는 에이전트 폴더 거부 | `crates/core/src/owner_only.rs:31` `restrict()` · [개발자 가이드](../manual/dev/developer-guide.md) "보안 경계 요약" |
 
-`innerHTML` 은 웹UI 전체에서 한 곳(`app.js:1260`)뿐이고, 넣는 값은 코드에 박힌 아이콘 SVG 상수다 — 원격 값이 아니다.
+(#1z-12 개정) `innerHTML` 에 넣는 값은 모두 코드에 박힌 아이콘 SVG 상수다 — 원격 값이 아니다(`js/core/widgets.js` `tileFace` · `iconButton`, `shell.js` `renderAvatar`,
+`sidebar.js` `starButton`, `agents.js` `renderAgentsView` — 다섯 곳).
 
 ## 6. 남는 위험
 

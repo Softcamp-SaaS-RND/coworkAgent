@@ -1,4 +1,4 @@
-//! 내 정보 · 피어 API(S4 · D8) — `server::router_with` 의 guard 뒤에 붙는다. 원격에서 온 이름은 웹UI 가 textContent 로만 그린다.
+//! 내 정보 · 피어 API(D8) — `server::router_with` 의 guard 뒤에 붙는다. 원격에서 온 이름은 웹UI 가 textContent 로만 그린다.
 use an_core::peers::Peer;
 use an_core::run_opts;
 use an_net::identity::fingerprint;
@@ -35,7 +35,7 @@ pub(crate) struct PeerView {
     /// 접속 상태 — 마지막 통신이 [`an_core::peers::ONLINE_WITHIN`] 안이면 온라인, 마지막 `Pong` · 거절 때 상대가 집중 중이었나(오프라인이면 거짓).
     online: bool,
     focus: bool,
-    /// 마지막으로 주고받기에 성공한 시각(유닉스 초, 없으면 `null`, #1c) — 화면 "n분 전 통신". 통신할 때만 바뀐다(주기 확인 없음).
+    /// 마지막으로 주고받기에 성공한 시각(유닉스 초, 없으면 `null`) — 화면 "n분 전 통신". 통신할 때만 바뀐다(주기 확인 없음).
     seen_at: Option<i64>,
 }
 
@@ -73,7 +73,7 @@ struct AddPeer {
     /// 상대 화면 "페어링 받기" 의 초대 코드 — 처음 보는 사이에만 필요.
     #[serde(default)]
     code: Option<String>,
-    /// 메신저로 받은 초대 텍스트 통째(P10) — 있으면 `addr` · `code` 대신 쓰고, 지문을 대조한 뒤 내 승인까지 한다.
+    /// 메신저로 받은 초대 텍스트 통째 — 있으면 `addr` · `code` 대신 쓰고, 지문을 대조한 뒤 내 승인까지 한다.
     #[serde(default)]
     invite: Option<String>,
 }
@@ -188,7 +188,7 @@ async fn add(State(node): State<Arc<Node>>, Json(req): Json<AddPeer>) -> Respons
         Ok(p) => p,
         Err(e) => return fail(e),
     };
-    // 코드가 맞아 초대 생성 측이 이미 승인했으면 붙인 사람의 승인으로 본다 — 초대 붙여넣기와 같다(D8 추가 수용: 직접 추가 경로 포함).
+    // 코드가 맞아 초대 생성 측이 이미 승인했으면 붙인 사람의 승인으로 본다 — 초대 붙여넣기와 같다(D8 — 직접 추가 경로 포함).
     // 아는 키의 다시 추가는 상대가 승인하지 않으므로(their_ok 거짓) 승인 대기로 남는다.
     if with_code && added.their_ok && !added.my_ok {
         return match node.approve(added.id).await {
@@ -287,8 +287,7 @@ async fn remove(State(node): State<Arc<Node>>, Path(id): Path<i64>) -> Response 
     }
 }
 
-/// 연결 확인 — 받은 `Pong` 은 접속 상태로 남는다(`GET /api/peers` 의 `online` · `focus`).
-/// 연결 확인(웹UI 시작 · 타일 고름 · 버튼) — 60초 안에 통신했으면 보내지 않는다(#1c).
+/// 연결 확인(웹UI 시작 · 타일 고름 · 버튼) — 60초 안에 통신했으면 보내지 않는다. 받은 `Pong` 은 접속 상태로 남는다(`GET /api/peers` 의 `online` · `focus`).
 async fn ping(State(node): State<Arc<Node>>, Path(id): Path<i64>) -> Response {
     match node.refresh(id, 60).await {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),

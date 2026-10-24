@@ -32,7 +32,7 @@
 - **웹UI 글꼴**(#1p): IBM Plex Sans KR 1.1.0 woff2 3종(SIL OFL 1.1 — `/fonts/LICENSE.txt`)을 실행 파일에 넣음(+1.25 MiB).
 - **빌드**: `cargo build --release --workspace` → Windows `target/release/coworkAgent.exe`(단일 파일). macOS universal 은
   `lipo` 절차(Phase 4, D25) — [archive/00.skeleton/plan.md](docs/archive/00.skeleton/plan.md) "macOS universal".
-- **웹UI 테스트**: `node --test` — 화면 로직 모듈(`crates/app/web/view.js`)만, Node 22+ 는 개발 PC 에만(제품 의존 아님).
+- **웹UI 테스트**: `node --test` — DOM 없는 화면 로직 모듈(`crates/app/web/js/logic/`)만, Node 22+ 는 개발 PC 에만(제품 의존 아님).
 - **테스트**: `cargo test --workspace` — **경고 baseline**: 없음 <!-- 외부 의존 경고만 여기 고정. 우리 코드 경고는 0 -->
 
 ## 모듈 Layer 구조
@@ -41,7 +41,7 @@
 |---|---|---|
 | base | `an-core`(`crates/core`) | 데이터 경로 · SQLite · 로그 회전 · 단일 인스턴스 · 실행 옵션 · 화면 설정 검증 |
 | comm | `an-net`(`crates/net`) | 신원 · RPK TLS · 피어 프로토콜 · 페어링 · 초대 |
-| domain | `an-agent`(`crates/agent`) | `claude -p` 실행기 · 대화 왕복 조율 · DB 대기열 |
+| domain | `an-agent`(`crates/agent`) | 에이전트 실행기(`claude -p` · `codex exec`) · 대화 왕복 조율 · DB 대기열 |
 | app | `coworkagent-app`(`crates/app`) | 웹UI 서버 · 내 정보 · 피어 · 에이전트 · 대화 API · 핸드오프 · AI 에이전트용 CLI · 트레이 · 브라우저 · 시작 순서 |
 
 <!-- 의존 방향 app → domain → comm → base 단방향. 비-Python 이라 `check_layers.py` 는 두지 않는다 — 이 절의
@@ -67,7 +67,7 @@
   `Authorization: Bearer`(알림 스트림만 `?t=`), 정적 자산은 공개(Host 검사), 모든 응답에 CSP(`frame-ancestors 'none'`) · `X-Frame-Options: DENY` ·
   `nosniff` · `no-referrer`. 위협 모델은 **한 PC = 한 사용자**(다른 로그인 사용자 · 같은 사용자 악성 프로세스는 밖).
 - **웹UI 다시 읽기**(D39 ② · #1u): 알림 스트림(`/api/events`)에 알림과 별개인 변경 신호 `event: change`(`{res: [{kind, id?}]}`)가 함께 흐른다 — 알림 설정 · 일시 중지 ·
-  집중과 무관. 웹UI 는 그 자원을 쓰는 로더만 다시 읽고(`view.js` `loadersFor`), 다시 읽기는 한 번에 하나(`OneAtATime`). 5초 전체 새로 고침은 그대로 — 화면 규칙 [web-ui](docs/manual/dev/web-ui.md) "알림".
+  집중과 무관. 웹UI 는 그 자원을 쓰는 로더만 다시 읽고(`js/logic/sync.js` `loadersFor`), 다시 읽기는 한 번에 하나(`OneAtATime`). 5초 전체 새로 고침은 그대로 — 화면 규칙 [web-ui](docs/manual/dev/web-ui.md) "알림".
 - **데이터 폴더 권한**(#1a): 주 인스턴스 시작마다 소유자 전용(Windows 보호 DACL 사용자 · SYSTEM / Unix 0700). OS 전용 암호화(DPAPI 등)로 키를
   감싸지 않는다 — Windows · macOS 가 같은 방식.
 - **원격 실패 · 프롬프트**(#1a): 상대에게는 정해진 실패 문구만(stderr · 경로 · DB 오류는 내 쪽만) · 실행 입력은 늘 구분자 틀 · 원격 대화 id 는 UUID 꼴만.

@@ -1,4 +1,4 @@
-//! 부모 툴 하위 메뉴용 CLI(#1n) — `start` · `open` · `stop`. 다른 CLI 와 달리 꺼져 있어도 동작한다(handshake 없음).
+//! 부모 툴 하위 메뉴용 CLI — `start` · `open` · `stop`. 다른 CLI 와 달리 꺼져 있어도 동작한다(handshake 없음).
 //! `start` · `open` 은 실행 파일을 인자 없이 트레이 없는 모드(감시 변수 [`PARENT_ENV`] = 부모 PID)로 띄우고 받을 준비를 기다린다.
 //! `stop` 은 로컬 API 종료(`POST /api/quit`) → 감시 · 앱 잠금이 풀릴 때까지 기다린다. 응답이 없으면 잡힌 잠금의 PID 를 강제 종료한다.
 use crate::cli::{

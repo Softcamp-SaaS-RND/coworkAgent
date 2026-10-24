@@ -1,4 +1,4 @@
-//! 데이터 루트를 이 PC 사용자 전용으로(1a A1). Windows = 보호 DACL(현재 사용자 · SYSTEM, 하위 상속) · Unix = 0700.
+//! 데이터 루트를 이 PC 사용자 전용으로. Windows = 보호 DACL(현재 사용자 · SYSTEM, 하위 상속) · Unix = 0700.
 //! 기존 하위 파일은 상속 항목만 가졌으면 OS 가 새 DACL 로 다시 계산한다.
 use std::io;
 use std::path::Path;

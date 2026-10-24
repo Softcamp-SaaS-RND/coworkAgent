@@ -1,4 +1,4 @@
-//! 보내는 쪽 보관(D7 실현 — #1c). 상대에게 가는 대화 프레임을 먼저 적고, 상대별 줄이 응답(ack)을 받을 때까지 다시 보낸다. 응답을 받으면 행을
+//! 보내는 쪽 보관. 상대에게 가는 대화 프레임을 먼저 적고, 상대별 줄이 응답(ack)을 받을 때까지 다시 보낸다. 응답을 받으면 행을
 //! 지우고, 한도를 넘으면 `failed` 로 남긴다(실패 보관). 프레임 내용은 모른다 — 직렬화된 JSON 그대로.
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
@@ -120,13 +120,13 @@ pub fn has_before(
     .exists(params![conv_id, id])
 }
 
-/// 그 상대에 닿지 않고 있나 — 다시 보내기를 기다리는 행(시도 1번 이상)이 있다.
-/// 그 대화에서 그 상대에게 지금 보내는 중(`inflight`)인 행이 있는가(#1x 적대적 평가 R2 — 이미 떠난 옛 글을 기록 지우기가 앞지르지 않게).
+/// 그 대화에서 그 상대에게 지금 보내는 중(`inflight`)인 행이 있는가(이미 떠난 옛 글을 기록 지우기가 앞지르지 않게).
 pub fn sending(conn: &Connection, conv_id: i64, peer_id: i64) -> rusqlite::Result<bool> {
     conn.prepare("SELECT 1 FROM outbox WHERE conv_id = ?1 AND peer_id = ?2 AND state = 'inflight'")?
         .exists([conv_id, peer_id])
 }
 
+/// 그 상대에 닿지 않고 있나 — 다시 보내기를 기다리는 행(시도 1번 이상)이 있다.
 pub fn failing(conn: &Connection, peer_id: i64) -> rusqlite::Result<bool> {
     conn.prepare("SELECT 1 FROM outbox WHERE peer_id = ?1 AND state = 'pending' AND tries > 0")?
         .exists([peer_id])
@@ -222,18 +222,19 @@ pub fn pending_peers(conn: &Connection) -> rusqlite::Result<Vec<i64>> {
         .collect()
 }
 
-/// 편집 · 삭제를 상대 창에 반영하는 행 종류(#1f) — 그 글을 실어 나르는 행이 아니다.
+/// 편집 · 삭제를 상대 창에 반영하는 행 종류 — 그 글을 실어 나르는 행이 아니다.
 pub const EDIT: &str = "msg_edit";
 pub const DELETE: &str = "msg_delete";
 
-/// 공유 대화 프레임(#1o) — 관람자 앞 `Share*` · 원 상대 앞 관람자 수(`ShareNotice`). 실어 나르는 글이 없고(`msg_id` NULL) 포기하지 않는다.
+/// 공유 대화 프레임 — 관람자 앞 `Share*` · 원 상대 앞 관람자 수(`ShareNotice`). 실어 나르는 글이 없다(`msg_id` NULL). 관람자에 한도만큼 닿지 않으면 행을 지우고 관람을 끝낸다(빼기 표시 `ShareEnd` 만 남긴다).
 pub const SHARE: &str = "share";
 pub const SHARE_NOTICE: &str = "share_notice";
 
-/// 대화 나가기(#1w) — 상대 앞 `Leave`. 대화를 지워도 남게 `conv_id` 없이 넣고(uuid 는 프레임에), 포기하지 않는다.
+/// 대화 나가기 — 상대 앞 `Leave`. 대화를 지워도 남게 `conv_id` 없이 넣고(uuid 는 프레임에), 포기하지 않는다.
 pub const LEAVE: &str = "leave";
 
-/// 대화 기록 모두 지우기(#1x) — 상대 앞 `Clear`. [`LEAVE`] 와 같게 `conv_id` 없이 · 포기하지 않는다.
+/// 대화 기록 모두 지우기 — 상대 앞 `Clear`. 그 대화의 줄(`conv_id`)에 넣어 뒤에 쓴 글이 앞지르지 못하게 하고, 나가기 · 삭제 때 떼어 남긴다.
+/// 포기하지 않는다.
 pub const CLEAR: &str = "clear";
 
 /// 그 글을 실어 나르는 가장 최근 행(보관 상태 표시 · 편집 가능 판정) — 편집 · 삭제 반영 행([`EDIT`] · [`DELETE`])은 뺀다.

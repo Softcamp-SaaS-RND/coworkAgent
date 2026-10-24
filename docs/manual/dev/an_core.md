@@ -6,6 +6,19 @@
 CLI 트랜잭션 표.
 OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
 
+`chat` 은 도메인별 하위 모듈(`crates/core/src/chat/`)로 나뉜다 — 공개 경로는 `an_core::chat::X` 그대로(`mod.rs` 의 `pub use`).
+
+| 하위 모듈 | 담는 것 |
+| --- | --- |
+| `chat/mod.rs` | 대화 · 글 타입 · 행 읽기 · 공통 SQL |
+| `chat/conversation.rs` | 대화 열기 · 찾기 · 목록 · 제목 · 별 · 읽음 · 나가기 · 지우기 · 비우기 · 요약 · 정보 |
+| `chat/message.rs` | 글 쓰기 · 읽기 · 상태 · 고치기 · 북마크 · 페이지 |
+| `chat/request.rs` | 요청 상태 · 메모 · 보관 · 개수 |
+| `chat/activity.rs` | 내 활동 |
+| `chat/search.rs` | 검색 |
+| `chat/relay.rs` | 자동 왕복 표시 |
+| `chat/session.rs` | 에이전트 세션 · 컨텍스트 · 실행 명령 · 실행 표시 |
+
 ## 공개 계약
 
 - `paths::Paths` — `legacy_root()` · `adopt_legacy(legacy)`(개명 전 이름 `LEGACY_APP_DIR` 의 데이터를 첫 실행 때 이어받음 — 옛 `instance.lock` 을 잡고 항목별로 옮김 · 옛 DB · 로그는 새 이름, 옛 앱 실행 중 · 두 루트 모두 데이터면 오류로 시작 멈춤, 다시 불러도 안전) · `default_root()`(Windows `%LOCALAPPDATA%\coworkAgent` · macOS `~/Library/Application Support/coworkAgent`) ·
