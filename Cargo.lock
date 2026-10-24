@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "an-agent"
-version = "1.3.5"
+version = "1.3.6"
 dependencies = [
  "an-core",
  "an-net",
@@ -25,7 +25,7 @@ dependencies = [
 
 [[package]]
 name = "an-core"
-version = "1.3.5"
+version = "1.3.6"
 dependencies = [
  "dirs",
  "log",
@@ -35,7 +35,7 @@ dependencies = [
 
 [[package]]
 name = "an-net"
-version = "1.3.5"
+version = "1.3.6"
 dependencies = [
  "an-core",
  "log",
@@ -276,7 +276,7 @@ dependencies = [
 
 [[package]]
 name = "coworkagent-app"
-version = "1.3.5"
+version = "1.3.6"
 dependencies = [
  "an-agent",
  "an-core",
