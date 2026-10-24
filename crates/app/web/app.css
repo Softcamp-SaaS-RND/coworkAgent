@@ -113,7 +113,7 @@
   --bubble-theirs-alpha: 0.0;
   --pv-scale: 1; /* 개요 미리보기 카드 폭 · 본문 높이 배수(#1z-6 — 스크립트가 `#home_preview` 에 1 ~ 2, 글자 크기는 그대로) */
   /* 개요 미리보기 전용(#1z-11 시안 C "편안함 · 종이 톤" — 절 15% 확대는 뺌, 결정 5) */
-  --pv-bg: #F5F3EE;
+  --pv-bg: #F9F7F3; /* 시안 C #F5F3EE 보다 연하게(사용자 지시 — Task 밖) */
   --pv-card: #FBFAF7;
   --pv-line: #E3DED5;
   --pv-line-soft: #EEEAE2;

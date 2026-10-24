@@ -291,6 +291,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app.css", ".pv-sec + .pv-sec { border-top: 1px solid var(--pv-line); }", "#1z-11 시안 C 절 사이 가는 선"),
     ("app.css", ".pv-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: var(--pv-list-pad); background: var(--pv-bg);", "#1z-11 시안 C 종이 바탕"),
     ("app.css", "  --pv-bg: var(--dark-pv-bg);", "#1z-11 다크 = 어두운 종이 톤"),
+    ("app.css", "  --pv-bg: #F9F7F3;", "개요 미리보기 바탕 더 연하게(사용자 지시 — Task 밖)"),
     ("app.css", ".pv-msg.side-theirs { align-self: flex-start; background: var(--pv-theirs); border: 1px solid var(--pv-theirs-line); }", "#1z-11 결정 3 상대 글 = 흰 바탕 + 가는 테두리"),
     ("app.css", ".pv-msg.agent, .pv-msg.running { background: var(--pv-agent-bg); border: 0; color: var(--pv-agent); }", "#1z-11 에이전트 · 실행 중 말풍선"),
     ("app.js", r#"c.unread ? el("span", { class: "pv-new", text: `새 글 ${c.unread}` }) : "","#, "#1z-11 결정 6 안 읽음 = 머리 \"새 글 n\""),
