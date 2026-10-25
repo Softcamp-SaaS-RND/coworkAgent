@@ -4,7 +4,7 @@ import { $, el, ico } from "./core/dom.js";
 import { state } from "./core/state.js";
 import { agentTile, rowTile } from "./core/widgets.js";
 import { convKindIcon } from "./logic/conv.js";
-import { colorOf } from "./logic/peer.js";
+import { displayName } from "./logic/format.js";
 import { searchGroups } from "./logic/search.js";
 import { Latest } from "./logic/sync.js";
 import { newChat } from "./compose.js";
@@ -26,7 +26,7 @@ export function showSearch(children) {
   $("search_box").hidden = false;
 }
 
-/// 검색 줄 앞 칩 — 메시지 = 말풍선 · 대화 = 유형 아이콘(둘 다 대화 유형 색, 공유 사본은 점선 빈 칩), 사람 = 그 타일, 에이전트 = 로봇(내 것 = 고른 아이콘 색 · 상대 것 = 그 상대 타일 색).
+/// 검색 줄 앞 칩 — 메시지 = 말풍선 · 대화 = 유형 아이콘(둘 다 무채), 사람 = 그 타일, 에이전트 = 로봇(내 것 = 고른 아이콘 색 · 상대 것 = 무채 네모).
 export function searchMark(m) {
   if (m.type === "msg" || m.type === "conv") {
     const n = m.type === "msg" ? "chat" : convKindIcon({ dir: m.kind });
@@ -34,10 +34,10 @@ export function searchMark(m) {
   }
   if (m.type === "peer") {
     const p = state.peers.find((x) => x.id === m.peer);
-    return rowTile(`small ${colorOf(m.peer)}`, p?.icon);
+    return rowTile("small", p?.icon, p && displayName(p));
   }
   if (m.owner === "me") return agentTile(state.agents.find((a) => a.name === m.name)?.color, "small");
-  return el("span", { class: `pa small ${colorOf(m.owner)}`, "aria-hidden": "true" }, ico("bot"));
+  return el("span", { class: "pa small", "aria-hidden": "true" }, el("span", { class: "tile-shape" }, ico("bot")));
 }
 
 export async function runSearch() {

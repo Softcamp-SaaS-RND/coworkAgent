@@ -6,7 +6,7 @@ import { kindChip, rowTile, speakerEl } from "./core/widgets.js";
 import { KIND_NAMES, convLabel, convMeta } from "./logic/conv.js";
 import { displayName, formatTime, stateText } from "./logic/format.js";
 import { PREVIEW_MSGS, previewBubbles, previewKey, previewSections, previewZoom } from "./logic/home.js";
-import { colorOf, peerSummary, presence } from "./logic/peer.js";
+import { peerSummary, presence } from "./logic/peer.js";
 import { groupPeers } from "./logic/rail.js";
 import { SESSION_NEW, route } from "./logic/shell.js";
 import { SendLatest } from "./logic/sync.js";
@@ -24,7 +24,7 @@ export function refreshHome() {
   if (route(location.hash).view === "home") renderHome();
 }
 
-/// 개요 = 상대별 요약 — 목록 보기는 머리(사용자 아이콘 · 이름 · 안 읽음 · 대기 요청) + 그 상대 대화(누르면 그 대화), 미리보기는 `renderHomePreview`.
+/// 개요 = 상대별 요약 — 목록 보기는 머리(상대 타일 · 이름 · 안 읽음 · 대기 요청) + 그 상대 대화(누르면 그 대화), 미리보기는 `renderHomePreview`.
 /// 페어링된 상대가 없고 대화도 없으면 처음 안내.
 export function renderHome() {
   const group = railGroupOf();
@@ -50,9 +50,9 @@ export function renderHome() {
   $("home_summary").replaceChildren(
     ...groups.map((g) => {
       const p = peerOf(g.peer);
-      // 머리 = 사용자 아이콘(그 상대 타일 모양 · 색) · 줄 = 에이전트 로봇 아이콘 — 사람 · 에이전트를 아이콘으로 가른다.
+      // 머리 = 그 상대 타일(머리글자 · 그림) · 줄 = 에이전트 로봇 아이콘 — 사람 · 에이전트를 가른다.
       const head = [
-        rowTile(`small ${colorOf(g.peer)}`, p?.icon),
+        rowTile("small", p?.icon, g.name),
         el("strong", { text: g.name }),
         p ? "" : el("span", { class: "hint", text: "페어링 해제" }),
         g.unread ? el("span", { class: "stat", text: `안 읽음 ${g.unread}` }) : "",

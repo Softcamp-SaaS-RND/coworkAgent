@@ -6,7 +6,6 @@ import { rowTile } from "../core/widgets.js";
 import { convLabel } from "../logic/conv.js";
 import { displayName } from "../logic/format.js";
 import { sortByPos } from "../logic/order.js";
-import { colorOf } from "../logic/peer.js";
 import { groupSettingsList } from "../logic/rail.js";
 import { changeGroup, openGroupNew, openGroupRename } from "../rail.js";
 import { convAct, convLine, convSig } from "./conn.js";
@@ -25,7 +24,7 @@ export function renderGroupPage(force) {
   const convs = sortByPos(state.convs);
   const list = groupSettingsList(state.groups, state.peers, convs, q, state.peerNames);
   $("group_list").replaceChildren(
-    ...list.groups.map((g) => mdRow("groups", g.id, rowTile(`small ${colorOf(g.id)}`, g.icon, true), g.name, `대화 ${g.count}`)),
+    ...list.groups.map((g) => mdRow("groups", g.id, rowTile("small", g.icon, g.name), g.name, `대화 ${g.count}`)),
     ...(list.groups.length ? [] : [el("li", { class: "hint md-none", text: q ? "맞는 그룹 없음" : "그룹 없음 — 그룹 추가" })]),
   );
   const g = state.groups.find((x) => x.id === pick.groups);
@@ -41,7 +40,7 @@ export function groupDetail(g, convs) {
   const say = (t) => ($("group_msg").textContent = t);
   const title = (c) => convLabel(c, state.peerNames).title;
   return [
-    mdHead("groups", rowTile(colorOf(g.id), g.icon, true), g.name, el("span", { class: "hint", text: `대화 ${inside.length}` })),
+    mdHead("groups", rowTile("", g.icon, g.name), g.name, el("span", { class: "hint", text: `대화 ${inside.length}` })),
     el(
       "div",
       { class: "md-body md-cols" },

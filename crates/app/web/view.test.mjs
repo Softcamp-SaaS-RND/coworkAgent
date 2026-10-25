@@ -82,7 +82,7 @@ import {
   PEER_WEEKS,
   peerGroups,
   peerSummary,
-  colorOf,
+  initialOf,
   waitingByPeer,
   tileUnread,
 } from "./js/logic/peer.js";
@@ -1328,10 +1328,11 @@ test("agent_color — 아이콘 색은 바꿨을 때만 보내고, 모르는 값
   assert.deepEqual(agentPatch({}, { folder: "f", prompt: "", color: "agent-tile" }), { folder: "f", prompt: "" }, "옛 응답 = 기본 색");
 });
 
-test("conv_kind_icon — 내 에이전트 응답 = 로봇, 내가 문의 = 사람, 공유 사본 = 없음(#1z-7)", () => {
+test("conv_kind_icon — 내 에이전트 응답 = 로봇, 내가 문의 = 사람, 공유 대화 = 눈, 모르는 유형 = 없음", () => {
   assert.equal(convKindIcon({ dir: "in" }), "bot");
   assert.equal(convKindIcon({ dir: "out" }), "user");
-  assert.equal(convKindIcon({ dir: "shared" }), null);
+  assert.equal(convKindIcon({ dir: "shared" }), "eye");
+  assert.equal(convKindIcon({ dir: "x" }), null);
 });
 
 test("messages_sig_req — 요청 상태 · 메모가 바뀌면 다시 그린다", () => {
@@ -1611,8 +1612,21 @@ test("membership_diff — 고른 것과 지금 소속의 차이(넣기 · 빼기
   assert.deepEqual(membershipDiff([], []), { add: [], remove: [] });
 });
 
-test("color_of — id 로 다섯 색(자리와 무관)", () => {
-  assert.deepEqual([1, 2, 5, 6, 10, 11].map(colorOf), ["peer-2", "peer-3", "peer-1", "peer-2", "peer-1", "peer-2"]);
+test("initial_of — 앞뒤 공백 뺀 첫 글자 묶음(서로게이트 쌍 · 결합 문자 · 풀어 쓴 한글) · 로마자 대문자 · 이름 없으면 빈 글자", () => {
+  const cases = [
+    ["김도윤", "김"],
+    ["  박서연 ", "박"],
+    ["tskim", "T"],
+    ["planner", "P"],
+    ["\u{20BB7}野", "\u{20BB7}"],
+    ["\u1100\u1175\u11B7도윤", "\u1100\u1175\u11B7"],
+    ["e\u0301mile", "E\u0301"],
+    ["", ""],
+    ["   ", ""],
+    [undefined, ""],
+    [null, ""],
+  ];
+  for (const [name, want] of cases) assert.equal(initialOf(name), want, JSON.stringify(name));
 });
 
 test("move_in_order — 대상 앞 · 뒤에 끼우기, 걸러 보인 이웃 기준이어도 전체 순서에서 · 그대로인 경우", () => {

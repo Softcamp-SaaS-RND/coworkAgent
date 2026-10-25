@@ -487,12 +487,15 @@ async fn delete_while_waiting_leaves_no_rows() {
     let at_b1 = by_uuid(&t.b, &c1.uuid).unwrap();
     // B 의 보낼 줄을 A 에 닿지 않게 — 생긴 행이 보내져 사라지지 않고 남아 보이게.
     readdr(&t.b, t.a_at_b, &closed_port());
+    // 글 상태(실행 중)는 실행기 호출보다 먼저 바뀐다 — 앞 실행이 실행기에 닿은 뒤에 센다.
+    common::eventually(|| t.b.runs.lock().unwrap().len() == 1).await;
     let runs = t.b.runs.lock().unwrap().len();
     t.b.chat.delete_conversation(at_b2.id).unwrap();
     // 앞 실행이 끝나 자리가 난 뒤.
     common::eventually(|| answered(&t.b, at_b1.id)).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(t.b.runs.lock().unwrap().len(), runs, "지운 대화의 글은 실행하지 않는다");
+    assert!(!t.b.runs.lock().unwrap().iter().any(|r| r.text.contains("기다림")), "지운 대화의 글은 실행기에 닿지 않는다");
     assert_eq!(count(&t.b, "SELECT count(*) FROM outbox WHERE conv_id = ?1", at_b2.id), 0);
     assert!(by_uuid(&t.b, &c2.uuid).is_none());
 }

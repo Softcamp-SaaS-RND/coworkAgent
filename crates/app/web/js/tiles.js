@@ -3,11 +3,11 @@ import { api } from "./core/api.js";
 import { $, act, button, el, ico } from "./core/dom.js";
 import { closeFloat, focusAfterFloat, openFloat } from "./core/float.js";
 import { state } from "./core/state.js";
-import { tileColor, tileFace } from "./core/widgets.js";
+import { tileFace } from "./core/widgets.js";
 import { groupNameError, stepTarget } from "./logic/rail.js";
 import { stepMove } from "./drag.js";
 import { refresh } from "./events.js";
-import { groupColor, loadGroups, loadPeers, pickGroup, pickTile } from "./rail.js";
+import { loadGroups, loadPeers, pickGroup, pickTile } from "./rail.js";
 import { fillPrefs } from "./settings/prefs.js";
 
 export const ICON_PX = 80; // 타일 40px × 2(고해상도 화면)
@@ -21,17 +21,17 @@ export function currentTile() {
   return { kind: "me", id: null };
 }
 
-/// 타일의 지금 값 — 이름(편집 칸) · 빈 이름일 때 보일 이름 · 그림 · 색.
+/// 타일의 지금 값 — 이름(편집 칸) · 빈 이름일 때 보일 이름 · 그림.
 export function tileNow(t) {
   if (t.kind === "group") {
     const g = state.groups.find((x) => x.id === t.id);
-    return g && { value: g.name, fallback: g.name, icon: g.icon, color: groupColor(g) };
+    return g && { value: g.name, fallback: g.name, icon: g.icon };
   }
   if (t.kind === "peer") {
     const p = state.peers.find((x) => x.id === t.id);
-    return p && { value: p.alias ?? "", fallback: p.name, icon: p.icon, color: tileColor(p) };
+    return p && { value: p.alias ?? "", fallback: p.name, icon: p.icon };
   }
-  return { value: state.settings.me_alias ?? "", fallback: "나", icon: state.settings.me_icon, color: "me" };
+  return { value: state.settings.me_alias ?? "", fallback: "나", icon: state.settings.me_icon };
 }
 
 export function openTileEdit() {
@@ -58,14 +58,14 @@ export function closeTileEdit() {
   $("tile_form").hidden = true;
 }
 
-/// 미리보기 — 고친 아이콘으로 그린 타일.
+/// 미리보기 — 고친 아이콘 · 이름(비면 원래 이름)으로 그린 타일, 이름 칸 입력마다 다시 그린다.
 export function renderTilePreview() {
   const now = tileNow(tileEdit);
   if (!now) return;
   const icon = tileEdit.icon !== undefined ? tileEdit.icon : now.icon;
   const box = $("tile_preview");
-  box.className = `rail-btn tile-preview ${now.color}`;
-  box.replaceChildren(tileFace(icon, tileEdit.kind === "group"));
+  box.className = tileEdit.kind === "me" ? "rail-btn tile-preview me" : "rail-btn tile-preview";
+  box.replaceChildren(tileFace(icon, $("tile_alias").value.trim() || now.fallback));
 }
 
 /// 고른 그림 → 가운데 정사각형을 잘라 `ICON_PX` 크기 PNG data URL(서버는 PNG data URL 만 받는다). 그림은 data URL 로 읽는다 — CSP

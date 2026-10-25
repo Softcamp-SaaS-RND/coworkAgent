@@ -6,7 +6,7 @@ import { iconButton, tileFace } from "./core/widgets.js";
 import { formatTime } from "./logic/format.js";
 import { PEER_PAGE, inboxRows, mergePage, pageMore, peerMsgsSig, peerSummaryRows } from "./logic/inbox.js";
 import { avatarKind, speakerIcon } from "./logic/message.js";
-import { colorOf } from "./logic/peer.js";
+import { initialOf } from "./logic/peer.js";
 import { BOOKMARK_SVG } from "./conv.js";
 import { foldEl, pairedIds } from "./sidebar.js";
 
@@ -70,7 +70,7 @@ export function renderPeerMessages() {
     ...heads.map((h) => {
       const p = state.peers.find((x) => x.id === h.peer);
       const head = [
-        el("span", { class: `row-tile ${colorOf(h.peer)}`, "aria-hidden": "true" }, tileFace(p?.icon)),
+        el("span", { class: "row-tile", "aria-hidden": "true" }, tileFace(p?.icon, h.name)),
         el("strong", { text: h.name }),
         el("span", { class: "stat", text: h.count }),
         el("span", { class: "peer-last", text: h.last }),
@@ -99,7 +99,7 @@ export function moreRow(h, shown) {
   return el("div", { class: "more-row" }, el("span", { text: m.text }), m.more ? button("더 보기", more, "small") : "");
 }
 
-/// 주고받은 메시지 행 — 원형 아바타(상대 사람 · 나 · 에이전트, `avatarKind`) · 메타(이름 · "사람" / 에이전트 이름 + "에이전트" 칩 · 대화 제목 ·
+/// 주고받은 메시지 행 — 아바타(상대 사람 · 나 = 머리글자 네모, 에이전트 = 로봇 — `avatarKind`) · 메타(이름 · "사람" / 에이전트 이름 + "에이전트" 칩 · 대화 제목 ·
 /// 요청 태그) · 본문 · 오른쪽 시각, 에이전트 줄은 옅은 에이전트 색 바탕. 오른쪽 끝 북마크 아이콘(말풍선과 같은 그림 · 동작).
 export function peerRowEls(rows) {
   if (!rows.length) return [el("li", { class: "hint", text: "주고받은 메시지 없음" })];
@@ -112,7 +112,7 @@ export function peerRowEls(rows) {
       el(
         "a",
         { href: r.href, class: "pm-link" },
-        el("span", { class: `pm-av pm-av-${kind}`, role: "img", "aria-label": s.label, title: s.label }, ico(s.icon)),
+        el("span", { class: `pm-av pm-av-${kind}`, role: "img", "aria-label": s.label, title: s.label }, kind === "agent" ? ico(s.icon) : initialOf(r.who)),
         el(
           "span",
           { class: "pm-text" },

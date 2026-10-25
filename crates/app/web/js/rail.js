@@ -3,10 +3,10 @@ import { api } from "./core/api.js";
 import { $, button, el, unchanged } from "./core/dom.js";
 import { closeFloat, focusAfterFloat, openFloat } from "./core/float.js";
 import { state } from "./core/state.js";
-import { tileColor, tileFace, tileName } from "./core/widgets.js";
+import { tileFace, tileName } from "./core/widgets.js";
 import { keepsConversation } from "./logic/conv.js";
 import { displayName } from "./logic/format.js";
-import { colorOf, presence, tileUnread } from "./logic/peer.js";
+import { presence, tileUnread } from "./logic/peer.js";
 import { RAIL_W, groupNameError, groupUnread, inGroup, railSize, tileKeeps } from "./logic/rail.js";
 import { route } from "./logic/shell.js";
 import { renderAgentsView } from "./agents.js";
@@ -65,14 +65,15 @@ export function renderRail() {
   ];
   if (unchanged($("rail"), JSON.stringify(sig))) return;
   const me = $("rail_me");
+  const meName = state.settings.me_alias || "나";
   me.setAttribute("aria-pressed", String(state.railPeer == null && state.railGroup == null));
-  me.setAttribute("aria-label", state.settings.me_alias || "나");
-  me.title = state.settings.me_alias || "나";
-  me.replaceChildren(tileFace(state.settings.me_icon), tileName(state.settings.me_alias || "나"));
+  me.setAttribute("aria-label", meName);
+  me.title = meName;
+  me.replaceChildren(tileFace(state.settings.me_icon, meName), tileName(meName));
   keepFocus($("rail"), () => drawRailTiles(paired, unread));
 }
 
-/// 상대 · 그룹 타일(모양 + 아래 이름).
+/// 상대 · 그룹 타일(머리글자 네모 · 그림 + 아래 이름).
 export function drawRailTiles(paired, unread) {
   $("rail_pcs").replaceChildren(
     ...paired.map((p) => {
@@ -82,7 +83,7 @@ export function drawRailTiles(paired, unread) {
         "button",
         {
           type: "button",
-          class: `rail-btn ${tileColor(p)}`,
+          class: "rail-btn",
           "aria-label": `${displayName(p)} · ${p.host}${n ? ` · 안 읽음 ${n}` : ""} · ${pr.text}`,
           "aria-pressed": String(state.railPeer === p.id),
           "data-peer": String(p.id),
@@ -93,14 +94,14 @@ export function drawRailTiles(paired, unread) {
           onclick: () => pickTile(p.id),
           oncontextmenu: (ev) => tileMenuEvent(ev, { kind: "peer", id: p.id }),
         },
-        tileFace(p.icon),
+        tileFace(p.icon, displayName(p)),
         tileName(displayName(p)),
         n ? el("span", { class: "rail-badge", "aria-hidden": "true", text: n > 99 ? "99+" : String(n) }) : "",
         el("span", { class: `rail-dot ${pr.key}`, "aria-hidden": "true" }),
       );
     }),
   );
-  // 그룹 타일 — 상대 타일 아래 구분선 뒤, 사람 + 그림자 모양 또는 그림, 배지 = 그룹 대화의 안 읽음 합.
+  // 그룹 타일 — 상대 타일 아래 구분선 뒤, 이름 머리글자 또는 그림, 배지 = 그룹 대화의 안 읽음 합.
   $("rail_sep").hidden = false;
   $("rail_groups").replaceChildren(
     ...state.groups.map((g) => {
@@ -109,7 +110,7 @@ export function drawRailTiles(paired, unread) {
         "button",
         {
           type: "button",
-          class: `rail-btn group ${groupColor(g)}`,
+          class: "rail-btn group",
           "data-group": String(g.id),
           "data-drag": "group",
           "data-id": String(g.id),
@@ -120,17 +121,12 @@ export function drawRailTiles(paired, unread) {
           onclick: () => pickGroup(g.id),
           oncontextmenu: (ev) => tileMenuEvent(ev, { kind: "group", id: g.id }),
         },
-        tileFace(g.icon, true),
+        tileFace(g.icon, g.name),
         tileName(g.name),
         n ? el("span", { class: "rail-badge", "aria-hidden": "true", text: n > 99 ? "99+" : String(n) }) : "",
       );
     }),
   );
-}
-
-/// 그룹 타일 색 — 그룹 id 로 다섯 색을 돈다.
-export function groupColor(g) {
-  return colorOf(g.id);
 }
 
 /// 레일 그룹 읽기 — 레일 · 사이드바 · 요약을 다시 그린다.

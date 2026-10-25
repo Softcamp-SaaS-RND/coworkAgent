@@ -135,8 +135,8 @@ export function convItem({ c, label }, section) {
     el(
       "a",
       { href: `#c/${c.id}`, title: label.sub, draggable: "false" },
-      // 한 줄: 유형 아이콘(내 에이전트 응답 = 로봇 · 내가 문의 = 사람, 공유 사본 = 없음) · 제목 · 실행 중 점 · 안 읽음 수 · 시각.
-      kindChip(c, "room-av agent-av"),
+      // 한 줄: 유형 아이콘(무채 — 응답 = 로봇 · 문의 = 사람 · 공유 = 눈) · 제목 · 실행 중 점 · 안 읽음 수 · 시각.
+      kindChip(c, "room-kind"),
       el(
         "span",
         { class: "room-text" },

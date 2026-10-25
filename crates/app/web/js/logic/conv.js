@@ -171,9 +171,9 @@ export function convInfoRows(info, dir, now = Date.now() / 1000) {
     );
   return rows;
 }
-/// 대화 유형 아이콘 — 내 에이전트가 답(`in`) = 로봇, 내가 문의(`out`) = 사람, 공유 사본 = 없음.
+/// 대화 유형 아이콘 — 내 에이전트가 답(`in`) = 로봇, 내가 문의(`out`) = 사람(사람 ↔ 에이전트 구분, 발화자 표시 `speakerIcon` 과 같은 그림), 공유 대화 = 눈.
 export function convKindIcon(conv) {
-  return conv.dir === "in" ? "bot" : conv.dir === "out" ? "user" : null;
+  return conv.dir === "in" ? "bot" : conv.dir === "out" ? "user" : conv.dir === "shared" ? "eye" : null;
 }
-/// 대화 유형 이름(제목 아이콘의 읽는 이름).
-export const KIND_NAMES = { in: "내 에이전트 응답", out: "내가 문의" };
+/// 대화 유형 이름(유형 아이콘의 읽는 이름 — 공유는 사이드바 절 머리와 같은 말).
+export const KIND_NAMES = { in: "내 에이전트 응답", out: "내가 문의", shared: "공유 대화" };

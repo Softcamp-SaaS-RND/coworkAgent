@@ -181,7 +181,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("index.html", r#"id="star_btn" class="star-btn" aria-label="즐겨찾기""#, "#1j 별"),
     ("app", "side-${side}", "#1j 말풍선"),
     ("app", r#"class: "day-break""#, "#1j 말풍선"),
-    ("app", r#"kindChip(c, "room-av agent-av"),"#, "#1z-2 대화 줄 아이콘 · #1z-7 유형별(로봇 · 사람)"),
+    ("app", r#"kindChip(c, "room-kind"),"#, "#1z-2 대화 줄 아이콘 · #1z-7 유형별 → #1z-13 U8 (가) 무채 선 아이콘"),
     ("app", "function starButton(", "#1j 별"),
     ("app", "function bookmarkButton(", "#1j 북마크"),
     ("app.css", ".msg.side-mine", "#1j 말풍선"),
@@ -199,7 +199,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app", r#"["위로 옮기기", -1],"#, "#1j 타일 메뉴"),
     ("app", r#"["아래로 옮기기", 1],"#, "#1j 타일 메뉴"),
     ("app", r#"class: "tile-name""#, "#1j 레일"),
-    ("app", "tileFace(g.icon, true)", "#1j 레일"),
+    ("app", "tileFace(g.icon, g.name)", "#1j 레일 → #1z-13 결정 12 그룹 = 이름 머리글자"),
     ("app", r#""이미지를 지웠습니다""#, "#1j 타일 메뉴"),
     ("app", r##"go("#");"##, "#1j 레일"),
     ("view", r#"{ key: "avail", label: "받기 가능", hint: "새 요청을 받습니다""#, "#1j 상태"),
@@ -261,7 +261,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app", "if (await changeGroup(g.id, [c.id], [])) say(`그룹 ${g.name} 에 넣었습니다`);", "#1w 넣기 = 복사(다른 그룹 · 원래 자리 그대로) · #1z-8 단추"),
     ("app.css", ".ico-exit {", "#1w 아이콘"),
     ("app", "{ class: `has-mark pm-row pm-${kind}` },", "#1z-2 주고받은 메시지 시안 Peer"),
-    ("app", "{ class: `pm-av pm-av-${kind}`, role: \"img\", \"aria-label\": s.label, title: s.label }", "#1z-2 원형 아바타"),
+    ("app", "{ class: `pm-av pm-av-${kind}`, role: \"img\", \"aria-label\": s.label, title: s.label }", "#1z-2 아바타 → #1z-13 결정 12 사람 = 머리글자 네모"),
     ("app", r#"goSettings("invite_accept", "invite_text")"#, "#1k 레일 + · #1r 수락 칸은 라우터가"),
     ("app", r#"mdHead("agents", agentTile(a.color), a.name,"#, "#1k 줄 타일 · #1z-7 로봇 타일(고른 색) · #1z-8 상세 머리"),
     ("view", "agent: conv.dir === \"in\" ? `내 ${conv.agent}` : conv.agent", "#1k 받은 대화만 '내 '"),
@@ -296,15 +296,13 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app", "new ResizeObserver(refitPreview).observe($(\"home_preview\"));", "#1z-5 창 폭이 바뀌면 열 수를 다시 잰다"),
     ("app", "  refitPreview();", "미리보기 크기로 카드 폭이 바뀌면 열 수를 다시 잰다(사용자 지시)"),
     ("app.css", ".pv-msg { flex: none; max-width: 88%; padding: var(--pv-msg-pad); border-radius: var(--radius-lg); font-size: var(--fs-xs); line-height: var(--pv-lh-msg);", "#1z-11 결정 3 말풍선 = 시안 C 12px · 줄간격 1.5(사용자 지시 축소 11px 개정)"),
-    ("app.css", ".pv-msg b { margin-right: var(--pv-gap-who); color: var(--pv-muted); font-size: var(--pv-fs-who); font-weight: var(--fw-medium); }", "#1z-11 결정 3 말풍선 이름 = 시안 C 10.5px"),
+    ("app.css", ".pv-msg b { margin-right: var(--pv-gap-who); color: var(--muted); font-size: var(--pv-fs-who); font-weight: var(--fw-medium); }", "#1z-11 결정 3 말풍선 이름 = 시안 C 10.5px → #1z-13 결정 6 공용 토큰"),
     ("app", "text: `+${s.more}개 더 보기` })", "#1z-5 넘치면 \"+n개\" · #1z-11 시안 C 글"),
-    ("app.css", ".pv-head strong { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pv-text); font-size: var(--fs-md); font-weight: var(--fw-medium); }", "#1z-11 결정 4 상대 이름 14px · 500"),
-    ("app.css", ".pv-sec + .pv-sec { border-top: 1px solid var(--pv-line); }", "#1z-11 시안 C 절 사이 가는 선"),
-    ("app.css", ".pv-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: var(--pv-list-pad); background: var(--pv-bg);", "#1z-11 시안 C 종이 바탕"),
-    ("app.css", "  --pv-bg: var(--dark-pv-bg);", "#1z-11 다크 = 어두운 종이 톤"),
-    ("app.css", "  --pv-bg: #F9F7F3;", "개요 미리보기 바탕 더 연하게(사용자 지시 — Task 밖)"),
-    ("app.css", ".pv-msg.side-theirs { align-self: flex-start; background: var(--pv-theirs); border: 1px solid var(--pv-theirs-line); }", "#1z-11 결정 3 상대 글 = 흰 바탕 + 가는 테두리"),
-    ("app.css", ".pv-msg.agent, .pv-msg.running { background: var(--pv-agent-bg); border: 0; color: var(--pv-agent); }", "#1z-11 에이전트 · 실행 중 말풍선"),
+    ("app.css", ".pv-head strong { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: var(--fs-md); font-weight: var(--fw-medium); }", "#1z-11 결정 4 상대 이름 14px · 500 → #1z-13 결정 6 공용 토큰"),
+    ("app.css", ".pv-sec + .pv-sec { border-top: 1px solid var(--border); }", "#1z-11 시안 C 절 사이 가는 선 → #1z-13 결정 6 공용 토큰"),
+    ("app.css", ".pv-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: var(--pv-list-pad); background: var(--surface);", "#1z-11 시안 C 종이 바탕 → #1z-13 결정 6 · 개정 ③ 메인과 같은 흰 면(사용자 '더 연하게' 그대로)"),
+    ("app.css", ".pv-msg.side-theirs { align-self: flex-start; background: var(--subtle); }", "#1z-11 결정 3 상대 글 = 흰 바탕 + 가는 테두리 → #1z-13 결정 12 사람 글 = 옅은 회색 면"),
+    ("app.css", ".pv-msg.agent, .pv-msg.running { background: var(--surface); border: 1px solid var(--border); color: var(--text); }", "#1z-11 에이전트 · 실행 중 말풍선 → #1z-13 결정 12 에이전트 글 = 흰 면 + 가는 선"),
     ("app", r#"c.unread ? el("span", { class: "pv-new", text: `새 글 ${c.unread}` }) : "","#, "#1z-11 결정 6 안 읽음 = 머리 \"새 글 n\""),
     ("app", r#"c.last_state ? el("span", { class: `pv-state st-${c.last_state}`, text: stateText(c.last_state) }) : "","#, "#1z-11 상태 = 바닥 점 + 글자"),
     ("app", r#"el("span", { class: "pv-pres" }, el("span", { class: `st-dot st-${pres.key}`, "aria-hidden": "true" }), el("span", { text: p ? pres.text : "페어링 해제" })),"#, "#1z-11 머리 접속 = 점 + 글"),
@@ -326,7 +324,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app.css", "#rail { user-select: none; }", "#1z-2 레일 끌기 글자 선택 없음"),
     ("app", "railSlot(same.map(mid), across ? e.clientX : e.clientY)", "#1z-2 레일 놓을 자리 = 가장 가까운 타일"),
     ("app", r#"el("span", { class: "home-agent" }, speakerEl("agent"),"#, "#1z-2 개요 줄 에이전트 아이콘"),
-    ("app", "rowTile(`small ${colorOf(g.peer)}`, p?.icon),", "#1z-2 개요 머리 사용자 아이콘"),
+    ("app", r#"rowTile("small", p?.icon, g.name),"#, "#1z-2 개요 머리 사용자 아이콘 → #1z-13 결정 12 머리글자"),
     // 1l — 아이콘 · 말풍선 색 · 설정 정리
     ("index.html", r#"<dialog id="me_dialog" class="me-dialog" aria-labelledby="me_title">"#, "#1l 사용자 정보"),
     ("index.html", r#"<span class="ico ico-user" aria-hidden="true"></span>사용자 정보</h2>"#, "#1l 사용자 정보"),
@@ -346,7 +344,6 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("index.html", r#"<strong><span class="ico ico-inbox" aria-hidden="true"></span>요청</strong>"#, "#1l 아이콘"),
     ("app", "function ico(name)", "#1l 아이콘"),
     ("app", r#"el("span", { class: "nav-label" }, ico(n.icon), el("span", { text: n.label }))"#, "#1l 아이콘"),
-    ("app", r#""data-tone": colorOf(conv.peer_id)"#, "#1l 말풍선 색"),
     ("app", r#"$("me_dialog").showModal();"#, "#1l 사용자 정보"),
     ("app", "function showAgentNew(on)", "#1l 에이전트 등록"),
     ("app", r#"if (r.sub === "agent_new") showAgentNew(true);"#, "#1l 에이전트 등록 · #1z-8 별칭 agent_new"),
@@ -355,9 +352,6 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app", r#"item(dir < 0 ? "arrow-up" : "arrow-down", text"#, "#1l 아이콘"),
     ("view", r#"{ key: "me", label: "사용자 정보", icon: "user" }"#, "#1l 사용자 정보 · #1r 아이콘"),
     ("app.css", ".ico { display: inline-block; flex: none; width: 16px; height: 16px;", "#1l 아이콘"),
-    ("app.css", r#".msg[data-tone="peer-1"] { --tone: var(--peer-1); }"#, "#1l 말풍선 색"),
-    ("app.css", ".msg.side-theirs .bubble::before { content: \"\"; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--tone, var(--wait)); opacity: var(--bubble-theirs-alpha);", "#1l 말풍선 색 · #1p 층 토큰"),
-    ("app.css", ".msg.side-mine .bubble { isolation: isolate; background: var(--surface); color: var(--text);", "#1l 말풍선 색"),
     ("app.css", ".help-wrap:hover .tip, .help:focus + .tip { display: block; }", "#1l 도움말"),
     // 1m — 컨텍스트
     ("index.html", r#"<button id="ctx_btn" type="button" class="tool-btn ctx-btn" aria-haspopup="menu""#, "#1m 컨텍스트"),
@@ -384,10 +378,6 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app", "foldEl(`convs:${s.peer}`", "#1o 목록 나눔"),
     ("app", "starredSections(", "#1o 즐겨찾기 그대로"),
     ("app", r#"$("rail").addEventListener("contextmenu", (ev) => ev.preventDefault());"#, "#1o 레일 우클릭"),
-    ("app.css", ".msg.side-mine .bubble { isolation: isolate; background: var(--surface); color: var(--text); }", "#1o 음영 · #1p 옆 띠 없음"),
-    ("app.css", ".msg.side-mine .bubble::before { content: \"\"; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--accent); opacity: var(--bubble-mine-alpha);", "#1o 음영 · #1p 층 토큰"),
-    ("app.css", ".msg.side-theirs .bubble { isolation: isolate; background: var(--surface); }", "#1o 음영 · #1p 옆 띠 없음"),
-    ("app.css", ".msg.side-mine .bubble a { color: var(--sent); }", "#1o 음영"),
     ("app.css", ".dir-head {", "#1o 목록 나눔"),
     ("index.html", r#"<p class="hint">이 PC 에서만 표시</p>"#, "#1o 설명 지우기"),
     ("app", r#"class: "small agent-new""#, "#1o 에이전트 새 대화"),
@@ -446,19 +436,11 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app", r#"}, ico(k.icon), el("span", { text: k.label })),"#, "#1r 내 활동 탭 아이콘"),
     // 1z-7 — 대화 유형 아이콘 · 색(시안 A), 내 에이전트 상세(한 격자 · 아이콘 색 · 닫기)
     ("index.html", r#"<span id="conv_kind" class="conv-kind kind-chip" role="img" hidden></span><strong id="conv_title"></strong>"#, "#1z-7 제목 앞 유형 아이콘"),
-    ("view", r#"return conv.dir === "in" ? "bot" : conv.dir === "out" ? "user" : null;"#, "#1z-7 응답 = 로봇 · 문의 = 사람 · 공유 = 없음"),
-    ("view", r#"export const KIND_NAMES = { in: "내 에이전트 응답", out: "내가 문의" };"#, "#1z-7 유형 이름"),
-    ("app.css", "  --conv-in: var(--agent);", "#1z-7 응답 = 청록"),
-    ("app.css", "  --conv-out: var(--accent);", "#1z-7 문의 = 파랑"),
-    ("app.css", "  --conv-shared: var(--faint);", "#1z-7 공유 = 회색"),
-    ("app.css", ".conv-head[data-kind] { border-bottom: 2px solid var(--kind); }", "#1z-7 머리 아래 선"),
-    ("app.css", ".side-list li[data-kind] { border-color: var(--kind); }", "#1z-7 사이드바 줄 테두리"),
-    ("app.css", ".pv-card.unseen { border-color: var(--pv-unseen); }", "#1z-7 안 읽음 표시 → #1z-11 결정 6 테두리 색(윤곽선 대신)"),
-    ("app.css", ".pv-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--pv-card); border: 1px solid var(--pv-line);", "#1z-7 카드 테두리 = 유형 색 → #1z-11 결정 6 한 색"),
-    ("app.css", r#".pv-card[data-kind="in"] .pv-kind { color: var(--pv-kind-in); }"#, "#1z-11 결정 6 유형 = 아이콘 색"),
+    ("view", r#"export const KIND_NAMES = { in: "내 에이전트 응답", out: "내가 문의", shared: "공유 대화" };"#, "#1z-7 유형 이름 · #1z-13 U8 공유도 아이콘(읽는 이름 = 사이드바 절 머리)"),
+    ("app.css", ".pv-card.unseen { border-color: var(--accent); }", "#1z-7 안 읽음 표시 → #1z-11 결정 6 테두리 색(윤곽선 대신) → #1z-13 결정 5 안 읽음 = 강조색"),
+    ("app.css", ".pv-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border);", "#1z-7 카드 테두리 = 유형 색 → #1z-11 결정 6 한 색 → #1z-13 결정 6 공용 토큰"),
     ("app", r#"{ class: c.unread ? "pv-card unseen" : "pv-card", href: `#c/${c.id}`, "aria-label": `${[KIND_NAMES[c.dir], title].filter(Boolean).join(" · ")} 대화 열기`, onclick: () => followFromHome(c), "data-kind": c.dir },"#, "#1z-7 미리보기 카드 유형 · R1 읽는 이름에 유형"),
     ("app", r#"el("span", { class: `${cls} kind-chip`, role: "img", "aria-label": KIND_NAMES[c.dir] }, ico(n))"#, "#1z-7 R1 유형 칩 읽는 이름"),
-    ("app.css", r#".conv-head[data-kind="shared"] { border-bottom-style: dashed; }"#, "#1z-7 R1 공유 머리는 아래 선만"),
     ("app", r#"{ class: meta.unread ? "unseen" : null, "data-kind": c.dir },"#, "#1z-7 개요 목록 줄 유형"),
     ("app", r#""data-section": section, "data-kind": c.dir },"#, "#1z-7 사이드바 줄 유형"),
     ("app", r#"el("span", { class: "label" }, lead("palette"), "아이콘 색"),"#, "#1z-7 아이콘 색 줄"),
@@ -496,7 +478,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app", "if (infoView.gen !== gen) return;", "#1z-10 R2 /info 마지막 읽기 응답만(A → B → A 역전 막음)"),
     ("view", r#"{ icon: "terminal", label: "실행 명령","#, "#1z-10 결정 2 라벨"),
     ("app", "if (!h.querySelector(\".ico\")) h.prepend(lead(n.icon));", "#1z-10 설정 화면 제목 = 메뉴 아이콘"),
-    ("app.css", ".set-head h2 .ico.lead { color: var(--accent); }", "#1z-10 설정 화면 제목 아이콘만 강조색"),
+    ("app.css", ".set-head h2 .ico.lead { color: var(--muted); }", "#1z-10 설정 화면 제목 아이콘만 강조색 → #1z-13 결정 5 강조색은 상태 · 선택에만"),
     ("app.css", ".ico.lead { margin-right: var(--sp-2);", "#1z-10 글자 앞 아이콘"),
     ("app.css", ".md-detail:has(> .md-pane:not([hidden]), > .md-head) { align-self: start; max-height: 100%; }", "#1z-10 결정 8 상세 상자 = 내용 높이"),
     ("app.css", ".md-body { flex: 0 1 auto; min-height: 0;", "#1z-10 결정 8 단추 줄 = 내용 바로 아래"),
@@ -506,6 +488,38 @@ const PRESENT: &[(&str, &str, &str)] = &[
         "trash","#, "#1z-10 에이전트 삭제 아이콘"),
     ("app", r#"button("이름 바꾸기", (ev) => openGroupRename(g.id, ev.currentTarget), undefined, "pencil"),"#, "#1z-10 그룹 이름 바꾸기 아이콘"),
     ("index.html", r#"<button type="submit" class="primary"><span class="ico ico-send lead" aria-hidden="true"></span>보내기</button>"#, "#1z-10 보내기 아이콘"),
+    // 1z-13 — Graphite: 흑연 주 단추 · 청록 강조 하나 · 카드 대신 선
+    ("app.css", "button.primary { border: 0; background: var(--primary); color: var(--on-primary);", "#1z-13 결정 5 · 12 주 단추 = 흑연"),
+    ("app.css", "  --accent: #2F6F6B;", "#1z-13 결정 12 강조 하나 = 차분한 청록"),
+    ("app.css", "  --border-strong: #D4D4D8;", "#1z-13 결정 12 단추 · 입력창 테두리"),
+    ("app.css", ".msg.agent .bubble { background: var(--surface); border-color: var(--border); }", "#1z-13 결정 12 에이전트 글 = 흰 면 + 가는 선"),
+    ("app.css", "border: 1px solid transparent; border-radius: var(--radius-sm) var(--radius-bubble) var(--radius-bubble) var(--radius-bubble); background: var(--subtle);", "#1z-13 결정 12 사람 글 = 옅은 회색 면"),
+    ("app.css", ".tag.agent-tag { background: transparent; color: var(--agent);", "#1z-13 P1 '에이전트' = 청록 작은 글자"),
+    ("app.css", ".ask-kind label > span {", "#1z-13 결정 3 질의 / 요청 줄바꿈 뿌리 — 안쪽 아이콘 span 에 칸 여백이 걸리지 않게"),
+    ("app.css", r#".seg button[aria-pressed="true"]::after"#, "#1z-13 결정 12 대화 보기 · 원문 보기 = 글자 탭 밑줄"),
+    ("index.html", "<span class=\"hint kbd-hint\"><kbd>Enter</kbd> 보내기 · <kbd>Shift+Enter</kbd> 줄바꿈</span>\n              <div class=\"ask-kind\"", "#1z-13 결정 3 입력창 바 = 서식 | 키 안내 · 질의 / 요청 · 보내기"),
+    ("index.html", r#"<button type="button" id="new_btn" aria-haspopup="menu""#, "#1z-13 결정 3 · 12 새로 만들기 = 테두리 단추(종 왼쪽 그대로)"),
+    ("index.html", r#"<div class="md-foot"><span class="grow"></span><button type="submit" form="invite_form" class="primary">"#, "#1z-13 P3 단추 줄 = 오른쪽 한 묶음"),
+    ("index.html", r#"<div id="agent_step2_foot" class="md-foot" hidden><span class="grow"></span><button type="submit" form="agent_form" class="primary">"#, "#1z-13 P3 단추 줄 = 오른쪽 한 묶음"),
+    ("app", r#"el("div", { class: "md-foot" }, el("span", { class: "grow" }), ...actions, button("닫기""#, "#1z-13 P3 단추 줄 = 오른쪽 한 묶음 · 순서 그대로"),
+    // 1z-13 stage 2 — 머리글자 네모(사람 아이콘 아바타 대신)
+    ("view", "export function initialOf(name) {", "#1z-13 결정 12 머리글자"),
+    ("app", "export function tileFace(icon, name) {", "#1z-13 결정 12 그림이 없으면 머리글자"),
+    ("app", "export function rowTile(cls, icon, name) {", "#1z-13 결정 12 줄 타일 = 머리글자"),
+    ("app", "tileFace(state.settings.me_icon, meName)", "#1z-13 결정 12 레일 나 = 표시 이름 머리글자"),
+    ("app", "tileFace(p.icon, displayName(p)),", "#1z-13 결정 12 레일 상대 = 표시 이름 머리글자"),
+    ("app", "else face.append(initialOf(name));", "#1z-13 결정 12 프로필 = 머리글자"),
+    ("app", r#"text: initialOf(who.slice(who.lastIndexOf("/") + 1))"#, "#1z-13 결정 12 상대 사람 아바타 = 머리글자"),
+    ("app", r#"kind === "agent" ? ico(s.icon) : initialOf(r.who)"#, "#1z-13 결정 12 · P1 주고받은 메시지 = 머리글자 · 에이전트 로봇"),
+    ("app.css", ".tile-shape { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border-radius: inherit; background: var(--avatar-bg); color: var(--avatar-text);", "#1z-13 결정 12 머리글자 네모 = 무채"),
+    ("app.css", ".rail-btn.me .tile-shape { background: var(--rail-2); color: var(--on-dark); }", "#1z-13 결정 12 레일 나 = 흑연 네모"),
+    ("app.css", ".avatar { flex: 0 0 24px; height: 24px; border-radius: var(--radius-sm);", "#1z-13 결정 12 메시지 아바타 = 24px 네모"),
+    // 1z-13 stage 3 — 대화 종류 = 무채 선 아이콘(U8 (가)), 대화 줄 납작하게
+    ("view", r#"return conv.dir === "in" ? "bot" : conv.dir === "out" ? "user" : conv.dir === "shared" ? "eye" : null;"#, "#1z-13 U8 (가) · 결정 16 응답 = 로봇 · 문의 = 사람(사람 ↔ 에이전트 구분) · 공유 = 눈"),
+    ("app.css", ".kind-chip { flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--faint); }", "#1z-13 U8 (가) 무채 선 아이콘(색 면 없음)"),
+    ("app.css", ".tile-form { flex-direction: column; flex-wrap: nowrap; align-items: stretch;", "#1z-13 stage2-2 타일 편집 이름 칸이 사이드바 밖으로 넘치지 않게 — 전역 form 의 wrap 은 줄 폭을 입력 기본 폭(266px)으로 잡는다"),
+    // 1z-13 stage 4 — 메뉴 안 켜기 항목 = 앱 스위치 모양(stage4-2)
+    ("app.css", r#".menu button[role="menuitemcheckbox"]::before { content: ""; position: absolute;"#, "#1z-13 stage4-2 메뉴 스위치 = 설정 화면 스위치와 같은 손잡이"),
 ];
 
 /// 없어야 하는 문구 — (파일 키, 문구, 출처). `a+b` 는 두 파일 모두에 없어야 한다.
@@ -543,10 +557,7 @@ const ABSENT: &[(&str, &str, &str)] = &[
     ("view", r#"key: "save""#, "#1j 북마크는 말풍선 아이콘 — 막대에 없음"),
     ("index.html+app+app.css", "focus_chip", "#1j 상단 집중 칩 없음"),
     ("index.html+app+app.css", "status-chip", "#1j 상단 집중 칩 없음"),
-    ("index.html+app+app.css", "tile-text", "#1j 글자 타일 없음"),
-    ("index.html+app+app.css", "tileText", "#1j 글자 타일 없음"),
     ("index.html+app+app.css", "renderFocusChip", "#1j 상단 집중 칩 없음"),
-    ("view", "export function tileText", "#1j 글자 타일 없음"),
     ("app.css", ".rail-btn.group { box-shadow", "#1j 겹친 카드 없음"),
     ("view", "집중 — 요청 받지 않음", "#1j 프로필 메뉴는 받기 가능 · 집중 고르기"),
     ("index.html", "주소 · 코드로 직접 추가", "#1j 직접 추가 칸 없음"),
@@ -709,8 +720,41 @@ const ABSENT: &[(&str, &str, &str)] = &[
     ("index.html", ">+ 사용자<", "#1z-10 + 글자 → 아이콘"),
     ("app.css", "--pv-zoom", "#1z-11 결정 5 절 15% 확대 없음"),
     ("app", "pv-unread", "#1z-11 결정 6 카드 바닥 안 읽음 배지 없음"),
-    ("app", "rowTile(`small ${colorOf(s.peer)}`, p?.icon),", "#1z-11 미리보기 머리 상대 타일 없음"),
+    ("app", r#"rowTile("small", p?.icon, s.name)"#, "#1z-11 미리보기 머리 상대 타일 없음(#1z-13 줄 타일 모양)"),
     ("app.css", ".pv-card.unseen { outline", "#1z-11 결정 6 안 읽음 윤곽선 없음"),
+    // 1z-13 — Graphite
+    ("index.html", r#"id="new_btn" class="primary""#, "#1z-13 결정 5 새로 만들기는 주 단추 색이 아니다"),
+    ("app.css", "--pv-bg", "#1z-13 결정 6 미리보기 = 공용 토큰(종이 톤 없음)"),
+    ("app.css", "--bubble-mine-alpha", "#1z-13 결정 12 말풍선 색 층 없음"),
+    ("app.css", "--bubble-theirs-alpha", "#1z-13 결정 12 말풍선 색 층 없음"),
+    ("app.css", ".msg[data-tone=", "#1z-13 결정 12 말풍선 색 층 없음"),
+    ("app.css", ".msg.side-mine .bubble a { color: var(--sent); }", "#1z-13 결정 12 내 글 링크 = 전역 링크 색"),
+    ("app.css", ".msg.side-theirs:not(.agent) .bubble { background: var(--recv-bg); }", "#1z-13 P4 상대 사람 글 주황 면 없음"),
+    ("app.css", ".ask-kind span { display: inline-flex;", "#1z-13 결정 3 안쪽 아이콘까지 칸 여백을 받던 선택자"),
+    ("app.css", "button:hover { border-color: var(--accent); }", "#1z-13 결정 5 올림은 강조색이 아니다"),
+    ("app.css", r#"#act_tabs a[data-kind="request"][aria-current="page"] { background"#, "#1z-13 P4 내 활동 탭 = 글자 탭(종류 색 바탕 없음)"),
+    // 1z-13 stage 2 — 사람 아이콘 아바타 · 타일 다섯 색 없음
+    ("index.html+app+app.css", "PERSON_SVG", "#1z-13 결정 2 · 12 사람 아이콘 아바타 없음"),
+    ("index.html+app+app.css", "GROUP_SVG", "#1z-13 결정 2 · 12 사람 아이콘 아바타 없음"),
+    ("index.html+app+app.css", "M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z", "#1z-13 결정 2 · 12 사람 모양 그림 없음"),
+    ("app+view", "colorOf", "#1z-13 결정 12 상대 · 그룹 타일 다섯 색 없음"),
+    ("app", "tileColor", "#1z-13 결정 12 상대 타일 색 없음"),
+    ("app", "groupColor", "#1z-13 결정 12 그룹 타일 색 없음"),
+    ("app", "data-tone", "#1z-13 결정 12 말풍선 색 층 없음"),
+    // 1z-13 stage 3 — 종류 색 · 테두리 · 점선 · 대화 줄 카드 없음
+    ("app.css", "--conv-", "#1z-13 U8 (가) 종류 색 토큰 없음"),
+    ("app.css", "var(--kind", "#1z-13 U8 (가) 종류 색 면 · 테두리 없음"),
+    ("app.css", r#"data-kind="shared""#, "#1z-13 U8 (가) 공유 점선 없음"),
+    ("app.css", ".room-av", "#1z-13 개정 ⑥ 종류 칩 원 없음"),
+    ("app.css", "#sidebar { background: var(--subtle); }", "#1z-13 개정 ② 사이드바 바탕 덮어쓰기 없음"),
+    ("app.css", ".side-list li:not(.hint) { background: var(--surface);", "#1z-13 개정 ② 대화 줄 카드 없음"),
+    ("app.css", "box-shadow: inset 0 0 0 1px var(--accent)", "#1z-13 P2 고른 줄 안쪽 테두리 없음"),
+    // 1z-13 stage 4 — 상태 색 띠 · 손잡이 없는 메뉴 알약 없음
+    ("app.css", "border-top: 3px solid var(--muted)", "#1z-13 stage4-1 요청 보드 칸 위 상태 색 띠 없음"),
+    ("app.css", "border-left: 4px solid var(--muted)", "#1z-13 stage4-1 요청 보드 카드 왼쪽 상태 색 띠 없음"),
+    ("app.css", "border-left: 3px solid var(--muted)", "#1z-13 stage4-1 의견 상자 왼쪽 상태 색 띠 없음"),
+    ("app.css", ".menu button[aria-checked]::after", "#1z-13 stage4-2 손잡이 없는 메뉴 알약 없음"),
+    ("app.css", ".avatar-face.st-offline { color:", "#1z-13 R1-1 연결 끊김 머리글자도 --avatar-text(상태는 점 — 흐린 글자 대비 4.16)"),
 ];
 
 /// 정확한 개수 — (파일 키, 문구, 개수, 출처).
@@ -787,14 +831,6 @@ fn token(name: &str) -> [f64; 3] {
     [0, 2, 4].map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap() as f64)
 }
 
-/// 말풍선 층 불투명도 토큰 `--bubble-{side}-alpha` 값(#1p).
-fn alpha(side: &str) -> f64 {
-    let key = format!("--bubble-{side}-alpha: ");
-    let at = CSS.find(&key).unwrap_or_else(|| panic!("토큰 {key}")) + key.len();
-    let v = &CSS[at..];
-    v[..v.find(';').unwrap()].parse().unwrap()
-}
-
 fn luminance(c: [f64; 3]) -> f64 {
     let lin = |v: f64| {
         let s = v / 255.0;
@@ -812,43 +848,45 @@ fn contrast(a: [f64; 3], b: [f64; 3]) -> f64 {
     (x.max(y) + 0.05) / (x.min(y) + 0.05)
 }
 
-/// 말풍선 글자 대비(#1o A3 · #1p) — 2 테마 × (내 글 1 + 상대 글 타일 5색) × 글자 3(본문 · muted · 링크) = 36 경우 모두 4.5:1 이상. 바탕 = 색 층 × 불투명도(토큰) + surface.
+/// 토큰 대비 — 두 테마 × 36 짝(글자 · 강조 글자 · 주 단추 · 배지 · 레일 · 머리글자 · 상태(올림 바탕 · 칩 바탕 포함) · 위험 · 범주 칩) + 에이전트 아이콘 6색 흰 아이콘 = 78 경우 모두 4.5:1 이상.
 #[test]
-fn bubble_contrast() {
-    let (mine, theirs) = (alpha("mine"), alpha("theirs"));
-    assert_eq!((mine, theirs), (0.1, 0.0), "#1p 시안 A 먹선 층 불투명도");
+fn token_contrast() {
+    const PAIRS: [(&str, &str); 36] = [
+        ("text", "bg"), ("text", "surface"), ("text", "surface-2"), ("text", "subtle"), ("text", "accent-soft"),
+        ("muted", "bg"), ("muted", "surface"), ("muted", "surface-2"), ("muted", "subtle"), ("muted", "accent-soft"),
+        ("faint", "bg"), ("faint", "surface"), ("faint", "surface-2"), ("faint", "subtle"),
+        ("accent", "bg"), ("accent", "surface"), ("accent", "surface-2"), ("accent", "subtle"), ("accent", "accent-soft"),
+        ("on-primary", "primary"), ("on-primary", "primary-hover"), ("on-accent", "accent"),
+        ("rail-text", "rail"), ("on-dark", "rail-2"), ("avatar-text", "avatar-bg"),
+        ("run", "surface"), ("ok", "surface"), ("danger", "surface"), ("danger", "danger-soft"), ("on-danger", "danger"),
+        // 컨텍스트 단추 경고 · 위험 글자 + 도구 단추 올림 바탕, 요청 태그(`.tag.ask`) 대기 · 완료 글자 + 칩 바탕
+        ("run", "surface-2"), ("danger", "surface-2"), ("run", "subtle"), ("ok", "subtle"),
+        ("sent", "sent-bg"), ("recv", "recv-bg"),
+    ];
     let mut cases = 0;
     for dark in [false, true] {
+        // `--on-dark` 는 두 테마가 같다(다크 짝 없음).
         let t = |name: &str| {
-            token(&if dark {
+            token(&if dark && name != "on-dark" {
                 format!("dark-{name}")
             } else {
                 name.to_string()
             })
         };
-        let surface = t("surface");
-        // (층 색, 불투명도, 링크 색) — 내 글 링크 = --sent(plan 해석 6), 상대 글 링크 = 전역 a(--accent).
-        let mut layers = vec![(t("accent"), mine, t("sent"), "내 글".to_string())];
-        layers.extend((1..=5).map(|i| {
-            (
-                token(&format!("peer-{i}")),
-                theirs,
-                t("accent"),
-                format!("상대 글 peer-{i}"),
-            )
-        }));
-        for (tone, alpha, link, who) in layers {
-            let bg = [0, 1, 2].map(|i| tone[i] * alpha + surface[i] * (1.0 - alpha));
-            for (what, fg) in [("본문", t("text")), ("muted", t("muted")), ("링크", link)] {
-                let r = contrast(fg, bg);
-                assert!(
-                    r >= 4.5,
-                    "{} {who} {what} {r:.2}",
-                    if dark { "다크" } else { "라이트" }
-                );
-                cases += 1;
-            }
+        for (fg, bg) in PAIRS {
+            let r = contrast(t(fg), t(bg));
+            assert!(
+                r >= 4.5,
+                "{} {fg} / {bg} {r:.2}",
+                if dark { "다크" } else { "라이트" }
+            );
+            cases += 1;
         }
     }
-    assert_eq!(cases, 36);
+    for tile in ["agent-tile", "peer-1", "peer-2", "peer-3", "peer-4", "peer-5"] {
+        let r = contrast(token("on-dark"), token(tile));
+        assert!(r >= 4.5, "에이전트 아이콘 {tile} {r:.2}");
+        cases += 1;
+    }
+    assert_eq!(cases, 78);
 }

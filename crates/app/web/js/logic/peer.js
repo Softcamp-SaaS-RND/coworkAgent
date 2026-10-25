@@ -76,9 +76,12 @@ export function peerSummary(convs, paired, peerNames, waiting = new Map()) {
   });
 }
 
-/// 타일 색 — id 로 다섯 색을 돈다(상대 · 그룹, 자리를 옮겨도 색이 따라간다).
-export function colorOf(id) {
-  return `peer-${(((id % 5) + 5) % 5) + 1}`;
+const GRAPHEMES = new Intl.Segmenter();
+
+/// 머리글자 — 앞뒤 공백을 뺀 첫 글자 묶음(서로게이트 쌍 · 결합 문자 · 풀어 쓴 한글도 한 글자), 로마자는 대문자. 이름이 없으면 빈 글자.
+export function initialOf(name) {
+  const [first] = GRAPHEMES.segment(String(name ?? "").trim());
+  return first ? first.segment.toUpperCase() : "";
 }
 
 /// 레일 배지 — 상대별 안 읽음 합(0 인 상대는 없다).

@@ -63,7 +63,7 @@ export function agentPatch(a, form) {
   if (form.skip_git !== undefined && !!form.skip_git !== (a.skip_git ?? true)) body.skip_git = !!form.skip_git; // Codex Git 확인 건너뜀
   return body;
 }
-/// 에이전트 아이콘 색(an_core `agents::ICON_COLORS` 와 같다, 타일 색 클래스 이름 그대로). 첫 값이 기본.
+/// 에이전트 아이콘 색(an_core `agents::ICON_COLORS` 와 같다, `app.css` 색 클래스 이름 그대로). 첫 값이 기본.
 export const AGENT_COLORS = ["agent-tile", "peer-1", "peer-2", "peer-3", "peer-4", "peer-5"];
 /// 저장된 색 → 그릴 색(옛 응답 · 모르는 값 = 기본).
 export function agentColor(c) {

@@ -28,7 +28,7 @@
       </div>
       <div class="top-actions">
         <div class="menu-wrap">
-          <button type="button" id="new_btn" class="primary" aria-haspopup="menu" aria-expanded="false" aria-controls="new_menu"><span class="ico ico-plus lead" aria-hidden="true"></span>새로 만들기</button>
+          <button type="button" id="new_btn" aria-haspopup="menu" aria-expanded="false" aria-controls="new_menu"><span class="ico ico-plus lead" aria-hidden="true"></span>새로 만들기</button>
           <div id="new_menu" class="popover menu" role="menu" hidden></div>
         </div>
         <a id="bell" class="icon-btn bell" href="#activity" title="알림" aria-label="내 활동">
@@ -251,11 +251,11 @@
                 <button type="button" class="icon-btn" data-md="list" title="목록" aria-label="목록">•≡</button>
                 <button type="button" class="icon-btn mono" data-md="code" title="코드" aria-label="코드">&lt;/&gt;</button>
               </div>
+              <span class="hint kbd-hint"><kbd>Enter</kbd> 보내기 · <kbd>Shift+Enter</kbd> 줄바꿈</span>
               <div class="ask-kind" role="radiogroup" aria-label="메시지 종류">
                 <label><input type="radio" name="ask" value="query" checked><span><span class="ico ico-help lead" aria-hidden="true"></span>질의</span></label>
                 <label><input type="radio" name="ask" value="request"><span><span class="ico ico-inbox lead" aria-hidden="true"></span>요청</span></label>
               </div>
-              <span class="hint kbd-hint"><kbd>Enter</kbd> 보내기 · <kbd>Shift+Enter</kbd> 줄바꿈</span>
               <button type="submit" class="primary"><span class="ico ico-send lead" aria-hidden="true"></span>보내기</button>
             </div>
           </form>
@@ -319,7 +319,7 @@
                     <span class="label-row"><label for="invite_text">초대 수락</label><span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_accept">?</button><span id="tip_accept" class="tip" role="tooltip">받은 초대를 통째로 붙여 넣으세요. 지문이 맞는 상대에게만 연결합니다.</span></span></span>
                     <textarea id="invite_text" rows="5" placeholder="받은 초대를 붙여 넣으세요"></textarea>
                   </form>
-                  <div class="md-foot"><button type="submit" form="invite_form" class="primary"><span class="ico ico-check lead" aria-hidden="true"></span>수락</button><span class="grow"></span><button type="button" data-close="conn"><span class="ico ico-x lead" aria-hidden="true"></span>닫기</button></div>
+                  <div class="md-foot"><span class="grow"></span><button type="submit" form="invite_form" class="primary"><span class="ico ico-check lead" aria-hidden="true"></span>수락</button><button type="button" data-close="conn"><span class="ico ico-x lead" aria-hidden="true"></span>닫기</button></div>
                 </section>
                 <section id="conn_user" class="md-pane" hidden></section>
               </div>
@@ -394,7 +394,7 @@
                     <div class="field"><textarea id="agent_prompt" rows="4"></textarea></div>
                   </form>
                   <div id="agent_step1_foot" class="md-foot"><span class="hint">도구를 고르면 다음 단계로 넘어갑니다</span><span class="grow"></span><button type="button" id="agent_engine_cancel"><span class="ico ico-x lead" aria-hidden="true"></span>취소</button></div>
-                  <div id="agent_step2_foot" class="md-foot" hidden><button type="submit" form="agent_form" class="primary"><span class="ico ico-check lead" aria-hidden="true"></span>등록</button><span class="grow"></span><button type="button" id="agent_new_cancel"><span class="ico ico-x lead" aria-hidden="true"></span>취소</button></div>
+                  <div id="agent_step2_foot" class="md-foot" hidden><span class="grow"></span><button type="submit" form="agent_form" class="primary"><span class="ico ico-check lead" aria-hidden="true"></span>등록</button><button type="button" id="agent_new_cancel"><span class="ico ico-x lead" aria-hidden="true"></span>취소</button></div>
                 </section>
                 <section id="agent_pane" class="md-pane" hidden></section>
               </div>

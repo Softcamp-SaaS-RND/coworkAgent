@@ -2,9 +2,8 @@
 import { api, appOffline } from "./core/api.js";
 import { $, act, el, ico } from "./core/dom.js";
 import { state } from "./core/state.js";
-import { PERSON_SVG } from "./core/widgets.js";
 import { keepsConversation } from "./logic/conv.js";
-import { presenceOf } from "./logic/peer.js";
+import { initialOf, presenceOf } from "./logic/peer.js";
 import { RAIL_W, groupLeaves, inGroup, peerLeaves } from "./logic/rail.js";
 import { portText } from "./logic/settings.js";
 import { newMenu, profileMenu, route } from "./logic/shell.js";
@@ -67,7 +66,7 @@ export function go(hash) {
   else location.hash = hash;
 }
 
-/// 상단 바 프로필 단추 — 알약: 아이콘(없으면 사람 모양) + 표시 이름 한 번. 아이콘 테두리 · 점 = 내 상태(`presenceOf` — 받기 가능 초록 · 집중 주황 ·
+/// 상단 바 프로필 단추 — 24px 네모 얼굴(그림, 없으면 머리글자) + 표시 이름 한 번. 얼굴 점 = 내 상태(`presenceOf` — 받기 가능 초록 · 집중 주황 ·
 /// 앱과 연결 끊김 붉음). 이름은 CSS 로 약 12자에서 말줄임, 전체는 `title`.
 export function renderAvatar() {
   const name = state.settings.me_alias || "나";
@@ -75,7 +74,7 @@ export function renderAvatar() {
   const st = presenceOf(state.settings.focus, appOffline());
   const face = el("span", { class: `avatar-face st-${st.key}`, "aria-hidden": "true" });
   if (icon) face.append(el("img", { src: icon, alt: "" }));
-  else face.innerHTML = PERSON_SVG;
+  else face.append(initialOf(name));
   face.append(el("span", { class: "avatar-dot" }));
   $("avatar_btn").title = `${name} · ${st.text}`;
   $("avatar_btn").setAttribute("aria-label", `프로필 · ${st.text}`);

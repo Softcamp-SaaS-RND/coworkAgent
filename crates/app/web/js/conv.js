@@ -10,7 +10,7 @@ import { KIND_NAMES, MAX_OBSERVERS, convClosed, convKindIcon, convLabel, shareCa
 import { dayBreaks, displayName, formatDuration, formatTime, josa, shortName, stateText } from "./logic/format.js";
 import { htmlSrcdoc, isHtmlDoc, markdownBlocks } from "./logic/markdown.js";
 import { editedTag, enterSends, lastRun, messageActions, messagesSigOf, noteCount, outboxText, progressText, refusedText, relayText } from "./logic/message.js";
-import { colorOf, presence } from "./logic/peer.js";
+import { initialOf, presence } from "./logic/peer.js";
 import { askTag, reqFeedback } from "./logic/request.js";
 import { closeMention } from "./composer.js";
 import { convEndForm } from "./conv-menu.js";
@@ -219,16 +219,16 @@ export function messageEl(conv, m) {
   }
   meta.push(editedTag(m));
   const acts = messageActions(m, !!convClosed(conv));
-  // 말풍선 — 이 PC 쪽 글은 오른쪽(이름은 "나" 가 아닐 때만), 상대 쪽은 왼쪽에 아바타 · 이름.
-  // 에이전트 글은 어느 쪽이든 로봇 아바타 + "에이전트" 칩(말풍선 모양은 `app.css` `.msg.agent`).
+  // 말풍선 — 이 PC 쪽 글은 오른쪽(이름은 "나" 가 아닐 때만), 상대 쪽은 왼쪽에 머리글자 아바타 · 이름.
+  // 에이전트 글은 어느 쪽이든 로봇 아바타 + "에이전트" 글자(말풍선 모양은 `app.css` `.msg.agent`).
   const agent = m.author === "agent";
   const article = el(
     "article",
-    { class: `msg ${m.author} side-${side}`, "data-msg": String(m.id), "data-tone": colorOf(conv.peer_id), tabindex: "0" },
+    { class: `msg ${m.author} side-${side}`, "data-msg": String(m.id), tabindex: "0" },
     agent
       ? el("div", { class: "avatar agent-av", "aria-hidden": "true" }, ico("bot"))
       : side === "theirs"
-        ? el("div", { class: `avatar ${colorOf(conv.peer_id)}`, "aria-hidden": "true", text: who.slice(who.lastIndexOf("/") + 1).slice(0, 1) })
+        ? el("div", { class: "avatar", "aria-hidden": "true", text: initialOf(who.slice(who.lastIndexOf("/") + 1)) })
         : "",
     el(
       "div",
@@ -355,8 +355,8 @@ export function feedbackEl(conv, m) {
   const who = f.side === "mine" ? "나" : shortName(state.peerNames.get(conv.peer_id));
   return el(
     "article",
-    { class: `msg feedback side-${f.side}`, "data-feedback": String(m.id), "data-tone": colorOf(conv.peer_id) },
-    f.side === "theirs" ? el("div", { class: `avatar ${colorOf(conv.peer_id)}`, "aria-hidden": "true", text: who.slice(0, 1) }) : "",
+    { class: `msg feedback side-${f.side}`, "data-feedback": String(m.id) },
+    f.side === "theirs" ? el("div", { class: "avatar", "aria-hidden": "true", text: initialOf(who) }) : "",
     el(
       "div",
       { class: "msg-body" },

@@ -15,7 +15,7 @@ export const ACT_KINDS = [
 
 /// 내 활동 항목(`GET /api/activity`) → 목록 행. 라벨 = "받은 요청 · {상태}" · "받은 답"(실패한 답이면 "· 실패") · "내 요청 · {상태}"(+ 메모) ·
 /// "실패"(내 쪽) · "상대 반영 실패 · {사유}". 글은 누르면 그 글로(`#c/{대화}/m/{글}`), 상대 반영 실패는 그 대화로. 대화를 모르는 항목 · 모르는 종류는 뺀다.
-/// `key` = 다시 그려도 같은 항목을 가리키는 열쇠. `tone` = 종류 색(거르기 탭 `ACT_KINDS.kind` 와 같은 이름): `request` · `mine` · `answer` ·
+/// `key` = 다시 그려도 같은 항목을 가리키는 열쇠. `tone` = 칩 class(거르기 탭 `ACT_KINDS.kind` 와 같은 이름, 색은 `failed` 만): `request` · `mine` · `answer` ·
 /// `failed`(내 쪽 실패 · 실패한 답 · 상대 반영 실패).
 export function activityRows(items, peerNames) {
   return items

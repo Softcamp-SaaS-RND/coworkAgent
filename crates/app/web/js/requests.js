@@ -94,7 +94,7 @@ export function boardEls(cols) {
   return cols.map((c) => {
     const cards = c.rows.map((r) => {
       const li = requestItem(r);
-      li.classList.add("board-card", `req-${r.stateKey}`);
+      li.classList.add("board-card");
       if (r.moves.length) {
         const grip = el("button", { type: "button", class: "drag-handle", title: "끌어서 상태 옮기기", "aria-label": "끌어서 상태 옮기기" }, ico("grip"));
         grip.addEventListener("pointerdown", (ev) => boardGrab(ev, li, r));
@@ -104,7 +104,7 @@ export function boardEls(cols) {
     });
     return el(
       "section",
-      { class: `board-col req-${c.key}`, "data-col": c.key },
+      { class: "board-col", "data-col": c.key },
       el("h3", { class: "board-head" }, el("span", { class: `tag ask req-${c.key}`, text: c.name }), el("b", { class: "count", text: String(c.count) })),
       el("ol", { class: "rows" }, ...(cards.length ? cards : [el("li", { class: "hint", text: "없음" })])),
     );
@@ -220,8 +220,8 @@ export function requestItem(r) {
     if (r.archive) bar.append(textButton(r.archive.label, null, () => archiveReq(r.id, r.archive.key === "archive")));
     li.append(bar);
   }
-  // 의견(받은 쪽이 상태와 함께 남긴 글, 여러 줄) — 회색 힌트가 아니라 상태 색 띠의 상자로 읽히게.
-  if (r.note) li.append(el("div", { class: `req-feedback req-${r.stateKey}` }, el("span", { class: "req-feedback-label", text: "의견" }), el("span", { text: r.note })));
+  // 의견(받은 쪽이 상태와 함께 남긴 글, 여러 줄) — 회색 힌트가 아니라 면 있는 상자로 읽히게.
+  if (r.note) li.append(el("div", { class: "req-feedback" }, el("span", { class: "req-feedback-label", text: "의견" }), el("span", { text: r.note })));
   if (r.resend) li.append(el("div", { class: "req-notes" }, el("span", { class: "hint", text: "요청자에게 알리지 못함" })));
   return li;
 }

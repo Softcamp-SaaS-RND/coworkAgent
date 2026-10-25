@@ -66,9 +66,9 @@ export function mdHead(page, face, name, sub = "") {
   );
 }
 
-/// 상세 아래 단추 줄 — 작업들 · 끝에 닫기.
+/// 상세 아래 단추 줄 — 오른쪽 끝 한 묶음(작업들 · 닫기).
 export function mdFoot(page, ...actions) {
-  return el("div", { class: "md-foot" }, ...actions, el("span", { class: "grow" }), button("닫기", () => closePick(page), undefined, "x"));
+  return el("div", { class: "md-foot" }, el("span", { class: "grow" }), ...actions, button("닫기", () => closePick(page), undefined, "x"));
 }
 
 // 정적 상세(초대 생성 · 초대 수락 · 새 에이전트)의 ✕ · 닫기.
