@@ -3,20 +3,20 @@
 > **세션 시작 시 가장 먼저 읽는 문서.** 지금 어디서 재개하는지의 단일 좌표 — **매번 덮어쓴다.**
 > Task 목록은 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`), 미조치는 [overview/ledger.md](docs/overview/ledger.md).
 
-- **갱신**: 2026-10-26 / 브랜치 `main`(로컬) — **#1z-15 종결**(타일 편집 '아이콘 색' · 상대 · 그룹 처음 무작위 색 · 머리글자 네모 색 · 그룹 세 사람 그림 · 스키마 29 · 1.4.0 그대로)
+- **갱신**: 2026-10-26 / 브랜치 `main`(로컬) — **#1z-15 개정 ② 종결**(받은 대화 직접 쓰기 · 받은 쪽 글은 자동 왕복 안 멈춤 · '자동 왕복 거절 중' · 세부정보 '자동 왕복' 절 없앰 · 요청 3건 + 더보기 · 1.4.0 그대로)
 
 ## 현재 작업
 
-없음 — #1z-15 종결([report](docs/archive/1z-15.tile-color/report.md)). #1z-13 · #1z-14 · #1z-15 는 main 로컬 반영 — push · 릴리스 안 함, 1.4.0 으로 함께 내보낸다.
+없음 — #1z-15 종결 · 개정 ② 종결([report](docs/archive/1z-15.tile-color/report.md) — main squash `42d8038`). #1z-13 · #1z-14 · #1z-15 는 main 로컬 반영 — push · 릴리스 안 함, 1.4.0 으로 함께 내보낸다.
 
-- **직전에 한 일**: #1z-15 stage 1 ~ 3 · 평가(check_gates 8/8 · codex 라운드 1/2 지적 2 고침 · 2/2 지적 0) · 종결 · main squash · 1.4.0 릴리스 빌드 다시(서명 전).
-- **중단 지점**: 선생님 확인 — 1.4.0 push · 서명 · gh release(#1z-15 report-1). 릴리스 빌드 = `target\rel-1.4.0\coworkAgent.exe`(서명 전 · 파일 버전 1.4.0 · SHA-256 F6301A14… — `target\release` 는 실행 중 인스턴스가 잡아 `deps` 링크 산출물을 복사).
+- **직전에 한 일**: #1z-15 개정 ②(stage 4 · 결정 10 ~ 16) — check_gates 12/12, codex 연장 없음(사용자 답), main squash `42d8038`, 1.4.0 릴리스 빌드 다시(서명 전).
+- **중단 지점**: 선생님 확인 — 1.4.0 push · 서명 · gh release(#1z-15 report-1). 릴리스 빌드 = `target\rel-1.4.0\coworkAgent.exe`(서명 전 · 파일 버전 1.4.0 · SHA-256 DA1255D1… — `target\release` 는 실행 중 인스턴스가 잡아 `deps` 링크 산출물을 복사).
 - **작업 메모**: 원 작업 폴더의 다른 세션 미커밋(PRODUCT.md 2줄 · 미추적 docs/tech/security-posture.md)은 건드리지 않음 — main 반영 때 stash → pop.
   Task 는 worktree 없이 브랜치만. `cargo fmt` 쓰지 않음, `cargo test` 는 PowerShell 로. 다른 디버그 인스턴스가 `target\debug` 를 잡으면 `CARGO_TARGET_DIR=target\t15`.
 
 ## 다음 행동
 
-1. 선생님 확인 뒤: origin push(squash) · 1.4.0 릴리스 서명 · gh release. #1z-15 report-1 ~ report-3 · #1z-14 report-2 · report-3 · #1z-13 report-1 · report-2.
+1. 선생님 확인 뒤: origin push(squash) · 1.4.0 릴리스 서명 · gh release. #1z-15 report-1 · report-2 · #1z-14 report-2 · report-3 · #1z-13 report-1 · report-2.
 2. 다음 Task 후보: stage2-1 접힘 저장 실패(masterPlan 후보 — 사용자 "별도 Task").
    선생님 결정: #1z-12 report "사용자 결정 필요" — report-6 · stage3-1 · stage3-2 · stage4-1 ~ stage4-9 · report-2 · report-3 · report-4.
 3. 19 acceptance TC(사용자) · macOS zip 첨부 — 이전 STATE 그대로.
