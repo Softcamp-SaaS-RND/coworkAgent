@@ -10,8 +10,8 @@
 없음 — #1z-14 종결([report](docs/archive/1z-14.ui-touchup/report.md)). #1z-13(`c9459a3`) · #1z-14 는 main 로컬 반영 — push · 릴리스 안 함, 1.4.0 으로 함께 내보낸다.
 
 - **직전에 한 일**: #1z-14 stage 1 · 2 · 평가(check_gates 8/8 · codex 라운드 1/2 approve 지적 0) · 종결 · main squash · 1.4.0 릴리스 빌드(서명 전).
-- **중단 지점**: 선생님 확인 — 1.4.0 push · 서명 · gh release(#1z-14 report-1). 릴리스 빌드 = `targetel-1.4.0\coworkAgent.exe`(서명 전 · 파일 버전 1.4.0 ·
-  SHA-256 3E911C33… — `targetelease\coworkAgent.exe` 는 실행 중인 1.3.7 인스턴스가 잡고 있어 덮지 못함, 같은 링크 산출물 `deps\` 를 복사).
+- **중단 지점**: 선생님 확인 — 1.4.0 push · 서명 · gh release(#1z-14 report-1). 릴리스 빌드 = `target\rel-1.4.0\coworkAgent.exe`(서명 전 · 파일 버전 1.4.0 ·
+  SHA-256 3E911C33… — `target\release\coworkAgent.exe` 는 실행 중인 1.3.7 인스턴스가 잡고 있어 덮지 못함, 같은 링크 산출물 `deps\` 를 복사).
 - **작업 메모**: 원 작업 폴더의 다른 세션 미커밋(PRODUCT.md 2줄 · 미추적 docs/tech/security-posture.md)은 건드리지 않음 — main 반영 때 stash → pop.
   Task 는 worktree 없이 브랜치만. `cargo fmt` 쓰지 않음, `cargo test` 는 PowerShell 로.
 
