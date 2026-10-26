@@ -21,6 +21,9 @@
   --on-accent: #FFFFFF;
   --agent: var(--accent); /* 에이전트 표시 = 강조색(다크는 --accent 를 따라감) */
   --agent-soft: var(--accent-soft); /* 에이전트 줄 바탕(주고받은 메시지) */
+  --card-agent: var(--agent); /* 개요 미리보기 카드 테두리 — 에이전트 대화 · 내 대화 · 관전 대화 */
+  --card-mine: #46607E;
+  --card-watch: var(--run);
   --run: #80632B;
   --ok: #3F7A52;
   --danger: #A34A40;
@@ -80,6 +83,7 @@
   --dark-rail-text: #A1A1AA;
   --dark-avatar-bg: #2E2E33;
   --dark-avatar-text: #D4D4D8;
+  --dark-card-mine: #8AA4C4;
   --dark-on-danger: #170C0B;
   --dark-shadow: 0 4px 16px rgba(0,0,0,.45);
   --dark-shadow-sm: 0 1px 3px rgba(0,0,0,.35);
@@ -166,6 +170,7 @@
   --rail-text: var(--dark-rail-text);
   --avatar-bg: var(--dark-avatar-bg);
   --avatar-text: var(--dark-avatar-text);
+  --card-mine: var(--dark-card-mine);
   --on-danger: var(--dark-on-danger);
   --shadow: var(--dark-shadow);
   --shadow-sm: var(--dark-shadow-sm);
@@ -814,11 +819,12 @@ details { margin: var(--sp-2) 0; }
 .menu button[role="menuitemradio"][aria-checked="true"]::after { content: "✓"; }
 .menu button .kbd { margin-left: auto; color: var(--faint); }
 .menu button:disabled { opacity: 0.45; }
-/* 레일 — 머리글자 네모(그림이면 그림) + 아래 이름, 레일 72px */
+/* 레일 — 무채 네모 + 사람 · 사람 그룹 모양(그림이면 그림) + 아래 이름, 레일 72px */
 #rail { gap: var(--sp-6); padding-bottom: var(--sp-5); }
 #rail_pcs, .rail-groups { gap: var(--sp-6); }
 .tile-shape { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border-radius: inherit; background: var(--avatar-bg); color: var(--avatar-text); font-weight: var(--fw-medium); line-height: 1; }
 .rail-btn.me .tile-shape { background: var(--rail-2); color: var(--on-dark); }
+.rail-btn .tile-shape svg { width: 22px; height: 22px; }
 .rail-btn .tile-name { position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); width: 64px; font-size: var(--fs-xs); font-weight: var(--fw-medium); line-height: var(--lh-tight); color: var(--rail-text); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .rail-btn[aria-pressed="true"] .tile-name { color: var(--on-dark); font-weight: var(--fw-bold); }
 /* 작은 타일(설정 "타일 크기") — 아이콘 24px + 오른쪽 이름 한 줄, 레일이 넓어진다(넓은 화면만) */
@@ -827,6 +833,7 @@ details { margin: var(--sp-2) 0; }
   #app.tile-small #rail { align-items: flex-start; gap: var(--sp-3); padding-left: var(--sp-4); }
   #app.tile-small #rail_pcs, #app.tile-small .rail-groups { gap: var(--sp-3); }
   #app.tile-small .rail-btn { width: 24px; height: 24px; font-size: var(--fs-xs); }
+  #app.tile-small .rail-btn .tile-shape svg { width: 16px; height: 16px; }
   #app.tile-small .rail-btn .tile-name { top: 50%; left: calc(100% + var(--sp-2)); transform: translateY(-50%); width: calc(var(--rail-w-small) - 64px); font-size: var(--fs-sm); text-align: left; pointer-events: auto; }
   #app.tile-small .rail-dot { width: 8px; height: 8px; }
   #app.tile-small .rail-badge { top: -8px; right: -10px; }
@@ -995,7 +1002,11 @@ details { margin: var(--sp-2) 0; }
 .pv-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(256px * var(--pv-scale))), 1fr)); gap: var(--pv-gap-cards); }
 .pv-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--pv-radius); color: var(--text); text-decoration: none; }
 .pv-card:hover { color: var(--text); border-color: var(--border-strong); }
-.pv-card.unseen { border-color: var(--accent); } /* 안 읽음 = 테두리 색 + 머리 "새 글 n" */
+/* 테두리 = 대화 유형 색(올려도 그대로), 안 읽음 = 같은 색 2px + 머리 "새 글 n" */
+.pv-card[data-kind="in"] { border-color: var(--card-agent); }
+.pv-card[data-kind="out"] { border-color: var(--card-mine); }
+.pv-card[data-kind="shared"] { border-color: var(--card-watch); }
+.pv-card.unseen { border-width: 2px; }
 .pv-card-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--pv-card-head-pad); }
 .pv-card-head strong { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--pv-fs-title); font-weight: var(--fw-medium); }
 /* 유형 = 머리 제목 앞 무채 선 아이콘(`.kind-chip`) */

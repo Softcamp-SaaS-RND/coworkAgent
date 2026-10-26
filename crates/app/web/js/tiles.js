@@ -3,7 +3,7 @@ import { api } from "./core/api.js";
 import { $, act, button, el, ico } from "./core/dom.js";
 import { closeFloat, focusAfterFloat, openFloat } from "./core/float.js";
 import { state } from "./core/state.js";
-import { tileFace } from "./core/widgets.js";
+import { railFace } from "./core/widgets.js";
 import { groupNameError, stepTarget } from "./logic/rail.js";
 import { stepMove } from "./drag.js";
 import { refresh } from "./events.js";
@@ -58,14 +58,14 @@ export function closeTileEdit() {
   $("tile_form").hidden = true;
 }
 
-/// 미리보기 — 고친 아이콘 · 이름(비면 원래 이름)으로 그린 타일, 이름 칸 입력마다 다시 그린다.
+/// 미리보기 — 고친 그림으로 그린 레일 타일(그림이 없으면 사람 · 사람 그룹 모양), 이름 칸 입력마다 다시 그린다.
 export function renderTilePreview() {
   const now = tileNow(tileEdit);
   if (!now) return;
   const icon = tileEdit.icon !== undefined ? tileEdit.icon : now.icon;
   const box = $("tile_preview");
   box.className = tileEdit.kind === "me" ? "rail-btn tile-preview me" : "rail-btn tile-preview";
-  box.replaceChildren(tileFace(icon, $("tile_alias").value.trim() || now.fallback));
+  box.replaceChildren(railFace(icon, tileEdit.kind === "group"));
 }
 
 /// 고른 그림 → 가운데 정사각형을 잘라 `ICON_PX` 크기 PNG data URL(서버는 PNG data URL 만 받는다). 그림은 data URL 로 읽는다 — CSP

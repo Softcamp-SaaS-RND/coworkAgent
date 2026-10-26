@@ -83,8 +83,8 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
   `reply_text` 초점. 첫 메시지(질의 · 요청)는 그 대화 입력창에서 — 상대 PC 는 그때 대화를 받고, 자동 왕복 대화는 그 첫 메시지부터 왕복한다(첫 메시지가 요청이면 400).
 - **접이식 들여쓰기**(#1r · #1s): `.peer-fold` 몸(머리 아닌 자식)을 한 단(`--sp-5`, ≤ 720px `--sp-3`) 들인다 — 겹친 절(요청 개요 받은/보낸 → 상대 → 행)은 단계마다
   한 단씩. 세로 안내선은 없다(행 구분선과 격자처럼 보여 #1s 에서 지움).
-- **PC 레일**: '나' · 상대 타일 · "+ 사용자" · 구분선 · 그룹 타일 · "+ 그룹" · 설정(#1z-2 — "+" 두 단추 = `.rail-btn.add-text` 글자, 보이는 글자가 접근 이름 · `title` 로 동작). 안 읽음 배지 · 접속 점. 타일 = 이름 머리글자 네모(#1z-13 결정 12 — `tileFace` · `js/logic/peer.js` `initialOf`,
-  무채 · '나' = 흑연, 그림이 있으면 그림 — 옛 A안 사람 · 사람 + 그림자 아이콘 · 다섯 색 없음), 이름은 타일 아래. 타일 순서 설정(사용자 → 그룹 기본 · 그룹 → 사용자, 이 PC). 레일 어디서든 브라우저 우클릭 메뉴는 뜨지 않는다.
+- **PC 레일**: '나' · 상대 타일 · "+ 사용자" · 구분선 · 그룹 타일 · "+ 그룹" · 설정(#1z-2 — "+" 두 단추 = `.rail-btn.add-text` 글자, 보이는 글자가 접근 이름 · `title` 로 동작). 안 읽음 배지 · 접속 점. 타일 = 무채 네모 + 사람(나 · 상대) · 사람 + 그림자(그룹) 모양(#1z-14 결정 1 — `railFace` · `PERSON_SVG` · `GROUP_SVG`,
+  '나' = 흑연, 그림이 있으면 그림, 다섯 색 없음 — 레일과 타일 편집 미리보기만, 목록 줄 타일 · 프로필 · 말풍선은 머리글자 `tileFace`), 이름은 타일 아래. 타일 순서 설정(사용자 → 그룹 기본 · 그룹 → 사용자, 이 PC). 레일 어디서든 브라우저 우클릭 메뉴는 뜨지 않는다.
   레일 "+ 사용자" = 설정 '연결' 화면 · 상세에 초대 수락 폼 · 초점(#1z-8). 타일 크기(#1x — 설정 `ui_tile_size` `small` 기본 · `normal`, `applyTileSize` →
   `#app.tile-small`): 작게 = 아이콘 24px + 오른쪽 이름 한 줄 말줄임 · 레일 폭 `--rail-w-small`, 넓은 화면(721px 이상)만. 설정 표시 = "크게"(`normal`) · "작게"(`small`).
   레일 끌기(#1z): 레일 오른쪽 손잡이 `#rail_resize`(separator, `aria-valuenow` 72 · 168) — 끄는 동안 `#app` 의 `--rail-w` = 끈 폭(`js/logic/rail.js` `RAIL_W` 64 ~ 240) ·
@@ -98,15 +98,15 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
   미리보기(#1z-5 2차 시안 A → #1z-11 시안 C "편안함 · 종이 톤" → #1z-13 결정 6 공용 토큰) `#home_preview.pv-list` = 흰 면(`--surface`) 위 상대마다 절 `.pv-sec`(세로 목록, 절 사이 가는 선 `.pv-sec + .pv-sec`,
   넘치면 세로 스크롤) — 머리 `.pv-head` = 이름(14px `--fs-md` · `--fw-medium`) · 접속 `.pv-pres`(점 6px + 글) · "· 대화 n" · "· 안 읽음 n" · "· 대기 요청 n"(`stat pv-wait`) — 상대 타일 없음
   (머리 "{이름} 개요 →" 없음 — 그 상대 개요는 "+n개 더 보기" · 레일 타일), 절 확대 없음(#1z-11 결정 5 — 2026-10-22 "15% 확대" 개정). 대화 없는 상대 = 머리 한 줄 + 오른쪽 "세션 생성"(점선 상자 없음).
-  카드 `.pv-card` = `--surface` · 1px `--border` · `--pv-radius` 10px · 그림자 없음, 머리 = 유형 아이콘(`.pv-kind` — 무채 선 아이콘, #1z-13 결정 15) ·
-  제목 13.5px 500 · 안 읽음이면 `.pv-new` "새 글 n"(+ 카드 테두리 `--accent`), 바닥 = `.pv-who` "{에이전트} · {시각}" · `.pv-state st-{상태}`(점 + `stateText`). 말풍선 = 12px · 줄간격 1.5 ·
+  카드 `.pv-card` = `--surface` · 1px 테두리 = 대화 유형 색(#1z-14 결정 2 — `data-kind` 에이전트 대화 `in` `--card-agent` 청록 · 내 대화 `out` `--card-mine` 남색 · 관전 `shared` `--card-watch` 호박, 올려도 그대로) · `--pv-radius` 10px · 그림자 없음, 머리 = 유형 아이콘(`.pv-kind` — 무채 선 아이콘, #1z-13 결정 15) ·
+  제목 13.5px 500 · 안 읽음이면 `.pv-new` "새 글 n"(+ 카드 테두리 2px), 바닥 = `.pv-who` "{에이전트} · {시각}" · `.pv-state st-{상태}`(점 + `stateText`). 말풍선 = 12px · 줄간격 1.5 ·
   사람 글 `--subtle` 면 · 에이전트 · 실행 중 `--surface` + 1px `--border` · 오류 `--danger-soft`. 색 = 공용 토큰(#1z-13 결정 6 — 종이 톤 없음), 크기 · 간격 = 첫 `:root` 의 `--pv-*`,
   "미리보기 크기"(#1z-6 — 머리 `#home_zoom_pick` `select#ui_home_zoom`, 미리보기에서만, 설정 `ui_home_zoom` 100 기본 · 125 · 150 · 175 · 200 — 축소 없음, 시작할 때 · 고를 때만 적용(`PREFS` 밖 — 다른 설정 저장의 늦은 응답이 되돌리지 않게, #1z-6 R1), 저장은 `SendLatest`(한 번에 하나 · 마지막 값, R2) ·
   `applyHomeZoom` 이 `js/logic/home.js` `previewZoom` 의 `--pv-scale`(1 ~ 2 — 카드 최소 폭 · 본문 높이 · "+n개" 칸 높이)을 `#home_preview` 에. 말풍선은 모든 크기 2줄(#1z-8 — 사용자 "2줄까지만", #1z-6 의 줄 수 늘림 개정 ·
   `--pv-lines` 없음) — 줄 자르기는 안쪽 `.pv-text`(말풍선 안쪽 여백에 다음 줄이 비치지 않게), 말풍선 사이 `--sp-3`.
   글자 크기는 그대로, 카드가 넓어져 한 줄 열 수가 바뀌면 `refitPreview` 가 다시 잰다 — 사용자 지시로 #1z-6 의 "카드 폭 · 열 수 그대로" 를 바꿈),
   카드 격자 `.pv-cards` = `repeat(auto-fill, minmax(min(100%, calc(256px * var(--pv-scale))), 1fr))`(#1z-11 시안 C 256px — 열 수는 그만큼 준다).
-  카드 `a.pv-card`(누르면 그 대화, 안 읽음이면 `.unseen` 테두리 색) = 머리(유형 아이콘 · 제목 · "새 글 n" `.pv-new`) · 본문 `.pv-body`(높이 `132px × --pv-scale`) = 마지막 글 `PREVIEW_MSGS`(12)를 `previewBubbles`
+  카드 `a.pv-card`(누르면 그 대화, 안 읽음이면 `.unseen` 유형 색 테두리 2px) = 머리(유형 아이콘 · 제목 · "새 글 n" `.pv-new`) · 본문 `.pv-body`(높이 `132px × --pv-scale`) = 마지막 글 `PREVIEW_MSGS`(12)를 `previewBubbles`
   말풍선 `.pv-msg`(#1z-11 결정 3 — 글자 `--fs-xs` 12px · 줄간격 `--pv-lh-msg` 1.5 · 이름 `--pv-fs-who` 10.5px, 쪽 `bubbleSide`, 이름 `authorLabel`, 글자만, `agent` · `running` · `error` 색, 요약 글 뺌 — 최신이 아래, 넘친 옛 글은 위에서 잘림) ·
   바닥 `.pv-card-foot`("{에이전트} · {시각}" `.pv-who` · 상태 `.pv-state` 점 + 글자). `previewSections(groups, single, cols)` = 카드 최근 활동 순(`last_at` 큰 것부터), '나' · 그룹은 한 줄 —
   넘치면 `cols - 1` 개 + 끝 칸 `.pv-more` "+n개 더 보기"(`pickTile(상대)` = 그 상대 개요), 상대 타일은 전부. 한 줄 열 수 `state.previewCols` = 그린 `.pv-cards` 의 실제 트랙 수
@@ -142,7 +142,7 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
   상대 사람 일반 메시지 · 자동 왕복 기록은 없다.
 - **대화 목록**(`js/logic/conv.js` `convListParts`): 나 · 상대 타일 = 내 대화(`dir = out` — 내가 연 대화 · 내가 연 자동 왕복)만 머리 없이 + "공유 대화"(`shared`) 머리,
   에이전트 대화(`in`)는 '나' 의 사이드바 '에이전트 응답' 화면으로(#1v · #1z-2). 그룹 타일 = "내 대화" · "에이전트 대화" · "공유 대화" 머리(제목 · 개수, 하나뿐이면 머리 없음). 끌어 옮기기는 묶음 안에서만(행 `data-section = {절}:{dir}`), 즐겨찾기 화면은 나누지 않는다. 대화 줄 = 한 줄(#1z-2) — 손잡이(#1x — `button.drag-handle` · `ico-grip`, `aria-label`
-  "{제목} 옮기기", `convGrab`) · 유형 아이콘(`kindChip` — `.room-kind.kind-chip`, #1z-13 결정 15 · 16: 내 에이전트 응답 `in` = 로봇 · 내가 문의 `out` = 사람 · 공유 `shared` = 눈, 무채) · 제목 · 실행 중 점(`spin` — 상태 이름이 접근 이름) · 안 읽음 수 · 시각. 미리보기 · 발화자 · 칩 줄 없음(줄 `title` = 상대 · 에이전트). 줄에 ☆ 없음 — 즐겨찾기는 대화 머리 `star_btn` 만(#1x). 메뉴 '즐겨찾기' = 그 범위 ★ 대화(★ = 대화 하나, 북마크 = 글 하나 — 내부 이름 `saved`).
+  "{제목} 옮기기", `convGrab`) · 유형 아이콘(`kindChip` — `.room-kind.kind-chip`, #1z-13 결정 15 · 16: 내 에이전트 응답 `in` = 로봇 · 내가 문의 `out` = 사람 · 공유 `shared` = 눈, 무채 — 사이드바 대화 목록 `renderConvList` 의 내 대화 줄은 아이콘 없음, #1z-14 결정 4 — `convItem` 셋째 인자 `sideList`, 즐겨찾기 · 에이전트 응답 화면은 그대로) · 제목 · 실행 중 점(`spin` — 상태 이름이 접근 이름) · 안 읽음 수 · 시각. 미리보기 · 발화자 · 칩 줄 없음(줄 `title` = 상대 · 에이전트). 줄에 ☆ 없음 — 즐겨찾기는 대화 머리 `star_btn` 만(#1x). 메뉴 '즐겨찾기' = 그 범위 ★ 대화(★ = 대화 하나, 북마크 = 글 하나 — 내부 이름 `saved`).
 - **대화**: 메신저형 말풍선 — 이 PC 쪽 글(`mine`) 오른쪽 · 상대 사람 · 에이전트 글 왼쪽(아바타 — 24px 무채 네모, 사람 = 머리글자 · 에이전트 = 로봇 — · 이름 · 시각) · 날짜 구분선 · 최대 폭 대화 칸의 90%, 방향
   라벨(사람 → 에이전트 · 보냄 · 받음) 없음. 말풍선(#1z-13 결정 12) = 사람 글(내 글 · 상대 사람 글) `--subtle` 면 · 에이전트 글 `--surface` 면 + 1px `--border`, 색 층 없음 ·
   옆 띠 없음(#1p), 둥글기 `--radius-bubble` 8px, 글자 대비 = `ux_literals` `token_contrast`(아래 디자인 토큰 — 78 경우 4.5:1 이상), 링크 = 전역 `a`. 뷰어 = markdown · HTML 은 sandbox iframe.
@@ -293,7 +293,8 @@ S9 · D27 · D29.
 | 주 단추 | `--primary` · `--primary-hover` · `--on-primary` | 흑연 #27272A / 밝은 회색 #E4E4E7 — `button.primary` 만, 강조색이 아니다(#1z-13 결정 5) |
 | 강조 | `--accent` · `--accent-hover` · `--accent-soft` · `--on-accent` | 차분한 청록 #2F6F6B / #6FB3AC(채도 45 % 아래) — 링크 · 선택 · 초점 · 안 읽음 · 스위치에만 |
 | 상태 | `--agent` · `--run` · `--ok` · `--danger` · `--wait` · `--on-danger` | `--agent` = 강조색을 따름, 그 밖 차분한 색 — 글자/바탕 4.5:1 이상 |
-| 레일 · 머리글자 | `--rail` · `--rail-2` · `--rail-text` · `--on-dark` · `--avatar-bg` · `--avatar-text` · `--rail-w-small` | 레일은 두 테마 모두 어둡다, 머리글자 네모 = 무채(#E4E4E7 · #3F3F46 / #2E2E33 · #D4D4D8) · '나' = `--rail-2` + `--on-dark`, 작은 타일 레일 폭 168px(#1x) |
+| 미리보기 카드 테두리 | `--card-agent` · `--card-mine` · `--card-watch` | 에이전트 대화 = `--agent` · 내 대화 #46607E / #8AA4C4 · 관전 = `--run`(#1z-14 결정 2 — 강조 하나의 예외, 바탕 대비 3:1 이상) |
+| 레일 · 머리글자 | `--rail` · `--rail-2` · `--rail-text` · `--on-dark` · `--avatar-bg` · `--avatar-text` · `--rail-w-small` | 레일은 두 테마 모두 어둡다, 레일 타일 · 머리글자 네모 = 무채(#E4E4E7 · #3F3F46 / #2E2E33 · #D4D4D8) · '나' = `--rail-2` + `--on-dark`, 작은 타일 레일 폭 168px(#1x) |
 | 에이전트 아이콘 색 | `--agent-tile` · `--peer-1 ~ 5` | 사용자가 고르는 6색(이름이 저장됨 — `AGENT_COLORS`), 흰 아이콘 4.5:1 이상 — 상대 · 그룹 타일 색으로는 쓰지 않는다 |
 | 글꼴 | `--font` · `--mono` | IBM Plex Sans KR(실행 파일 포함 — `/fonts/`) · 고정폭은 시스템(코드 · 키 · 지문 · 원문 · 숫자만) |
 | 크기 · 굵기 · 줄높이 | `--fs-xs ~ xl` · `--fw-regular/medium/bold` · `--lh-body` · `--lh-tight` | 12 · 13 · 14 · 16 · 20 · 400 · 500 · 600 · 1.6 · 1.3 |

@@ -17,10 +17,23 @@ export function agentTile(color, cls = "") {
   return el("span", { class: `pa agent-pa ${agentColor(color)} ${cls}`.trim(), "aria-hidden": "true" }, ico("bot"));
 }
 
-/// 타일 얼굴 — 그림이 있으면 그림, 없으면 이름 머리글자 네모(나 · 상대 · 그룹 같은 모양). 누구인지는 아래 이름(`tileName`).
+/// 줄 타일 얼굴 — 그림이 있으면 그림, 없으면 이름 머리글자 네모(나 · 상대 · 그룹 같은 모양). 레일은 `railFace`.
 export function tileFace(icon, name) {
   if (icon) return el("img", { src: icon, alt: "", draggable: "false" }); // 그림 기본 끌기가 레일 포인터 끌기를 가로채지 않게
   return el("span", { class: "tile-shape", "aria-hidden": "true", text: initialOf(name) });
+}
+
+export const PERSON_SVG =
+  '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="currentColor"></circle><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" fill="currentColor"></path></svg>';
+export const GROUP_SVG =
+  '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="15.5" cy="7.5" r="3.4" fill="currentColor" opacity=".45"></circle><path d="M10 20c.3-3.8 2.8-6 5.5-6s5.3 2.2 5.5 6z" fill="currentColor" opacity=".45"></path><circle cx="9.5" cy="9" r="3.8" fill="currentColor"></circle><path d="M2.5 21.5c0-4.1 3.1-6.6 7-6.6s7 2.5 7 6.6z" fill="currentColor"></path></svg>';
+
+/// 레일 타일 얼굴 — 그림이 있으면 그림, 없으면 사람(나 · 상대) · 사람 + 그림자(그룹) 모양. 누구인지는 아래 이름(`tileName`). 그림은 고정 문자열만.
+export function railFace(icon, group = false) {
+  if (icon) return el("img", { src: icon, alt: "", draggable: "false" }); // 그림 기본 끌기가 레일 포인터 끌기를 가로채지 않게
+  const s = el("span", { class: "tile-shape", "aria-hidden": "true" });
+  s.innerHTML = group ? GROUP_SVG : PERSON_SVG;
+  return s;
 }
 
 /// 타일 아래 이름 — 11px · 넘치면 말줄임, 전체 이름은 단추 `title`.

@@ -181,7 +181,8 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("index.html", r#"id="star_btn" class="star-btn" aria-label="즐겨찾기""#, "#1j 별"),
     ("app", "side-${side}", "#1j 말풍선"),
     ("app", r#"class: "day-break""#, "#1j 말풍선"),
-    ("app", r#"kindChip(c, "room-kind"),"#, "#1z-2 대화 줄 아이콘 · #1z-7 유형별 → #1z-13 U8 (가) 무채 선 아이콘"),
+    ("app", r#"sideList && c.dir === "out" ? "" : kindChip(c, "room-kind"),"#, "#1z-2 대화 줄 아이콘 · #1z-7 유형별 → #1z-13 U8 (가) 무채 선 아이콘 → #1z-14 결정 4 사이드바 대화 목록 내 대화 줄은 아이콘 없음"),
+    ("app", "...g.rows.map((r) => convItem(r, splitKey(s.key, g.dir), true))", "#1z-14 결정 4 사이드바 대화 목록만 sideList"),
     ("app", "function starButton(", "#1j 별"),
     ("app", "function bookmarkButton(", "#1j 북마크"),
     ("app.css", ".msg.side-mine", "#1j 말풍선"),
@@ -199,7 +200,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app", r#"["위로 옮기기", -1],"#, "#1j 타일 메뉴"),
     ("app", r#"["아래로 옮기기", 1],"#, "#1j 타일 메뉴"),
     ("app", r#"class: "tile-name""#, "#1j 레일"),
-    ("app", "tileFace(g.icon, g.name)", "#1j 레일 → #1z-13 결정 12 그룹 = 이름 머리글자"),
+    ("app", "railFace(g.icon, true)", "#1j 레일 → #1z-13 결정 12 머리글자 → #1z-14 결정 1 그룹 = 사람 + 그림자 그림"),
     ("app", r#""이미지를 지웠습니다""#, "#1j 타일 메뉴"),
     ("app", r##"go("#");"##, "#1j 레일"),
     ("view", r#"{ key: "avail", label: "받기 가능", hint: "새 요청을 받습니다""#, "#1j 상태"),
@@ -437,7 +438,10 @@ const PRESENT: &[(&str, &str, &str)] = &[
     // 1z-7 — 대화 유형 아이콘 · 색(시안 A), 내 에이전트 상세(한 격자 · 아이콘 색 · 닫기)
     ("index.html", r#"<span id="conv_kind" class="conv-kind kind-chip" role="img" hidden></span><strong id="conv_title"></strong>"#, "#1z-7 제목 앞 유형 아이콘"),
     ("view", r#"export const KIND_NAMES = { in: "내 에이전트 응답", out: "내가 문의", shared: "공유 대화" };"#, "#1z-7 유형 이름 · #1z-13 U8 공유도 아이콘(읽는 이름 = 사이드바 절 머리)"),
-    ("app.css", ".pv-card.unseen { border-color: var(--accent); }", "#1z-7 안 읽음 표시 → #1z-11 결정 6 테두리 색(윤곽선 대신) → #1z-13 결정 5 안 읽음 = 강조색"),
+    ("app.css", ".pv-card.unseen { border-width: 2px; }", "#1z-7 안 읽음 표시 → #1z-11 결정 6 테두리 색 → #1z-13 결정 5 강조색 → #1z-14 결정 3 유형 색 2px"),
+    ("app.css", r#".pv-card[data-kind="in"] { border-color: var(--card-agent); }"#, "#1z-14 결정 2 에이전트 대화 = 청록"),
+    ("app.css", r#".pv-card[data-kind="out"] { border-color: var(--card-mine); }"#, "#1z-14 결정 2 내 대화 = 차분한 남색"),
+    ("app.css", r#".pv-card[data-kind="shared"] { border-color: var(--card-watch); }"#, "#1z-14 결정 2 관전 대화 = 호박"),
     ("app.css", ".pv-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border);", "#1z-7 카드 테두리 = 유형 색 → #1z-11 결정 6 한 색 → #1z-13 결정 6 공용 토큰"),
     ("app", r#"{ class: c.unread ? "pv-card unseen" : "pv-card", href: `#c/${c.id}`, "aria-label": `${[KIND_NAMES[c.dir], title].filter(Boolean).join(" · ")} 대화 열기`, onclick: () => followFromHome(c), "data-kind": c.dir },"#, "#1z-7 미리보기 카드 유형 · R1 읽는 이름에 유형"),
     ("app", r#"el("span", { class: `${cls} kind-chip`, role: "img", "aria-label": KIND_NAMES[c.dir] }, ico(n))"#, "#1z-7 R1 유형 칩 읽는 이름"),
@@ -506,8 +510,10 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("view", "export function initialOf(name) {", "#1z-13 결정 12 머리글자"),
     ("app", "export function tileFace(icon, name) {", "#1z-13 결정 12 그림이 없으면 머리글자"),
     ("app", "export function rowTile(cls, icon, name) {", "#1z-13 결정 12 줄 타일 = 머리글자"),
-    ("app", "tileFace(state.settings.me_icon, meName)", "#1z-13 결정 12 레일 나 = 표시 이름 머리글자"),
-    ("app", "tileFace(p.icon, displayName(p)),", "#1z-13 결정 12 레일 상대 = 표시 이름 머리글자"),
+    ("app", "railFace(state.settings.me_icon)", "#1z-13 결정 12 → #1z-14 결정 1 레일 나 = 사람 그림"),
+    ("app", "railFace(p.icon),", "#1z-13 결정 12 → #1z-14 결정 1 레일 상대 = 사람 그림"),
+    ("app", "export function railFace(icon, group = false) {", "#1z-14 결정 1 레일 타일 = 그림, 없으면 사람 · 사람 그룹"),
+    ("app.css", ".rail-btn .tile-shape svg { width: 22px; height: 22px; }", "#1z-14 결정 1 레일 그림 크기"),
     ("app", "else face.append(initialOf(name));", "#1z-13 결정 12 프로필 = 머리글자"),
     ("app", r#"text: initialOf(who.slice(who.lastIndexOf("/") + 1))"#, "#1z-13 결정 12 상대 사람 아바타 = 머리글자"),
     ("app", r#"kind === "agent" ? ico(s.icon) : initialOf(r.who)"#, "#1z-13 결정 12 · P1 주고받은 메시지 = 머리글자 · 에이전트 로봇"),
@@ -734,9 +740,6 @@ const ABSENT: &[(&str, &str, &str)] = &[
     ("app.css", "button:hover { border-color: var(--accent); }", "#1z-13 결정 5 올림은 강조색이 아니다"),
     ("app.css", r#"#act_tabs a[data-kind="request"][aria-current="page"] { background"#, "#1z-13 P4 내 활동 탭 = 글자 탭(종류 색 바탕 없음)"),
     // 1z-13 stage 2 — 사람 아이콘 아바타 · 타일 다섯 색 없음
-    ("index.html+app+app.css", "PERSON_SVG", "#1z-13 결정 2 · 12 사람 아이콘 아바타 없음"),
-    ("index.html+app+app.css", "GROUP_SVG", "#1z-13 결정 2 · 12 사람 아이콘 아바타 없음"),
-    ("index.html+app+app.css", "M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z", "#1z-13 결정 2 · 12 사람 모양 그림 없음"),
     ("app+view", "colorOf", "#1z-13 결정 12 상대 · 그룹 타일 다섯 색 없음"),
     ("app", "tileColor", "#1z-13 결정 12 상대 타일 색 없음"),
     ("app", "groupColor", "#1z-13 결정 12 그룹 타일 색 없음"),
@@ -744,7 +747,8 @@ const ABSENT: &[(&str, &str, &str)] = &[
     // 1z-13 stage 3 — 종류 색 · 테두리 · 점선 · 대화 줄 카드 없음
     ("app.css", "--conv-", "#1z-13 U8 (가) 종류 색 토큰 없음"),
     ("app.css", "var(--kind", "#1z-13 U8 (가) 종류 색 면 · 테두리 없음"),
-    ("app.css", r#"data-kind="shared""#, "#1z-13 U8 (가) 공유 점선 없음"),
+    ("app.css", r#".pv-card[data-kind="shared"] { border-style"#, "#1z-13 U8 (가) 공유 점선 없음(#1z-14 카드 관전 테두리 = 호박 실선)"),
+    ("app", "tileFace(state.settings.me_icon", "#1z-14 결정 1 레일은 머리글자 아님"),
     ("app.css", ".room-av", "#1z-13 개정 ⑥ 종류 칩 원 없음"),
     ("app.css", "#sidebar { background: var(--subtle); }", "#1z-13 개정 ② 사이드바 바탕 덮어쓰기 없음"),
     ("app.css", ".side-list li:not(.hint) { background: var(--surface);", "#1z-13 개정 ② 대화 줄 카드 없음"),
@@ -888,5 +892,14 @@ fn token_contrast() {
         assert!(r >= 4.5, "에이전트 아이콘 {tile} {r:.2}");
         cases += 1;
     }
-    assert_eq!(cases, 78);
+    // 미리보기 카드 테두리(글자가 아닌 선 — 3:1): 내 대화 남색(청록 = --accent · 호박 = --run 은 위 4.5:1 짝)
+    for dark in [false, true] {
+        let p = if dark { "dark-" } else { "" };
+        for bg in ["bg", "surface"] {
+            let r = contrast(token(&format!("{p}card-mine")), token(&format!("{p}{bg}")));
+            assert!(r >= 3.0, "카드 테두리 card-mine / {bg} {r:.2}");
+            cases += 1;
+        }
+    }
+    assert_eq!(cases, 82);
 }

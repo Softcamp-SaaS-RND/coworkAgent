@@ -3,7 +3,7 @@ import { api } from "./core/api.js";
 import { $, button, el, unchanged } from "./core/dom.js";
 import { closeFloat, focusAfterFloat, openFloat } from "./core/float.js";
 import { state } from "./core/state.js";
-import { tileFace, tileName } from "./core/widgets.js";
+import { railFace, tileName } from "./core/widgets.js";
 import { keepsConversation } from "./logic/conv.js";
 import { displayName } from "./logic/format.js";
 import { presence, tileUnread } from "./logic/peer.js";
@@ -69,7 +69,7 @@ export function renderRail() {
   me.setAttribute("aria-pressed", String(state.railPeer == null && state.railGroup == null));
   me.setAttribute("aria-label", meName);
   me.title = meName;
-  me.replaceChildren(tileFace(state.settings.me_icon, meName), tileName(meName));
+  me.replaceChildren(railFace(state.settings.me_icon), tileName(meName));
   keepFocus($("rail"), () => drawRailTiles(paired, unread));
 }
 
@@ -94,7 +94,7 @@ export function drawRailTiles(paired, unread) {
           onclick: () => pickTile(p.id),
           oncontextmenu: (ev) => tileMenuEvent(ev, { kind: "peer", id: p.id }),
         },
-        tileFace(p.icon, displayName(p)),
+        railFace(p.icon),
         tileName(displayName(p)),
         n ? el("span", { class: "rail-badge", "aria-hidden": "true", text: n > 99 ? "99+" : String(n) }) : "",
         el("span", { class: `rail-dot ${pr.key}`, "aria-hidden": "true" }),
@@ -121,7 +121,7 @@ export function drawRailTiles(paired, unread) {
           onclick: () => pickGroup(g.id),
           oncontextmenu: (ev) => tileMenuEvent(ev, { kind: "group", id: g.id }),
         },
-        tileFace(g.icon, g.name),
+        railFace(g.icon, true),
         tileName(g.name),
         n ? el("span", { class: "rail-badge", "aria-hidden": "true", text: n > 99 ? "99+" : String(n) }) : "",
       );

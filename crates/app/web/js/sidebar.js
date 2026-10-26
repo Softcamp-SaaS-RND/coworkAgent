@@ -118,7 +118,7 @@ export async function toggleStar(c) {
   });
 }
 
-export function convItem({ c, label }, section) {
+export function convItem({ c, label }, section, sideList = false) {
   const meta = convMeta(c);
   const cls = [state.current?.id === c.id ? "current" : "", meta.unread ? "unread" : ""].filter(Boolean).join(" ");
   return el(
@@ -136,7 +136,8 @@ export function convItem({ c, label }, section) {
       "a",
       { href: `#c/${c.id}`, title: label.sub, draggable: "false" },
       // 한 줄: 유형 아이콘(무채 — 응답 = 로봇 · 문의 = 사람 · 공유 = 눈) · 제목 · 실행 중 점 · 안 읽음 수 · 시각.
-      kindChip(c, "room-kind"),
+      // 사이드바 대화 목록(`sideList`)의 내 대화 줄은 아이콘 없음 — 그 목록의 기본이 내가 연 대화라 다른 절(에이전트 · 공유)만 표시한다.
+      sideList && c.dir === "out" ? "" : kindChip(c, "room-kind"),
       el(
         "span",
         { class: "room-text" },
@@ -202,7 +203,7 @@ export function renderConvList() {
       ...sections.map((s) => {
         // 묶음 — 나 · 상대 타일 = 내 대화(머리 없음) · 공유 대화(머리), 에이전트 대화는 '나' 의 사이드바 '에이전트 응답' 화면. 그룹 타일은 묶음마다 머리.
         const parts = convListParts(s.rows, group);
-        const list = (g) => el("ul", { class: "side-list" }, ...g.rows.map((r) => convItem(r, splitKey(s.key, g.dir))));
+        const list = (g) => el("ul", { class: "side-list" }, ...g.rows.map((r) => convItem(r, splitKey(s.key, g.dir), true)));
         const lists = parts.length
           ? parts.flatMap((g) =>
               g.head ? [el("div", { class: "dir-head" }, el("span", { text: g.title }), el("b", { text: String(g.rows.length) })), list(g)] : [list(g)],
