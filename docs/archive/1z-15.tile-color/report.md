@@ -1,6 +1,7 @@
 # report — 1z-15.tile-color
 
 종결: 2026-10-26 · 브랜치 `task/1z-15-tile-color`(원 작업 폴더 — worktree 없음) → main(로컬 반영, push 는 사용자 확인 뒤).
+개정 ②: 2026-10-26 · 브랜치 `task/1z-15-direct-post`(main `5150225` 에서) → main(로컬 반영) — 사용자 지시 "버전 변경 없이 마지막 task 에 포함".
 
 ## 결과
 
@@ -20,6 +21,8 @@
 | A3 레일 · 머리글자 네모 전부 색 · 대비 | 충족 | E3 `tile_tint` · 그룹설정 목록 색, E4 `token_contrast` 88(`--on-dark` × 여섯 4.5:1 — 두 테마 같은 값), E7 레일 · 연결 · 말풍선 · 주고받은 메시지 · 프로필 |
 | A4 그룹 그림 세 사람 | 충족 | E4 그림 행, E7 그룹 타일 원 3 |
 | A5 동작 · 문구 · 검증 · 문서 · 1.4.0 | 충족 | E1 · E2 · E6 · E8, 새 문구는 '아이콘 색' 하나(접근 이름 '아이콘 색 {열쇠}' 는 에이전트와 같은 꼴), 매뉴얼 · README 사진 |
+| A6 받은 대화 글 = 실행 없음 · 양쪽 창 · 왕복 안 멈춤 | 충족 | E9 `conversation_post_targets`(B 글 `exec` false · A 이력 셋 · B 답 없음), E10 `receiver_note_keeps_relay` · `receiver_stop_refuses_agent_requests`, E11 직접 쓰기(실행 문 0) |
+| A7 거절 중 문구 · 자동 왕복 절 없음 · 요청 3건 + 더보기 | 충족 | E3 `reqFold` · `relayText`, E4 PRESENT 4 · ABSENT 2, E11 두 테마(3 → 5 → 3 · 대화 옮기면 접힘), E12 매뉴얼 |
 
 - 편차 · 한계:
   - 스키마 29 — 1.4.0 으로 한 번 연 DB 는 이전 실행 파일(1.3.x)이 열지 않는다(올리기 전 `{db}.v28.bak` 사본으로 되돌림 — 기존 규칙). README 1.4.0 줄에 적었다.
@@ -28,11 +31,19 @@
   - `cargo test --workspace` 간헐 실패 — `os error 10055`(WSAENOBUFS, 로컬 API 연결)로 `ux_api` `home_zoom_setting_persists`(이 Task) · `cli_tx`(#1z-14) 를 잡았다. 단독 재실행은 통과 —
     환경 문제로 본다(추론). #1z-14 report-3 과 같은 건.
   - 미실행: macOS · 두 PC 실연동 · 화면 낭독기 · 서명 빌드 · 옛 스키마(16 이하) 실제 사용자 DB(시험 `store.rs` · `paths.rs` 는 돎).
+- 개정 ②(stage 4) 편차 · 한계:
+  - D23 · D24 개정 — 받은 대화의 사람 글은 실행 없음, 받은 쪽 사람 글은 자동 왕복을 멈추지 않는다(사용자 질문 답). 받은 쪽에서 왕복을 멈추려면 머리글 "멈춤"(남김) — 멈춘 뒤에는
+    머리글 표시 없이 세부정보 '대화 정보' 에 '자동 왕복' 줄(결정 16 — report-4 사용자 답). 간헐 실패(10055)는 masterPlan 후보로 등록(report-3 답).
+  - 판단 자리는 로컬 API 하나 — 코어 `Chat::post(…, true)` 의 받은 쪽 실행 경로는 남는다(웹 · API 는 쓰지 않음). CLI `ask` 는 원래 받은 대화를 거절.
+  - 오류 글 바꿈: `to` 가 agent 밖일 때 "to 는 agent 만 — 모든 글은 대화 에이전트에게 간다" → "to 는 agent 만 — 사람에게 보내기는 없다"(받은 대화에는 틀린 설명이 돼서).
+  - 단추 글 "더보기" 는 지시 글자 그대로 — 다른 화면(주고받은 메시지 · 개요)은 "더 보기"(띄어 씀).
+  - codex 리뷰 없음(사용자 질문 답 — 종결 때 2/2 사용). 미실행: 두 PC 실연동(상대가 켜진 채 받은 대화 글이 상대 창에 닿는 것 — 시험 `conversation_post_targets` 가 두 노드로 확인).
 - 구현자 해석(사용자 미확인):
   - 결정 6 — '나' 색 단추 맨 앞 '흑연'(되돌릴 길).
   - 결정 9 — 색 저장 자리(상대 · 그룹 표 열 · '나' 설정), 무작위 = SQL `abs(random()) % 6`.
   - '나' 의 색은 고르기 전엔 레일만 흑연 · 그 밖 머리글자 네모(프로필 · 주고받은 메시지 '나')는 무채 그대로, 고르면 모두 그 색.
   - plan 승인 질문 없이 구현 — 사용자 지시 + 질문 답 U1 ~ U6 이 설계를 정함.
+  - 개정 ② 결정 12 — 머리글 멈춤 · 재개 단추는 남김(지시는 '거절 중' 문구와 세부정보 절만). 받은 대화의 "질의 | 요청" 고르기 그대로(질의 = 실행 없는 사람 글).
 
 ## 사용자 결정 필요
 
@@ -40,7 +51,6 @@
 |---|---|---|
 | report-1 | 1.4.0 릴리스(#1z-13 · #1z-14 · #1z-15 함께) — origin push(squash) · 서명 · gh release | — |
 | report-2 | '나' 기본 흑연일 때 프로필 · 주고받은 메시지 '나' 머리글자는 무채(레일만 흑연) — 흑연으로 맞출지 | [intent](intent.md) 결정 4 |
-| report-3 | 시험 간헐 실패(`os error 10055`) 별도 Task 여부(#1z-14 report-3 과 같은 건) | [eval](eval.md) 측정 기록 |
 
 ## 산출
 
@@ -49,3 +59,6 @@
   `js/settings/{conn,groups,prefs}.js` · `index.html` · `app.css`.
 - 시험: `crates/core/tests/paths.rs`(`schema29_tile_color`) · `store.rs`(열 수 — 개정 ①) · `crates/app/tests/{ux_api,groups_api,ux_literals}.rs` · `view.test.mjs`.
 - 문서: [an_core](../../manual/dev/an_core.md) · [web-ui](../../manual/dev/web-ui.md) · [사용자 가이드](../../manual/user/user-guide.md) · PRODUCT(#1z-15 줄) · README(1.4.0 줄 · 사진 셋) · masterPlan S4 개정.
+- 개정 ②: `crates/app/src/chat_api/{tx,mod}.rs` · `crates/agent/src/chat/send.rs` · web `js/{detail,conv,composer}.js` · `js/logic/{message,request}.js` · `index.html` · `app.css`,
+  시험 `crates/app/tests/{chat_api,ux_literals}.rs` · `crates/agent/tests/relay.rs` · `view.test.mjs`, 문서 PRODUCT(양쪽 발화 · 자동 왕복) · masterPlan(D23 · D24) ·
+  [an_agent](../../manual/dev/an_agent.md) · [developer-guide](../../manual/dev/developer-guide.md) · web-ui · 사용자 가이드, [work/stage4](work/stage4.md).

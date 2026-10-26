@@ -145,7 +145,7 @@ async fn human_write_stops_relay() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn receiver_stop_refuses_agent_requests() {
-    // A 에이전트가 도는 동안 B 사람이 쓴다.
+    // A 에이전트가 도는 동안 B 사람이 멈춘다.
     let (a, b, b_id) = two("rs", Duration::from_millis(400)).await;
     let (conv, _) = a
         .chat
@@ -154,7 +154,7 @@ async fn receiver_stop_refuses_agent_requests() {
         .unwrap();
     common::eventually(|| a.runs.lock().unwrap().len() == 1).await;
     let bc = b_conv(&b);
-    b.chat.post(bc.id, "B 가 멈춘다", false).await.unwrap();
+    b.chat.relay(bc.id, false).await.unwrap();
     common::eventually(|| !relay_of(&a, conv.id).on).await;
     settled(&a, conv.id).await;
     assert_eq!(
@@ -209,6 +209,30 @@ async fn receiver_stop_refuses_agent_requests() {
         .await
         .unwrap();
     assert_eq!(resp, Response::Ok);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn receiver_note_keeps_relay() {
+    // 받은 쪽 사람 글은 자동 왕복을 멈추지 않는다 — 거절 없이 상한까지 이어 간다.
+    let (a, b, b_id) = two("rn", Duration::from_millis(200)).await;
+    let (conv, _) = a
+        .chat
+        .start_relay(b_id, "review", "mine", 2, "시작", None)
+        .await
+        .unwrap();
+    common::eventually(|| a.runs.lock().unwrap().len() + b.runs.lock().unwrap().len() >= 1).await;
+    let bc = b_conv(&b);
+    let (_, note, _) = b.chat.post(bc.id, "B 메모", false).await.unwrap();
+    assert!(!note.exec);
+    assert!(!b_conv(&b).relay_blocked, "거절하지 않는다");
+    common::eventually(|| relay_of(&a, conv.id).count == 2).await;
+    settled(&a, conv.id).await;
+    assert!(!b_conv(&b).relay_blocked);
+    assert_eq!(
+        (a.runs.lock().unwrap().len(), b.runs.lock().unwrap().len()),
+        (2, 2),
+        "상한 2 — 양쪽 두 번씩"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

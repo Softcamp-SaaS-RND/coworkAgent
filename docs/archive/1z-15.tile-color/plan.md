@@ -55,6 +55,22 @@
   `token_contrast` 에 `--on-dark` × 여섯 색 × 두 테마(4.5:1 — 머리글자 글자) 더함.
 - `crates/core` 스키마 시험이 `SCHEMA_VERSION` 28 을 적었으면 29 로.
 
+### stage 4 — 개정 ②(받은 대화 직접 쓰기 · 자동 왕복 표시 · 요청 접기)
+
+> 근거: intent 개정 ②(결정 10 ~ 15). 브랜치 `task/1z-15-direct-post`(main `5150225` 에서). 승인: 2026-10-26 — 사용자 지시 + 질문 답 U1 ~ U4(plan 승인 질문 없이 — 구현자 해석).
+
+1. `continue_conversation`(`POST /api/conversations/{id}/messages`): 받은 대화(`dir = in`)면 `to_agent = false` — 실행 없이 내 이력 + 상대 `post` 미러(기존 실행 없는 사람 글 경로).
+   보낸 대화는 그대로 실행 요청. CLI `ask` 는 이미 받은 대화를 거절(그대로).
+2. `Chat::post_with`: 받은 쪽 사람 글의 자동 왕복 거절(`set_blocked` · `block_relay`)을 뺀다 — 연 쪽 사람 글의 끔은 그대로, 받은 쪽 멈춤은 `relay(conv, false)` 그대로.
+3. 웹: `relayText` — `relay_blocked` 면 `null`(문구 없음). 세부정보 '자동 왕복' 절(`#detail_relay_sec` · `.relay-box` · `.bar`) 없앰. '요청' = `js/logic/request.js`
+   `REQ_FOLD = 3` · `reqFold(reqs, open)`(접혔으면 앞 3건, 넘치면 단추 "더보기" ↔ "접기"), `detail.js` `reqView{conv, open}`(대화를 옮기면 접힘).
+   (결정 16) 받은 쪽이 멈춘 대화는 '대화 정보' `convInfoRows` 에 컨텍스트 뒤 '자동 왕복' 줄(`RELAY_STOPPED` — `drawInfo` 가 대화 `relay_blocked` 를 덧붙임).
+4. 문서: PRODUCT 양쪽 발화 · 자동 왕복 줄, masterPlan D23 · D24 개정 · 기록, [an_agent](../../manual/dev/an_agent.md) · [developer-guide](../../manual/dev/developer-guide.md) 8.3 ·
+   [web-ui](../../manual/dev/web-ui.md) 세부정보 · [사용자 가이드](../../manual/user/user-guide.md) 7.2 · 10장 · 세부정보 줄.
+5. 바꾸는 시험(의도된 변경 — 결정 10 · 11): `chat_api.rs` `conversation_post_targets` 받은 대화 글 = 실행 없음(A 이력 셋 · B 답 없음),
+   `relay.rs` `receiver_stop_refuses_agent_requests` 의 받은 쪽 멈춤을 사람 글 → `relay(false)` 로, 새 `receiver_note_keeps_relay`,
+   `view.test.mjs` 거절 중 → `null` · 새 `reqFold`, `ux_literals` 새 행(PRESENT 4 · ABSENT 2).
+
 ## 평가 항목
 
 - [ ] E1: A5 — 워크스페이스 테스트 전부 통과
@@ -88,7 +104,24 @@
   EXPECT: /core=[1-9][0-9]* web=[1-9][0-9]* guide=[1-9][0-9]* product=[1-9][0-9]*/
   EVIDENCE: pending
 
+- [ ] E9: A6 — 받은 대화에 쓴 글 = 실행 없음 · 상대 창에도(로컬 API)
+  CHECK: cargo test -p coworkagent-app --test chat_api conversation_post_targets
+  EXPECT: /test result: ok\. 1 passed; 0 failed/
+  EVIDENCE: pending
+- [ ] E10: A6 — 받은 쪽 사람 글은 자동 왕복을 멈추지 않고, 받은 쪽 "멈춤" 은 그대로 거절
+  CHECK: cargo test -p an-agent --test relay receiver_
+  EXPECT: /test result: ok\. 2 passed; 0 failed/
+  EVIDENCE: pending
+- [ ] E11: A6·A7 — 실제 화면(디버그 빌드 · ego-browser) 두 테마 — 받은 대화 직접 쓰기(실행 없음) · 거절 중 문구 · 자동 왕복 절 없음 · 요청 3건 + 더보기 · 접기 · 대화 옮기면 접힘, 콘솔 오류 0
+  EVIDENCE: pending
+- [ ] E12: A6·A7 — 개정 ② 매뉴얼 반영
+  CHECK: python -c "import pathlib as P;r=lambda f:P.Path(f).read_text(encoding='utf-8');print('agent=%d web=%d guide=%d product=%d'%(r('docs/manual/dev/an_agent.md').count('#1z-15'),r('docs/manual/dev/web-ui.md').count('reqFold'),r('docs/manual/user/user-guide.md').count('더보기'),r('PRODUCT.md').count('D23 개정 · #1z-15')))"
+  EXPECT: /agent=[1-9][0-9]* web=[1-9][0-9]* guide=[1-9][0-9]* product=[1-9][0-9]*/
+  EVIDENCE: pending
+
 ## 개정 기록
 
 - ① 2026-10-26(평가 첫 실행 E1 FAIL) — '바꾸는 시험' 에 `crates/core/tests/store.rs` `schema17_peer_ids_never_reused` 의 peers 열 수 19 → 20 더함:
   그 시험은 지금 정의(스키마 29 `color` 포함)를 16 으로 되돌려 쓰므로 열 수가 하나 는다(검사 뜻 — 열 전부 · 순서 그대로 — 은 같음).
+- ② 2026-10-26(종결 뒤 사용자 지시 — "마지막 task 에 포함") — intent 개정 ②(결정 10 ~ 16), stage 4 · E9 ~ E12 더함. E1 ~ E8 은 그대로 다시 잰다.
+  결정 16(report-4 답)은 E11 측정 뒤 더했다 — E3(`convInfoRows` 시험) · E4(literal 2행)가 잰다, 실제 화면은 E11 에 덧붙여 다시 쟀다.

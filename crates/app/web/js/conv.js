@@ -559,7 +559,7 @@ export function showRelay(conv, ms) {
   btn.dataset.on = String(r?.action === "resume");
 }
 
-/// 자동 왕복 멈춤 · 재개 — 머리글 · 실행 상세 버튼이 같은 API.
+/// 자동 왕복 멈춤 · 재개 — 머리글 버튼.
 export function switchRelay(on) {
   const conv = state.current;
   if (!conv || state.msgsOf !== conv.id) return; // 지금 대화의 글을 받기 전 단추
@@ -637,4 +637,4 @@ $("share_leave_btn").addEventListener("click", (ev) => {
   openFloat(ev.currentTarget, "dialog", "대화 나가기", [convEndForm(conv, "leave")]);
 });
 
-for (const id of ["conv_relay_btn", "detail_relay_btn"]) $(id).addEventListener("click", () => switchRelay($(id).dataset.on === "true"));
+$("conv_relay_btn").addEventListener("click", () => switchRelay($("conv_relay_btn").dataset.on === "true"));

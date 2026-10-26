@@ -1,12 +1,12 @@
-// 세부정보 — 이 PC 실행 · 진행 · 대화 정보 · 자동 왕복 · 요청 · 북마크.
+// 세부정보 — 이 PC 실행 · 진행 · 대화 정보 · 관람자 · 요청 · 북마크.
 import { api } from "./core/api.js";
-import { $, el, lead, unchanged } from "./core/dom.js";
+import { $, button, el, lead, unchanged } from "./core/dom.js";
 import { state } from "./core/state.js";
 import { authorLabel } from "./logic/author.js";
-import { INFO_CMD_HINT, convClosed, convInfoRows } from "./logic/conv.js";
+import { INFO_CMD_HINT, convInfoRows } from "./logic/conv.js";
 import { formatTime, preview } from "./logic/format.js";
-import { relayText, runSteps, timeline } from "./logic/message.js";
-import { askTag } from "./logic/request.js";
+import { runSteps, timeline } from "./logic/message.js";
+import { askTag, reqFold } from "./logic/request.js";
 import { runsSummary } from "./logic/sync.js";
 import { renderShare } from "./conv.js";
 import { go } from "./shell.js";
@@ -86,31 +86,19 @@ export function renderDetail() {
   for (const a of $("messages").querySelectorAll(".msg.picked")) if (a.dataset.msg !== String(picked)) a.classList.remove("picked");
   if (picked != null) $("messages").querySelector(`[data-msg="${picked}"]`)?.classList.add("picked");
   renderInfo(conv, ms);
-  const out = conv.dir === "out";
-  // 자동 왕복 — 진행 n/상한 · 멈춤(재개는 연 쪽). 글을 받기 전에는 숨긴다(단추가 이전 대화에 작동하지 않게).
-  const relay = ready ? relayText(conv, ms) : null;
-  $("detail_relay_sec").hidden = relay == null;
-  if (relay) {
-    const capped = out && conv.relay_cap > 0;
-    $("detail_relay_text").textContent = relay.text;
-    $("detail_relay_count").textContent = out && conv.relay_agent ? `내 ${conv.relay_agent} ⇄ ${conv.agent}` : "";
-    $("detail_relay_bar").parentElement.hidden = !capped;
-    if (capped) $("detail_relay_bar").style.width = `${Math.min(100, Math.round(((conv.relay_count ?? 0) / conv.relay_cap) * 100))}%`;
-    const btn = $("detail_relay_btn");
-    btn.hidden = !relay.action || !!convClosed(conv); // 닫힌 대화는 읽기 전용
-    btn.textContent = relay.action === "resume" ? "재개" : "멈춤";
-    btn.dataset.on = String(relay.action === "resume");
-  }
   renderShare(conv);
-  // 요청 — 이 대화의 요청 글(최근 글부터, 상태 · 메모).
+  // 요청 — 이 대화의 요청 글(최근 글부터, 상태 · 메모). 최근 몇 건만, "더보기" 로 펼침 — 다른 대화로 옮기면 다시 접는다.
   const peerName = state.peerNames.get(conv.peer_id);
   const reqs = ms.filter((m) => m.author === "human" && m.request).reverse();
+  if (reqView.conv !== conv.id) [reqView.conv, reqView.open] = [conv.id, false];
+  const fold = reqFold(reqs, reqView.open);
   $("detail_req_n").textContent = reqs.length ? String(reqs.length) : "";
-  if (!unchanged($("detail_req"), JSON.stringify([conv.id, ready, peerName, reqs.map((m) => [m.id, m.req_state, m.req_note, m.text.length])])))
+  if (!unchanged($("detail_req"), JSON.stringify([conv.id, ready, peerName, reqView.open, reqs.map((m) => [m.id, m.req_state, m.req_note, m.text.length])])))
     $("detail_req").replaceChildren(
       ...(reqs.length
-        ? reqs.map((m) => detailItem(conv, m, [askTag(m), m.req_note, authorLabel(conv, m, peerName), formatTime(m.created_at)].filter(Boolean).join(" · ")))
+        ? fold.shown.map((m) => detailItem(conv, m, [askTag(m), m.req_note, authorLabel(conv, m, peerName), formatTime(m.created_at)].filter(Boolean).join(" · ")))
         : [el("li", { class: "hint", text: !ready ? "불러오는 중 …" : "요청 없음" })]),
+      ...(fold.toggle ? [el("li", { class: "req-more" }, button(fold.toggle, toggleReqs, "small"))] : []),
     );
   // 북마크 항목 — 이 대화에서 북마크한 글(최근 글부터).
   const saved = ms.filter((m) => m.saved).reverse();
@@ -121,6 +109,15 @@ export function renderDetail() {
       ? saved.map((m) => detailItem(conv, m, `${authorLabel(conv, m, peerName)} · ${formatTime(m.created_at)}`))
       : [el("li", { class: "hint", text: ready ? "북마크 없음" : "불러오는 중 …" })]),
   );
+}
+
+/// 세부정보 '요청' 펼침 — 어느 대화에서 펼쳤나(대화를 옮기면 접힌다).
+export const reqView = { conv: null, open: false };
+
+/// 세부정보 '요청' 더보기 · 접기.
+export function toggleReqs() {
+  reqView.open = !reqView.open;
+  renderDetail();
 }
 
 /// 세부정보 '대화 정보' — 대화 · 글 수 · 마지막 글 상태가 바뀔 때만 `GET …/info` 를 다시 읽는다(실행이 끝나면 명령 · 시각이 바뀐다).
@@ -153,12 +150,12 @@ export function renderInfo(conv, ms) {
 export function drawInfo(conv) {
   const d = infoView.conv === conv.id ? infoView.data : null;
   const box = $("info_rows");
-  if (unchanged(box, JSON.stringify([conv.id, conv.dir, d]))) return;
+  if (unchanged(box, JSON.stringify([conv.id, conv.dir, conv.relay_blocked, d]))) return;
   if (!d) {
     box.replaceChildren(el("dd", { class: "info-hint", text: "불러오는 중 …" }));
     return;
   }
-  const rows = convInfoRows(d, conv.dir);
+  const rows = convInfoRows({ ...d, relay_blocked: conv.relay_blocked }, conv.dir);
   box.replaceChildren(
     ...rows.flatMap((r) => [
       el("dt", {}, lead(r.icon), r.label),

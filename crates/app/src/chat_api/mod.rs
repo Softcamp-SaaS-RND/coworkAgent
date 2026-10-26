@@ -202,7 +202,7 @@ fn via_of(via: &Option<String>) -> Result<Option<&'static str>, &'static str> {
 fn to_of(to: &Option<String>) -> Result<(), &'static str> {
     match to.as_deref() {
         None | Some("agent") => Ok(()),
-        Some(_) => Err("to 는 agent 만 — 모든 글은 대화 에이전트에게 간다"),
+        Some(_) => Err("to 는 agent 만 — 사람에게 보내기는 없다"),
     }
 }
 

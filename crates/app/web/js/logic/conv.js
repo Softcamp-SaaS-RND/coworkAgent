@@ -147,11 +147,15 @@ export function requestNotice(n) {
   return { title: n.title, body: n.body, tag: "coworkagent-" + n.kind, href: "#activity", sound: false };
 }
 
+/// 받은 쪽이 멈춘 자동 왕복 — 세부정보 '대화 정보' 줄.
+export const RELAY_STOPPED = "멈춤 — 이 PC 가 멈춤(재개는 연 쪽)";
+
 /// 실행 명령 복사 안내 — 명령은 띄운 그대로라 이어 쓰기 세션 인자가 들고, 프롬프트는 표준 입력으로 받는다.
 export const INFO_CMD_HINT = "이어 쓰기 세션 인자가 든 명령 그대로 — 터미널에서 돌리면 이 대화 세션에 이어지고, 프롬프트는 표준 입력으로 받습니다. Windows 는 PowerShell 7.3 이상(pwsh)에 붙여 넣으세요.";
 
 /// 세부정보 '대화 정보' 줄(`GET /api/conversations/{id}/info`) → `{icon, label, text, mono, copy}`. 받은 대화(`in`) = 기간 · 답하는 도구 · 읽는 폴더 ·
-/// 컨텍스트 · 실행 명령(`copy` = 전체 명령), 보낸 대화 · 공유 사본 = 기간 · 컨텍스트(실행은 상대 PC 가 정한다).
+/// 컨텍스트 · 실행 명령(`copy` = 전체 명령) — 이 PC 가 자동 왕복을 멈췄으면(`relay_blocked` — 대화에서 덧붙임) 컨텍스트 뒤에 '자동 왕복' 줄,
+/// 보낸 대화 · 공유 사본 = 기간 · 컨텍스트(실행은 상대 PC 가 정한다).
 export function convInfoRows(info, dir, now = Date.now() / 1000) {
   const when = (t) => `${dayLabel(t, now)} ${formatTime(t)}`;
   const mine = dir === "in";
@@ -163,6 +167,7 @@ export function convInfoRows(info, dir, now = Date.now() / 1000) {
       { icon: "folder", label: "읽는 폴더", text: info.agent?.folder ?? "—", mono: true },
     );
   rows.push({ icon: "compress", label: "컨텍스트", text: info.clears ? `${ctx} · 비우기 ${info.clears}회` : ctx });
+  if (mine && info.relay_blocked) rows.push({ icon: "swap", label: "자동 왕복", text: RELAY_STOPPED });
   if (mine)
     rows.push(
       info.cmd

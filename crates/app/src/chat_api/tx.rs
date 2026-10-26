@@ -5,7 +5,7 @@ use super::*;
 #[derive(Deserialize)]
 pub(super) struct NewMessage {
     text: String,
-    /// `agent` 만(생략 가능) — 모든 새 글은 대화 에이전트에게 실행 요청이다(`human` 은 400).
+    /// `agent` 만(생략 가능) — 보낸 대화의 새 글은 대화 에이전트에게 실행 요청이다(`human` 은 400). 받은 대화의 글은 실행 없이 양쪽 창에만.
     #[serde(default)]
     to: Option<String>,
     /// 글의 출처 — [`NewConversation::via`] 와 같다.
@@ -22,7 +22,7 @@ pub(super) struct NewMessage {
     tx_key: Option<String>,
 }
 
-/// 대화에 이어 쓴다 — 양쪽 다, 늘 대화 에이전트에게 실행 요청.
+/// 대화에 이어 쓴다 — 보낸 대화는 상대 에이전트에게 실행 요청, 받은 대화(내 에이전트가 답함)는 실행 없이 양쪽 창에만(내 에이전트를 거치지 않는다).
 pub(super) async fn continue_conversation(
     State(chat): State<Arc<Chat>>,
     Path(id): Path<i64>,
@@ -53,7 +53,11 @@ pub(super) async fn continue_conversation(
         mention: req.agent.as_deref(),
         ..Compose::default()
     };
-    match chat.post_with(id, &req.text, true, opts).await {
+    let to_agent = match chat::by_id(&chat.db(), id) {
+        Ok(c) => c.is_none_or(|c| c.dir != Dir::In),
+        Err(e) => return db_fail(e),
+    };
+    match chat.post_with(id, &req.text, to_agent, opts).await {
         Ok((c, m, warning)) => sent_tx(&chat, c, m, warning, via),
         Err(e) => fail(e),
     }

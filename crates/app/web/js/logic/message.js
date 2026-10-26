@@ -3,7 +3,7 @@ import { CLI_LABEL } from "./author.js";
 import { formatClock, formatDuration, stateText } from "./format.js";
 import { reqMoves, reqResend } from "./request.js";
 
-/// 대화 머리글의 자동 왕복 표시와 누를 수 있는 동작 — 보낸 쪽: 멈춤 · 재개, 받은 쪽: 멈춤만(재개는 연 쪽). 아니면 `null`.
+/// 대화 머리글의 자동 왕복 표시와 누를 수 있는 동작 — 보낸 쪽: 멈춤 · 재개, 받은 쪽: 멈춤만(재개는 연 쪽 — 멈춘 뒤에는 표시 없음). 아니면 `null`.
 export function relayText(conv, messages) {
   if (conv.dir === "shared") return null;
   if (conv.dir === "out") {
@@ -11,7 +11,7 @@ export function relayText(conv, messages) {
     const n = `자동 왕복 ${conv.relay_count ?? 0} / ${conv.relay_cap}`;
     return conv.relay_on ? { text: `${n} · 진행 중`, action: "stop" } : { text: `${n} · 멈춤`, action: "resume" };
   }
-  if (conv.relay_blocked) return { text: "자동 왕복 거절 중", action: null };
+  if (conv.relay_blocked) return null;
   const relayed = (messages ?? []).some((m) => m.author === "agent" && m.mine === false);
   return relayed ? { text: "자동 왕복 받는 중", action: "stop" } : null;
 }

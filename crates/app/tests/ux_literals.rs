@@ -536,6 +536,13 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app.css", ".tile-form { flex-direction: column; flex-wrap: nowrap; align-items: stretch;", "#1z-13 stage2-2 타일 편집 이름 칸이 사이드바 밖으로 넘치지 않게 — 전역 form 의 wrap 은 줄 폭을 입력 기본 폭(266px)으로 잡는다"),
     // 1z-13 stage 4 — 메뉴 안 켜기 항목 = 앱 스위치 모양(stage4-2)
     ("app.css", r#".menu button[role="menuitemcheckbox"]::before { content: ""; position: absolute;"#, "#1z-13 stage4-2 메뉴 스위치 = 설정 화면 스위치와 같은 손잡이"),
+    // 1z-15 stage 4 — 세부정보 요청 최근 3건 · 더보기, 받은 쪽 멈춘 자동 왕복은 표시 없음
+    ("view", "export const REQ_FOLD = 3;", "#1z-15 결정 13 요청 최근 3건"),
+    ("view", r#"toggle: over ? (open ? "접기" : "더보기") : null"#, "#1z-15 결정 13 · 14 더보기 · 접기"),
+    ("app", "if (reqView.conv !== conv.id) [reqView.conv, reqView.open] = [conv.id, false];", "#1z-15 결정 14 대화를 옮기면 다시 접힘"),
+    ("view", "  if (conv.relay_blocked) return null;", "#1z-15 결정 12 '자동 왕복 거절 중' 표시 없음"),
+    ("view", r#"export const RELAY_STOPPED = "멈춤 — 이 PC 가 멈춤(재개는 연 쪽)";"#, "#1z-15 결정 16 받은 쪽 멈춤 = 대화 정보 한 줄"),
+    ("app", "convInfoRows({ ...d, relay_blocked: conv.relay_blocked }, conv.dir)", "#1z-15 결정 16 대화 정보에 멈춤 상태"),
 ];
 
 /// 없어야 하는 문구 — (파일 키, 문구, 출처). `a+b` 는 두 파일 모두에 없어야 한다.
@@ -769,6 +776,8 @@ const ABSENT: &[(&str, &str, &str)] = &[
     ("app.css", "border-left: 3px solid var(--muted)", "#1z-13 stage4-1 의견 상자 왼쪽 상태 색 띠 없음"),
     ("app.css", ".menu button[aria-checked]::after", "#1z-13 stage4-2 손잡이 없는 메뉴 알약 없음"),
     ("app.css", ".avatar-face.st-offline { color:", "#1z-13 R1-1 연결 끊김 머리글자도 --avatar-text(상태는 점 — 흐린 글자 대비 4.16)"),
+    ("index.html+app+view", "자동 왕복 거절 중", "#1z-15 결정 12 머리글 문구 없음"),
+    ("index.html+app", "detail_relay", "#1z-15 결정 12 세부정보 '자동 왕복' 절 없음"),
 ];
 
 /// 정확한 개수 — (파일 키, 문구, 개수, 출처).

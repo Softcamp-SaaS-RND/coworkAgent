@@ -106,3 +106,12 @@ export function reqFeedback(m) {
     side: bubbleSide(m) === "mine" ? "theirs" : "mine",
   };
 }
+
+/// 세부정보 '요청' 에 처음 보이는 수 — 넘치면 "더보기" 로 펼친다.
+export const REQ_FOLD = 3;
+
+/// 세부정보 '요청' 접기 — `reqs` 는 최근 글부터. 접혔으면 앞 `REQ_FOLD` 건만, `toggle` = 단추 글("더보기" · "접기" — 넘칠 때만, 아니면 `null`).
+export function reqFold(reqs, open) {
+  const over = reqs.length > REQ_FOLD;
+  return { shown: over && !open ? reqs.slice(0, REQ_FOLD) : reqs, toggle: over ? (open ? "접기" : "더보기") : null };
+}

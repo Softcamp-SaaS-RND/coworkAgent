@@ -9,7 +9,7 @@ import { refresh } from "./events.js";
 import { loadPeerAgents } from "./rail.js";
 
 /// 열린 대화에 새 요청 — 입력창. 보내는 대상은 지금 화면에 열린 대화(해시)이고, 레일에서 고른 상대와 맞아야 한다.
-/// 글은 대화 에이전트에게 — 멘션이면 부른 에이전트에게. `opts` = `{request, agent}`(글 종류 · 멘션). `sent` = 보낸 뒤 할 일(입력창 비우기).
+/// 보낸 대화의 글은 대화 에이전트에게 — 멘션이면 부른 에이전트에게. 받은 대화의 글은 내 에이전트를 거치지 않고 양쪽 창에만(서버가 정한다). `opts` = `{request, agent}`(글 종류 · 멘션). `sent` = 보낸 뒤 할 일(입력창 비우기).
 export function sendText(text, opts, sent) {
   const r = route(location.hash);
   const conv = state.current;

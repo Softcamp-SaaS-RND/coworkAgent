@@ -29,7 +29,7 @@
 | `js/conv.js` | 대화방 — 머리 · 글 · 본문 뷰어 · 컨텍스트 · 제목 · 자동 왕복 · 관람자. |
 | `js/conv-menu.js` | 대화 메뉴 — 나가기 · 기록 삭제 · 그룹 넣기. |
 | `js/composer.js` | 입력창 — 보내기 · 마크다운 단추 · 멘션 후보. |
-| `js/detail.js` | 세부정보 — 이 PC 실행 · 진행 · 대화 정보 · 자동 왕복 · 요청 · 북마크. |
+| `js/detail.js` | 세부정보 — 이 PC 실행 · 진행 · 대화 정보 · 관람자 · 요청 · 북마크. |
 | `js/activity.js` | 내 활동 · 북마크 목록. |
 | `js/requests.js` | 요청 — 목록 · 보드 · 보관. |
 | `js/agents.js` | 에이전트 화면 — 내 에이전트 · 상대 PC 에이전트 목록. |
@@ -163,10 +163,13 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
   `KIND_NAMES` — 공유 = "공유 대화"). 닿는 곳: 대화 머리(`#conv_kind` 18px — 제목 앞), 사이드바 대화 줄(`convItem` — 대화 · 즐겨찾기 · 에이전트 응답, 16px), 개요 목록 줄
   (`home-kind` 16px), 개요 미리보기 카드(`pv-kind` 15px), 검색 대화 줄(`s-mark` 16px). 사이드바는 절 머리('내 대화' · '에이전트 대화' · '공유 대화')도 유형을 가른다.
   줄 · 카드의 `data-kind`(= 대화 `dir`)는 남는다(개요 목록 줄 배치). 설정의 대화 관리 줄(그룹설정)과 말풍선은 그대로.
-- **세부정보 패널**: 진행 · 대화 정보 · 자동 왕복 · 관람자 · 요청 · 북마크(절 제목마다 아이콘 — #1z-10).
+- **세부정보 패널**: 진행 · 대화 정보 · 관람자 · 요청 · 북마크(절 제목마다 아이콘 — #1z-10). 자동 왕복 절 없음(#1z-15 — 멈춤 · 재개는 대화 머리글 `#conv_relay_btn` 만,
+  받은 쪽이 멈춘 대화(`relay_blocked`)는 머리글 표시 없음 — `relayText` `null`, 대신 '대화 정보' 에 '자동 왕복' 줄 `RELAY_STOPPED`).
+  - **요청**(#1z-15): 최근 글부터 `js/logic/request.js` `reqFold(reqs, open)` — 접혔으면 앞 `REQ_FOLD`(3)건, 넘치면 끝 줄 단추 "더보기" ↔ "접기"(`.req-more`).
+    펼침은 `reqView{conv, open}` — 다른 대화로 옮기면 접힌다.
   - **대화 정보**(#1z-10 — 옛 상대 · 에이전트 · 실행 기본값 줄 없음): `<dl id="info_rows">` 를 `renderInfo` 가 `GET /api/conversations/{id}/info` 로 채운다(대화 · 글 수 ·
     마지막 글 상태가 바뀔 때만 다시 읽음, 실패면 다음 그리기에서 다시, 응답은 마지막 읽기 것만 — `infoView.gen`). 줄 = `js/logic/conv.js` `convInfoRows(info, dir)` — 받은 대화 = 기간(clock) · 답하는 도구(bot) · 읽는 폴더(folder) · 컨텍스트(compress — 압축 n회 ·
-    마지막, 비우기) · 실행 명령(terminal — 한 줄 말줄임 + **복사** = 전체 명령 · 아래 `INFO_CMD_HINT`), 보낸 대화 · 공유 사본 = 기간 · 컨텍스트.
+    마지막, 비우기) · (이 PC 가 자동 왕복을 멈췄으면 — #1z-15) 자동 왕복(swap — `RELAY_STOPPED`, 대화의 `relay_blocked` 를 덧붙여 넘김) · 실행 명령(terminal — 한 줄 말줄임 + **복사** = 전체 명령 · 아래 `INFO_CMD_HINT`), 보낸 대화 · 공유 사본 = 기간 · 컨텍스트.
 - **통합 검색 결과**(#1z-8 시안 S1): 상자 머리 `#search_opts` = 스위치 `#search_closed`("나간 대화 포함", `checkbox role="switch"` — 탭이 열린 동안만, 설정 아님) ·
   "지운 대화는 검색되지 않습니다", 결과는 `#search_results` 만 다시 그린다(스위치 초점 유지). 조회 `GET /api/search?q=…&closed={켬}`(서버 기본 = 닫힌 대화 뺌). 줄 = 칩(`searchMark` —
   `js/logic/search.js` `searchGroups` 의 `mark`: 메시지 = 말풍선 · 대화 = 유형 아이콘(둘 다 무채), 사람 = 그 타일(머리글자 네모), 에이전트 = 로봇(내 것 = 고른 아이콘 색 ·

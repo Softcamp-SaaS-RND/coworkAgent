@@ -372,15 +372,10 @@ impl Chat {
                 .await?;
             return Ok((c, m, None));
         }
-        let peer = self.paired_peer(conv.peer_id)?;
-        // 사람이 쓰면 자동 왕복은 멈춘다 — 연 쪽은 끄고, 받은 쪽은 에이전트발 요청을 거절하고 연 쪽에 알린다.
+        self.paired_peer(conv.peer_id)?;
+        // 연 쪽 사람이 쓰면 자동 왕복은 멈춘다. 받은 쪽 사람 글은 멈추지 않는다 — 받은 쪽 멈춤은 [`relay`](Self::relay).
         if conv.dir == Dir::Out {
             let _ = chat::relay_on(&self.db(), conv.id, false, false);
-        } else {
-            // 거절은 바로, 연 쪽 알림은 기다리지 않는다(상대가 꺼져 있어도 글쓰기가 늦어지지 않게).
-            let _ = chat::set_blocked(&self.db(), conv.id, true);
-            let (me, c, p) = (self.clone(), conv.clone(), peer.clone());
-            tokio::spawn(async move { me.block_relay(&c, &p).await });
         }
         let lock = self.turn(conv.id);
         let _turn = lock.lock().await;

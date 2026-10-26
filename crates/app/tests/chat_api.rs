@@ -395,7 +395,7 @@ async fn conversation_post_targets() {
     )
     .await;
     assert_eq!(code, 400, "{r}");
-    // B: 받은 대화에 자기 에이전트에게.
+    // B: 받은 대화(내 에이전트가 답함)에 쓴 글은 내 에이전트를 거치지 않고 양쪽 창에만 — 실행 없음.
     let (_, list) = call(port_b, &hb, "GET", "/api/conversations", "").await;
     let conv_b = list[0]["id"].as_i64().unwrap();
     let path_b = format!("/api/conversations/{conv_b}/messages");
@@ -404,12 +404,13 @@ async fn conversation_post_targets() {
         &hb,
         "POST",
         &path_b,
-        r#"{"text":"B 질문","to":"agent"}"#,
+        r#"{"text":"B 메모","to":"agent"}"#,
     )
     .await;
     assert_eq!(code, 201, "{r}");
-    // A 이력: 질문 · 답 · B 질문 · 답 — 발화자 표시용 mine · exec.
-    let ms = messages(port_a, &ha, conv_a, 4).await;
+    assert_eq!((r["message"]["exec"].as_bool(), r["message"]["mine"].as_bool()), (Some(false), Some(true)), "{r}");
+    // A 이력: 질문 · 답 · B 메모(실행 없음) — 발화자 표시용 mine · exec.
+    let ms = messages(port_a, &ha, conv_a, 3).await;
     let flags: Vec<_> = ms
         .as_array()
         .unwrap()
@@ -427,10 +428,12 @@ async fn conversation_post_targets() {
         [
             ("human".to_string(), true, true),
             ("agent".to_string(), false, false),
-            ("human".to_string(), false, true),
-            ("agent".to_string(), false, false),
+            ("human".to_string(), false, false),
         ]
     );
+    // B 쪽도 셋 — 내 에이전트는 B 메모에 답하지 않는다(답이 생길 틈을 둔 뒤 본다).
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(messages(port_b, &hb, conv_b, 3).await.as_array().unwrap().len(), 3);
     // 이상한 대상은 400.
     let (code, _) = call(port_a, &ha, "POST", &path_a, r#"{"text":"x","to":"robot"}"#).await;
     assert_eq!(code, 400);

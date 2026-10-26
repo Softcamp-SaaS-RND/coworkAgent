@@ -35,6 +35,7 @@ import {
   agentConvSections,
   convInfoRows,
   INFO_CMD_HINT,
+  RELAY_STOPPED,
   convKindIcon,
 } from "./js/logic/conv.js";
 import {
@@ -149,6 +150,8 @@ import {
   reqArchiveAction,
   REQ_BTN,
   REQ_STATES,
+  REQ_FOLD,
+  reqFold,
 } from "./js/logic/request.js";
 import {
   activityRows,
@@ -381,7 +384,16 @@ test("자동 왕복 — 누구의 에이전트인지 · 머리글 문구", () =>
   assert.equal(relayText({ dir: "out", agent: "review", relay_agent: null }, []), null);
   assert.equal(relayText(inn, [{ author: "agent", mine: true }]), null, "보통 받은 대화");
   assert.deepEqual(relayText(inn, [{ author: "agent", mine: false }]), { text: "자동 왕복 받는 중", action: "stop" });
-  assert.equal(relayText({ ...inn, relay_blocked: true }, []).action, null, "받은 쪽은 재개 없음");
+  assert.equal(relayText({ ...inn, relay_blocked: true }, [{ author: "agent", mine: false }]), null, "받은 쪽이 멈춘 뒤 — 표시 없음(재개는 연 쪽)");
+});
+
+test("세부정보 요청 — 최근 3건, 더보기로 펼치고 접기로 접는다", () => {
+  const reqs = [5, 4, 3, 2, 1].map((id) => ({ id }));
+  assert.equal(REQ_FOLD, 3);
+  assert.deepEqual(reqFold(reqs, false), { shown: reqs.slice(0, 3), toggle: "더보기" });
+  assert.deepEqual(reqFold(reqs, true), { shown: reqs, toggle: "접기" });
+  assert.deepEqual(reqFold(reqs.slice(0, 3), false), { shown: reqs.slice(0, 3), toggle: null }, "3건 이하면 단추 없음");
+  assert.deepEqual(reqFold([], true), { shown: [], toggle: null });
 });
 
 test("타임라인 — 실행 없는 사람 글은 요청이 아니다", () => {
@@ -2743,5 +2755,11 @@ test("conv_info — 대화 정보 줄: 받은 대화 = 기간 · 도구 · 폴�
     ["지운 에이전트", "—", "압축 없음 · 비우기 2회", "아직 실행 없음"],
   );
   assert.equal(fresh.at(-1).copy, undefined, "명령이 없으면 복사 없음");
+  // 이 PC 가 자동 왕복을 멈춘 받은 대화 — 컨텍스트 뒤 '자동 왕복' 줄(머리글 · 세부정보 절에는 표시 없음).
+  const stopped = convInfoRows({ ...info, relay_blocked: true }, "in", now);
+  assert.deepEqual(stopped.map((r) => r.label), ["기간", "답하는 도구", "읽는 폴더", "컨텍스트", "자동 왕복", "실행 명령"]);
+  assert.equal(stopped[4].text, RELAY_STOPPED);
+  assert.equal(stopped[4].icon, "swap");
+  assert.ok(!convInfoRows({ ...info, relay_blocked: true }, "out", now).some((r) => r.label === "자동 왕복"), "보낸 대화에는 없음");
   assert.match(INFO_CMD_HINT, /세션/);
 });
