@@ -278,6 +278,13 @@ async fn rename_and_icon() {
     assert_eq!(code, 200, "자기 이름 그대로는 겹침 아님");
     let (code, r) = a.call("PATCH", &path, json!({ "icon": "" })).await;
     assert_eq!((code, r["icon"].clone()), (200, Value::Null), "그림 지우기");
+    // 타일 색 — 처음 무작위(여섯 중), 여섯만, 하나라도 틀리면 아무것도 안 바뀜.
+    assert!(an_core::agents::ICON_COLORS.contains(&a.groups().await[0]["color"].as_str().unwrap()));
+    let (code, r) = a.call("PATCH", &path, json!({ "color": "peer-5" })).await;
+    assert_eq!((code, r["color"].clone(), r["name"].clone()), (200, json!("peer-5"), json!("결제 모듈")));
+    let (code, _) = a.call("PATCH", &path, json!({ "name": "결제 새", "color": "pink" })).await;
+    assert_eq!(code, 400, "틀린 색");
+    assert_eq!((a.groups().await[0]["name"].clone(), a.groups().await[0]["color"].clone()), (json!("결제 모듈"), json!("peer-5")));
     let (code, _) = a
         .call("PATCH", "/api/groups/999", json!({ "name": "x" }))
         .await;

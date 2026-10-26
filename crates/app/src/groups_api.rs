@@ -17,7 +17,7 @@ struct NewGroup {
     name: String,
 }
 
-/// `PATCH /api/groups/{id}` — 준 항목만: 이름 · 그림(빈 문자열 = 지움). 둘 다 없으면 400.
+/// `PATCH /api/groups/{id}` — 준 항목만: 이름 · 그림(빈 문자열 = 지움) · 타일 색. 다 없으면 400.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GroupPatch {
@@ -25,6 +25,8 @@ struct GroupPatch {
     name: Option<String>,
     #[serde(default)]
     icon: Option<String>,
+    #[serde(default)]
+    color: Option<String>,
 }
 
 /// `PUT /api/groups/{id}/conversations` — 넣고 뺄 대화 id(이미 있음 · 없음은 그대로).
@@ -55,7 +57,7 @@ pub fn routes(chat: Arc<Chat>) -> Router {
 }
 
 fn group_json(g: &Group) -> Value {
-    json!({ "id": g.id, "name": g.name, "icon": g.icon, "pos": g.pos, "convs": g.convs })
+    json!({ "id": g.id, "name": g.name, "icon": g.icon, "color": g.color, "pos": g.pos, "convs": g.convs })
 }
 
 fn err(code: StatusCode, msg: &str) -> Response {
@@ -98,10 +100,10 @@ async fn update(
     Path(id): Path<i64>,
     Json(req): Json<GroupPatch>,
 ) -> Response {
-    if req.name.is_none() && req.icon.is_none() {
-        return err(StatusCode::BAD_REQUEST, "name 또는 icon 을 준다");
+    if req.name.is_none() && req.icon.is_none() && req.color.is_none() {
+        return err(StatusCode::BAD_REQUEST, "name · icon · color 중 하나를 준다");
     }
-    // 둘 다 검증한 뒤 쓴다 — 하나라도 틀리면 아무것도 바꾸지 않는다.
+    // 전부 검증한 뒤 쓴다 — 하나라도 틀리면 아무것도 바꾸지 않는다.
     let name = match req.name.as_deref().map(groups::clean_name) {
         None => None,
         Some(Ok(n)) => Some(n),
@@ -110,6 +112,11 @@ async fn update(
     let icon = match req.icon.as_deref().map(run_opts::clean_icon) {
         None => None,
         Some(Ok(i)) => Some(i),
+        Some(Err(m)) => return err(StatusCode::BAD_REQUEST, &m),
+    };
+    let color = match req.color.as_deref().map(run_opts::clean_tile_color) {
+        None => None,
+        Some(Ok(c)) => Some(c),
         Some(Err(m)) => return err(StatusCode::BAD_REQUEST, &m),
     };
     let db = chat.db();
@@ -129,6 +136,9 @@ async fn update(
         }
         if let Some(i) = &icon {
             groups::set_icon(&tx, id, i.as_deref())?;
+        }
+        if let Some(c) = &color {
+            groups::set_color(&tx, id, c)?;
         }
         Ok(Ok(()))
     })();

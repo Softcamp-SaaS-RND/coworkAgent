@@ -20,6 +20,8 @@ pub struct Peer {
     /// 이 PC 에서 부르는 표시 이름(별칭) · 타일 아이콘(PNG data URL) — 없으면 `None`.
     pub alias: Option<String>,
     pub icon: Option<String>,
+    /// 이 PC 의 타일 색 — [`crate::agents::ICON_COLORS`] 중 하나(처음 무작위).
+    pub color: String,
     /// 접속 상태 — 마지막으로 주고받기에 성공한 시각(유닉스 초, 없으면 아직) · 마지막 `Pong` · 거절 때 상대의 집중.
     pub seen_at: Option<i64>,
     pub focus: bool,
@@ -40,7 +42,7 @@ impl Peer {
     }
 }
 
-const COLS: &str = "id, spki, name, host, addr, my_ok, their_ok, round, grp, model, effort, alias, icon, seen_at, focus";
+const COLS: &str = "id, spki, name, host, addr, my_ok, their_ok, round, grp, model, effort, alias, icon, seen_at, focus, color";
 
 fn row(r: &Row) -> rusqlite::Result<Peer> {
     Ok(Peer {
@@ -59,6 +61,7 @@ fn row(r: &Row) -> rusqlite::Result<Peer> {
         icon: r.get(12)?,
         seen_at: r.get(13)?,
         focus: r.get::<_, Option<bool>>(14)?.unwrap_or(false),
+        color: r.get(15)?,
     })
 }
 
@@ -72,10 +75,14 @@ pub fn upsert(
     addr: &str,
     round: &str,
 ) -> rusqlite::Result<Peer> {
+    // 색은 처음 만들 때만 정한다 — 다시 hello(갱신)는 이 PC 의 색을 그대로 둔다.
     conn.execute(
-        "INSERT INTO peers (spki, name, host, addr, round, created_at, pos)
-         VALUES (?1, ?2, ?3, ?4, ?5, unixepoch(), (SELECT coalesce(max(pos), -1) + 1 FROM peers))
-         ON CONFLICT(spki) DO UPDATE SET name = ?2, host = ?3, addr = ?4, round = ?5, my_ok = 0, their_ok = 0",
+        &format!(
+            "INSERT INTO peers (spki, name, host, addr, round, created_at, pos, color)
+             VALUES (?1, ?2, ?3, ?4, ?5, unixepoch(), (SELECT coalesce(max(pos), -1) + 1 FROM peers), {})
+             ON CONFLICT(spki) DO UPDATE SET name = ?2, host = ?3, addr = ?4, round = ?5, my_ok = 0, their_ok = 0",
+            crate::run_opts::TILE_COLOR_RANDOM
+        ),
         params![spki, name, host, addr, round],
     )?;
     by_spki(conn, spki).map(|p| p.expect("방금 쓴 기록"))
@@ -201,6 +208,14 @@ pub fn set_tile(
     )? == 1)
 }
 
+/// 타일 색만 바꾼다. 값 검증은 [`crate::run_opts::clean_tile_color`]. 없는 피어면 `false`.
+pub fn set_color(conn: &Connection, id: i64, color: &str) -> rusqlite::Result<bool> {
+    Ok(conn.execute(
+        "UPDATE peers SET color = ?2 WHERE id = ?1",
+        params![id, color],
+    )? == 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ONLINE_WITHIN, Peer};
@@ -223,6 +238,7 @@ mod tests {
             icon: None,
             seen_at,
             focus: false,
+            color: String::new(),
         };
         let now = 1_000;
         assert!(peer(Some(now - ONLINE_WITHIN + 1)).online(now));

@@ -15,8 +15,8 @@ import { groupDeleteForm } from "../tiles.js";
 /// 그룹설정 — 왼쪽 그룹 목록(검색 = 그룹 이름 · 그 그룹 대화 제목 · 사용자), 오른쪽 상세(이 그룹의 대화 · 넣을 수 있는 대화).
 export function renderGroupPage(force) {
   const box = $("groups");
-  const groupSig = state.groups.map((g) => [g.id, g.name, g.icon, g.convs]);
-  const peerSig = state.peers.map((p) => [p.id, displayName(p), p.host, p.icon]);
+  const groupSig = state.groups.map((g) => [g.id, g.name, g.icon, g.color, g.convs]);
+  const peerSig = state.peers.map((p) => [p.id, displayName(p), p.host, p.icon, p.color]);
   const sig = JSON.stringify([groupSig, peerSig, convSig(), $("group_q").value, pick.groups]);
   if (!needsRender(box, sig, force)) return;
   if (pick.groups != null && !state.groups.some((g) => g.id === pick.groups)) pick.groups = null; // 지운 그룹
@@ -24,7 +24,7 @@ export function renderGroupPage(force) {
   const convs = sortByPos(state.convs);
   const list = groupSettingsList(state.groups, state.peers, convs, q, state.peerNames);
   $("group_list").replaceChildren(
-    ...list.groups.map((g) => mdRow("groups", g.id, rowTile("small", g.icon, g.name), g.name, `대화 ${g.count}`)),
+    ...list.groups.map((g) => mdRow("groups", g.id, rowTile("small", g.icon, g.name, g.color), g.name, `대화 ${g.count}`)),
     ...(list.groups.length ? [] : [el("li", { class: "hint md-none", text: q ? "맞는 그룹 없음" : "그룹 없음 — 그룹 추가" })]),
   );
   const g = state.groups.find((x) => x.id === pick.groups);
@@ -40,7 +40,7 @@ export function groupDetail(g, convs) {
   const say = (t) => ($("group_msg").textContent = t);
   const title = (c) => convLabel(c, state.peerNames).title;
   return [
-    mdHead("groups", rowTile("", g.icon, g.name), g.name, el("span", { class: "hint", text: `대화 ${inside.length}` })),
+    mdHead("groups", rowTile("", g.icon, g.name, g.color), g.name, el("span", { class: "hint", text: `대화 ${inside.length}` })),
     el(
       "div",
       { class: "md-body md-cols" },

@@ -615,7 +615,7 @@ fn schema17_peer_ids_never_reused() {
         "{sql}"
     );
     assert_eq!(columns(&conn), before, "열 전부 · 순서 그대로");
-    assert_eq!(before.len(), 19, "peers 열 수(스키마 16 기준)");
+    assert_eq!(before.len(), 20, "peers 열 수(지금 정의를 16 으로 되돌린 표 — 스키마 29 color 포함)");
     let p1 = peers::by_id(&conn, 1).unwrap().unwrap();
     assert_eq!(
         (p1.alias.as_deref(), p1.icon.as_deref()),

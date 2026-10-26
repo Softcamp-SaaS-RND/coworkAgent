@@ -1,6 +1,13 @@
 // 상대 — 접속 · 요약 · 안 읽음 · 색 · 주고받은 메시지.
+import { AGENT_COLORS } from "./agent.js";
 import { shortName } from "./format.js";
 import { sortByPos } from "./order.js";
+
+/// 타일 색 class — 여섯 색(`AGENT_COLORS` — 에이전트 아이콘 색과 같음)이면 `tinted {색}`, 아니면 빈 글자(흑연 · 무채).
+/// 레일 타일 · 머리글자 네모 · 말풍선 · 프로필 얼굴이 같은 규칙(`app.css` `.tinted`).
+export function tileTint(color) {
+  return AGENT_COLORS.includes(color) ? `tinted ${color}` : "";
+}
 
 /// 피어 승인 상태 → 문구.
 export function peerState(p) {

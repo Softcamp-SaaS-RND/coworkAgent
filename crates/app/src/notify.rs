@@ -333,6 +333,19 @@ impl Notifier {
             .map(run_opts::clean_icon)
             .transpose()
             .map_err(|m| invalid(&m))?;
+        // 빈 값 = 흑연(기본)으로 되돌림.
+        let me_color = patch
+            .me_color
+            .as_deref()
+            .map(|c| {
+                if c.is_empty() {
+                    Ok(None)
+                } else {
+                    run_opts::clean_tile_color(c).map(Some)
+                }
+            })
+            .transpose()
+            .map_err(|m| invalid(&m))?;
         let folded = patch
             .ui_folded
             .as_deref()
@@ -345,6 +358,7 @@ impl Notifier {
         for (key, v) in [
             (run_opts::ME_ALIAS_KEY, me_alias),
             (run_opts::ME_ICON_KEY, me_icon),
+            (run_opts::ME_COLOR_KEY, me_color),
         ] {
             if let Some(v) = v {
                 writes.push((key, v.unwrap_or_default()));
@@ -510,11 +524,11 @@ impl Notifier {
         run_opts::rail_order(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
 
-    /// 화면 — 사이드바 폭 · '나' 타일(표시 이름, 아이콘).
-    pub fn screen(&self) -> io::Result<(i64, Option<String>, Option<String>)> {
+    /// 화면 — 사이드바 폭 · '나' 타일(표시 이름, 아이콘, 색).
+    pub fn screen(&self) -> io::Result<(i64, run_opts::MeTile)> {
         let db = an_core::sync::lock(&self.db);
-        let (alias, icon) = run_opts::me_tile(&db).map_err(db_err)?;
-        Ok((run_opts::side_width(&db).map_err(db_err)?, alias, icon))
+        let me = run_opts::me_tile(&db).map_err(db_err)?;
+        Ok((run_opts::side_width(&db).map_err(db_err)?, me))
     }
 
     /// 접은 절 열쇠 목록.
@@ -730,6 +744,8 @@ pub struct SettingsPatch {
     /// '나' 타일 — 표시 이름 · 아이콘(PNG data URL). 빈 문자열 = 지움.
     pub me_alias: Option<String>,
     pub me_icon: Option<String>,
+    /// '나' 타일 색 — `an_core::agents::ICON_COLORS` 중 하나, 빈 문자열 = 흑연(기본).
+    pub me_color: Option<String>,
     /// 로그인 때 자동 시작(이 PC).
     pub autostart: Option<bool>,
     /// 자동 압축(이 PC) — 이 PC 에서 돈 세션이 컨텍스트 80% 를 넘으면 요약 후 새 세션.
@@ -758,10 +774,11 @@ fn settings_json(n: &Notifier) -> io::Result<serde_json::Value> {
     v["ui_home_view"] = json!(n.home_view()?);
     v["ui_home_zoom"] = json!(n.home_zoom()?);
     v["ui_peer_weeks"] = json!(n.peer_weeks()?);
-    let (side, alias, icon) = n.screen()?;
+    let (side, (alias, icon, color)) = n.screen()?;
     v["ui_side_width"] = json!(side);
     v["me_alias"] = json!(alias);
     v["me_icon"] = json!(icon);
+    v["me_color"] = json!(color);
     v["ui_folded"] = json!(n.folded()?);
     v["autostart"] = json!(n.autostart()?);
     v["auto_compact"] = json!(n.auto_compact()?);

@@ -200,7 +200,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app", r#"["위로 옮기기", -1],"#, "#1j 타일 메뉴"),
     ("app", r#"["아래로 옮기기", 1],"#, "#1j 타일 메뉴"),
     ("app", r#"class: "tile-name""#, "#1j 레일"),
-    ("app", "railFace(g.icon, true)", "#1j 레일 → #1z-13 결정 12 머리글자 → #1z-14 결정 1 그룹 = 사람 + 그림자 그림"),
+    ("app", "railFace(g.icon, true, g.color)", "#1j 레일 → #1z-13 결정 12 머리글자 → #1z-14 결정 1 그룹 그림 → #1z-15 결정 5 타일 색"),
     ("app", r#""이미지를 지웠습니다""#, "#1j 타일 메뉴"),
     ("app", r##"go("#");"##, "#1j 레일"),
     ("view", r#"{ key: "avail", label: "받기 가능", hint: "새 요청을 받습니다""#, "#1j 상태"),
@@ -262,7 +262,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app", "if (await changeGroup(g.id, [c.id], [])) say(`그룹 ${g.name} 에 넣었습니다`);", "#1w 넣기 = 복사(다른 그룹 · 원래 자리 그대로) · #1z-8 단추"),
     ("app.css", ".ico-exit {", "#1w 아이콘"),
     ("app", "{ class: `has-mark pm-row pm-${kind}` },", "#1z-2 주고받은 메시지 시안 Peer"),
-    ("app", "{ class: `pm-av pm-av-${kind}`, role: \"img\", \"aria-label\": s.label, title: s.label }", "#1z-2 아바타 → #1z-13 결정 12 사람 = 머리글자 네모"),
+    ("app", "{ class: `pm-av pm-av-${kind} ${kind === \"agent\" ? \"\" : tileTint(kind === \"me\" ? state.settings.me_color : peerColor)}`.trim(), role: \"img\", \"aria-label\": s.label, title: s.label }", "#1z-2 아바타 → #1z-13 결정 12 사람 = 머리글자 네모 → #1z-15 결정 5 타일 색"),
     ("app", r#"goSettings("invite_accept", "invite_text")"#, "#1k 레일 + · #1r 수락 칸은 라우터가"),
     ("app", r#"mdHead("agents", agentTile(a.color), a.name,"#, "#1k 줄 타일 · #1z-7 로봇 타일(고른 색) · #1z-8 상세 머리"),
     ("view", "agent: conv.dir === \"in\" ? `내 ${conv.agent}` : conv.agent", "#1k 받은 대화만 '내 '"),
@@ -325,7 +325,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app.css", "#rail { user-select: none; }", "#1z-2 레일 끌기 글자 선택 없음"),
     ("app", "railSlot(same.map(mid), across ? e.clientX : e.clientY)", "#1z-2 레일 놓을 자리 = 가장 가까운 타일"),
     ("app", r#"el("span", { class: "home-agent" }, speakerEl("agent"),"#, "#1z-2 개요 줄 에이전트 아이콘"),
-    ("app", r#"rowTile("small", p?.icon, g.name),"#, "#1z-2 개요 머리 사용자 아이콘 → #1z-13 결정 12 머리글자"),
+    ("app", r#"rowTile("small", p?.icon, g.name, p?.color),"#, "#1z-2 개요 머리 사용자 아이콘 → #1z-13 결정 12 머리글자 → #1z-15 결정 5 타일 색"),
     // 1l — 아이콘 · 말풍선 색 · 설정 정리
     ("index.html", r#"<dialog id="me_dialog" class="me-dialog" aria-labelledby="me_title">"#, "#1l 사용자 정보"),
     ("index.html", r#"<span class="ico ico-user" aria-hidden="true"></span>사용자 정보</h2>"#, "#1l 사용자 정보"),
@@ -508,11 +508,21 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app", r#"el("div", { class: "md-foot" }, el("span", { class: "grow" }), ...actions, button("닫기""#, "#1z-13 P3 단추 줄 = 오른쪽 한 묶음 · 순서 그대로"),
     // 1z-13 stage 2 — 머리글자 네모(사람 아이콘 아바타 대신)
     ("view", "export function initialOf(name) {", "#1z-13 결정 12 머리글자"),
-    ("app", "export function tileFace(icon, name) {", "#1z-13 결정 12 그림이 없으면 머리글자"),
-    ("app", "export function rowTile(cls, icon, name) {", "#1z-13 결정 12 줄 타일 = 머리글자"),
-    ("app", "railFace(state.settings.me_icon)", "#1z-13 결정 12 → #1z-14 결정 1 레일 나 = 사람 그림"),
-    ("app", "railFace(p.icon),", "#1z-13 결정 12 → #1z-14 결정 1 레일 상대 = 사람 그림"),
-    ("app", "export function railFace(icon, group = false) {", "#1z-14 결정 1 레일 타일 = 그림, 없으면 사람 · 사람 그룹"),
+    ("app", "export function tileFace(icon, name, color) {", "#1z-13 결정 12 그림이 없으면 머리글자 → #1z-15 결정 5 타일 색"),
+    ("app", "export function rowTile(cls, icon, name, color) {", "#1z-13 결정 12 줄 타일 = 머리글자 → #1z-15 결정 5 타일 색"),
+    ("app", "railFace(state.settings.me_icon, false, state.settings.me_color)", "#1z-13 결정 12 → #1z-14 결정 1 레일 나 = 사람 그림 → #1z-15 결정 4 고른 색(기본 흑연)"),
+    ("app", "railFace(p.icon, false, p.color),", "#1z-13 결정 12 → #1z-14 결정 1 레일 상대 = 사람 그림 → #1z-15 결정 5 타일 색"),
+    ("app", "export function railFace(icon, group = false, color) {", "#1z-14 결정 1 레일 타일 = 그림, 없으면 사람 · 사람 그룹 → #1z-15 결정 5 타일 색"),
+    ("view", "export function tileTint(color) {", "#1z-15 결정 1 · 5 타일 색 = 에이전트 여섯 색(tinted)"),
+    ("app", "renderTileColors();", "#1z-15 결정 1 · 3 타일 편집 아이콘 색 단추"),
+    ("app", r#"...(tileEdit.kind === "me" ? ["", ...AGENT_COLORS] : AGENT_COLORS).map((c) =>"#, "#1z-15 결정 4 · 6 '나' 는 흑연 단추 더"),
+    ("index.html", r#"<span id="tile_colors" class="swatches" role="group" aria-label="아이콘 색"></span>"#, "#1z-15 결정 1 타일 편집 아이콘 색"),
+    ("app", r#"class: `avatar ${peerTint(conv)}`.trim()"#, "#1z-15 결정 5 말풍선 상대 아바타 = 그 상대 색"),
+    ("app", r#"class: `avatar-face st-${st.key} ${tileTint(state.settings.me_color)}`.trim()"#, "#1z-15 결정 5 프로필 얼굴 = '나' 색"),
+    ("app.css", ":is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted { color: var(--on-dark); }", "#1z-15 결정 5 색 네모 흰 글자"),
+    ("app.css", ":is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted.peer-3 { background: var(--peer-3); }", "#1z-15 결정 1 여섯 색 바탕"),
+    ("app", r#"<circle cx="5.6" cy="8.4" r="2.8" fill="currentColor" opacity=".45"></circle>"#, "#1z-15 결정 7 그룹 = 앞 사람 + 뒤 좌우 둘(왼쪽)"),
+    ("app", r#"<circle cx="18.4" cy="8.4" r="2.8" fill="currentColor" opacity=".45"></circle>"#, "#1z-15 결정 7 그룹 = 앞 사람 + 뒤 좌우 둘(오른쪽)"),
     ("app.css", ".rail-btn .tile-shape svg { width: 22px; height: 22px; }", "#1z-14 결정 1 레일 그림 크기"),
     ("app", "else face.append(initialOf(name));", "#1z-13 결정 12 프로필 = 머리글자"),
     ("app", r#"text: initialOf(who.slice(who.lastIndexOf("/") + 1))"#, "#1z-13 결정 12 상대 사람 아바타 = 머리글자"),
@@ -901,5 +911,11 @@ fn token_contrast() {
             cases += 1;
         }
     }
-    assert_eq!(cases, 82);
+    // 타일 색(나 · 상대 · 그룹 — 에이전트 여섯 색, 두 테마 같은 값) 위 흰 머리글자(4.5:1)
+    for c in ["agent-tile", "peer-1", "peer-2", "peer-3", "peer-4", "peer-5"] {
+        let r = contrast(token("on-dark"), token(c));
+        assert!(r >= 4.5, "머리글자 on-dark / {c} {r:.2}");
+        cases += 1;
+    }
+    assert_eq!(cases, 88);
 }

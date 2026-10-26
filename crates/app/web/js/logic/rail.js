@@ -21,7 +21,7 @@ export function groupSettingsList(groups, peers, convs, q, peerNames) {
       .map((g) => {
         const all = inGroup(convs, g);
         const shown = !needle || hit(g.name) ? all : all.filter(convHit);
-        return { id: g.id, name: g.name, icon: g.icon, count: all.length, convs: shown.map((c) => c.id) };
+        return { id: g.id, name: g.name, icon: g.icon, color: g.color, count: all.length, convs: shown.map((c) => c.id) };
       }),
     users: peers.filter((p) => !needle || userHit(p) || mine(p).some(convHit)).map((p) => ({ id: p.id, count: mine(p).length })),
   };

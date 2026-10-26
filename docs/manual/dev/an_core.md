@@ -30,7 +30,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   `agent_folder_problem` 이면 `None`, 비교는 정규화 · 대소문자 무시, 돌려주는 값은 정규화 전 경로).
 - `owner_only::restrict(dir)`(#1a) — Windows 보호 DACL(토큰 사용자 SID · SYSTEM, `FILE_ALL_ACCESS`, 하위 상속) · Unix 0700.
 - `sync::lock(&Mutex<T>)`(#1a) — 오염된 잠금도 안의 값을 꺼내 계속 쓴다(warn). 원시 `.lock().expect(` 는 쓰지 않는다.
-- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(25)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
+- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(29)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
   `messages` 에 `reply_to` · `turns` · `duration_ms` — 한 트랜잭션, 있는 열은 건너뜀). 더 새 스키마면 오류. 올리기 전 `{db}.v{버전}.bak`
   사본(`db::backup_path`, `VACUUM INTO`) — 이전 실행 파일로 롤백할 때 DB 를 이 사본으로 바꿔 쓴다. → 6 `messages` 에 `mine` ·
   `exec` · `lc`(이전 이력은 방향 · id 로 채움). → 7 `conversations` 에 `relay_agent` · `relay_cap` · `relay_count` · `relay_on` ·
@@ -135,6 +135,10 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   스키마 19(#1m, 한 트랜잭션): `messages.ctx_tokens` · `ctx_op` · `ctx_seeds(conversation_id, agent, text)`. `chat::Author::Context` · `set_ctx_tokens` ·
   `add_context` · `finish_context` · `sessions(conv)` · `clear_sessions(conv, keep_seeds)` · `set_ctx_seed` · `ctx_seed` · `drop_ctx_seed`, `pending` 은 구분선
   글 먼저 · 구분선은 내 활동 · 미리보기 · 안 읽음 · 가로지른 글 · 메모 범위에서 뺌.
+  스키마 29(#1z-15, 한 트랜잭션): `peers.color` · `groups.color`(TEXT NOT NULL — 이 PC 의 타일 색, `agents::ICON_COLORS` 열쇠) — 더한 뒤 있던 행은
+  `run_opts::TILE_COLOR_RANDOM`(SQL `abs(random()) % 6`)으로 한 번 정해 저장, 새 상대(`peers::upsert` INSERT — 다시 hello 갱신은 색 그대로) · 새 그룹(`groups::add`)도 같은 식.
+  `peers::set_color` · `groups::set_color`(값 검사 `run_opts::clean_tile_color` — 여섯만), '나' = 설정 `me_color`(`run_opts::ME_COLOR_KEY`, 빈 · 틀린 값 = 흑연 — `me_tile` 셋째 값).
+  스키마 18 의 옛 그룹 옮기기는 그 때 표에 직접 INSERT 한다(`groups::add` 는 지금 표 — 색 열 — 를 가정).
   스키마 28(#1z-10, 한 트랜잭션): `conversations.cmd`(TEXT — 이 PC 가 그 대화에서 띄운 마지막 에이전트 실행 명령, 있던 대화 NULL) · `conversations.cmd_at`(INTEGER).
   `chat::set_cmd(conn, id, cmd, at)` · `chat::info(conn, id) -> ConvInfo{created_at, last_at, compacts, last_compact_at, clears, cmd, cmd_at}`(압축 = `compact` · `auto_compact`,
   비우기 = `clear` — `state = 'done'` 만). 명령 열은 `CONV_COLS` · `Conversation` 밖(목록 · 상대 프레임에 싣지 않는다).

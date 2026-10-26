@@ -4,6 +4,7 @@ import { $, act, button, el, ico } from "./core/dom.js";
 import { closeFloat, focusAfterFloat, openFloat } from "./core/float.js";
 import { state } from "./core/state.js";
 import { railFace } from "./core/widgets.js";
+import { AGENT_COLORS } from "./logic/agent.js";
 import { groupNameError, stepTarget } from "./logic/rail.js";
 import { stepMove } from "./drag.js";
 import { refresh } from "./events.js";
@@ -11,7 +12,8 @@ import { loadGroups, loadPeers, pickGroup, pickTile } from "./rail.js";
 import { fillPrefs } from "./settings/prefs.js";
 
 export const ICON_PX = 80; // 타일 40px × 2(고해상도 화면)
-/// 열린 타일 편집 — `kind` = `me` · `peer` · `group`, `id` = 상대 · 그룹 id, `icon` = `undefined`(그대로) · `""`(지움) · PNG data URL.
+/// 열린 타일 편집 — `kind` = `me` · `peer` · `group`, `id` = 상대 · 그룹 id, `icon` = `undefined`(그대로) · `""`(지움) · PNG data URL,
+/// `color` = `undefined`(그대로) · 고른 타일 색(`AGENT_COLORS`, '나' 는 `""` = 흑연도).
 export let tileEdit = null;
 
 /// 지금 고른 타일(레일 범위).
@@ -21,24 +23,24 @@ export function currentTile() {
   return { kind: "me", id: null };
 }
 
-/// 타일의 지금 값 — 이름(편집 칸) · 빈 이름일 때 보일 이름 · 그림.
+/// 타일의 지금 값 — 이름(편집 칸) · 빈 이름일 때 보일 이름 · 그림 · 타일 색('나' 는 `""` = 흑연).
 export function tileNow(t) {
   if (t.kind === "group") {
     const g = state.groups.find((x) => x.id === t.id);
-    return g && { value: g.name, fallback: g.name, icon: g.icon };
+    return g && { value: g.name, fallback: g.name, icon: g.icon, color: g.color };
   }
   if (t.kind === "peer") {
     const p = state.peers.find((x) => x.id === t.id);
-    return p && { value: p.alias ?? "", fallback: p.name, icon: p.icon };
+    return p && { value: p.alias ?? "", fallback: p.name, icon: p.icon, color: p.color };
   }
-  return { value: state.settings.me_alias ?? "", fallback: "나", icon: state.settings.me_icon };
+  return { value: state.settings.me_alias ?? "", fallback: "나", icon: state.settings.me_icon, color: state.settings.me_color ?? "" };
 }
 
 export function openTileEdit() {
   const t = currentTile();
   const now = tileNow(t);
   if (!now) return;
-  tileEdit = { ...t, icon: undefined };
+  tileEdit = { ...t, icon: undefined, color: undefined };
   const group = t.kind === "group";
   $("tile_alias_label").textContent = group ? "그룹 이름" : "표시 이름";
   // 그룹 이름 길이는 `groupNameError`(코드 포인트 40자)로 — HTML 제한은 UTF-16 단위라 두지 않는다.
@@ -49,6 +51,7 @@ export function openTileEdit() {
   $("tile_icon_file").value = "";
   $("tile_msg").textContent = "";
   renderTilePreview();
+  renderTileColors();
   $("tile_form").hidden = false;
   $("tile_alias").focus();
 }
@@ -58,14 +61,40 @@ export function closeTileEdit() {
   $("tile_form").hidden = true;
 }
 
-/// 미리보기 — 고친 그림으로 그린 레일 타일(그림이 없으면 사람 · 사람 그룹 모양), 이름 칸 입력마다 다시 그린다.
+/// 미리보기 — 고친 그림 · 색으로 그린 레일 타일(그림이 없으면 사람 · 세 사람 모양), 이름 칸 입력 · 색 고르기마다 다시 그린다.
 export function renderTilePreview() {
   const now = tileNow(tileEdit);
   if (!now) return;
   const icon = tileEdit.icon !== undefined ? tileEdit.icon : now.icon;
+  const color = tileEdit.color !== undefined ? tileEdit.color : now.color;
   const box = $("tile_preview");
   box.className = tileEdit.kind === "me" ? "rail-btn tile-preview me" : "rail-btn tile-preview";
-  box.replaceChildren(railFace(icon, tileEdit.kind === "group"));
+  box.replaceChildren(railFace(icon, tileEdit.kind === "group", color));
+}
+
+/// 아이콘 색 단추 — 에이전트 상세와 같은 여섯 색(`AGENT_COLORS`), '나' 는 맨 앞 흑연(기본 — `""`) 하나 더. 고르면 미리보기만, 저장 때 보낸다.
+export function renderTileColors() {
+  const now = tileNow(tileEdit);
+  if (!now) return;
+  const picked = tileEdit.color !== undefined ? tileEdit.color : now.color;
+  const box = $("tile_colors");
+  box.replaceChildren(
+    ...(tileEdit.kind === "me" ? ["", ...AGENT_COLORS] : AGENT_COLORS).map((c) =>
+      el("button", {
+        type: "button",
+        class: `swatch ${c || "rail-2"}`,
+        title: `아이콘 색 ${c || "흑연"}`,
+        "aria-label": `아이콘 색 ${c || "흑연"}`,
+        "aria-pressed": String(c === picked),
+        onclick: (ev) => {
+          if (!tileEdit) return;
+          tileEdit.color = c;
+          for (const b of box.children) b.setAttribute("aria-pressed", String(b === ev.currentTarget));
+          renderTilePreview();
+        },
+      }),
+    ),
+  );
 }
 
 /// 고른 그림 → 가운데 정사각형을 잘라 `ICON_PX` 크기 PNG data URL(서버는 PNG data URL 만 받는다). 그림은 data URL 로 읽는다 — CSP
@@ -228,6 +257,9 @@ $("tile_form").addEventListener("submit", (ev) => {
   if (!edit) return;
   const { kind, id, icon } = edit;
   const alias = $("tile_alias").value;
+  // 색은 바꿨을 때만 보낸다.
+  const color = edit.color !== undefined && edit.color !== tileNow(edit)?.color ? edit.color : undefined;
+  const tile = (body) => ({ ...body, ...(icon === undefined ? {} : { icon }), ...(color === undefined ? {} : { color }) });
   if (kind === "group") {
     const bad = groupNameError(alias, state.groups, id);
     if (bad) {
@@ -239,12 +271,13 @@ $("tile_form").addEventListener("submit", (ev) => {
     "타일 저장",
     async () => {
       if (kind === "me") {
-        fillPrefs(await api("PUT", "/api/settings", icon === undefined ? { me_alias: alias } : { me_alias: alias, me_icon: icon }));
+        const body = { me_alias: alias, ...(icon === undefined ? {} : { me_icon: icon }), ...(color === undefined ? {} : { me_color: color }) };
+        fillPrefs(await api("PUT", "/api/settings", body));
       } else if (kind === "group") {
-        await api("PATCH", `/api/groups/${id}`, icon === undefined ? { name: alias } : { name: alias, icon });
+        await api("PATCH", `/api/groups/${id}`, tile({ name: alias }));
         await loadGroups();
       } else {
-        await api("PATCH", `/api/peers/${id}`, icon === undefined ? { alias } : { alias, icon });
+        await api("PATCH", `/api/peers/${id}`, tile({ alias }));
         await loadPeers(true);
         await refresh(); // 열린 대화 · 목록의 발화자 이름도 새 표시 이름으로
       }

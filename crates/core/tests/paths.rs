@@ -39,7 +39,7 @@ fn db_schema_version_kept_on_reopen() {
     let root = temp_root("dbver");
     let paths = Paths::under(&root);
     paths.ensure().unwrap();
-    assert_eq!(db::SCHEMA_VERSION, 28);
+    assert_eq!(db::SCHEMA_VERSION, 29);
     {
         // 00 이 남긴 스키마 1 파일 — 열면 2 로 오른다.
         let conn = rusqlite::Connection::open(paths.db_file()).unwrap();
@@ -650,7 +650,7 @@ fn schema28_conv_info() {
         .unwrap();
     }
     let conn = db::open(&paths.db_file()).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 28);
+    assert_eq!(db::user_version(&conn).unwrap(), db::SCHEMA_VERSION);
     let empty = chat::info(&conn, 2).unwrap().unwrap();
     assert_eq!(
         (empty.created_at, empty.last_at, empty.compacts, empty.last_compact_at, empty.clears, empty.cmd, empty.cmd_at),
@@ -675,6 +675,63 @@ fn schema28_conv_info() {
     chat::set_cmd(&conn, 1, "claude -p --resume s", 180).unwrap();
     assert_eq!(chat::info(&conn, 1).unwrap().unwrap().cmd.as_deref(), Some("claude -p --resume s"), "마지막 실행으로 덮는다");
     assert!(chat::info(&conn, 9).unwrap().is_none(), "없는 대화");
+}
+
+/// 29(#1z-15): 상대 · 그룹 타일 색 — 있던 행 · 새 행은 여섯 중 무작위 한 색(저장), 다시 hello 해도 그대로, 색만 바꾼다. '나' = 설정(빈 값 = 흑연).
+#[test]
+fn schema29_tile_color() {
+    use an_core::{agents::ICON_COLORS, groups, peers, run_opts, settings};
+    let root = temp_root("schema29");
+    let paths = Paths::under(&root);
+    paths.ensure().unwrap();
+    {
+        let conn = db::open(&paths.db_file()).unwrap();
+        conn.execute_batch(
+            "ALTER TABLE peers DROP COLUMN color; ALTER TABLE groups DROP COLUMN color; PRAGMA user_version = 28;
+             INSERT INTO peers (id, spki, name, host, addr, round, created_at) VALUES (1, x'01', 'p', 'h', '1.2.3.4:1', 'r', 0);
+             INSERT INTO groups (id, name, pos) VALUES (1, 'g', 0);",
+        )
+        .unwrap();
+    }
+    let conn = db::open(&paths.db_file()).unwrap();
+    assert_eq!(db::user_version(&conn).unwrap(), db::SCHEMA_VERSION);
+    let old = peers::by_id(&conn, 1).unwrap().unwrap();
+    assert!(ICON_COLORS.contains(&old.color.as_str()), "있던 상대 = 여섯 중 하나: {}", old.color);
+    let g = groups::by_id(&conn, 1).unwrap().unwrap();
+    assert!(ICON_COLORS.contains(&g.color.as_str()), "있던 그룹 = 여섯 중 하나: {}", g.color);
+    assert_eq!(peers::by_id(&conn, 1).unwrap().unwrap().color, old.color, "저장 — 다시 읽어도 같다");
+    // 새 상대 · 그룹 여럿 — 모두 여섯 안, 무작위라 한 색만 나오지 않는다(30 개가 다 같을 확률 6^-29).
+    let mut seen = std::collections::HashSet::new();
+    for i in 0..30u8 {
+        let p = peers::upsert(&conn, &[10, i], "n", "h", "1.2.3.4:9", "r").unwrap();
+        assert!(ICON_COLORS.contains(&p.color.as_str()));
+        seen.insert(p.color);
+        let ng = groups::add(&conn, &format!("g{i}")).unwrap();
+        assert!(ICON_COLORS.contains(&ng.color.as_str()));
+        seen.insert(ng.color);
+    }
+    assert!(seen.len() > 1, "무작위: {seen:?}");
+    // 색 바꾸기 — 다시 hello(upsert)해도 이 PC 의 색은 남는다.
+    assert!(peers::set_color(&conn, 1, "peer-4").unwrap());
+    peers::upsert(&conn, &[1u8], "p2", "h2", "1.2.3.4:2", "r2").unwrap();
+    assert_eq!(peers::by_id(&conn, 1).unwrap().unwrap().color, "peer-4", "다시 hello 해도 색 그대로");
+    assert!(!peers::set_color(&conn, 99, "peer-4").unwrap(), "없는 상대");
+    assert!(groups::set_color(&conn, 1, "agent-tile").unwrap());
+    assert_eq!(groups::by_id(&conn, 1).unwrap().unwrap().color, "agent-tile");
+    assert!(!groups::set_color(&conn, 99, "peer-1").unwrap(), "없는 그룹");
+    // 값 검사 — 여섯만.
+    for c in ICON_COLORS {
+        assert_eq!(run_opts::clean_tile_color(c), Ok(c.to_string()));
+    }
+    for bad in ["", "red", "peer-6", " peer-1", "rail-2"] {
+        assert!(run_opts::clean_tile_color(bad).is_err(), "{bad:?}");
+    }
+    // '나' — 없거나 틀린 값 = 흑연(None).
+    assert_eq!(run_opts::me_tile(&conn).unwrap().2, None);
+    settings::set(&conn, run_opts::ME_COLOR_KEY, "peer-2").unwrap();
+    assert_eq!(run_opts::me_tile(&conn).unwrap().2.as_deref(), Some("peer-2"));
+    settings::set(&conn, run_opts::ME_COLOR_KEY, "bogus").unwrap();
+    assert_eq!(run_opts::me_tile(&conn).unwrap().2, None, "틀린 값 = 흑연");
 }
 
 fn legacy_root(base: &std::path::Path) -> PathBuf {

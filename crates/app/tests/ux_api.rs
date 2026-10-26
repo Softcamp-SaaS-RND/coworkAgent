@@ -784,6 +784,52 @@ async fn peer_tile_alias_icon() {
     );
 }
 
+/// 타일 색 — 상대(처음 무작위 · 여섯만 · 준 쪽만 · 상대에 알리지 않음) · '나'(빈 값 = 흑연).
+#[tokio::test(flavor = "multi_thread")]
+async fn peer_and_me_tile_color() {
+    let (a, b) = (side("tc-a").await, side("tc-b").await);
+    let (pb, _) = pair(&a, &b).await;
+    let colors = an_core::agents::ICON_COLORS;
+    let (_, list) = a.call("GET", "/api/peers", Value::Null).await;
+    let first = list[0]["color"].as_str().unwrap().to_string();
+    assert!(colors.contains(&first.as_str()), "처음 색 = 여섯 중 하나: {first}");
+    let path = format!("/api/peers/{pb}");
+    let (code, r) = a.call("PATCH", &path, json!({ "alias": "세일즈", "color": "peer-3" })).await;
+    assert_eq!((code, &r["alias"], &r["color"]), (200, &json!("세일즈"), &json!("peer-3")), "{r}");
+    let (code, r) = a.call("PATCH", &path, json!({ "alias": "" })).await;
+    assert_eq!((code, &r["color"]), (200, &json!("peer-3")), "준 항목만");
+    for bad in [json!({ "color": "red" }), json!({ "color": "" }), json!({ "alias": "새", "color": "peer-9" })] {
+        let (code, r) = a.call("PATCH", &path, bad.clone()).await;
+        assert_eq!(code, 400, "{bad} → {r}");
+    }
+    let (_, list) = a.call("GET", "/api/peers", Value::Null).await;
+    assert_eq!((&list[0]["alias"], &list[0]["color"]), (&Value::Null, &json!("peer-3")), "틀린 요청은 쓰지 않았다");
+    // 쓰기 하나가 실패하면(표시 이름 쓰기를 DB 트리거로 막음) 함께 준 색 · 실행 설정도 쓰지 않는다 — 한 트랜잭션.
+    a.db()
+        .execute_batch(
+            "CREATE TRIGGER boom BEFORE UPDATE OF alias ON peers WHEN NEW.alias = '실패' BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+        )
+        .unwrap();
+    let (code, r) = a
+        .call("PATCH", &path, json!({ "alias": "실패", "color": "peer-5", "group": "새 그룹" }))
+        .await;
+    assert!(code >= 500, "{code} {r}");
+    let (_, list) = a.call("GET", "/api/peers", Value::Null).await;
+    assert_eq!((&list[0]["color"], &list[0]["group"]), (&json!("peer-3"), &Value::Null), "실패하면 아무것도 바뀌지 않는다");
+    a.db().execute_batch("DROP TRIGGER boom;").unwrap();
+    let (_, list) = b.call("GET", "/api/peers", Value::Null).await;
+    assert!(colors.contains(&list[0]["color"].as_str().unwrap()), "상대 PC 는 제 색(알리지 않음)");
+    // '나' — 기본 흑연(null), 여섯 중 하나, 빈 값 = 흑연으로 되돌림.
+    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
+    assert_eq!(s["me_color"], Value::Null);
+    let (code, s) = a.call("PUT", "/api/settings", json!({ "me_color": "peer-1" })).await;
+    assert_eq!((code, &s["me_color"]), (200, &json!("peer-1")), "{s}");
+    let (code, _) = a.call("PUT", "/api/settings", json!({ "me_color": "blue" })).await;
+    assert_eq!(code, 400);
+    let (code, s) = a.call("PUT", "/api/settings", json!({ "me_color": "" })).await;
+    assert_eq!((code, &s["me_color"]), (200, &Value::Null), "흑연으로");
+}
+
 /// 접은 절(#1g) — 목록을 통째로 저장 · 읽기, 형식 · 개수가 틀리면 400 이고 아무것도 쓰지 않는다.
 #[tokio::test(flavor = "multi_thread")]
 async fn settings_folded() {

@@ -43,11 +43,11 @@ export function fillPrefs(s) {
   if (s.ui_rail_order !== undefined) applyRailOrder(s.ui_rail_order);
   if (s.ui_tile_size !== undefined) applyTileSize(s.ui_tile_size);
   if (s.notify_paused !== undefined || s.focus !== undefined) $("bell").classList.toggle("paused", s.notify_paused === true || s.focus === true);
-  if (s.me_alias !== undefined || s.me_icon !== undefined) {
+  if (s.me_alias !== undefined || s.me_icon !== undefined || s.me_color !== undefined) {
     renderRail();
     renderSideHead();
   }
-  if (s.me_alias !== undefined || s.me_icon !== undefined || s.focus !== undefined) renderAvatar();
+  if (s.me_alias !== undefined || s.me_icon !== undefined || s.me_color !== undefined || s.focus !== undefined) renderAvatar();
   // 세션 생성의 상한 칸 처음 값.
   if (s.relay_cap_default !== undefined) $("chat_relay_cap").value = String(s.relay_cap_default);
 }

@@ -60,8 +60,9 @@ export function renderRail() {
     state.railGroup,
     state.settings.me_alias,
     state.settings.me_icon,
-    paired.map((p) => [p.id, displayName(p), p.host, p.icon, unread.get(p.id) ?? 0, presence(p).text]),
-    state.groups.map((g) => [g.id, g.name, g.icon, groupUnread(state.convs, g), inGroup(state.convs, g).length]),
+    state.settings.me_color,
+    paired.map((p) => [p.id, displayName(p), p.host, p.icon, p.color, unread.get(p.id) ?? 0, presence(p).text]),
+    state.groups.map((g) => [g.id, g.name, g.icon, g.color, groupUnread(state.convs, g), inGroup(state.convs, g).length]),
   ];
   if (unchanged($("rail"), JSON.stringify(sig))) return;
   const me = $("rail_me");
@@ -69,7 +70,7 @@ export function renderRail() {
   me.setAttribute("aria-pressed", String(state.railPeer == null && state.railGroup == null));
   me.setAttribute("aria-label", meName);
   me.title = meName;
-  me.replaceChildren(railFace(state.settings.me_icon), tileName(meName));
+  me.replaceChildren(railFace(state.settings.me_icon, false, state.settings.me_color), tileName(meName));
   keepFocus($("rail"), () => drawRailTiles(paired, unread));
 }
 
@@ -94,7 +95,7 @@ export function drawRailTiles(paired, unread) {
           onclick: () => pickTile(p.id),
           oncontextmenu: (ev) => tileMenuEvent(ev, { kind: "peer", id: p.id }),
         },
-        railFace(p.icon),
+        railFace(p.icon, false, p.color),
         tileName(displayName(p)),
         n ? el("span", { class: "rail-badge", "aria-hidden": "true", text: n > 99 ? "99+" : String(n) }) : "",
         el("span", { class: `rail-dot ${pr.key}`, "aria-hidden": "true" }),
@@ -121,7 +122,7 @@ export function drawRailTiles(paired, unread) {
           onclick: () => pickGroup(g.id),
           oncontextmenu: (ev) => tileMenuEvent(ev, { kind: "group", id: g.id }),
         },
-        railFace(g.icon, true),
+        railFace(g.icon, true, g.color),
         tileName(g.name),
         n ? el("span", { class: "rail-badge", "aria-hidden": "true", text: n > 99 ? "99+" : String(n) }) : "",
       );

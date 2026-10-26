@@ -45,14 +45,14 @@ export function renderHome() {
   $("home_zoom_pick").hidden = !pv; // 미리보기 크기는 미리보기에서만
   if (pv) return renderHomePreview(groups, !group && state.railPeer != null);
   const peerOf = (id) => state.peers.find((x) => x.id === id);
-  const sig = JSON.stringify([groups.map(({ rows, ...g }) => [g, rows.map((c) => [c.id, c.title, c.last_state, c.unread, c.last_at, c.starred])]), groups.map((g) => presence(peerOf(g.peer)).text)]);
+  const sig = JSON.stringify([groups.map(({ rows, ...g }) => [g, rows.map((c) => [c.id, c.title, c.last_state, c.unread, c.last_at, c.starred])]), groups.map((g) => [presence(peerOf(g.peer)).text, peerOf(g.peer)?.icon, peerOf(g.peer)?.color])]);
   if (!needsRender($("home_summary"), sig, false)) return;
   $("home_summary").replaceChildren(
     ...groups.map((g) => {
       const p = peerOf(g.peer);
       // 머리 = 그 상대 타일(머리글자 · 그림) · 줄 = 에이전트 로봇 아이콘 — 사람 · 에이전트를 가른다.
       const head = [
-        rowTile("small", p?.icon, g.name),
+        rowTile("small", p?.icon, g.name, p?.color),
         el("strong", { text: g.name }),
         p ? "" : el("span", { class: "hint", text: "페어링 해제" }),
         g.unread ? el("span", { class: "stat", text: `안 읽음 ${g.unread}` }) : "",

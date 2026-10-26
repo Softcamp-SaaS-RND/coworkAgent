@@ -10,7 +10,7 @@ import { KIND_NAMES, MAX_OBSERVERS, convClosed, convKindIcon, convLabel, shareCa
 import { dayBreaks, displayName, formatDuration, formatTime, josa, shortName, stateText } from "./logic/format.js";
 import { htmlSrcdoc, isHtmlDoc, markdownBlocks } from "./logic/markdown.js";
 import { editedTag, enterSends, lastRun, messageActions, messagesSigOf, noteCount, outboxText, progressText, refusedText, relayText } from "./logic/message.js";
-import { initialOf, presence } from "./logic/peer.js";
+import { initialOf, presence, tileTint } from "./logic/peer.js";
 import { askTag, reqFeedback } from "./logic/request.js";
 import { closeMention } from "./composer.js";
 import { convEndForm } from "./conv-menu.js";
@@ -228,7 +228,7 @@ export function messageEl(conv, m) {
     agent
       ? el("div", { class: "avatar agent-av", "aria-hidden": "true" }, ico("bot"))
       : side === "theirs"
-        ? el("div", { class: "avatar", "aria-hidden": "true", text: initialOf(who.slice(who.lastIndexOf("/") + 1)) })
+        ? el("div", { class: `avatar ${peerTint(conv)}`.trim(), "aria-hidden": "true", text: initialOf(who.slice(who.lastIndexOf("/") + 1)) })
         : "",
     el(
       "div",
@@ -356,7 +356,7 @@ export function feedbackEl(conv, m) {
   return el(
     "article",
     { class: `msg feedback side-${f.side}`, "data-feedback": String(m.id) },
-    f.side === "theirs" ? el("div", { class: "avatar", "aria-hidden": "true", text: initialOf(who) }) : "",
+    f.side === "theirs" ? el("div", { class: `avatar ${peerTint(conv)}`.trim(), "aria-hidden": "true", text: initialOf(who) }) : "",
     el(
       "div",
       { class: "msg-body" },
@@ -442,8 +442,13 @@ export function resendState(id, state, note) {
   );
 }
 
+/// 상대 쪽 말풍선 아바타 색 — 그 대화 상대 타일 색(`tileTint`).
+export function peerTint(conv) {
+  return tileTint(state.peers.find((p) => p.id === conv.peer_id)?.color);
+}
+
 export function messagesSig(conv, ms) {
-  return messagesSigOf(state.peerNames.get(conv.peer_id), ms);
+  return `${messagesSigOf(state.peerNames.get(conv.peer_id), ms)}|${peerTint(conv)}`;
 }
 
 /// 그 글로 — 가운데로 스크롤해 잠깐 강조하고 실행 상세의 '진행' 을 그 요청으로(`#c/{대화}/m/{글}`).

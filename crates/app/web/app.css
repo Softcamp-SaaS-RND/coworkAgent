@@ -1083,3 +1083,12 @@ details { margin: var(--sp-2) 0; }
 .swatches { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .swatch { width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--border); }
 .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--text); }
+.swatch.rail-2 { background: var(--rail-2); } /* '나' 타일 흑연(기본) */
+/* 타일 색(나 · 상대 · 그룹이 고른 색 — 에이전트 아이콘 색과 같은 여섯, `tileTint`) — 레일 · 머리글자 네모 · 말풍선 · 주고받은 메시지 · 프로필 얼굴, 흰 글자 */
+:is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted { color: var(--on-dark); }
+:is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted.agent-tile { background: var(--agent-tile); }
+:is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted.peer-1 { background: var(--peer-1); }
+:is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted.peer-2 { background: var(--peer-2); }
+:is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted.peer-3 { background: var(--peer-3); }
+:is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted.peer-4 { background: var(--peer-4); }
+:is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted.peer-5 { background: var(--peer-5); }

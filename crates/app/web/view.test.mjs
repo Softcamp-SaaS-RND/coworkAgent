@@ -85,6 +85,7 @@ import {
   initialOf,
   waitingByPeer,
   tileUnread,
+  tileTint,
 } from "./js/logic/peer.js";
 import {
   inboxRows,
@@ -1629,6 +1630,11 @@ test("initial_of — 앞뒤 공백 뺀 첫 글자 묶음(서로게이트 쌍 · 
   for (const [name, want] of cases) assert.equal(initialOf(name), want, JSON.stringify(name));
 });
 
+test("tile_tint — 여섯 색(에이전트 아이콘 색과 같음)이면 tinted + 색 class, 아니면 빈 글자(흑연 · 무채)", () => {
+  for (const c of ["agent-tile", "peer-1", "peer-2", "peer-3", "peer-4", "peer-5"]) assert.equal(tileTint(c), `tinted ${c}`);
+  for (const c of [undefined, null, "", "rail-2", "red", "peer-6", " peer-1", "tinted"]) assert.equal(tileTint(c), "", JSON.stringify(c));
+});
+
 test("move_in_order — 대상 앞 · 뒤에 끼우기, 걸러 보인 이웃 기준이어도 전체 순서에서 · 그대로인 경우", () => {
   const order = [1, 2, 3, 4, 5];
   assert.deepEqual(moveInOrder(order, 5, 2), [1, 5, 2, 3, 4], "앞");
@@ -2566,7 +2572,7 @@ test("group_settings_list — 그룹설정 목록(#1z 시안 A): 대화 수 · �
     { id: 12, peer_id: 2, agent: "qa", dir: "in", title: "" },
   ];
   const groups = [
-    { id: 7, name: "배포 준비", convs: [10] },
+    { id: 7, name: "배포 준비", convs: [10], color: "peer-4" },
     { id: 8, name: "QA", convs: [11, 12] },
     { id: 9, name: "빈 그룹", convs: [] },
   ];
@@ -2590,6 +2596,8 @@ test("group_settings_list — 그룹설정 목록(#1z 시안 A): 대화 수 · �
   assert.deepEqual(shown("qa"), [[8, [11, 12]]], "그룹 이름 'QA' — 전부(사용자 'qa-pc' 와 겹쳐도)");
   assert.deepEqual(shown("로그인"), [[8, [11]]], "대화 제목 — 맞는 대화만");
   assert.deepEqual(shown("ab12"), [[7, [10]]], "지문 — 그 사용자 대화만");
+  // 타일 색은 목록 줄 머리글자 네모에 쓴다(적대적 리뷰 #1z-15 R1-1) — 거른 뒤에도 그대로.
+  for (const q of ["", "배포"]) assert.equal(groupSettingsList(groups, peers, convs, q, names).groups[0].color, "peer-4", q);
 });
 
 test("past_slop — 레일 타일 끌기 시작(#1z): 5px 미만 = 누름, 5px 이상 = 끌기", () => {

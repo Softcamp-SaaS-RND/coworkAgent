@@ -49,6 +49,11 @@ pub const MAX_FOLD_CHARS: usize = 32;
 /// '나' 타일 — 표시 이름 · 아이콘(빈 값 = 없음).
 pub const ME_ALIAS_KEY: &str = "me_alias";
 pub const ME_ICON_KEY: &str = "me_icon";
+/// '나' 타일 색 — [`crate::agents::ICON_COLORS`] 중 하나, 빈 값 = 흑연(기본).
+pub const ME_COLOR_KEY: &str = "me_color";
+/// 상대 · 그룹 타일의 처음 색 — [`crate::agents::ICON_COLORS`] 여섯 중 무작위 하나(SQL 식, 새 행 · 스키마 29 의 있던 행에 한 번 쓴다).
+pub const TILE_COLOR_RANDOM: &str = "(CASE abs(random()) % 6 WHEN 0 THEN 'agent-tile' WHEN 1 THEN 'peer-1' WHEN 2 THEN 'peer-2' \
+     WHEN 3 THEN 'peer-3' WHEN 4 THEN 'peer-4' ELSE 'peer-5' END)";
 
 /// model — [`MODELS`] 중 하나.
 pub fn valid_model(s: &str) -> bool {
@@ -95,6 +100,17 @@ pub fn clean_icon(s: &str) -> Result<Option<String>, String> {
         return Err(format!("아이콘은 PNG data URL({MAX_ICON_CHARS}자까지)"));
     }
     Ok(Some(s.to_string()))
+}
+
+/// 타일 색 — [`crate::agents::ICON_COLORS`] 중 하나(앞뒤 공백도 틀린 값), 아니면 `Err`.
+pub fn clean_tile_color(s: &str) -> Result<String, String> {
+    if crate::agents::ICON_COLORS.contains(&s) {
+        return Ok(s.to_string());
+    }
+    Err(format!(
+        "타일 색은 {} 중 하나",
+        crate::agents::ICON_COLORS.join(" · ")
+    ))
 }
 
 // 아래 설정 읽기는 없거나 틀린 값만 기본값으로 — DB 오류는 그대로 낸다(기본값을 성공처럼 내지 않는다).
@@ -204,11 +220,14 @@ pub fn folded(conn: &Connection) -> rusqlite::Result<Vec<String>> {
         .unwrap_or_default())
 }
 
-/// '나' 타일(표시 이름, 아이콘) — 비었거나 틀린 값은 `None`.
-pub fn me_tile(conn: &Connection) -> rusqlite::Result<(Option<String>, Option<String>)> {
+/// '나' 타일(표시 이름, 아이콘, 색) — 비었거나 틀린 값은 `None`(색 `None` = 흑연).
+pub type MeTile = (Option<String>, Option<String>, Option<String>);
+
+pub fn me_tile(conn: &Connection) -> rusqlite::Result<MeTile> {
     Ok((
         settings::get(conn, ME_ALIAS_KEY)?.and_then(|a| clean_alias(&a).ok().flatten()),
         settings::get(conn, ME_ICON_KEY)?.and_then(|i| clean_icon(&i).ok().flatten()),
+        settings::get(conn, ME_COLOR_KEY)?.and_then(|c| clean_tile_color(&c).ok()),
     ))
 }
 

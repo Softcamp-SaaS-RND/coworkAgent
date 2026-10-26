@@ -3,7 +3,7 @@ import { api, appOffline } from "./core/api.js";
 import { $, act, el, ico } from "./core/dom.js";
 import { state } from "./core/state.js";
 import { keepsConversation } from "./logic/conv.js";
-import { initialOf, presenceOf } from "./logic/peer.js";
+import { initialOf, presenceOf, tileTint } from "./logic/peer.js";
 import { RAIL_W, groupLeaves, inGroup, peerLeaves } from "./logic/rail.js";
 import { portText } from "./logic/settings.js";
 import { newMenu, profileMenu, route } from "./logic/shell.js";
@@ -72,7 +72,7 @@ export function renderAvatar() {
   const name = state.settings.me_alias || "나";
   const icon = state.settings.me_icon;
   const st = presenceOf(state.settings.focus, appOffline());
-  const face = el("span", { class: `avatar-face st-${st.key}`, "aria-hidden": "true" });
+  const face = el("span", { class: `avatar-face st-${st.key} ${tileTint(state.settings.me_color)}`.trim(), "aria-hidden": "true" });
   if (icon) face.append(el("img", { src: icon, alt: "" }));
   else face.append(initialOf(name));
   face.append(el("span", { class: "avatar-dot" }));

@@ -2,7 +2,7 @@ use rusqlite::OptionalExtension;
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 28;
+pub const SCHEMA_VERSION: i64 = 29;
 
 /// DB 오류를 `io::Error` 로 — 상위 크레이트가 `map_err(db_err)` 로 쓴다(`Error` 는 rusqlite 것이라 `From` 을 구현할 수 없다).
 pub fn db_err(e: Error) -> std::io::Error {
@@ -418,9 +418,16 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
                     r.get(0)
                 })
                 .optional()?;
+            // 그 때 표(색 열은 29)에 직접 넣는다 — `groups::add` 는 지금 표를 가정한다.
             let id = match found {
                 Some(id) => id,
-                None => crate::groups::add(&tx, &name)?.id,
+                None => {
+                    tx.execute(
+                        "INSERT INTO groups (name, pos) VALUES (?1, (SELECT coalesce(max(pos), -1) + 1 FROM groups))",
+                        [&name],
+                    )?;
+                    tx.last_insert_rowid()
+                }
             };
             tx.execute(
                 "INSERT OR IGNORE INTO group_peers (group_id, peer_id) VALUES (?1, ?2)",
@@ -674,6 +681,21 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
             tx.execute_batch("ALTER TABLE conversations ADD COLUMN cmd_at INTEGER;")?;
         }
         tx.execute_batch("PRAGMA user_version = 28;")?;
+        tx.commit()?;
+    }
+    // 29: 상대 · 그룹 타일 색(이 PC 표시) — 있던 행은 여섯 중 무작위 한 색을 한 번 정해 저장한다.
+    if v < 29 {
+        let tx = conn.unchecked_transaction()?;
+        for table in ["peers", "groups"] {
+            if !has_column(&tx, table, "color")? {
+                tx.execute_batch(&format!(
+                    "ALTER TABLE {table} ADD COLUMN color TEXT NOT NULL DEFAULT 'agent-tile';
+                     UPDATE {table} SET color = {};",
+                    crate::run_opts::TILE_COLOR_RANDOM
+                ))?;
+            }
+        }
+        tx.execute_batch("PRAGMA user_version = 29;")?;
         tx.commit()?;
     }
     Ok(conn)

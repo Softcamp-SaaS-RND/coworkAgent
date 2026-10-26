@@ -13,6 +13,8 @@ pub struct Group {
     pub name: String,
     /// 타일 그림 — PNG data URL(`run_opts::clean_icon`), 없으면 머리글자.
     pub icon: Option<String>,
+    /// 이 PC 의 타일 색 — [`crate::agents::ICON_COLORS`] 중 하나(처음 무작위).
+    pub color: String,
     pub pos: i64,
     /// 넣은 대화 id(작은 것부터).
     pub convs: Vec<i64>,
@@ -65,13 +67,14 @@ pub fn fit_name(raw: &str) -> Option<String> {
 /// 레일 순서(자리, 같으면 id).
 pub fn list(conn: &Connection) -> rusqlite::Result<Vec<Group>> {
     let mut groups: Vec<Group> = conn
-        .prepare("SELECT id, name, icon, pos FROM groups ORDER BY pos, id")?
+        .prepare("SELECT id, name, icon, pos, color FROM groups ORDER BY pos, id")?
         .query_map([], |r| {
             Ok(Group {
                 id: r.get(0)?,
                 name: r.get(1)?,
                 icon: r.get(2)?,
                 pos: r.get(3)?,
+                color: r.get(4)?,
                 convs: Vec::new(),
             })
         })?
@@ -105,10 +108,13 @@ pub fn name_taken(conn: &Connection, name: &str, except: Option<i64>) -> rusqlit
     .map(|o| o.is_some())
 }
 
-/// 새 그룹은 레일 그룹 끝에. 이름은 [`clean_name`] 을 거친 값.
+/// 새 그룹은 레일 그룹 끝에 · 색은 여섯 중 무작위. 이름은 [`clean_name`] 을 거친 값.
 pub fn add(conn: &Connection, name: &str) -> rusqlite::Result<Group> {
     conn.execute(
-        "INSERT INTO groups (name, pos) VALUES (?1, (SELECT coalesce(max(pos), -1) + 1 FROM groups))",
+        &format!(
+            "INSERT INTO groups (name, pos, color) VALUES (?1, (SELECT coalesce(max(pos), -1) + 1 FROM groups), {})",
+            crate::run_opts::TILE_COLOR_RANDOM
+        ),
         [name],
     )?;
     by_id(conn, conn.last_insert_rowid()).map(|g| g.expect("방금 쓴 그룹"))
@@ -127,6 +133,14 @@ pub fn set_icon(conn: &Connection, id: i64, icon: Option<&str>) -> rusqlite::Res
     Ok(conn.execute(
         "UPDATE groups SET icon = ?2 WHERE id = ?1",
         params![id, icon],
+    )? == 1)
+}
+
+/// 타일 색(값 검증은 [`crate::run_opts::clean_tile_color`]). 없는 그룹이면 `false`.
+pub fn set_color(conn: &Connection, id: i64, color: &str) -> rusqlite::Result<bool> {
+    Ok(conn.execute(
+        "UPDATE groups SET color = ?2 WHERE id = ?1",
+        params![id, color],
     )? == 1)
 }
 

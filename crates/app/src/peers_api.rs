@@ -32,6 +32,8 @@ pub(crate) struct PeerView {
     /// 이 PC 에서 부르는 표시 이름 · 타일 아이콘(PNG data URL) — `null` 이면 원래 이름 · 글자 타일.
     alias: Option<String>,
     icon: Option<String>,
+    /// 이 PC 의 타일 색(`an_core::agents::ICON_COLORS` 중 하나).
+    color: String,
     /// 접속 상태 — 마지막 통신이 [`an_core::peers::ONLINE_WITHIN`] 안이면 온라인, 마지막 `Pong` · 거절 때 상대가 집중 중이었나(오프라인이면 거짓).
     online: bool,
     focus: bool,
@@ -60,6 +62,7 @@ impl From<Peer> for PeerView {
             alias: p.alias,
             seen_at: p.seen_at,
             icon: p.icon,
+            color: p.color,
             online,
             focus: online && p.focus,
         }
@@ -92,6 +95,8 @@ struct PeerPatch {
     alias: Option<String>,
     #[serde(default)]
     icon: Option<String>,
+    #[serde(default)]
+    color: Option<String>,
 }
 
 pub fn routes(node: Arc<Node>) -> Router {
@@ -210,11 +215,11 @@ async fn patch(
         Ok(None) => return fail(io::Error::new(io::ErrorKind::NotFound, "없는 피어")),
         Err(e) => return fail(e),
     };
-    // 준 쪽만 쓴다 — 화면은 실행 설정(그룹 · model · effort)과 타일(표시 이름 · 아이콘)을 따로 보낸다. 한쪽만 고치는 요청이
-    // 미리 읽은 다른 쪽 값을 다시 써서 그 사이 바뀐 값을 덮지 않게. 두 쪽을 함께 주면 차례로 쓴다(한 트랜잭션은 아니다).
+    // 준 쪽만 쓴다 — 화면은 실행 설정(그룹 · model · effort)과 타일(표시 이름 · 아이콘 · 색)을 따로 보낸다. 한쪽만 고치는 요청이
+    // 미리 읽은 다른 쪽 값을 다시 써서 그 사이 바뀐 값을 덮지 않게. 함께 주면 한 트랜잭션으로 쓴다.
     let meta = req.group.is_some() || req.model.is_some() || req.effort.is_some();
     let tile = req.alias.is_some() || req.icon.is_some();
-    if !meta && !tile {
+    if !meta && !tile && req.color.is_none() {
         return Json(PeerView::from(peer)).into_response();
     }
     // 없음 = 그대로, 빈 문자열 = 지움.
@@ -255,18 +260,18 @@ async fn patch(
         Some(Ok(i)) => i,
         Some(Err(m)) => return invalid(m),
     };
-    // 전부 검증한 뒤에 쓴다 — 틀린 값이 하나라도 있으면 아무것도 바꾸지 않는다.
-    let saved = if tile {
-        if meta
-            && let Err(e) =
-                node.set_peer_meta(id, group.as_deref(), model.as_deref(), effort.as_deref())
-        {
-            return fail(e);
-        }
-        node.set_peer_tile(id, alias.as_deref(), icon.as_deref())
-    } else {
-        node.set_peer_meta(id, group.as_deref(), model.as_deref(), effort.as_deref())
+    let color = match req.color.as_deref().map(run_opts::clean_tile_color) {
+        None => None,
+        Some(Ok(c)) => Some(c),
+        Some(Err(m)) => return invalid(m),
     };
+    // 전부 검증한 뒤 한 트랜잭션으로 쓴다 — 틀린 값이 있거나 쓰기가 하나라도 실패하면 아무것도 바꾸지 않는다.
+    let saved = node.set_peer_fields(
+        id,
+        meta.then_some((group.as_deref(), model.as_deref(), effort.as_deref())),
+        tile.then_some((alias.as_deref(), icon.as_deref())),
+        color.as_deref(),
+    );
     match saved {
         Ok(p) => Json(PeerView::from(p)).into_response(),
         Err(e) => fail(e),

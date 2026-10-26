@@ -104,6 +104,11 @@ type RequestHandler = Box<dyn Fn(&Peer, Request) -> Response + Send + Sync>;
 /// 페어링된 상대의 `Ping` 을 받았을 때(상대 id) — 막히면 안 된다.
 type SeenHandler = Box<dyn Fn(i64) + Send + Sync>;
 
+/// [`Node::set_peer_fields`] 의 실행 설정 묶음(그룹, model, effort).
+pub type PeerMeta<'a> = (Option<&'a str>, Option<&'a str>, Option<&'a str>);
+/// [`Node::set_peer_fields`] 의 타일 묶음(표시 이름, 아이콘).
+pub type PeerTile<'a> = (Option<&'a str>, Option<&'a str>);
+
 pub struct Node {
     id: Identity,
     server: Arc<ServerConfig>,
@@ -792,29 +797,32 @@ impl Node {
         }
     }
 
-    /// 그룹 · model · effort 를 통째로 바꾼다(`None` = 지움) — 이 PC 만의 표시 · 실행 설정이라 상대에 알리지 않는다.
-    pub fn set_peer_meta(
+    /// 이 PC 만의 상대 설정을 한 트랜잭션으로 바꾼다 — 실행 설정(그룹 · model · effort) · 타일(표시 이름 · 아이콘) 은 통째로(`None` = 지움),
+    /// 타일 색은 값 하나. `None` 인 묶음은 그대로, 하나라도 실패하면 아무것도 바꾸지 않는다. 상대에 알리지 않는다.
+    pub fn set_peer_fields(
         &self,
         id: i64,
-        group: Option<&str>,
-        model: Option<&str>,
-        effort: Option<&str>,
+        meta: Option<PeerMeta<'_>>,
+        tile: Option<PeerTile<'_>>,
+        color: Option<&str>,
     ) -> io::Result<Peer> {
-        if !peers::set_meta(&self.db(), id, group, model, effort).map_err(db_err)? {
-            return Err(io::Error::new(io::ErrorKind::NotFound, "없는 피어"));
-        }
-        self.peer(id)
-    }
-
-    /// 표시 이름 · 타일 아이콘을 통째로 바꾼다(`None` = 지움) — 이 PC 만의 표시라 상대에 알리지 않는다.
-    pub fn set_peer_tile(
-        &self,
-        id: i64,
-        alias: Option<&str>,
-        icon: Option<&str>,
-    ) -> io::Result<Peer> {
-        if !peers::set_tile(&self.db(), id, alias, icon).map_err(db_err)? {
-            return Err(io::Error::new(io::ErrorKind::NotFound, "없는 피어"));
+        {
+            let db = self.db();
+            let tx = an_core::db::write_tx(&db).map_err(db_err)?;
+            let mut found = true;
+            if let Some((group, model, effort)) = meta {
+                found &= peers::set_meta(&tx, id, group, model, effort).map_err(db_err)?;
+            }
+            if let Some((alias, icon)) = tile {
+                found &= peers::set_tile(&tx, id, alias, icon).map_err(db_err)?;
+            }
+            if let Some(c) = color {
+                found &= peers::set_color(&tx, id, c).map_err(db_err)?;
+            }
+            if !found {
+                return Err(io::Error::new(io::ErrorKind::NotFound, "없는 피어"));
+            }
+            tx.commit().map_err(db_err)?;
         }
         self.peer(id)
     }
