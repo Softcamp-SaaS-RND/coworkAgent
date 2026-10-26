@@ -4,9 +4,14 @@ import { shortName } from "./format.js";
 import { sortByPos } from "./order.js";
 
 /// 타일 색 class — 여섯 색(`AGENT_COLORS` — 에이전트 아이콘 색과 같음)이면 `tinted {색}`, 아니면 빈 글자(흑연 · 무채).
-/// 레일 타일 · 머리글자 네모 · 말풍선 · 프로필 얼굴이 같은 규칙(`app.css` `.tinted`).
+/// 레일 · 줄 타일 · 말풍선 · 주고받은 메시지 · 프로필 얼굴이 같은 규칙(`app.css` `.tinted`).
 export function tileTint(color) {
   return AGENT_COLORS.includes(color) ? `tinted ${color}` : "";
+}
+
+/// '나' 얼굴 색 — 고른 색, 없으면 흑연(`me-tile`).
+export function meTint(color) {
+  return tileTint(color) || "me-tile";
 }
 
 /// 피어 승인 상태 → 문구.
@@ -81,14 +86,6 @@ export function peerSummary(convs, paired, peerNames, waiting = new Map()) {
       rows,
     };
   });
-}
-
-const GRAPHEMES = new Intl.Segmenter();
-
-/// 머리글자 — 앞뒤 공백을 뺀 첫 글자 묶음(서로게이트 쌍 · 결합 문자 · 풀어 쓴 한글도 한 글자), 로마자는 대문자. 이름이 없으면 빈 글자.
-export function initialOf(name) {
-  const [first] = GRAPHEMES.segment(String(name ?? "").trim());
-  return first ? first.segment.toUpperCase() : "";
 }
 
 /// 레일 배지 — 상대별 안 읽음 합(0 인 상대는 없다).

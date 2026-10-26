@@ -3,14 +3,14 @@ import { api } from "./core/api.js";
 import { $, act, button, el, ico, unchanged } from "./core/dom.js";
 import { closeFloat, focusAfterFloat, openFloat } from "./core/float.js";
 import { latest, state } from "./core/state.js";
-import { iconButton } from "./core/widgets.js";
+import { iconButton, railFace } from "./core/widgets.js";
 import { authorLabel, bubbleSide } from "./logic/author.js";
 import { contextBusy, contextLabel, contextNote, contextSize, ctxMenu } from "./logic/context.js";
 import { KIND_NAMES, MAX_OBSERVERS, convClosed, convKindIcon, convLabel, shareCandidates, shareHead } from "./logic/conv.js";
 import { dayBreaks, displayName, formatDuration, formatTime, josa, shortName, stateText } from "./logic/format.js";
 import { htmlSrcdoc, isHtmlDoc, markdownBlocks } from "./logic/markdown.js";
 import { editedTag, enterSends, lastRun, messageActions, messagesSigOf, noteCount, outboxText, progressText, refusedText, relayText } from "./logic/message.js";
-import { initialOf, presence, tileTint } from "./logic/peer.js";
+import { presence } from "./logic/peer.js";
 import { askTag, reqFeedback } from "./logic/request.js";
 import { closeMention } from "./composer.js";
 import { convEndForm } from "./conv-menu.js";
@@ -219,7 +219,7 @@ export function messageEl(conv, m) {
   }
   meta.push(editedTag(m));
   const acts = messageActions(m, !!convClosed(conv));
-  // 말풍선 — 이 PC 쪽 글은 오른쪽(이름은 "나" 가 아닐 때만), 상대 쪽은 왼쪽에 머리글자 아바타 · 이름.
+  // 말풍선 — 이 PC 쪽 글은 오른쪽(이름은 "나" 가 아닐 때만), 상대 쪽은 왼쪽에 상대 얼굴(`peerFace`) · 이름.
   // 에이전트 글은 어느 쪽이든 로봇 아바타 + "에이전트" 글자(말풍선 모양은 `app.css` `.msg.agent`).
   const agent = m.author === "agent";
   const article = el(
@@ -228,7 +228,7 @@ export function messageEl(conv, m) {
     agent
       ? el("div", { class: "avatar agent-av", "aria-hidden": "true" }, ico("bot"))
       : side === "theirs"
-        ? el("div", { class: `avatar ${peerTint(conv)}`.trim(), "aria-hidden": "true", text: initialOf(who.slice(who.lastIndexOf("/") + 1)) })
+        ? el("div", { class: "avatar", "aria-hidden": "true" }, peerFace(conv, conv.dir === "shared" && m.owner !== true))
         : "",
     el(
       "div",
@@ -356,7 +356,7 @@ export function feedbackEl(conv, m) {
   return el(
     "article",
     { class: `msg feedback side-${f.side}`, "data-feedback": String(m.id) },
-    f.side === "theirs" ? el("div", { class: `avatar ${peerTint(conv)}`.trim(), "aria-hidden": "true", text: initialOf(who) }) : "",
+    f.side === "theirs" ? el("div", { class: "avatar", "aria-hidden": "true" }, peerFace(conv)) : "",
     el(
       "div",
       { class: "msg-body" },
@@ -442,13 +442,15 @@ export function resendState(id, state, note) {
   );
 }
 
-/// 상대 쪽 말풍선 아바타 색 — 그 대화 상대 타일 색(`tileTint`).
-export function peerTint(conv) {
-  return tileTint(state.peers.find((p) => p.id === conv.peer_id)?.color);
+/// 상대 쪽 말풍선 아바타 — 그 대화 상대의 레일 얼굴(그림 · 타일 색). `other` = 공유 대화의 원 상대 글 — 짝지은 상대가 아니라 무채 사람 모양.
+export function peerFace(conv, other = false) {
+  const p = other ? null : state.peers.find((x) => x.id === conv.peer_id);
+  return railFace(p?.icon, false, p?.color);
 }
 
 export function messagesSig(conv, ms) {
-  return `${messagesSigOf(state.peerNames.get(conv.peer_id), ms)}|${peerTint(conv)}`;
+  const p = state.peers.find((x) => x.id === conv.peer_id);
+  return `${messagesSigOf(state.peerNames.get(conv.peer_id), ms)}|${JSON.stringify([p?.icon, p?.color])}`;
 }
 
 /// 그 글로 — 가운데로 스크롤해 잠깐 강조하고 실행 상세의 '진행' 을 그 요청으로(`#c/{대화}/m/{글}`).

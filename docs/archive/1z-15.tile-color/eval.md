@@ -7,17 +7,17 @@
      WEAK 줄은 기계가 매 실행 다시 단다 — 약한 gate 를 셀 수 있게 하는 표시이며
      판정에는 영향이 없다. -->
 
-측정 커밋: fe8186dba019d434c6076be05df77f521c3a4f70
+측정 커밋: c8b2ad2fc95fe570ae4722fa07970c9c2c9c4b90
 
 - [x] E1: A5 — 워크스페이스 테스트 전부 통과
   CHECK: cargo test --workspace
   EXPECT: /test result: ok\. [1-9][0-9]* passed; 0 failed/
-  EVIDENCE: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+  EVIDENCE: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
 - [x] E2: A5 — clippy 경고 0
   CHECK: cargo clippy --workspace --all-targets -- -D warnings
   EXPECT: Finished
-  EVIDENCE: Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.37s
+  EVIDENCE: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.23s
 
 - [x] E3: A3·A4 — 웹UI 로직 시험(`tileTint`)
   CHECK: node --test --test-reporter=tap "crates/app/web/*.test.mjs"
@@ -27,12 +27,12 @@
 - [x] E4: A3·A4 — 화면 원본 literal(색 단추 · 색 붙임 · 그룹 그림) · 토큰 대비 · `:root` 밖 리터럴 0
   CHECK: cargo test -p coworkagent-app --test ux_literals --test css_tokens
   EXPECT: /test result: ok\. [1-9][0-9]* passed; 0 failed/
-  EVIDENCE: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+  EVIDENCE: test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
 
 - [x] E5: A1·A2 — 저장(스키마 29 · 무작위 색 · 색 바꾸기 · `me_color`) 시험
   CHECK: cargo test -p an-core tile_color
   EXPECT: /test result: ok\. [1-9][0-9]* passed; 0 failed/
-  EVIDENCE: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.22s
+  EVIDENCE: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.21s
 
 - [x] E6: A5 — 버전 1.4.0 그대로(크레이트 넷)
   CHECK: python -c "import pathlib as P;v=[P.Path('crates/%s/Cargo.toml'%c).read_text(encoding='utf-8') for c in ('core','net','agent','app')];print('crates=%d v140=%d'%(len(v),sum(t.split('version = ',1)[1][1:6]=='1.4.0' for t in v)))"
@@ -45,17 +45,17 @@
 - [x] E8: A5 — 문서 규약 · 크레이트 경계 · 코드 정리 · 매뉴얼 반영
   CHECK: python tools/check_ddd_docs.py && python tools/check_crates.py && python tools/check_code_tidy.py && python tools/check_readme.py && python -c "import pathlib as P;r=lambda f:P.Path(f).read_text(encoding='utf-8');print('core=%d web=%d guide=%d product=%d'%(r('docs/manual/dev/an_core.md').count('스키마 29'),r('docs/manual/dev/web-ui.md').count('tileTint'),r('docs/manual/user/user-guide.md').count('아이콘 색'),r('PRODUCT.md').count('#1z-15')))"
   EXPECT: /core=[1-9][0-9]* web=[1-9][0-9]* guide=[1-9][0-9]* product=[1-9][0-9]*/
-  EVIDENCE: core=1 web=2 guide=6 product=3
+  EVIDENCE: core=1 web=2 guide=6 product=4
 
 - [x] E9: A6 — 받은 대화에 쓴 글 = 실행 없음 · 상대 창에도(로컬 API)
   CHECK: cargo test -p coworkagent-app --test chat_api conversation_post_targets
   EXPECT: /test result: ok\. 1 passed; 0 failed/
-  EVIDENCE: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.59s
+  EVIDENCE: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.61s
 
 - [x] E10: A6 — 받은 쪽 사람 글은 자동 왕복을 멈추지 않고, 받은 쪽 "멈춤" 은 그대로 거절
   CHECK: cargo test -p an-agent --test relay receiver_
   EXPECT: /test result: ok\. 2 passed; 0 failed/
-  EVIDENCE: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 2.17s
+  EVIDENCE: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 2.18s
 
 - [x] E11: A6·A7 — 실제 화면(디버그 빌드 · ego-browser) 두 테마 — 받은 대화 직접 쓰기(실행 없음) · 거절 중 문구 · 자동 왕복 절 없음 · 요청 3건 + 더보기 · 접기 · 대화 옮기면 접힘, 콘솔 오류 0
   EVIDENCE: Claude(구현자) 2026-10-26 — 디버그 빌드 1.4.0(`target\t15`, stage 4 원본 = `475ada9`) + scratchpad `ui1z12\data` 사본(`ui1z15b` — 받은 대화 11 에 요청 4 건 더해 5 건 · `relay_blocked = 1`), ego-browser 1440 × 900 라이트 · 다크. 판독: 대화 11 머리글 `#conv_relay` 숨김 · 페이지에 "자동 왕복 거절 중" 없음 · `#detail_relay_sec` 없음, 세부정보 요청 "5" · 3 줄 + "더보기" → 5 줄 + "접기" → 3 줄, 펼친 채 대화 2 → 11 로 돌아오면 3 줄 + "더보기". 입력창에 써서 보내기 → 새 글 `human · mine · exec false · sent`(상대 꺼짐 — 보관 pending) · 실행 문 running/waiting 0 · 상태 줄 "보냈습니다". 콘솔 · 페이지 오류 0. 결정 16(뒤에 더함 — 다시 빌드): 대화 11 '대화 정보' 에 '자동 왕복 = 멈춤 — 이 PC 가 멈춤(재개는 연 쪽)' · 대화 12 에는 없음, 두 테마, 오류 0. 근거 [work/stage4](work/stage4.md).
@@ -65,9 +65,23 @@
   EXPECT: /agent=[1-9][0-9]* web=[1-9][0-9]* guide=[1-9][0-9]* product=[1-9][0-9]*/
   EVIDENCE: agent=2 web=1 guide=1 product=1
 
+- [x] E13: A8 — 웹 원본에 머리글자 네모 코드 없음(`initialOf` · `tileFace` · `peerTint`)
+  CHECK: python -c "import pathlib as P;fs=list(P.Path('crates/app/web/js').rglob('*.js'));print('files=%d hits=%d'%(len(fs),sum(sum(f.read_text(encoding='utf-8').count(w) for w in ('initialOf','tileFace','peerTint')) for f in fs)))"
+  EXPECT: /files=[1-9][0-9]* hits=0/
+  EVIDENCE: files=48 hits=0
+
+- [x] E14: A8 — 실제 화면(디버그 빌드 · ego-browser) 두 테마 — 프로필 · 레일 · 말풍선 · 요청 의견 · 주고받은 메시지 · 연결 · 그룹설정 얼굴 = 레일 얼굴(그림 있으면 그림), '나' 흑연, 콘솔 오류 0, README 사진 셋
+  EVIDENCE: Claude(구현자) 2026-10-26 — 디버그 빌드 1.4.0(`target\t15`) + scratchpad `ui1z15b\data`, ego-browser 1440 × 900 라이트 · 다크. 판독(모양/색 class/폭): 프로필 `person/me-tile/24` · 레일 나 `person/me-tile` · 상대 `person/tinted peer-3` · 그룹 `group/tinted peer-4`, 대화 11 말풍선 · 요청 의견 `person/tinted peer-3/24` × 5, 주고받은 메시지 머리 `person/tinted peer-3/24` · 줄 나 `person/me-tile/28` · 상대 `person/tinted peer-3/28`, 연결 줄 `person/…/26`, 그룹설정 줄 `group/tinted peer-4/26` · `group/tinted peer-5/26`, 글자만 든 얼굴 네모 0. 그림(PNG): 상대 2 → 레일 · 주고받은 메시지 머리 · 연결 줄 `img`, 상대 1 → 대화 11 말풍선 아바타 `img/24` × 5(측정 뒤 지움). 콘솔 · 페이지 오류 0. README 사진 셋(다크 @2x) `readme pop=true errs=[]`. 근거 [work/stage5](work/stage5.md).
+
+- [x] E15: A8 — 개정 ③ 문서 반영
+  CHECK: python -c "import pathlib as P;r=lambda f:P.Path(f).read_text(encoding='utf-8');print('web=%d guide=%d product=%d master=%d'%(r('docs/manual/dev/web-ui.md').count('개정 ③'),r('docs/manual/user/user-guide.md').count('레일과 같은 얼굴'),r('PRODUCT.md').count('(개정 ③)'),r('docs/masterPlan.md').count('#1z-15(개정 ③)')))"
+  EXPECT: /web=[1-9][0-9]* guide=[1-9][0-9]* product=[1-9][0-9]* master=[1-9][0-9]*/
+  EVIDENCE: web=3 guide=2 product=1 master=1
+
 
 WEAK: E7 CHECK 없음 — 수동 gate(사람이 적은 EVIDENCE 로 판정)
 WEAK: E11 CHECK 없음 — 수동 gate(사람이 적은 EVIDENCE 로 판정)
+WEAK: E14 CHECK 없음 — 수동 gate(사람이 적은 EVIDENCE 로 판정)
 
 ## 측정 기록
 
@@ -79,6 +93,7 @@ WEAK: E11 CHECK 없음 — 수동 gate(사람이 적은 EVIDENCE 로 판정)
 - 개정 ②(12 gate, 원장 = 위 — 셋째 실행 12/12, `fe8186d`): 첫째(`475ada9`) = E11 pending 만 미충족 → EVIDENCE 적고 다시. 둘째(`9f7e665`) = E1 rc=101(간헐 — 실패 시험 이름은 gate 출력에 없음).
   셋째 전에 결정 16(report-4 답)을 더하고 E11 에 측정을 덧붙였다. stage 4 개발 중 `cargo test --workspace` 첫 실행이 `capacity`
   `thirty_requests_all_answered_without_refusal` 의 페어링(`common::pair`)에서 한 번 실패 — 단독 재실행 통과 · `--no-fail-fast` 전체 exit 0(위 간헐 실패와 같은 갈래로 본다, 추론).
+- 개정 ③(15 gate, 원장 = 위): 첫째(`433502a`) = E14 pending 만 미충족 → EVIDENCE 적고 다시.
 
 ## 적대적 평가 — 라운드 1/2
 
@@ -148,6 +163,10 @@ raw JSON: scratchpad `r15_r2_raw.txt`.
 ## 개정 ② — 적대적 평가 없음
 
 codex 리뷰는 종결 때 2/2 를 썼다. 개정 ②(stage 4 — `5150225..475ada9`)는 사용자 질문 답 "리뷰 없음" 으로 라운드를 늘리지 않았다 — gate E1 ~ E12 · 실제 화면만.
+
+## 개정 ③ — 적대적 평가 없음
+
+개정 ③(stage 5 — `afdacb4..` `task/1z-15-rail-face`)도 codex 라운드를 늘리지 않았다(종결 때 2/2 사용 · 개정 ② 선례) — gate E1 ~ E15 · 실제 화면만.
 
 ## 미조치 지적
 

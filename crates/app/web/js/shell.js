@@ -2,8 +2,9 @@
 import { api, appOffline } from "./core/api.js";
 import { $, act, el, ico } from "./core/dom.js";
 import { state } from "./core/state.js";
+import { railFace } from "./core/widgets.js";
 import { keepsConversation } from "./logic/conv.js";
-import { initialOf, presenceOf, tileTint } from "./logic/peer.js";
+import { presenceOf } from "./logic/peer.js";
 import { RAIL_W, groupLeaves, inGroup, peerLeaves } from "./logic/rail.js";
 import { portText } from "./logic/settings.js";
 import { newMenu, profileMenu, route } from "./logic/shell.js";
@@ -66,16 +67,12 @@ export function go(hash) {
   else location.hash = hash;
 }
 
-/// 상단 바 프로필 단추 — 24px 네모 얼굴(그림, 없으면 머리글자) + 표시 이름 한 번. 얼굴 점 = 내 상태(`presenceOf` — 받기 가능 초록 · 집중 주황 ·
+/// 상단 바 프로필 단추 — 24px 네모 얼굴(레일 '나' 와 같은 얼굴 — `railFace`) + 표시 이름 한 번. 얼굴 점 = 내 상태(`presenceOf` — 받기 가능 초록 · 집중 주황 ·
 /// 앱과 연결 끊김 붉음). 이름은 CSS 로 약 12자에서 말줄임, 전체는 `title`.
 export function renderAvatar() {
   const name = state.settings.me_alias || "나";
-  const icon = state.settings.me_icon;
   const st = presenceOf(state.settings.focus, appOffline());
-  const face = el("span", { class: `avatar-face st-${st.key} ${tileTint(state.settings.me_color)}`.trim(), "aria-hidden": "true" });
-  if (icon) face.append(el("img", { src: icon, alt: "" }));
-  else face.append(initialOf(name));
-  face.append(el("span", { class: "avatar-dot" }));
+  const face = el("span", { class: `avatar-face st-${st.key}`, "aria-hidden": "true" }, railFace(state.settings.me_icon, false, state.settings.me_color, true), el("span", { class: "avatar-dot" }));
   $("avatar_btn").title = `${name} · ${st.text}`;
   $("avatar_btn").setAttribute("aria-label", `프로필 · ${st.text}`);
   $("avatar_btn").replaceChildren(face, el("span", { class: "avatar-name", text: name }));

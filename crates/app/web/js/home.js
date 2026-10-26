@@ -50,9 +50,9 @@ export function renderHome() {
   $("home_summary").replaceChildren(
     ...groups.map((g) => {
       const p = peerOf(g.peer);
-      // 머리 = 그 상대 타일(머리글자 · 그림) · 줄 = 에이전트 로봇 아이콘 — 사람 · 에이전트를 가른다.
+      // 머리 = 그 상대 타일(레일 얼굴) · 줄 = 에이전트 로봇 아이콘 — 사람 · 에이전트를 가른다.
       const head = [
-        rowTile("small", p?.icon, g.name, p?.color),
+        rowTile("small", p?.icon, p?.color),
         el("strong", { text: g.name }),
         p ? "" : el("span", { class: "hint", text: "페어링 해제" }),
         g.unread ? el("span", { class: "stat", text: `안 읽음 ${g.unread}` }) : "",

@@ -36,7 +36,7 @@
   --rail: #18181B;
   --rail-2: #27272A;
   --rail-text: #A1A1AA;
-  --avatar-bg: #E4E4E7; /* 머리글자 네모 */
+  --avatar-bg: #E4E4E7; /* 무채 얼굴 네모 */
   --avatar-text: #3F3F46;
   /* 에이전트 아이콘 색 — 사용자가 고른다(이름이 저장된다), 두 테마 같음(흰 아이콘) */
   --peer-1: #496A9A;
@@ -731,7 +731,7 @@ details { margin: var(--sp-2) 0; }
 /* 에이전트 머리 · 하위 — 머리는 링크 없음, 하위는 들여쓴다. */
 .side-nav .nav-head { display: flex; align-items: center; height: 32px; padding: 0 var(--sp-3); color: var(--muted); }
 .side-nav .nav-sub a { padding-left: calc(var(--sp-3) + var(--sp-5)); }
-/* 프로필 단추 — 얼굴(그림 · 없으면 머리글자) + 이름 한 번, 이름은 약 12자에서 말줄임 · 전체는 title. 점 = 내 상태 */
+/* 프로필 단추 — 얼굴(레일 '나' 와 같음) + 이름 한 번, 이름은 약 12자에서 말줄임 · 전체는 title. 점 = 내 상태 */
 .avatar-btn { width: auto; height: 32px; display: inline-flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2) 0 var(--sp-1); border: 0; border-radius: var(--radius); background: transparent; color: var(--text); overflow: visible; }
 .avatar-btn:hover { background: var(--surface-2); }
 .avatar-btn .avatar-face { position: relative; width: 24px; height: 24px; flex: none; border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; background: var(--avatar-bg); color: var(--avatar-text); font-size: var(--fs-xs); font-weight: var(--fw-medium); }
@@ -820,7 +820,9 @@ details { margin: var(--sp-2) 0; }
 #rail { gap: var(--sp-6); padding-bottom: var(--sp-5); }
 #rail_pcs, .rail-groups { gap: var(--sp-6); }
 .tile-shape { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border-radius: inherit; background: var(--avatar-bg); color: var(--avatar-text); font-weight: var(--fw-medium); line-height: 1; }
-.rail-btn.me .tile-shape { background: var(--rail-2); color: var(--on-dark); }
+.tile-shape.me-tile { background: var(--rail-2); color: var(--on-dark); }
+.tile-shape svg { width: 70%; height: 70%; }
+:is(.avatar, .pm-av) img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .rail-btn .tile-shape svg { width: 22px; height: 22px; }
 .rail-btn .tile-name { position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); width: 64px; font-size: var(--fs-xs); font-weight: var(--fw-medium); line-height: var(--lh-tight); color: var(--rail-text); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .rail-btn[aria-pressed="true"] .tile-name { color: var(--on-dark); font-weight: var(--fw-bold); }
@@ -1035,7 +1037,7 @@ details { margin: var(--sp-2) 0; }
 .pv-state.st-error::before, .pv-state.st-undelivered::before { background: var(--danger); }
 .pv-more { min-height: calc(132px * var(--pv-scale)); border: 1px solid var(--border); border-radius: var(--pv-radius); background: transparent; color: var(--accent); font-size: var(--fs-md); font-weight: var(--fw-medium); }
 .pv-more:hover { border-color: var(--border-strong); background: var(--surface-2); }
-/* 주고받은 메시지 줄: 아바타(사람 = 머리글자 · 에이전트 = 로봇 네모) · 메타 · 본문 · 시각, 에이전트 줄 바탕 */
+/* 주고받은 메시지 줄: 아바타(사람 = 레일 얼굴 · 에이전트 = 로봇 네모) · 메타 · 본문 · 시각, 에이전트 줄 바탕 */
 .rows li.pm-agent { background: var(--agent-soft); }
 .rows a.pm-link { flex-direction: row; align-items: flex-start; gap: var(--sp-3); }
 .pm-av { flex: none; width: 28px; height: 28px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; background: var(--avatar-bg); color: var(--avatar-text); font-size: var(--fs-xs); font-weight: var(--fw-medium); }
@@ -1081,11 +1083,11 @@ details { margin: var(--sp-2) 0; }
 .swatch { width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--border); }
 .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--text); }
 .swatch.rail-2 { background: var(--rail-2); } /* '나' 타일 흑연(기본) */
-/* 타일 색(나 · 상대 · 그룹이 고른 색 — 에이전트 아이콘 색과 같은 여섯, `tileTint`) — 레일 · 머리글자 네모 · 말풍선 · 주고받은 메시지 · 프로필 얼굴, 흰 글자 */
-:is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted { color: var(--on-dark); }
-:is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted.agent-tile { background: var(--agent-tile); }
-:is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted.peer-1 { background: var(--peer-1); }
-:is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted.peer-2 { background: var(--peer-2); }
-:is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted.peer-3 { background: var(--peer-3); }
-:is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted.peer-4 { background: var(--peer-4); }
-:is(.tile-shape, .avatar, .avatar-face, .pm-av).tinted.peer-5 { background: var(--peer-5); }
+/* 타일 색(나 · 상대 · 그룹이 고른 색 — 에이전트 아이콘 색과 같은 여섯, `tileTint`) — 레일 · 줄 타일 · 말풍선 · 주고받은 메시지 · 프로필 얼굴(`railFace`), 흰 글자 */
+.tile-shape.tinted { color: var(--on-dark); }
+.tile-shape.tinted.agent-tile { background: var(--agent-tile); }
+.tile-shape.tinted.peer-1 { background: var(--peer-1); }
+.tile-shape.tinted.peer-2 { background: var(--peer-2); }
+.tile-shape.tinted.peer-3 { background: var(--peer-3); }
+.tile-shape.tinted.peer-4 { background: var(--peer-4); }
+.tile-shape.tinted.peer-5 { background: var(--peer-5); }

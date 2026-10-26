@@ -2,6 +2,7 @@
 
 종결: 2026-10-26 · 브랜치 `task/1z-15-tile-color`(원 작업 폴더 — worktree 없음) → main(로컬 반영, push 는 사용자 확인 뒤).
 개정 ②: 2026-10-26 · 브랜치 `task/1z-15-direct-post`(main `5150225` 에서) → main(로컬 반영) — 사용자 지시 "버전 변경 없이 마지막 task 에 포함".
+개정 ③: 2026-10-26 · 브랜치 `task/1z-15-rail-face`(main `afdacb4` 에서) → main → origin push — 사용자 지시 "레일 아이콘을 다른 대화방에서도 동일하게 유지 … 로컬 커밋, push 진행".
 
 ## 결과
 
@@ -22,6 +23,7 @@
 | A4 그룹 그림 세 사람 | 충족 | E4 그림 행, E7 그룹 타일 원 3 |
 | A5 동작 · 문구 · 검증 · 문서 · 1.4.0 | 충족 | E1 · E2 · E6 · E8, 새 문구는 '아이콘 색' 하나(접근 이름 '아이콘 색 {열쇠}' 는 에이전트와 같은 꼴), 매뉴얼 · README 사진 |
 | A6 받은 대화 글 = 실행 없음 · 양쪽 창 · 왕복 안 멈춤 | 충족 | E9 `conversation_post_targets`(B 글 `exec` false · A 이력 셋 · B 답 없음), E10 `receiver_note_keeps_relay` · `receiver_stop_refuses_agent_requests`, E11 직접 쓰기(실행 문 0) |
+| A8 얼굴 = 어디서나 레일 얼굴 · '나' 흑연 | 충족 | E13 웹 원본 `initialOf` · `tileFace` · `peerTint` 0, E3 `me_tint`, E4 PRESENT · ABSENT, E14 두 테마 일곱 곳 · 그림, E15 문서 · README 사진 셋 |
 | A7 거절 중 문구 · 자동 왕복 절 없음 · 요청 3건 + 더보기 | 충족 | E3 `reqFold` · `relayText`, E4 PRESENT 4 · ABSENT 2, E11 두 테마(3 → 5 → 3 · 대화 옮기면 접힘), E12 매뉴얼 |
 
 - 편차 · 한계:
@@ -38,10 +40,16 @@
   - 오류 글 바꿈: `to` 가 agent 밖일 때 "to 는 agent 만 — 모든 글은 대화 에이전트에게 간다" → "to 는 agent 만 — 사람에게 보내기는 없다"(받은 대화에는 틀린 설명이 돼서).
   - 단추 글 "더보기" 는 지시 글자 그대로 — 다른 화면(주고받은 메시지 · 개요)은 "더 보기"(띄어 씀).
   - codex 리뷰 없음(사용자 질문 답 — 종결 때 2/2 사용). 미실행: 두 PC 실연동(상대가 켜진 채 받은 대화 글이 상대 창에 닿는 것 — 시험 `conversation_post_targets` 가 두 노드로 확인).
+- 개정 ③(stage 5) 편차 · 한계:
+  - #1z-13 결정 12 · 이 Task 결정 5(머리글자 네모)를 개정 — 머리글자는 화면에서 없다(`initialOf` 삭제). 줄 타일 · 말풍선에서 이름 첫 글자로 사람을 가르던 단서는 곁의 이름 · 색 · 그림으로.
+  - 공유 대화의 원 상대(짝지은 상대가 아님) 글 아바타 = 무채 사람(구현자 해석 — 결정 17). 시험 데이터 공유 대화는 사람 글이 이 PC 쪽이라 화면에서 이 분기를 못 봤다(코드 · literal 만).
+  - 측정 화면 찍기는 창 최소화로 실패 — DOM 판독으로 쟀고, README 사진은 창을 되돌려 찍었다.
+  - codex 리뷰 없음(2/2 사용 · 개정 ② 와 같은 선례). 1.4.0 릴리스 빌드(`target\rel-1.4.0`)는 개정 ③ 뒤 다시 만듦 — STATE.
 - 구현자 해석(사용자 미확인):
+  - 결정 19 — 버전 1.4.0 그대로 · 새 Task 대신 이 Task 개정 ③(지시에 버전 · Task 언급 없음, 1.4.0 미배포 · 같은 주제).
   - 결정 6 — '나' 색 단추 맨 앞 '흑연'(되돌릴 길).
   - 결정 9 — 색 저장 자리(상대 · 그룹 표 열 · '나' 설정), 무작위 = SQL `abs(random()) % 6`.
-  - '나' 의 색은 고르기 전엔 레일만 흑연 · 그 밖 머리글자 네모(프로필 · 주고받은 메시지 '나')는 무채 그대로, 고르면 모두 그 색.
+  - (개정 ③ 결정 18 로 해소 — '나' 는 어디서나 흑연 기본) '나' 의 색은 고르기 전엔 레일만 흑연 · 그 밖은 무채였다.
   - plan 승인 질문 없이 구현 — 사용자 지시 + 질문 답 U1 ~ U6 이 설계를 정함.
   - 개정 ② 결정 12 — 머리글 멈춤 · 재개 단추는 남김(지시는 '거절 중' 문구와 세부정보 절만). 받은 대화의 "질의 | 요청" 고르기 그대로(질의 = 실행 없는 사람 글).
 
@@ -49,8 +57,7 @@
 
 | 인덱스 | 내용 | 곳 |
 |---|---|---|
-| report-1 | 1.4.0 릴리스(#1z-13 · #1z-14 · #1z-15 함께) — origin push(squash) · 서명 · gh release | — |
-| report-2 | '나' 기본 흑연일 때 프로필 · 주고받은 메시지 '나' 머리글자는 무채(레일만 흑연) — 흑연으로 맞출지 | [intent](intent.md) 결정 4 |
+| report-1 | 1.4.0 릴리스(#1z-13 · #1z-14 · #1z-15 함께) — 서명 · gh release(origin push 는 개정 ③ 때 사용자 지시로 함) | — |
 
 ## 산출
 
@@ -62,3 +69,5 @@
 - 개정 ②: `crates/app/src/chat_api/{tx,mod}.rs` · `crates/agent/src/chat/send.rs` · web `js/{detail,conv,composer}.js` · `js/logic/{message,request}.js` · `index.html` · `app.css`,
   시험 `crates/app/tests/{chat_api,ux_literals}.rs` · `crates/agent/tests/relay.rs` · `view.test.mjs`, 문서 PRODUCT(양쪽 발화 · 자동 왕복) · masterPlan(D23 · D24) ·
   [an_agent](../../manual/dev/an_agent.md) · [developer-guide](../../manual/dev/developer-guide.md) · web-ui · 사용자 가이드, [work/stage4](work/stage4.md).
+- 개정 ③: web `js/core/widgets.js` · `js/logic/{peer,message}.js` · `js/{conv,peers,shell,rail,tiles,home,search}.js` · `js/settings/{conn,groups}.js` · `app.css`,
+  시험 `view.test.mjs` · `crates/app/tests/ux_literals.rs`, 문서 PRODUCT · masterPlan S4 · web-ui · 사용자 가이드 · README 사진 셋, [work/stage5](work/stage5.md).

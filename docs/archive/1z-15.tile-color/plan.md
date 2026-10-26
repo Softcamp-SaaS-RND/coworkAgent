@@ -71,6 +71,18 @@
    `relay.rs` `receiver_stop_refuses_agent_requests` 의 받은 쪽 멈춤을 사람 글 → `relay(false)` 로, 새 `receiver_note_keeps_relay`,
    `view.test.mjs` 거절 중 → `null` · 새 `reqFold`, `ux_literals` 새 행(PRESENT 4 · ABSENT 2).
 
+### stage 5 — 개정 ③(사람 · 그룹 얼굴 = 레일 얼굴)
+
+> 근거: intent 개정 ③(결정 17 ~ 19). 브랜치 `task/1z-15-rail-face`(main `afdacb4` 에서). 승인: 2026-10-26 — 사용자 지시 + 질문 답 U1 · U2(plan 승인 질문 없이 — 구현자 해석).
+
+1. `js/core/widgets.js`: `tileFace`(머리글자) 삭제, `rowTile(cls, icon, color, group)` = `railFace` 감쌈, `railFace(icon, group, color, me)` — `me` 면 `meTint`(흑연 `me-tile`).
+   `js/logic/peer.js` `meTint` 새로, `initialOf` 삭제(쓰는 곳 없음).
+2. 호출: 개요 · 검색 · 연결 · 그룹설정(`group = true`) 줄 타일, 주고받은 메시지 머리 · 줄(`peerRowEls(rows, peer)` — 나 = `me_icon` · `me_color`), 말풍선 · 요청 의견
+   (`conv.js` `peerFace` — 공유 대화 원 상대 글 = 무채 사람), 프로필(`shell.js`), 레일 · 타일 편집 미리보기 '나' = `me = true`. 다시 그림 서명에 그림 더함(`messagesSig` · 주고받은 메시지 `me_icon`).
+3. `app.css`: `.tile-shape.me-tile`(`.rail-btn.me .tile-shape` 대신), `.tile-shape svg` 70%, `.avatar` · `.pm-av` 그림, `.tinted` 는 `.tile-shape` 에만.
+4. 시험: `view.test.mjs` `initial_of` 삭제 · `me_tint` 새로, `ux_literals` PRESENT 바꿈 · ABSENT `initialOf` · `tileFace` · `peerTint`.
+5. 문서: PRODUCT(Graphite · 타일 색 줄) · masterPlan S4 · 기록, web-ui · 사용자 가이드, README 사진 셋 다시.
+
 ## 평가 항목
 
 - [ ] E1: A5 — 워크스페이스 테스트 전부 통과
@@ -119,9 +131,21 @@
   EXPECT: /agent=[1-9][0-9]* web=[1-9][0-9]* guide=[1-9][0-9]* product=[1-9][0-9]*/
   EVIDENCE: pending
 
+- [ ] E13: A8 — 웹 원본에 머리글자 네모 코드 없음(`initialOf` · `tileFace` · `peerTint`)
+  CHECK: python -c "import pathlib as P;fs=list(P.Path('crates/app/web/js').rglob('*.js'));print('files=%d hits=%d'%(len(fs),sum(sum(f.read_text(encoding='utf-8').count(w) for w in ('initialOf','tileFace','peerTint')) for f in fs)))"
+  EXPECT: /files=[1-9][0-9]* hits=0/
+  EVIDENCE: pending
+- [ ] E14: A8 — 실제 화면(디버그 빌드 · ego-browser) 두 테마 — 프로필 · 레일 · 말풍선 · 요청 의견 · 주고받은 메시지 · 연결 · 그룹설정 얼굴 = 레일 얼굴(그림 있으면 그림), '나' 흑연, 콘솔 오류 0, README 사진 셋
+  EVIDENCE: pending
+- [ ] E15: A8 — 개정 ③ 문서 반영
+  CHECK: python -c "import pathlib as P;r=lambda f:P.Path(f).read_text(encoding='utf-8');print('web=%d guide=%d product=%d master=%d'%(r('docs/manual/dev/web-ui.md').count('개정 ③'),r('docs/manual/user/user-guide.md').count('레일과 같은 얼굴'),r('PRODUCT.md').count('(개정 ③)'),r('docs/masterPlan.md').count('#1z-15(개정 ③)')))"
+  EXPECT: /web=[1-9][0-9]* guide=[1-9][0-9]* product=[1-9][0-9]* master=[1-9][0-9]*/
+  EVIDENCE: pending
+
 ## 개정 기록
 
 - ① 2026-10-26(평가 첫 실행 E1 FAIL) — '바꾸는 시험' 에 `crates/core/tests/store.rs` `schema17_peer_ids_never_reused` 의 peers 열 수 19 → 20 더함:
   그 시험은 지금 정의(스키마 29 `color` 포함)를 16 으로 되돌려 쓰므로 열 수가 하나 는다(검사 뜻 — 열 전부 · 순서 그대로 — 은 같음).
 - ② 2026-10-26(종결 뒤 사용자 지시 — "마지막 task 에 포함") — intent 개정 ②(결정 10 ~ 16), stage 4 · E9 ~ E12 더함. E1 ~ E8 은 그대로 다시 잰다.
   결정 16(report-4 답)은 E11 측정 뒤 더했다 — E3(`convInfoRows` 시험) · E4(literal 2행)가 잰다, 실제 화면은 E11 에 덧붙여 다시 쟀다.
+- ③ 2026-10-26(사용자 지시 "레일 아이콘을 다른 대화방에서도 동일하게 유지. 해당 기능까지 적용하고 로컬 커밋, push 진행.") — intent 개정 ③(결정 17 ~ 19), stage 5 · E13 ~ E15 더함. E1 ~ E12 는 그대로 다시 잰다.

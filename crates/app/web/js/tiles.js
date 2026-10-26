@@ -69,7 +69,7 @@ export function renderTilePreview() {
   const color = tileEdit.color !== undefined ? tileEdit.color : now.color;
   const box = $("tile_preview");
   box.className = tileEdit.kind === "me" ? "rail-btn tile-preview me" : "rail-btn tile-preview";
-  box.replaceChildren(railFace(icon, tileEdit.kind === "group", color));
+  box.replaceChildren(railFace(icon, tileEdit.kind === "group", color, tileEdit.kind === "me"));
 }
 
 /// 아이콘 색 단추 — 에이전트 상세와 같은 여섯 색(`AGENT_COLORS`), '나' 는 맨 앞 흑연(기본 — `""`) 하나 더. 고르면 미리보기만, 저장 때 보낸다.

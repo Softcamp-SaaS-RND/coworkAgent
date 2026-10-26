@@ -50,7 +50,7 @@ export function renderConnPage(force) {
   const convs = sortByPos(state.convs);
   const users = groupSettingsList([], state.peers, convs, q, state.peerNames).users.map((u) => state.peers.find((p) => p.id === u.id));
   $("conn_list").replaceChildren(
-    ...users.map((p) => mdRow("conn", p.id, rowTile("small", p.icon, displayName(p), p.color), displayName(p), p.host, gsDot(p))),
+    ...users.map((p) => mdRow("conn", p.id, rowTile("small", p.icon, p.color), displayName(p), p.host, gsDot(p))),
     ...(users.length ? [] : [el("li", { class: "hint md-none", text: q ? "맞는 사용자 없음" : "연결 없음 — 초대 생성 · 초대 수락" })]),
   );
   const mode = pick.conn;
@@ -77,7 +77,7 @@ export function convLine(c, end = "") {
   return el(
     "li",
     { class: "md-conv" },
-    rowTile("small", p?.icon, p && displayName(p), p?.color),
+    rowTile("small", p?.icon, p?.color),
     el("span", { class: "md-row-text" }, el("strong", { text: label.title }), el("span", { class: "hint", text: label.sub })),
     closed ? el("span", { class: "chip", text: closed }) : "",
     end,
@@ -147,7 +147,7 @@ export function userDetail(p, convs) {
   );
   const mine = convs.filter((c) => c.peer_id === p.id);
   return [
-    mdHead("conn", rowTile("", p.icon, displayName(p), p.color), displayName(p), el("span", { class: "hint", "data-peer-sub": String(p.id), text: peerSub(p) })),
+    mdHead("conn", rowTile("", p.icon, p.color), displayName(p), el("span", { class: "hint", "data-peer-sub": String(p.id), text: peerSub(p) })),
     el(
       "div",
       { class: "md-body" },

@@ -83,9 +83,9 @@ import {
   PEER_WEEKS,
   peerGroups,
   peerSummary,
-  initialOf,
   waitingByPeer,
   tileUnread,
+  meTint,
   tileTint,
 } from "./js/logic/peer.js";
 import {
@@ -1625,26 +1625,14 @@ test("membership_diff — 고른 것과 지금 소속의 차이(넣기 · 빼기
   assert.deepEqual(membershipDiff([], []), { add: [], remove: [] });
 });
 
-test("initial_of — 앞뒤 공백 뺀 첫 글자 묶음(서로게이트 쌍 · 결합 문자 · 풀어 쓴 한글) · 로마자 대문자 · 이름 없으면 빈 글자", () => {
-  const cases = [
-    ["김도윤", "김"],
-    ["  박서연 ", "박"],
-    ["tskim", "T"],
-    ["planner", "P"],
-    ["\u{20BB7}野", "\u{20BB7}"],
-    ["\u1100\u1175\u11B7도윤", "\u1100\u1175\u11B7"],
-    ["e\u0301mile", "E\u0301"],
-    ["", ""],
-    ["   ", ""],
-    [undefined, ""],
-    [null, ""],
-  ];
-  for (const [name, want] of cases) assert.equal(initialOf(name), want, JSON.stringify(name));
-});
-
 test("tile_tint — 여섯 색(에이전트 아이콘 색과 같음)이면 tinted + 색 class, 아니면 빈 글자(흑연 · 무채)", () => {
   for (const c of ["agent-tile", "peer-1", "peer-2", "peer-3", "peer-4", "peer-5"]) assert.equal(tileTint(c), `tinted ${c}`);
   for (const c of [undefined, null, "", "rail-2", "red", "peer-6", " peer-1", "tinted"]) assert.equal(tileTint(c), "", JSON.stringify(c));
+});
+
+test("me_tint — '나' 얼굴 = 고른 색, 없으면 흑연(me-tile)", () => {
+  assert.equal(meTint("peer-2"), "tinted peer-2");
+  for (const c of [undefined, null, "", "red"]) assert.equal(meTint(c), "me-tile", JSON.stringify(c));
 });
 
 test("move_in_order — 대상 앞 · 뒤에 끼우기, 걸러 보인 이웃 기준이어도 전체 순서에서 · 그대로인 경우", () => {

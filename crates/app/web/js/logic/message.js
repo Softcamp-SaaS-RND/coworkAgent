@@ -198,7 +198,7 @@ export function speakerIcon(author) {
   return author === "agent" ? { kind: "agent", icon: "bot", label: "에이전트" } : { kind: "human", icon: "user", label: "사람" };
 }
 
-/// 주고받은 메시지 줄 아바타 — 에이전트(로봇) · 나(내 사람 글) · 상대(상대 사람 글) — 사람은 머리글자, 메타의 "사람" 은 `speakerIcon` 과 같다.
+/// 주고받은 메시지 줄 아바타 — 에이전트(로봇) · 나(내 사람 글) · 상대(상대 사람 글) — 사람은 레일 얼굴, 메타의 "사람" 은 `speakerIcon` 과 같다.
 export function avatarKind(author, mine) {
   return author === "agent" ? "agent" : mine ? "me" : "peer";
 }

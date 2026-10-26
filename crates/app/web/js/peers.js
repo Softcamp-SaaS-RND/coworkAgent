@@ -2,11 +2,10 @@
 import { api } from "./core/api.js";
 import { $, act, button, el, ico, needsRender } from "./core/dom.js";
 import { latest, state } from "./core/state.js";
-import { iconButton, tileFace } from "./core/widgets.js";
+import { iconButton, railFace } from "./core/widgets.js";
 import { formatTime } from "./logic/format.js";
 import { PEER_PAGE, inboxRows, mergePage, pageMore, peerMsgsSig, peerSummaryRows } from "./logic/inbox.js";
 import { avatarKind, speakerIcon } from "./logic/message.js";
-import { initialOf, tileTint } from "./logic/peer.js";
 import { BOOKMARK_SVG } from "./conv.js";
 import { foldEl, pairedIds } from "./sidebar.js";
 
@@ -65,19 +64,19 @@ export function renderPeerMessages() {
     $("peer_list").replaceChildren(el("li", { class: "hint", text: "주고받은 메시지 없음" }));
     return;
   }
-  if (!needsRender($("peer_list"), JSON.stringify([peerMsgsSig(heads, state.peerPages), state.peerNames.size, state.peers.map((p) => [p.id, p.icon, p.color]), state.settings.me_color]), false)) return;
+  if (!needsRender($("peer_list"), JSON.stringify([peerMsgsSig(heads, state.peerPages), state.peerNames.size, state.peers.map((p) => [p.id, p.icon, p.color]), state.settings.me_icon, state.settings.me_color]), false)) return;
   $("peer_list").replaceChildren(
     ...heads.map((h) => {
       const p = state.peers.find((x) => x.id === h.peer);
       const head = [
-        el("span", { class: "row-tile", "aria-hidden": "true" }, tileFace(p?.icon, h.name, p?.color)),
+        el("span", { class: "row-tile", "aria-hidden": "true" }, railFace(p?.icon, false, p?.color)),
         el("strong", { text: h.name }),
         el("span", { class: "stat", text: h.count }),
         el("span", { class: "peer-last", text: h.last }),
         el("span", { class: "hint", text: formatTime(h.at) }),
       ];
       const page = state.peerPages.get(h.peer);
-      const body = page ? [el("ol", { class: "rows" }, ...peerRowEls(inboxRows(page, state.peerNames), p?.color)), moreRow(h, page.length)] : [el("p", { class: "hint more-row", text: "불러오는 중 …" })];
+      const body = page ? [el("ol", { class: "rows" }, ...peerRowEls(inboxRows(page, state.peerNames), p)), moreRow(h, page.length)] : [el("p", { class: "hint more-row", text: "불러오는 중 …" })];
       const d = foldEl(`peer:${h.peer}`, head, body, "peer-fold peer-msgs", null, true);
       d.addEventListener("toggle", async () => {
         if (!d.open || state.peerPages.has(h.peer)) return;
@@ -99,9 +98,9 @@ export function moreRow(h, shown) {
   return el("div", { class: "more-row" }, el("span", { text: m.text }), m.more ? button("더 보기", more, "small") : "");
 }
 
-/// 주고받은 메시지 행 — 아바타(상대 사람 · 나 = 머리글자 네모, 에이전트 = 로봇 — `avatarKind`) · 메타(이름 · "사람" / 에이전트 이름 + "에이전트" 칩 · 대화 제목 ·
-/// 요청 태그) · 본문 · 오른쪽 시각, 에이전트 줄은 옅은 에이전트 색 바탕. 사람 아바타 = 타일 색(나 = `me_color` · 상대 = `peerColor`). 오른쪽 끝 북마크 아이콘(말풍선과 같은 그림 · 동작).
-export function peerRowEls(rows, peerColor) {
+/// 주고받은 메시지 행 — 아바타(상대 사람 · 나 = 레일 얼굴, 에이전트 = 로봇 — `avatarKind`) · 메타(이름 · "사람" / 에이전트 이름 + "에이전트" 칩 · 대화 제목 ·
+/// 요청 태그) · 본문 · 오른쪽 시각, 에이전트 줄은 옅은 에이전트 색 바탕. 사람 아바타 = 레일 얼굴(나 = `me_icon` · `me_color` · 상대 = `peer` 그림 · 색). 오른쪽 끝 북마크 아이콘(말풍선과 같은 그림 · 동작).
+export function peerRowEls(rows, peer) {
   if (!rows.length) return [el("li", { class: "hint", text: "주고받은 메시지 없음" })];
   return rows.map((r) => {
     const kind = avatarKind(r.author, r.mine);
@@ -112,7 +111,7 @@ export function peerRowEls(rows, peerColor) {
       el(
         "a",
         { href: r.href, class: "pm-link" },
-        el("span", { class: `pm-av pm-av-${kind} ${kind === "agent" ? "" : tileTint(kind === "me" ? state.settings.me_color : peerColor)}`.trim(), role: "img", "aria-label": s.label, title: s.label }, kind === "agent" ? ico(s.icon) : initialOf(r.who)),
+        el("span", { class: `pm-av pm-av-${kind}`, role: "img", "aria-label": s.label, title: s.label }, kind === "agent" ? ico(s.icon) : kind === "me" ? railFace(state.settings.me_icon, false, state.settings.me_color, true) : railFace(peer?.icon, false, peer?.color)),
         el(
           "span",
           { class: "pm-text" },

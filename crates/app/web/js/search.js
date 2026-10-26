@@ -34,7 +34,7 @@ export function searchMark(m) {
   }
   if (m.type === "peer") {
     const p = state.peers.find((x) => x.id === m.peer);
-    return rowTile("small", p?.icon, p && displayName(p), p?.color);
+    return rowTile("small", p?.icon, p?.color);
   }
   if (m.owner === "me") return agentTile(state.agents.find((a) => a.name === m.name)?.color, "small");
   return el("span", { class: "pa small", "aria-hidden": "true" }, el("span", { class: "tile-shape" }, ico("bot")));

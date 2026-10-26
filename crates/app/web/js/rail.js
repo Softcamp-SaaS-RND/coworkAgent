@@ -70,11 +70,11 @@ export function renderRail() {
   me.setAttribute("aria-pressed", String(state.railPeer == null && state.railGroup == null));
   me.setAttribute("aria-label", meName);
   me.title = meName;
-  me.replaceChildren(railFace(state.settings.me_icon, false, state.settings.me_color), tileName(meName));
+  me.replaceChildren(railFace(state.settings.me_icon, false, state.settings.me_color, true), tileName(meName));
   keepFocus($("rail"), () => drawRailTiles(paired, unread));
 }
 
-/// 상대 · 그룹 타일(머리글자 네모 · 그림 + 아래 이름).
+/// 상대 · 그룹 타일(사람 · 세 사람 모양 · 그림 + 아래 이름).
 export function drawRailTiles(paired, unread) {
   $("rail_pcs").replaceChildren(
     ...paired.map((p) => {
@@ -102,7 +102,7 @@ export function drawRailTiles(paired, unread) {
       );
     }),
   );
-  // 그룹 타일 — 상대 타일 아래 구분선 뒤, 이름 머리글자 또는 그림, 배지 = 그룹 대화의 안 읽음 합.
+  // 그룹 타일 — 상대 타일 아래 구분선 뒤, 세 사람 모양 또는 그림, 배지 = 그룹 대화의 안 읽음 합.
   $("rail_sep").hidden = false;
   $("rail_groups").replaceChildren(
     ...state.groups.map((g) => {
