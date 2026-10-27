@@ -14,6 +14,11 @@ export function meTint(color) {
   return tileTint(color) || "me-tile";
 }
 
+/// 내 말풍선 면 열쇠 — '나' 타일 색(여섯 중 하나), 없으면 흑연(`rail-2`). `app.css` `.msg.own-{열쇠}`.
+export function ownTint(color) {
+  return AGENT_COLORS.includes(color) ? color : "rail-2";
+}
+
 /// 피어 승인 상태 → 문구.
 export function peerState(p) {
   if (p.paired) return "페어링됨";

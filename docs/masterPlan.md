@@ -136,6 +136,7 @@
   (사람에게 보내기 없음 — 웹UI · CLI · API 모두), 기존 이력의 사람 글은 표시 · 받기 유지. 기각안: 다자 채널.
   (#1z-15 개정 — 사용자 "사용자가 직접 입력한 내용은 agent 를 거치지 않고 해당 채팅창에 작성") 받은 대화(내 에이전트가 답함)에 쓴 글은 실행 없이 양쪽 창에만 —
   실행 요청은 보낸 대화의 글만.
+  (#1z-16 — 사용자 지시 · 질문 답 U4) 받은 대화 입력창에는 질의 · 요청 단추가 없다(받은 대화의 글은 늘 질의 — 서버 규칙은 그대로).
 - **D24** 자동 왕복: 대화를 열 때 두 에이전트를 지정하고 첫 메시지를 쓰면 한쪽 답이 다른 쪽 입력으로 자동 전달. 상한 기본 10
   (1 ~ 50, 설정) — 도달 시 양쪽 멈추고 사람 입력 대기(연 쪽 재개). (#1z-15 개정 — 사용자 질문 답) 받은 쪽 사람 글은 왕복을 멈추지 않는다. 실행 한도 = 1회당 30분(넘으면 자손까지 종료) + **PC 전체
   동시 실행 상한** 기본 2 · 1 ~ 8(`max_runs`) — 넘는 요청은 거절 없이 FIFO 대기, 상대가 보낸 요청이면 `Progress`(대기 · 앞 사람
@@ -245,6 +246,8 @@
     색은 레일 + 그 사람 · 그룹의 머리글자 네모 전부(줄 타일 · 말풍선 · 주고받은 메시지 · 프로필 — #1z-13 '머리글자 무채' 개정), 그룹 그림 = 앞 사람 가운데 + 뒤 좌우 둘.
     (#1z-15 개정 ③ — 사용자 "레일 아이콘을 다른 대화방에서도 동일하게 유지" · 질문 답) 머리글자 네모 없음 — 사람 · 그룹 얼굴은 어디서나 레일 얼굴(줄 타일 · 말풍선 ·
     요청 의견 · 주고받은 메시지 · 프로필), '나' 는 어디서나 기본 흑연.
+    (#1z-16 — 사용자 "에이전트를 제공하는 사용자의 채팅 구분" · 질문 답 U1 ~ U7) 받은 · 보낸 대화에서 내가 직접 쓴 말풍선 = '나' 얼굴 + '나' 타일 색 옅은 면(흑연 기본,
+    CLI 글 · 공유 대화 빼고), 요청 의견 칸 안쪽 여백 = 입력창.
     타일 메뉴(우클릭 · 메뉴 키 · ⋯) — 타일 편집 · 이미지 지우기 · 그룹 삭제 · 위로 · 아래로. 우상단 프로필 = 아이콘 + 표시 이름 알약.
   - 메뉴 · 화면 제목 · 설정 트리 · ⋯ 메뉴 이름 앞 아이콘(16px 한 벌). 사이드바에 에이전트 목록 절 없음(에이전트 내비 하위 메뉴는 둔다 — #1v). 통계 메뉴는 별도 Task 후보.
     내용이 곧 설명인 메뉴 · 화면에는 설명 문구를 두지 않는다(개요 · 요청 · 즐겨찾기 · 북마크 머리). 레일 어디서든 브라우저 우클릭 메뉴 없음.
@@ -372,7 +375,7 @@ Task 상태는 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`).
 Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 1b.inbound-capacity · 1c.durable-messaging · 1d.request-list ·
 1e.autostart-watchdog · 1f.message-edit · 1g.rail-scope · 1h.stabilization · 1i.rail-group · 1j.messenger-ui · 1k.ui-polish ·
 1l.ui-icons · 1m.context-compact · 1n.cli-start-stop · 1o.chat-list-split · 1p.project-tidy · 1q.request-overview · 1r.ui-polish ·
-1s.fold-line-readme · 1t.notion-ux · 1u.scoped-refresh · 1v.notion-design · 1w.conv-leave · 1x.session-ui · 1y.data-update · 1z.chat-look · 1z-2.ui-refine · 1z-3.activity-color · 1z-4.home-preview · 1z-5.home-thumb · 1z-6.home-zoom · 1z-7.conv-type-look · 1z-8.settings-search · 1z-9.agent-engine · 1z-10.conv-info · 1z-11.overview-calm · 1z-12.code-tidy. 남음:
+1s.fold-line-readme · 1t.notion-ux · 1u.scoped-refresh · 1v.notion-design · 1w.conv-leave · 1x.session-ui · 1y.data-update · 1z.chat-look · 1z-2.ui-refine · 1z-3.activity-color · 1z-4.home-preview · 1z-5.home-thumb · 1z-6.home-zoom · 1z-7.conv-type-look · 1z-8.settings-search · 1z-9.agent-engine · 1z-10.conv-info · 1z-11.overview-calm · 1z-12.code-tidy · 1z-13.design-taste · 1z-14.ui-touchup · 1z-15.tile-color · 1z-16.owner-chat. 남음:
 - 후보(착수 전): 통계 메뉴(사이드바 상단 — 보여줄 숫자 미정 · 서버 집계 API 필요).
 - 후보(착수 전): outbox 정산 순서 점검 — 기존 종류(`req_state` 거절 등)도 "행을 지운 뒤 정산" 순서라 원자성 보강이 필요한지 판단(1f 평가의 범위 밖 관찰).
 - 후보(착수 전): 요청 보드 보기 설정(D39 ① · 1t U2 — U1 은 #1v 종결) — 보드의 그룹 · 정렬 · 거르기(이 PC 에만, 지금 보기 기억은 `ui_folded` 열쇠를 빌려 씀 → 전용 설정 키). 닿는 D·S: D35 · D39.
@@ -463,6 +466,8 @@ Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 
   세부정보 '자동 왕복' 절 없앰 · 받은 쪽 멈춤 = '대화 정보' 한 줄 · 세부정보 '요청' 최근 3건 + 더보기) — 사용자 지시 · 질문 답 U1 ~ U4 · report-4, 버전 1.4.0 그대로
 - 2026-10-26 · Task #1z-15(개정 ③) · S4 개정(사람 · 그룹 얼굴 = 어디서나 레일 얼굴 — 머리글자 네모 없음 · '나' 어디서나 흑연) — 사용자 지시 · 질문 답 U1 "머리글자 네모 전부" ·
   U2 "같이 맞춤", 버전 1.4.0 그대로
+- 2026-10-27 · Task #1z-16 · D23 보강(받은 대화 입력창 질의 · 요청 단추 없음) · S4 개정(내가 직접 쓴 말풍선 = '나' 얼굴 + '나' 타일 색 옅은 면 · 요청 의견 칸 안쪽 여백) —
+  사용자 결정(지시 · 질문 답 U1 ~ U7), 버전 1.4.1, 종결 목록에 1z-16
 - 2026-10-24 · Task #1z-12 · D10 보강(웹 원본 = ES 모듈 `js/` 48 · 서버 내장 표 `SCRIPTS` · `/js/{모듈}` 정확 이름만 토큰 없이) · 코드 정리(크레이트 안 도메인 모듈 · 죽은 코드 · 주석 = 왜 · 보안 · 함정만, 결정 이력은 문서 — 검증 명령 `tools/check_code_tidy.py`, 동작 · 버전 1.3.6 그대로) — 사용자 결정(질문 답 넷 · "권장 방안 승인." · 재개 "권장 방안으로 진행." — A2 예외 = 도메인을 가로지르는 화면 흐름, 동작 불변인 중복 지움), 종결 목록에 1z-12
 - 2026-10-19 · 1.0.0 배포 · D25 보강(보유한 Mac 의 macOS universal 실행 파일을 사전 배포에 첨부, 확인 · 서명은 Phase 4) — 사용자 지시(버전 1.0.0 · Mac 빌드 = 보유한 Mac)
 - 2026-10-19 · S1 개정(요청 상태 = 네 상태 사이 어디로든 — 되돌리기 포함) · S4 보강(요청 보드 손잡이 포인터 끌기 · 놓은 열로 옮김 · 요청 화면 "메모" → "피드백") — 사용자 지시(Task 밖 수정)

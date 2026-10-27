@@ -542,6 +542,18 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("view", "  if (conv.relay_blocked) return null;", "#1z-15 결정 12 '자동 왕복 거절 중' 표시 없음"),
     ("view", r#"export const RELAY_STOPPED = "멈춤 — 이 PC 가 멈춤(재개는 연 쪽)";"#, "#1z-15 결정 16 받은 쪽 멈춤 = 대화 정보 한 줄"),
     ("app", "convInfoRows({ ...d, relay_blocked: conv.relay_blocked }, conv.dir)", "#1z-15 결정 16 대화 정보에 멈춤 상태"),
+    // 1z-16 — 받은 대화 입력창 종류 단추 없음 · 내가 쓴 말풍선 '나' 얼굴 · 면 · 요청 의견 칸 여백
+    ("view", "  return conv?.dir !== \"in\";", "#1z-16 결정 4 받은 대화 = 질의 · 요청 단추 없음"),
+    ("app", "kind.hidden = !asksKind(conv);", "#1z-16 결정 4 받은 대화 입력창 종류 단추 숨김"),
+    ("app", "if (asksKind(state.current) && ask.value === \"request\") {", "#1z-16 결정 4 받은 대화 글은 요청이 아님"),
+    ("view", "  return conv.dir !== \"shared\" && m.author !== \"agent\" && m.mine === true && m.via !== \"cli\";", "#1z-16 결정 1 · 7 내 사람 글(CLI · 공유 빼고)"),
+    ("app", r#"${own ? ` own own-${ownTint(state.settings.me_color)}` : ""}"#, "#1z-16 결정 2 내 말풍선 면 = '나' 타일 색"),
+    ("app", r#"el("div", { class: "avatar", "aria-hidden": "true" }, railFace(state.settings.me_icon, false, state.settings.me_color, true))"#, "#1z-16 결정 5 내 말풍선 아바타 = '나' 레일 얼굴"),
+    ("app", "state.settings.me_icon, state.settings.me_color])}`;", "#1z-16 결정 2 · 5 '나' 얼굴 · 색을 바꾸면 말풍선 다시 그림"),
+    ("app.css", ".msg.own .bubble { background: var(--own-bg); border-color: var(--border-strong); }", "#1z-16 결정 2 '나' 색 옅은 면"),
+    ("app.css", ".msg.own-rail-2 { --own-bg: var(--own-rail-2); }", "#1z-16 결정 2 기본 흑연"),
+    ("app.css", ".msg.own-peer-5 { --own-bg: var(--own-peer-5); }", "#1z-16 결정 2 여섯 색"),
+    ("app.css", ".req-note textarea { width: 100%; box-sizing: border-box; min-height: 88px; resize: vertical; padding: var(--sp-3) var(--sp-4); }", "#1z-16 결정 3 의견 칸 안쪽 여백 = 입력창"),
 ];
 
 /// 없어야 하는 문구 — (파일 키, 문구, 출처). `a+b` 는 두 파일 모두에 없어야 한다.
@@ -928,5 +940,14 @@ fn token_contrast() {
         assert!(r >= 4.5, "머리글자 on-dark / {c} {r:.2}");
         cases += 1;
     }
-    assert_eq!(cases, 88);
+    // 내가 쓴 말풍선 면('나' 타일 색 옅은 면 — 흑연 · 여섯 색) 위 본문 글자(4.5:1, 두 테마)
+    for dark in [false, true] {
+        let p = if dark { "dark-" } else { "" };
+        for c in ["rail-2", "agent-tile", "peer-1", "peer-2", "peer-3", "peer-4", "peer-5"] {
+            let r = contrast(token(&format!("{p}text")), token(&format!("{p}own-{c}")));
+            assert!(r >= 4.5, "말풍선 {p}text / own-{c} {r:.2}");
+            cases += 1;
+        }
+    }
+    assert_eq!(cases, 102);
 }

@@ -7,6 +7,11 @@ export function bubbleSide(m) {
   return m.mine === true || m.owner === true ? "mine" : "theirs";
 }
 
+/// 내가 직접 쓴 글 — 이 PC 사람 글(CLI 글 · 공유 대화 빼고). 말풍선에 '나' 얼굴 · 면(`app.css` `.msg.own`).
+export function ownHuman(conv, m) {
+  return conv.dir !== "shared" && m.author !== "agent" && m.mine === true && m.via !== "cli";
+}
+
 /// 발화자 이름 — 사람: 내 글 "나", 상대 글은 상대 이름. 에이전트: 대화 에이전트의 주인 쪽(보낸 대화 = 상대 PC, 받은 대화 = 내 PC) —
 /// 멘션한 요청의 답이면 실행한 에이전트(`m.agent`). 자동 왕복이면 반대쪽 에이전트 글도 있다 — 보낸 대화의 내 글 = 내 자동 왕복 에이전트,
 /// 받은 대화의 상대 글 = 상대 에이전트.

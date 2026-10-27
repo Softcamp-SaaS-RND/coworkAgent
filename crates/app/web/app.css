@@ -45,6 +45,14 @@
   --peer-4: #905A3A;
   --peer-5: #2F6577;
   --agent-tile: #2F6F6B;
+  /* 내가 직접 쓴 말풍선 면(`.msg.own`) — '나' 타일 색(흑연 · 여섯 색)의 옅은 면 */
+  --own-rail-2: #E5E5E5;
+  --own-agent-tile: #E6EEED;
+  --own-peer-1: #E9EDF3;
+  --own-peer-2: #E6EDEC;
+  --own-peer-3: #EFEBF1;
+  --own-peer-4: #F2EBE7;
+  --own-peer-5: #E6EDEF;
   --on-dark: #FFFFFF; /* 레일 '나' 타일 · 에이전트 아이콘 글자 — 두 테마 모두 어두운 바탕 위 */
   --on-danger: #FFFFFF;
   --backdrop: rgb(0 0 0 / 0.35);
@@ -84,6 +92,13 @@
   --dark-avatar-bg: #2E2E33;
   --dark-avatar-text: #D4D4D8;
   --dark-card-mine: #8AA4C4;
+  --dark-own-rail-2: #333338;
+  --dark-own-agent-tile: #1F3233;
+  --dark-own-peer-1: #273141;
+  --dark-own-peer-2: #1F3130;
+  --dark-own-peer-3: #362C3D;
+  --dark-own-peer-4: #3C2C24;
+  --dark-own-peer-5: #1F2F37;
   --dark-on-danger: #170C0B;
   --dark-shadow: 0 4px 16px rgba(0,0,0,.45);
   --dark-shadow-sm: 0 1px 3px rgba(0,0,0,.35);
@@ -171,6 +186,13 @@
   --avatar-bg: var(--dark-avatar-bg);
   --avatar-text: var(--dark-avatar-text);
   --card-mine: var(--dark-card-mine);
+  --own-rail-2: var(--dark-own-rail-2);
+  --own-agent-tile: var(--dark-own-agent-tile);
+  --own-peer-1: var(--dark-own-peer-1);
+  --own-peer-2: var(--dark-own-peer-2);
+  --own-peer-3: var(--dark-own-peer-3);
+  --own-peer-4: var(--dark-own-peer-4);
+  --own-peer-5: var(--dark-own-peer-5);
   --on-danger: var(--dark-on-danger);
   --shadow: var(--dark-shadow);
   --shadow-sm: var(--dark-shadow-sm);
@@ -355,7 +377,7 @@ input[type="checkbox"][role="switch"]:disabled { opacity: .5; cursor: default; }
 #act_tabs a[data-kind="failed"] { color: var(--danger); }
 /* 요청 의견 칸 — 3줄 · 칸 폭 전부, 아래 줄 = 글자 수 · 취소 · 확인(44px) */
 .req-note { display: flex; flex-direction: column; gap: var(--sp-2); align-items: stretch; }
-.req-note textarea { width: 100%; box-sizing: border-box; min-height: 88px; resize: vertical; }
+.req-note textarea { width: 100%; box-sizing: border-box; min-height: 88px; resize: vertical; padding: var(--sp-3) var(--sp-4); } /* 안쪽 여백 = 입력창 */
 .req-note-bar { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
 .req-note-bar .note-count { margin-right: auto; font-variant-numeric: tabular-nums; }
 .req-note button { height: 44px; }
@@ -949,6 +971,15 @@ details { margin: var(--sp-2) 0; }
 /* ---- 사람 ↔ 에이전트 구분 ---- */
 /* 말풍선: 사람 글 = 옅은 회색 면(테두리 없음), 에이전트 글 = 흰 면 + 가는 선, 좌 · 우 어느 쪽이든 */
 .msg.agent .bubble { background: var(--surface); border-color: var(--border); }
+/* 내가 직접 쓴 글 — '나' 얼굴 + '나' 타일 색 옅은 면 · 선(고른 글 바탕 `--accent-soft` 과 갈리게) */
+.msg.own .bubble { background: var(--own-bg); border-color: var(--border-strong); }
+.msg.own-rail-2 { --own-bg: var(--own-rail-2); }
+.msg.own-agent-tile { --own-bg: var(--own-agent-tile); }
+.msg.own-peer-1 { --own-bg: var(--own-peer-1); }
+.msg.own-peer-2 { --own-bg: var(--own-peer-2); }
+.msg.own-peer-3 { --own-bg: var(--own-peer-3); }
+.msg.own-peer-4 { --own-bg: var(--own-peer-4); }
+.msg.own-peer-5 { --own-bg: var(--own-peer-5); }
 .avatar.agent-av .ico { width: 14px; height: 14px; }
 .tag.agent-tag { background: transparent; color: var(--agent); font-weight: var(--fw-medium); padding: 0; }
 /* 발화자 아이콘(대화 미리보기 · 메시지 줄) */

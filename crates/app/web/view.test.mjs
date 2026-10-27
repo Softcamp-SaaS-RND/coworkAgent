@@ -37,6 +37,7 @@ import {
   INFO_CMD_HINT,
   RELAY_STOPPED,
   convKindIcon,
+  asksKind,
 } from "./js/logic/conv.js";
 import {
   relayText,
@@ -86,6 +87,7 @@ import {
   waitingByPeer,
   tileUnread,
   meTint,
+  ownTint,
   tileTint,
 } from "./js/logic/peer.js";
 import {
@@ -100,6 +102,7 @@ import {
   authorLabel,
   bubbleSide,
   sharedAuthor,
+  ownHuman,
 } from "./js/logic/author.js";
 import {
   sortByPos,
@@ -1633,6 +1636,29 @@ test("tile_tint — 여섯 색(에이전트 아이콘 색과 같음)이면 tinte
 test("me_tint — '나' 얼굴 = 고른 색, 없으면 흑연(me-tile)", () => {
   assert.equal(meTint("peer-2"), "tinted peer-2");
   for (const c of [undefined, null, "", "red"]) assert.equal(meTint(c), "me-tile", JSON.stringify(c));
+});
+
+test("own_tint — 내 말풍선 면 = '나' 타일 색, 없거나 틀리면 흑연(rail-2)", () => {
+  for (const c of ["agent-tile", "peer-1", "peer-2", "peer-3", "peer-4", "peer-5"]) assert.equal(ownTint(c), c);
+  for (const c of [undefined, null, "", "red", "peer-6", "tinted peer-1"]) assert.equal(ownTint(c), "rail-2", JSON.stringify(c));
+});
+
+test("own_human — 내가 직접 쓴 글: 사람 · 내 쪽 · CLI 아님 · 공유 대화 아님", () => {
+  const out = { dir: "out" };
+  const inn = { dir: "in" };
+  assert.equal(ownHuman(out, { author: "human", mine: true }), true, "보낸 대화 내 글");
+  assert.equal(ownHuman(inn, { author: "human", mine: true }), true, "받은 대화 내 글");
+  assert.equal(ownHuman(inn, { author: "human", mine: false }), false, "상대 글");
+  assert.equal(ownHuman(inn, { author: "agent", mine: true }), false, "내 에이전트 답");
+  assert.equal(ownHuman(out, { author: "human", mine: true, via: "cli" }), false, "CLI 글");
+  assert.equal(ownHuman({ dir: "shared" }, { author: "human", owner: true, mine: true }), false, "공유 대화");
+  assert.equal(ownHuman(out, { author: "human" }), false, "mine 없음");
+});
+
+test("asks_kind — 질의 · 요청 단추는 받은 대화에 없다", () => {
+  assert.equal(asksKind({ dir: "in" }), false);
+  assert.equal(asksKind({ dir: "out" }), true);
+  assert.equal(asksKind({ dir: "out", relay_agent: "a" }), true);
 });
 
 test("move_in_order — 대상 앞 · 뒤에 끼우기, 걸러 보인 이웃 기준이어도 전체 순서에서 · 그대로인 경우", () => {

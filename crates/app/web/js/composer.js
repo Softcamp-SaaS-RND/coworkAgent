@@ -2,7 +2,7 @@
 import { api } from "./core/api.js";
 import { $, act, el } from "./core/dom.js";
 import { state } from "./core/state.js";
-import { keepsConversation } from "./logic/conv.js";
+import { asksKind, keepsConversation } from "./logic/conv.js";
 import { enterSends, hasMention, insertMarkdown, mentionQuery, mentionTarget, mentionToken } from "./logic/message.js";
 import { route } from "./logic/shell.js";
 import { refresh } from "./events.js";
@@ -53,8 +53,8 @@ $("reply_form").addEventListener("submit", (ev) => {
     fitComposer();
     ask.value = "query";
   };
-  // 요청 — 실행이 없어 부를 에이전트(멘션)도 없다.
-  if (ask.value === "request") {
+  // 요청 — 실행이 없어 부를 에이전트(멘션)도 없다. 받은 대화에는 종류가 없다(`asksKind` — 단추도 숨김).
+  if (asksKind(state.current) && ask.value === "request") {
     sendText(text, { request: true }, reset);
     return;
   }

@@ -176,6 +176,10 @@ export function convInfoRows(info, dir, now = Date.now() / 1000) {
     );
   return rows;
 }
+/// 입력창 '질의' · '요청' 단추 — 받은 대화(`in`)의 글은 내 에이전트를 거치지 않는 사람 글이라 종류가 없다.
+export function asksKind(conv) {
+  return conv?.dir !== "in";
+}
 /// 대화 유형 아이콘 — 내 에이전트가 답(`in`) = 로봇, 내가 문의(`out`) = 사람(사람 ↔ 에이전트 구분, 발화자 표시 `speakerIcon` 과 같은 그림), 공유 대화 = 눈.
 export function convKindIcon(conv) {
   return conv.dir === "in" ? "bot" : conv.dir === "out" ? "user" : conv.dir === "shared" ? "eye" : null;

@@ -4,13 +4,13 @@ import { $, act, button, el, ico, unchanged } from "./core/dom.js";
 import { closeFloat, focusAfterFloat, openFloat } from "./core/float.js";
 import { latest, state } from "./core/state.js";
 import { iconButton, railFace } from "./core/widgets.js";
-import { authorLabel, bubbleSide } from "./logic/author.js";
+import { authorLabel, bubbleSide, ownHuman } from "./logic/author.js";
 import { contextBusy, contextLabel, contextNote, contextSize, ctxMenu } from "./logic/context.js";
-import { KIND_NAMES, MAX_OBSERVERS, convClosed, convKindIcon, convLabel, shareCandidates, shareHead } from "./logic/conv.js";
+import { KIND_NAMES, MAX_OBSERVERS, asksKind, convClosed, convKindIcon, convLabel, shareCandidates, shareHead } from "./logic/conv.js";
 import { dayBreaks, displayName, formatDuration, formatTime, josa, shortName, stateText } from "./logic/format.js";
 import { htmlSrcdoc, isHtmlDoc, markdownBlocks } from "./logic/markdown.js";
 import { editedTag, enterSends, lastRun, messageActions, messagesSigOf, noteCount, outboxText, progressText, refusedText, relayText } from "./logic/message.js";
-import { presence } from "./logic/peer.js";
+import { ownTint, presence } from "./logic/peer.js";
 import { askTag, reqFeedback } from "./logic/request.js";
 import { closeMention } from "./composer.js";
 import { convEndForm } from "./conv-menu.js";
@@ -198,6 +198,10 @@ export function showConversation(conv) {
   // 공유 대화 · 닫힌 대화(나감 · 상대가 나감) — 보기만: 입력창 · 컨텍스트 단추 없음.
   const readOnly = conv.dir === "shared" || !!convClosed(conv);
   $("reply_form").hidden = $("ctx_btn").hidden = readOnly;
+  // 질의 · 요청 단추 — 받은 대화에는 없다(숨길 때 고른 값도 질의로).
+  const kind = $("reply_form").querySelector(".ask-kind");
+  kind.hidden = !asksKind(conv);
+  if (kind.hidden) $("reply_form").elements.ask.value = "query";
 }
 
 /// 실행 중 경과 — 받은 때부터(대기 포함, 실행 시작 시각은 남지 않는다).
@@ -220,16 +224,20 @@ export function messageEl(conv, m) {
   meta.push(editedTag(m));
   const acts = messageActions(m, !!convClosed(conv));
   // 말풍선 — 이 PC 쪽 글은 오른쪽(이름은 "나" 가 아닐 때만), 상대 쪽은 왼쪽에 상대 얼굴(`peerFace`) · 이름.
+  // 내가 직접 쓴 글(`ownHuman`)은 '나' 얼굴 + '나' 타일 색 옅은 면(`app.css` `.msg.own`).
   // 에이전트 글은 어느 쪽이든 로봇 아바타 + "에이전트" 글자(말풍선 모양은 `app.css` `.msg.agent`).
   const agent = m.author === "agent";
+  const own = ownHuman(conv, m);
   const article = el(
     "article",
-    { class: `msg ${m.author} side-${side}`, "data-msg": String(m.id), tabindex: "0" },
+    { class: `msg ${m.author} side-${side}${own ? ` own own-${ownTint(state.settings.me_color)}` : ""}`, "data-msg": String(m.id), tabindex: "0" },
     agent
       ? el("div", { class: "avatar agent-av", "aria-hidden": "true" }, ico("bot"))
       : side === "theirs"
         ? el("div", { class: "avatar", "aria-hidden": "true" }, peerFace(conv, conv.dir === "shared" && m.owner !== true))
-        : "",
+        : own
+          ? el("div", { class: "avatar", "aria-hidden": "true" }, railFace(state.settings.me_icon, false, state.settings.me_color, true))
+          : "",
     el(
       "div",
       { class: "msg-body" },
@@ -450,7 +458,7 @@ export function peerFace(conv, other = false) {
 
 export function messagesSig(conv, ms) {
   const p = state.peers.find((x) => x.id === conv.peer_id);
-  return `${messagesSigOf(state.peerNames.get(conv.peer_id), ms)}|${JSON.stringify([p?.icon, p?.color])}`;
+  return `${messagesSigOf(state.peerNames.get(conv.peer_id), ms)}|${JSON.stringify([p?.icon, p?.color, state.settings.me_icon, state.settings.me_color])}`;
 }
 
 /// 그 글로 — 가운데로 스크롤해 잠깐 강조하고 실행 상세의 '진행' 을 그 요청으로(`#c/{대화}/m/{글}`).
