@@ -286,12 +286,12 @@ export function messageEl(conv, m) {
   return article;
 }
 
-/// 메시지 작업 — 다시 알리기 · 요청 상태 바꾸기(`req:{상태}` — 받은 요청, 의견 칸을 열고 확인하면 쓴 쪽에 간다).
+/// 메시지 작업 — 다시 알리기 · 요청 상태 바꾸기(`req:{상태}` — 받은 요청, 의견 칸을 작업 줄 아래에 열고 확인하면 쓴 쪽에 간다).
 export function messageAct(m, key) {
   if (key === "req-again") {
     resendState(m.id, m.req_state, m.req_note);
   } else if (key.startsWith("req:")) {
-    const bar = $("messages").querySelector(`[data-msg="${m.id}"] .msg-actions`);
+    const bar = $("messages").querySelector(`[data-msg="${m.id}"] .msg-body`);
     if (bar) noteForm(bar, m.id, key.slice(4), messageActions(m, !!convClosed(state.current)).find((a) => a.key === key)?.label ?? "");
   }
 }
@@ -313,12 +313,17 @@ export function toggleBookmark(m) {
   const on = !cur.saved;
   act(on ? "북마크" : "북마크 해제", async () => {
     await api("PATCH", `/api/messages/${m.id}`, { saved: on });
-    cur.saved = on;
-    $("messages").querySelector(`[data-msg="${m.id}"] [data-act="save"]`)?.replaceWith(bookmarkButton(cur));
-    if (state.current) renderConvHead(state.current);
-    renderDetail();
+    markSaved(cur, on);
     return on ? "북마크했습니다" : "북마크 해제";
   });
+}
+
+/// 열린 대화 글의 북마크 상태를 바꾸고 그 아이콘 · 머리 수 · 실행 상세만 다시(대화 서명은 저장 여부를 안 본다 — 아이콘을 직접 바꿔야 한다).
+export function markSaved(cur, on) {
+  cur.saved = on;
+  $("messages").querySelector(`[data-msg="${cur.id}"] [data-act="save"]`)?.replaceWith(bookmarkButton(cur));
+  if (state.current) renderConvHead(state.current);
+  renderDetail();
 }
 
 export const COPY_SVG =
@@ -511,11 +516,17 @@ export async function openConversation(conv) {
   const sig = messagesSig(conv, ms);
   // 실행 중 경과는 다시 그리지 않고 글자만.
   for (const s of box.querySelectorAll("[data-since]")) s.textContent = elapsed(Number(s.dataset.since));
-  if (box.dataset.sig !== sig) {
+  // 의견 칸을 쓰는 중이면 미룬다 — 다시 그리면 쓰던 의견이 사라진다(닫거나 보내면 다음 새로 고침에 그린다).
+  if (box.dataset.sig !== sig && !box.querySelector(".req-note")) {
     box.dataset.sig = sig;
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
     box.replaceChildren(...messageEls(conv, ms));
     if (atBottom) box.scrollTop = box.scrollHeight;
+  }
+  // 북마크는 서명에 없다 — 다른 화면(북마크 목록)에서 바꾼 값이 늦게 온 응답에 가려져도 새로 고침 때 단추만 서버 값에 맞춘다.
+  for (const m of ms) {
+    const b = box.querySelector(`[data-msg="${m.id}"] [data-act="save"]`);
+    if (b && b.classList.contains("on") !== (m.saved === true)) b.replaceWith(bookmarkButton(m));
   }
   renderDetail();
   // 갈 글 — 이 대화를 실제로 그린 뒤(늦게 온 응답 · 새로 고침이 그려도).

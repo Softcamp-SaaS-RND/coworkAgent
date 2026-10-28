@@ -83,10 +83,10 @@ export function chime() {
   });
 }
 
-/// 서버 → 웹UI 알림 스트림. 붙는 순간 트레이 "새 요청" 이 지워진다. 원격 이름은 텍스트로만(브라우저 알림 본문도 텍스트).
+/// 서버 → 웹UI 알림 스트림. 붙는 순간 트레이 "확인할 일" 이 지워진다. 원격 이름은 텍스트로만(브라우저 알림 본문도 텍스트).
 export function listen() {
   const es = new EventSource(`/api/events?t=${encodeURIComponent(token)}`);
-  // 붙은 뒤 "봤다" 를 알린다(트레이 새 요청 지움) — 상태 변경은 POST 로만.
+  // 붙은 뒤 "봤다" 를 알린다(트레이 확인할 일 지움) — 상태 변경은 POST 로만.
   es.onopen = () => {
     api("POST", "/api/seen").catch(() => {});
     // 끊긴 동안의 변경 신호는 다시 오지 않는다 — 붙을 때마다 미리보기 글을 전부 새로.

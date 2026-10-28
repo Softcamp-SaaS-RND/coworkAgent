@@ -1,4 +1,4 @@
-//! 트레이 상주 — 메뉴 "열기" · "종료", "새 요청" 표시, 시작 실패 시 오류 모드(D30).
+//! 트레이 상주 — 메뉴 "열기" · "종료", "확인할 일" 표시, 시작 실패 시 오류 모드(D30).
 //! 두 OS 공통 tray-icon 만 쓴다. macOS 는 Dock 아이콘 없이 메뉴 막대에만.
 use crate::browser;
 use std::io;
@@ -30,7 +30,7 @@ pub struct Tray {
     event_loop: EventLoop<TrayEvent>,
 }
 
-/// 다른 스레드에서 트레이 "새 요청" 표시를 바꾼다 — 프록시로 보내기만 해서 막히지 않는다. 트레이 없는 모드는 아무것도 안 한다.
+/// 다른 스레드에서 트레이 "확인할 일" 표시를 바꾼다 — 프록시로 보내기만 해서 막히지 않는다. 트레이 없는 모드는 아무것도 안 한다.
 #[derive(Clone)]
 pub struct Attention(Option<EventLoopProxy<TrayEvent>>);
 
@@ -126,7 +126,7 @@ impl Tray {
         })
     }
 
-    /// 정상 모드 — "열기" 는 웹UI 를 열고 `on_seen` 을 부른다(새 요청 표시 지움). "종료" 는 `on_quit` 후 끝. `note` 는 툴팁 둘째 줄(피어 포트 등).
+    /// 정상 모드 — "열기" 는 웹UI 를 열고 `on_seen` 을 부른다(확인할 일 표시 지움). "종료" 는 `on_quit` 후 끝. `note` 는 툴팁 둘째 줄(피어 포트 등).
     pub fn run(
         self,
         url: String,
@@ -140,10 +140,10 @@ impl Tray {
         let mut menu = Some((open, quit));
         let mut tray: Option<TrayIcon> = None;
         let mut on_quit = Some(on_quit);
-        // 트레이 만들기 실패 횟수 · 다음 시도 시각 — 기다리는 동안에도 다른 이벤트(새 요청 표시 등)는 돈다.
+        // 트레이 만들기 실패 횟수 · 다음 시도 시각 — 기다리는 동안에도 다른 이벤트(확인할 일 표시 등)는 돈다.
         let mut failures = 0;
         let mut retry_at: Option<Instant> = None;
-        // 마지막 "새 요청" 수 — 트레이가 아직 없을 때(다시 시도 중) 온 값도 남겨 만들 때 그대로 그린다.
+        // 마지막 "확인할 일" 수 — 트레이가 아직 없을 때(다시 시도 중) 온 값도 남겨 만들 때 그대로 그린다.
         let mut attention = 0;
 
         self.event_loop.run(move |event, _, control_flow| {
@@ -185,15 +185,15 @@ impl Tray {
                     if let Some(t) = &tray {
                         let tip = tip(n, note.as_deref());
                         if let Err(e) = t.set_icon(Some(icon(mark_of(n)))) {
-                            log::warn!("트레이 아이콘 갱신 실패(새 요청 {n}건): {e}");
+                            log::warn!("트레이 아이콘 갱신 실패(확인할 일 {n}건): {e}");
                         }
                         if let Err(e) = t.set_tooltip(Some(tip)) {
-                            log::warn!("트레이 툴팁 갱신 실패(새 요청 {n}건): {e}");
+                            log::warn!("트레이 툴팁 갱신 실패(확인할 일 {n}건): {e}");
                         }
                     }
                 }
                 Event::UserEvent(TrayEvent::Menu(e)) if e.id == open_id => {
-                    // 열린 경우에만 "봤다" — 실패하면 새 요청 표시를 남긴다.
+                    // 열린 경우에만 "봤다" — 실패하면 확인할 일 표시를 남긴다.
                     match browser::open(&url) {
                         Ok(()) => on_seen(),
                         Err(e) => log::error!("브라우저 열기 실패: {e}"),
@@ -270,10 +270,10 @@ impl Tray {
     }
 }
 
-/// 툴팁 — "coworkAgent"(새 요청이 있으면 " — 새 요청 n건") + 덧붙임 줄. Windows 툴팁은 UTF-16 128 칸(끝 NUL 포함)이라 넘으면 "…" 로 자른다.
+/// 툴팁 — "coworkAgent"(확인할 일이 있으면 " — 확인할 일 n건") + 덧붙임 줄. Windows 툴팁은 UTF-16 128 칸(끝 NUL 포함)이라 넘으면 "…" 로 자른다.
 pub fn tip(n: usize, note: Option<&str>) -> String {
     let head = if n > 0 {
-        format!("coworkAgent — 새 요청 {n}건")
+        format!("coworkAgent — 확인할 일 {n}건")
     } else {
         "coworkAgent".to_string()
     };
@@ -321,7 +321,7 @@ fn show_failure(message: &str) {
     }
 }
 
-/// 새 요청 수의 표시 — 있으면 주황 점.
+/// 확인할 일 수의 표시 — 있으면 주황 점.
 fn mark_of(n: usize) -> Mark {
     if n > 0 { Mark::Attention } else { Mark::None }
 }
@@ -329,7 +329,7 @@ fn mark_of(n: usize) -> Mark {
 #[derive(Clone, Copy)]
 enum Mark {
     None,
-    /// 새 요청 — 오른쪽 위 주황 점.
+    /// 확인할 일 — 오른쪽 위 주황 점.
     Attention,
     /// 시작 실패 — 붉은 바탕.
     Error,
@@ -367,7 +367,7 @@ mod tests {
         assert_eq!(super::tip(0, None), "coworkAgent");
         assert_eq!(
             super::tip(2, Some("둘째")),
-            "coworkAgent — 새 요청 2건\n둘째"
+            "coworkAgent — 확인할 일 2건\n둘째"
         );
         let long = super::tip(1, Some(&"가".repeat(200)));
         assert_eq!(long.encode_utf16().count(), 127);

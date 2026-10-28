@@ -1,5 +1,5 @@
 //! 인바운드 알림 — 기본 OFF. 두 OS 같은 UI/UX(D30): 웹UI 탭이 열려 있으면 브라우저 알림(이벤트 스트림 →
-//! `Notification`, OS 알림 정책은 브라우저 · OS 가 따른다), 탭과 무관하게 트레이 "새 요청" 표시.
+//! `Notification`, OS 알림 정책은 브라우저 · OS 가 따른다), 탭과 무관하게 트레이 "확인할 일" 표시(받은 요청 · 연결 요청 · 연결 승인 · 내 요청 상태 변경만, 알림 설정과 무관).
 use an_agent::chat::{MAX_RELAY_CAP, RELAY_CAP_KEY, default_relay_cap};
 use an_core::db::{Connection, db_err};
 use an_core::run_opts;
@@ -76,6 +76,20 @@ pub fn change_of(e: &PeerEvent) -> Change {
     Change { res: vec![r] }
 }
 
+/// 트레이 "확인할 일" 로 세는 이벤트 — 받은 요청(요청 화면 행), 연결(페어링) 요청, 상대의 연결 승인, 내가 보낸 요청의 상태 변경
+/// (상대가 수용 · 반려 · 완료). 알림 설정과 무관하다.
+pub fn tray_marks(e: &PeerEvent) -> bool {
+    matches!(
+        e,
+        PeerEvent::PairRequest { .. }
+            | PeerEvent::Approved { .. }
+            | PeerEvent::Message {
+                kind: MessageKind::Ask | MessageKind::AskState,
+                ..
+            }
+    )
+}
+
 type Attention = Box<dyn Fn(usize) + Send + Sync>;
 /// 자동 시작 켜기(등록) · 끄기(지움) — 앱이 설치한다(디버그 빌드 · 시험은 없음).
 type AutostartHook = Box<dyn Fn(bool) -> io::Result<()> + Send + Sync>;
@@ -98,7 +112,7 @@ pub struct Prefs {
     pub notify_preview: bool,
     /// 받은 요청 알림 효과음(기본 켜짐) — 웹UI 가 낸다(집중 중에는 알림 자체가 없다).
     pub notify_sound: bool,
-    /// 알림 일시 중지(기본 꺼짐) — 켜 있는 동안 브라우저 알림 · 트레이 표시 · 이벤트를 내지 않는다. `notify_inbound` 와 별개라 풀면 그 설정대로.
+    /// 알림 일시 중지(기본 꺼짐) — 켜 있는 동안 브라우저 알림 · 이벤트를 내지 않는다(트레이 확인할 일은 그대로 — [`tray_marks`]). `notify_inbound` 와 별개라 풀면 그 설정대로.
     pub notify_paused: bool,
     /// 집중(기본 꺼짐, 설정 키 `focus`) — 상대의 새 실행 요청 거부와 함께 알림도 멈춘다. 일시 중지 값은 바꾸지 않는다.
     pub focus: bool,
@@ -156,7 +170,7 @@ impl Prefs {
 struct Status {
     enabled: bool,
     prefs: Prefs,
-    /// 사용자가 아직 보지 않은 알림 수 — 트레이 표시.
+    /// 사용자가 아직 보지 않은 확인할 일 수([`tray_marks`]) — 트레이 표시.
     pending: usize,
 }
 
@@ -201,7 +215,7 @@ impl Notifier {
         self.status().enabled
     }
 
-    /// DB 에 저장한 뒤 반영한다. 끄면 트레이 표시도 지운다 — 상태 잠금 안에서라 그 사이 이벤트가 끼어들지 못한다.
+    /// DB 에 저장한 뒤 반영한다. 트레이 확인할 일은 알림 설정과 무관해 꺼도 그대로다.
     pub fn set_enabled(&self, on: bool) -> io::Result<()> {
         let mut st = self.status();
         {
@@ -209,10 +223,6 @@ impl Notifier {
             settings::set(&db, NOTIFY_KEY, if on { "1" } else { "0" }).map_err(db_err)?;
         }
         st.enabled = on;
-        if !on {
-            st.pending = 0;
-            (self.attention)(0);
-        }
         Ok(())
     }
 
@@ -473,10 +483,6 @@ impl Notifier {
         drop(hook);
         if let Some(on) = patch.notify_inbound {
             st.enabled = on;
-            if !on {
-                st.pending = 0;
-                (self.attention)(0);
-            }
         }
         Ok(())
     }
@@ -554,8 +560,8 @@ impl Notifier {
         default_relay_cap(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
 
-    /// 막히지 않는다 — 켜져 있고 세부 설정이 허락하면 건수 · 트레이 표시를 올리고 구독자에게 뿌린다(구독자가 없으면 그냥
-    /// 버려진다). 걸러진 이벤트는 건수에도 들지 않는다.
+    /// 막히지 않는다 — 확인할 일([`tray_marks`])이면 설정과 무관하게 건수 · 트레이 표시를 올리고, 켜져 있고 세부 설정이 허락하면
+    /// 구독자에게 뿌린다(구독자가 없으면 그냥 버려진다).
     pub fn on_event(&self, e: &PeerEvent) {
         // 변경 신호는 켜짐 · 세부 설정 앞 — 알림을 꺼도 화면은 맞춰진다.
         let _ = self.changes.send(change_of(e));
@@ -563,12 +569,14 @@ impl Notifier {
             return;
         }
         let mut st = self.status();
+        if tray_marks(e) {
+            st.pending += 1;
+            (self.attention)(st.pending);
+        }
         if !st.enabled || !st.prefs.allows(e) {
             return;
         }
         let preview_on = st.prefs.notify_preview;
-        st.pending += 1;
-        (self.attention)(st.pending);
         drop(st);
         // 받은 요청 — 대기 요청 묶음 한 장. 상태 잠금을 놓고 읽는다(DB 잠금과 겹치지 않게).
         let ask = matches!(e, PeerEvent::Message { kind: MessageKind::Ask, .. })
@@ -590,7 +598,7 @@ impl Notifier {
         self.changes.subscribe()
     }
 
-    /// 사용자가 봤다 — 트레이 "새 요청" 을 지운다.
+    /// 사용자가 봤다 — 트레이 "확인할 일" 을 지운다.
     pub fn clear(&self) {
         let mut st = self.status();
         st.pending = 0;

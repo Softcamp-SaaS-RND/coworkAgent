@@ -34,6 +34,13 @@ export const PREFS = [
   "auto_compact",
 ];
 
+/// 설정 저장 — 보낸 키만 화면에 반영한다(다른 설정의 늦게 온 응답이 방금 저장한 값을 되돌리지 않게). 서버 응답을 돌려준다.
+export async function saveSettings(body) {
+  const saved = await api("PUT", "/api/settings", body);
+  fillPrefs(Object.fromEntries(Object.keys(body).map((k) => [k, saved[k]])));
+  return saved;
+}
+
 export function fillPrefs(s) {
   state.settings = { ...state.settings, ...s };
   for (const key of PREFS) {
@@ -67,13 +74,9 @@ for (const key of PREFS) {
     input.disabled = true;
     act("설정", async () => {
       try {
-        fillPrefs(await api("PUT", "/api/settings", { [key]: value }));
+        await saveSettings({ [key]: value });
         if (key === "claude_model" || key === "claude_effort") renderPeerList(); // 상대별 칸의 "기본값(…)" 문구
-        if (key === "ui_date_format") {
-          // 그린 목록 · 대화는 같은 서명이면 건너뛴다 — 서명을 비워 이미 그린 시각을 새 방식으로.
-          for (const box of document.querySelectorAll("[data-sig]")) box.dataset.sig = "";
-          refresh();
-        }
+        if (key === "ui_date_format") refresh(); // 서명의 시각 열쇠가 바뀌어 그린 시각을 새 방식으로 다시 그린다
         if (key === "ui_peer_weeks") {
           state.peerPages.clear(); // 받은 꼬리에 기간 밖 글이 남지 않게
           loadPeerMessages();
@@ -81,7 +84,8 @@ for (const key of PREFS) {
         return "설정 저장";
       } catch (e) {
         // 저장이 실패하면 서버 값으로 되돌린다 — 화면과 실제 설정이 어긋나지 않게.
-        fillPrefs(await api("GET", "/api/settings").catch(() => ({})));
+        const now = await api("GET", "/api/settings").catch(() => ({}));
+        fillPrefs({ [key]: now[key] });
         throw e;
       } finally {
         input.disabled = false;
@@ -128,7 +132,7 @@ export async function showSettings() {
   }
   box.addEventListener("change", () => {
     const wanted = box.checked;
-    // 브라우저 알림 권한은 사용자 동작(이 클릭) 안에서만 물을 수 있다. 거부 · 미지원이어도 설정은 저장하고 트레이 표시만 쓴다고 알린다.
+    // 브라우저 알림 권한은 사용자 동작(이 클릭) 안에서만 물을 수 있다. 거부 · 미지원이어도 설정은 저장하고 알림이 뜨지 않는다고 알린다(트레이 확인할 일은 이 설정과 무관).
     const permission =
       wanted && "Notification" in window
         ? Notification.permission === "default"
@@ -136,15 +140,15 @@ export async function showSettings() {
           : Promise.resolve(Notification.permission)
         : Promise.resolve(wanted ? "unsupported" : "off");
     box.disabled = true;
-    act("알림 설정", async () => {
+    act("브라우저 알림 설정", async () => {
       try {
         const r = await api("PUT", "/api/settings", { notify_inbound: wanted });
         box.checked = r.notify_inbound === true;
-        if (!box.checked) return "알림을 껐습니다";
+        if (!box.checked) return "브라우저 알림을 껐습니다";
         const p = await permission;
         return p === "granted"
-          ? "알림을 켰습니다"
-          : "알림을 켰습니다. 브라우저 알림을 쓸 수 없어 트레이에만 표시합니다.";
+          ? "브라우저 알림을 켰습니다"
+          : "브라우저 알림을 켰지만 이 브라우저는 알림을 허용하지 않아 뜨지 않습니다. 트레이 아이콘 표시는 그대로입니다.";
       } catch (e) {
         // 저장이 실패하면 서버 값으로 되돌린다 — 화면과 실제 알림 상태가 어긋나지 않게.
         box.checked = await api("GET", "/api/settings")

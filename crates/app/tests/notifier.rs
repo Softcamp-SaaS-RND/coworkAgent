@@ -32,7 +32,7 @@ fn disabled_sends_nothing() {
     let mut rx = n.subscribe();
     n.on_event(&request());
     assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
-    assert!(marks.lock().unwrap().is_empty(), "트레이도 그대로");
+    assert_eq!(*marks.lock().unwrap(), vec![1], "트레이 새 요청은 알림 설정과 무관(연결 요청)");
 }
 
 #[test]
@@ -56,11 +56,12 @@ fn enabled_sends_notice_and_marks_tray() {
         ("approved", "페어링 승인")
     );
     assert!(second.body.contains("박서연 · SYPARK-WIN"));
-    assert_eq!(*marks.lock().unwrap(), vec![1, 2], "트레이 새 요청 건수");
+    assert_eq!(*marks.lock().unwrap(), vec![1, 2], "트레이 확인할 일 — 연결 요청 · 상대 승인");
 }
 
+/// 본 것(`clear`)만 트레이를 지운다 — 알림을 꺼도 새 요청 건수는 남고 계속 센다.
 #[test]
-fn clear_and_off_reset_tray() {
+fn clear_resets_tray_but_off_does_not() {
     let (n, marks) = notifier("clear");
     n.set_enabled(true).unwrap();
     n.on_event(&request());
@@ -68,7 +69,8 @@ fn clear_and_off_reset_tray() {
     n.on_event(&request());
     n.set_enabled(false).unwrap();
     n.on_event(&request());
-    assert_eq!(*marks.lock().unwrap(), vec![1, 0, 1, 0]);
+    assert_eq!(*marks.lock().unwrap(), vec![1, 0, 1, 2]);
+    assert_eq!(n.pending(), 2);
 }
 
 #[test]
@@ -125,8 +127,8 @@ fn concurrent_events_and_clear_keep_tray_in_sync() {
 }
 
 #[test]
-fn turning_off_during_events_leaves_nothing_pending() {
-    // 알림이 쏟아지는 중에 끈다 — 끈 뒤에는 건수 0 · 마지막 표시 0 이어야 한다(켜짐 확인과 건수 변경 사이 틈이 없어야).
+fn turning_off_during_events_keeps_tray_count() {
+    // 알림이 쏟아지는 중에 끈다 — 트레이 건수는 알림 설정과 무관하니 하나도 빠지지 않고, 마지막 표시 = 실제 건수(건수 변경과 표시가 한 순서).
     for round in 0..30 {
         let (n, marks) = notifier(&format!("offrace{round}"));
         n.set_enabled(true).unwrap();
@@ -148,11 +150,11 @@ fn turning_off_during_events_leaves_nothing_pending() {
         for w in workers {
             w.join().unwrap();
         }
-        assert_eq!(n.pending(), 0, "round {round}: 끈 뒤 건수가 남았다");
+        assert_eq!(n.pending(), 8 * 3000, "round {round}: 끄는 사이 건수가 빠졌다");
         assert_eq!(
             marks.lock().unwrap().last(),
-            Some(&0),
-            "round {round}: 끈 뒤 표시가 남았다"
+            Some(&(8 * 3000)),
+            "round {round}: 마지막 표시가 실제 건수와 다르다"
         );
     }
 }
@@ -184,7 +186,7 @@ fn kinds_filtered() {
     n.on_event(&request());
     n.on_event(&message(Reply));
     n.on_event(&message(Request));
-    // 꺼진 종류는 알림도 건수도 없다.
+    // 꺼진 종류는 알림이 없다. 트레이는 세부 설정과 무관하게 연결 요청만 센다(사람 글 · 받은 답은 세지 않음).
     assert_eq!(rx.try_recv().unwrap().kind, "message");
     assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
     assert_eq!(*marks.lock().unwrap(), vec![1]);
@@ -269,9 +271,9 @@ fn pause(n: &Notifier, on: bool) {
     .unwrap();
 }
 
-/// 알림 일시 중지 — 켜져 있어도 알림 · 트레이 표시가 나가지 않는다(전체 켜짐은 그대로).
+/// 알림 일시 중지 — 켜져 있어도 알림이 나가지 않는다(전체 켜짐은 그대로). 트레이 새 요청은 그대로 센다.
 #[test]
-fn paused_drops_notices_and_tray() {
+fn paused_drops_notices_not_tray() {
     let (n, marks) = notifier("paused");
     n.set_enabled(true).unwrap();
     pause(&n, true);
@@ -280,8 +282,8 @@ fn paused_drops_notices_and_tray() {
     n.on_event(&request());
     n.on_event(&message(an_net::node::MessageKind::Request));
     assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
-    assert!(marks.lock().unwrap().is_empty(), "트레이도 그대로");
-    assert_eq!(n.pending(), 0);
+    assert_eq!(*marks.lock().unwrap(), vec![1], "트레이는 연결 요청을 센다(사람 글은 세지 않음)");
+    assert_eq!(n.pending(), 1);
     assert!(n.enabled(), "전체 켜짐은 따로");
 }
 
@@ -297,7 +299,7 @@ fn resume_after_pause_notifies_again() {
     n.on_event(&request());
     assert_eq!(rx.try_recv().unwrap().kind, "pair_request");
     assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
-    assert_eq!(*marks.lock().unwrap(), vec![1]);
+    assert_eq!(*marks.lock().unwrap(), vec![1, 2], "트레이는 멈춘 동안에도 셌다");
 }
 
 /// 집중 — 요청 거부와 함께 알림도 멈춘다(알림 일시 중지 설정 값은 그대로). 집중을 풀면 그 설정대로 다시 알린다.
@@ -318,11 +320,65 @@ fn focus_pauses_notices() {
     n.on_event(&request());
     n.on_event(&message(an_net::node::MessageKind::Reply));
     assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
-    assert!(marks.lock().unwrap().is_empty(), "트레이도 그대로");
+    assert_eq!(*marks.lock().unwrap(), vec![1], "트레이는 집중 중에도 연결 요청을 센다(받은 답은 세지 않음)");
     focus(false);
     n.on_event(&request());
     assert_eq!(rx.try_recv().unwrap().kind, "pair_request");
+    assert_eq!(*marks.lock().unwrap(), vec![1, 2]);
+}
+
+/// 트레이 확인할 일 = 받은 요청 · 연결 요청 · 상대 승인 · 내 요청 상태 변경만 — 그 밖 이벤트는 알림이 나가도 트레이를 켜지 않는다.
+#[test]
+fn tray_marks_only_requests() {
+    use an_net::node::MessageKind::*;
+    assert!(notify::tray_marks(&request()));
+    assert!(notify::tray_marks(&message(Ask)));
+    assert!(notify::tray_marks(&message(AskState)), "내가 보낸 요청의 상태가 바뀜");
+    assert!(
+        notify::tray_marks(&PeerEvent::Approved {
+            name: "a".into(),
+            host: "b".into(),
+        }),
+        "상대가 연결을 승인함"
+    );
+    let others = [
+        PeerEvent::AutoPaired {
+            name: "a".into(),
+            host: "b".into(),
+            fingerprint: "f".into(),
+        },
+        PeerEvent::Changed { conv: Some(1) },
+        message(Request),
+        message(Reply),
+        message(RelayStart),
+        message(RelayStep),
+        message(RelayEnd),
+        message(Share),
+        message(Clear),
+    ];
+    let (n, marks) = notifier("tray-only");
+    n.set_enabled(true).unwrap();
+    let mut rx = n.subscribe();
+    for e in &others {
+        assert!(!notify::tray_marks(e));
+        n.on_event(e);
+    }
+    assert!(marks.lock().unwrap().is_empty(), "요청 아닌 이벤트가 트레이를 켰다");
+    assert!(rx.try_recv().is_ok(), "브라우저 알림은 지금 그대로 나간다");
+    n.on_event(&message(Ask));
     assert_eq!(*marks.lock().unwrap(), vec![1]);
+}
+
+/// 브라우저 알림 꺼짐(기본)이어도 받은 요청은 트레이를 켠다 — 알림은 없다.
+#[test]
+fn tray_ignores_settings() {
+    let (n, marks) = notifier("tray-off");
+    assert!(!n.enabled());
+    let mut rx = n.subscribe();
+    n.on_event(&message(an_net::node::MessageKind::Ask));
+    assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
+    assert_eq!(*marks.lock().unwrap(), vec![1]);
+    assert_eq!(n.pending(), 1);
 }
 
 fn res(kind: &'static str, id: Option<i64>) -> notify::Res {

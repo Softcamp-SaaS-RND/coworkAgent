@@ -11,6 +11,7 @@ import {
   formatTime,
   DATE_FORMATS,
   setDateFormat,
+  timeKey,
   josa,
   fileSize,
   displayName,
@@ -19,6 +20,8 @@ import {
   convLabel,
   filterByPeer,
   roomPreview,
+  starDetail,
+  agentTag,
   keepsConversation,
   LEAVE_CONFIRM,
   composeDefaults,
@@ -316,6 +319,19 @@ test("format_time — 날짜 표시방식 md(기본) · relative · ymd · time,
   assert.equal(formatTime(t, { now }), "2026-10-28 14:03", "고른 방식을 따른다");
   setDateFormat("huge");
   assert.equal(formatTime(t, { now }), "10.28 14:03", "모르는 값 = md");
+});
+
+test("time_key — 그린 시각의 다시 그리기 열쇠: 날짜 표시방식 · 지역 날짜(자정 · 해 넘김에 바뀜)", () => {
+  const at = (y, mo, d, h, mi) => new Date(y, mo - 1, d, h, mi).getTime() / 1000;
+  assert.equal(timeKey(at(2026, 10, 28, 0, 1)), timeKey(at(2026, 10, 28, 23, 59)), "같은 날 = 같은 열쇠");
+  assert.notEqual(timeKey(at(2026, 10, 28, 23, 59)), timeKey(at(2026, 10, 29, 0, 1)), "자정 넘김");
+  assert.notEqual(timeKey(at(2026, 12, 31, 23, 59)), timeKey(at(2027, 1, 1, 0, 1)), "해 넘김");
+  const now = at(2026, 10, 28, 12, 0);
+  const md = timeKey(now);
+  setDateFormat("relative");
+  assert.notEqual(timeKey(now), md, "방식이 바뀌면 다른 열쇠");
+  setDateFormat("md");
+  assert.ok(messagesSigOf("p", []).endsWith(timeKey()), "메시지 서명에 붙는다");
 });
 
 test("타임라인 — reply_to 로 묶고, 실행 정보 · 대기 · 미전달", () => {
@@ -1593,6 +1609,17 @@ test("day_label · day_breaks — 오늘 · 어제 · M.D · 다른 해, 날짜�
   const ms = [at(2026, 10, 14, 9), at(2026, 10, 14, 10), at(2026, 10, 15, 8), at(2026, 10, 15, 9)].map((t, i) => ({ id: i, created_at: t }));
   assert.deepEqual(dayBreaks(ms, now), ["어제", null, "오늘", null]);
   assert.deepEqual(dayBreaks([], now), []);
+});
+
+test("star_detail · agent_tag — 즐겨찾기 줄 둘째 줄 '상대 · 에이전트 · 상태', 에이전트 응답 줄 '[이름]'", () => {
+  const out = { dir: "out", agent: "review", peer_id: 2, last_state: "done" };
+  assert.equal(starDetail(out, "김도윤 · QA-PC"), "김도윤 · review · 완료");
+  assert.equal(starDetail({ ...out, dir: "in", agent: "coder", last_state: "running" }, "김도윤 · QA-PC"), "김도윤 · 내 coder · 실행 중");
+  assert.equal(starDetail({ ...out, last_state: null }, "김도윤"), "김도윤 · review", "상태 없으면 생략");
+  assert.equal(starDetail({ ...out, last_state: null }, undefined), "상대 · review", "모르는 상대");
+  const shared = { dir: "shared", agent: "review", peer_id: 2, last_state: "done", share: { other: "박서연" } };
+  assert.equal(starDetail(shared, "김도윤 · QA-PC"), "공유 · 김도윤 ↔ 박서연 · 완료");
+  assert.equal(agentTag({ agent: "AI Discovery" }), "[AI Discovery]");
 });
 
 test("room_preview — 대화 줄 미리보기 = 마지막 글 '{말한 이}: {한 줄}', 글 없으면 빈 글자", () => {

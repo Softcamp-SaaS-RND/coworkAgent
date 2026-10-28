@@ -133,10 +133,11 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
   (`js/logic/request.js` `boardColumns` — 머리 건수 = 서버 집계), 카드 = 목록 행 그대로(상태 색 띠 없음 — 상태 = 열 제목 · 칩, #1z-13), 상태 거르기는 숨김. 받은 요청 카드를 `canDrop` 열(지금 열 말고 어디로든)에
   놓으면 카드가 그 열로 옮겨진 채 의견 칸(`noteForm`)이 열리고 확인해야 요청자에게 간다(취소면 제자리) — 보낸 요청 · 닫힌 대화는 끌 수 없다. 끌기 = 카드 왼쪽 손잡이
   (`.drag-handle` · `ico-grip`)의 포인터 끌기(`boardGrab` · `boardDrop` — 사본이 따라오고 놓을 열 강조 · 못 놓을 열 흐림). HTML 끌어 놓기(`draggable`)를 쓰지 않는다 — 브라우저
-  끌기 확장이 링크 끌기에 반응한다. 카드 링크는 `draggable="false"`. 의견(`req_note` — #1z 용어 — 옛 이름 "메모")은 회색 면 상자(`.req-feedback` — 상태 색 띠 없음 · #1z-13, 줄바꿈 그대로). 의견 칸 = 3줄 textarea(200자 · `noteCount` "n / 200") ·
+  끌기 확장이 링크 끌기에 반응한다. 카드 링크는 `draggable="false"`. 의견(`req_note` — #1z 용어 — 옛 이름 "메모")은 회색 면 상자(`.req-feedback` — 상태 색 띠 없음 · #1z-13, 줄바꿈 그대로). 의견 칸 = 3줄 textarea(200자 · `noteCount` "n / 200", #1z-18 — 요청 행 · 카드는 상태 단추 줄 `.req-acts` 다음 줄 전체 `flex: 1 0 100%`, 대화 메시지 작업은 `.msg-actions` 가 아니라
+  `.msg-body` 에 붙여 작업 줄 아래 `width: min(100%, 640px)`, 취소 · 확인 단추 32px 오른쪽) ·
   취소 · 확인 44px, Enter = 확인 · Shift+Enter = 줄바꿈(`enterSends`). 줄바꿈은 상대에게 U+2028 로 보낸다(`note_to_wire` — 이전 버전 검사 통과, [an_core](an_core.md)). 글자 단추는 카드에도 남는다(키보드 길).
   archive(#1y — 이 PC 에만): 머리 `#req_archive` "archive 항목 보기"(요청 화면에 들어올 때마다 끔 — 기억하지 않음), 켜면 쪽마다 `archived=true` 목록을 더 받아 목록 · 보드
-  아래 `#req_archive_list` 에 따로 된 절 "archive — 받은 요청" · "archive — 보낸 요청"(`renderReqArchive` — 접힘 열쇠 `reqarchive:{쪽}`, 처음 펼침). 행 글자 단추
+  아래 `#req_archive_list` 에 따로 된 절(#1z-18 — `#req_archive` = `role="switch"` 슬라이드 `.switch-line`) "archive — 받은 요청" · "archive — 보낸 요청"(`renderReqArchive` — 접힘 열쇠 `reqarchive:{쪽}`, 처음 펼침). 행 글자 단추
   `js/logic/request.js` `reqArchiveAction`(받은 · 보낸 요청 — 완료 = "archive" · archive 됨 = "archive 해제") → `archiveReq` = `POST /api/messages/{id}/archive` 뒤 `loadRequests`.
   절 머리 `reqHead` 끝 "archive n"(전체 수에 들지 않는다).
 - **내 활동**(#1q): 받은 요청 · 내 요청(지금 상태 + 메모, 상태가 바뀌면 맨 위 · 안 본 것) · 받은 답 · 실패만 — 탭 전체 · 받은 요청 · 내 요청 · 받은 답 · 실패 + 본문 검색.
@@ -145,7 +146,11 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
   상대 사람 일반 메시지 · 자동 왕복 기록은 없다.
 - **대화 목록**(`js/logic/conv.js` `convListParts`): 나 · 상대 타일 = 내 대화(`dir = out` — 내가 연 대화 · 내가 연 자동 왕복)만 머리 없이 + "공유 대화"(`shared`) 머리,
   에이전트 대화(`in`)는 '나' 의 사이드바 '에이전트 응답' 화면으로(#1v · #1z-2). 그룹 타일 = "내 대화" · "에이전트 대화" · "공유 대화" 머리(제목 · 개수, 하나뿐이면 머리 없음). 끌어 옮기기는 묶음 안에서만(행 `data-section = {절}:{dir}`), 즐겨찾기 화면은 나누지 않는다. 대화 줄 = 한 줄(#1z-2) — 손잡이(#1x — `button.drag-handle` · `ico-grip`, `aria-label`
-  "{제목} 옮기기", `convGrab`) · 유형 아이콘(`kindChip` — `.room-kind.kind-chip`, #1z-13 결정 15 · 16: 내 에이전트 응답 `in` = 로봇 · 내가 문의 `out` = 사람 · 공유 `shared` = 눈, 무채 — 사이드바 대화 목록 `renderConvList` 의 내 대화 줄은 아이콘 없음, #1z-14 결정 4 — `convItem` 셋째 인자 `sideList`, 즐겨찾기 · 에이전트 응답 화면은 그대로) · 제목 · 실행 중 점(`spin` — 상태 이름이 접근 이름) · 안 읽음 수 · 시각. 미리보기 · 발화자 · 칩 줄 없음(줄 `title` = 상대 · 에이전트). 줄에 ☆ 없음 — 즐겨찾기는 대화 머리 `star_btn` 만(#1x). 메뉴 '즐겨찾기' = 그 범위 ★ 대화(★ = 대화 하나, 북마크 = 글 하나 — 내부 이름 `saved`).
+  "{제목} 옮기기", `convGrab`) · 유형 아이콘(`kindChip` — `.room-kind.kind-chip`, #1z-13 결정 15 · 16: 내 에이전트 응답 `in` = 로봇 · 내가 문의 `out` = 사람 · 공유 `shared` = 눈, 무채 — 사이드바 대화 목록 `renderConvList` 의 내 대화 줄은 아이콘 없음, #1z-14 결정 4 — `convItem` 셋째 인자 `sideList`, 즐겨찾기 · 에이전트 응답 화면은 그대로) · 제목 · 실행 중 점(`spin` — 상태 이름이 접근 이름) · 안 읽음 수 · 시각. 미리보기 · 발화자 · 칩 줄 없음(줄 `title` = 상대 · 에이전트). 사이드바 대화 줄에 ☆ 없음 — 즐겨찾기는 대화 머리 `star_btn`(#1x). `convItem` 넷째 인자 `opts`(#1z-18): 즐겨찾기 화면(`renderStarred`) = `star`(손잡이 다음 · 링크 앞 줄 머리
+  `starButton` — 누르면 빼고 목록에서 빠짐, `align-self: center`) · `detail`(제목 줄 아래 `.sub.room-detail` — `js/logic/conv.js` `starDetail` "{상대} · {에이전트} · {상태}", 공유 = 대화 부제 · 상태),
+  에이전트 응답 화면(`renderAgentConvs`) = `agent`(유형 아이콘 대신 `agentTile(그 에이전트 색, "small")`, 시각 뒤 `.room-agent` `agentTag` "[이름]"(최대 160px · "…") — 시각과 한 묶음 `.room-end`
+  `flex: 0 0 272px`, `#agent_convs_list` 최대 너비 = 항목 1100px + 여백, 제목 `flex: 1 1 714px` 라 항목이 1100px 보다 좁으면 `.room-end` 가 둘째 줄 오른쪽으로 — container query 없이 flex 줄바꿈(macOS 12 Safari 15),
+  서명에 `state.agents` 이름 · 색). 메뉴 '즐겨찾기' = 그 범위 ★ 대화(★ = 대화 하나, 북마크 = 글 하나 — 내부 이름 `saved`).
 - **대화**: 메신저형 말풍선 — 이 PC 쪽 글(`mine`) 오른쪽 · 상대 사람 · 에이전트 글 왼쪽(아바타 — 24px 네모, 사람 = 그 상대 레일 얼굴 `peerFace`(공유 대화 원 상대 = 무채 사람) · 에이전트 = 로봇 — · 이름 · 시각) · 날짜 구분선 · 최대 폭 대화 칸의 90%, 방향
   라벨(사람 → 에이전트 · 보냄 · 받음) 없음. 말풍선(#1z-13 결정 12) = 사람 글(상대 사람 글) `--subtle` 면 · 에이전트 글 `--surface` 면 + 1px `--border`, 색 층 없음 ·
   옆 띠 없음(#1p), 둥글기 `--radius-bubble` 8px, 글자 대비 = `ux_literals` `token_contrast`(아래 디자인 토큰 — 102 경우 4.5:1 이상), 링크 = 전역 `a`. 뷰어 = markdown · HTML 은 sandbox iframe.
@@ -154,7 +159,7 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
   토큰 `--own-*` · `--dark-own-*`), 선 = 1px `--border-strong`(고른 글 `.picked` 바탕 `--accent-soft` 와 갈림 — 같은 색 선은 `color-mix` 가 macOS 12 에 없어 쓰지 않음).
   `messagesSig` 에 `me_icon` · `me_color` 가 들어 '나' 얼굴 · 색을 바꾸면 다시 그린다.
   대화 머리 = "대화 보기 / 원문 보기" · 컨텍스트 "42k / 1M" · "북마크 n"(세부정보 북마크 절) · "세부정보"(보낸 메시지 · 타임라인 탭 없음). 말풍선 우상단
-  아이콘 = 북마크(넣기 · 빼기) · 복사(늘 보임), 아래 작은 단추 = 요청 상태. "다시 보내기" 없음 — 입력창에서 다시 쓴다. 입력창(#1v — 시안 A 모양, #1z 여백) = 창 폭에 맞춰 늘어남(최대 폭 없음 · 좌우 여백 `max(48px, 8%)` = 말풍선 영역과 같음 · 말풍선과의 간격 24px 는 스크롤 영역 밖 —
+  아이콘 = 북마크(넣기 · 빼기 — 북마크 목록 `#saved` 은 `js/activity.js` `savedRowEls` 가 줄 머리에 켜진 북마크 단추 · `unsaveRow` 로 빼면 목록에서 빠짐 · 열린 대화의 같은 글 아이콘도 `conv.js` `markSaved` 로 꺼짐 · 목록 다시 읽기는 북마크 화면일 때만, #1z-18) · 복사(늘 보임), 아래 작은 단추 = 요청 상태. "다시 보내기" 없음 — 입력창에서 다시 쓴다. 입력창(#1v — 시안 A 모양, #1z 여백) = 창 폭에 맞춰 늘어남(최대 폭 없음 · 좌우 여백 `max(48px, 8%)` = 말풍선 영역과 같음 · 말풍선과의 간격 24px 는 스크롤 영역 밖 —
   `#messages` 아래 패딩 0 · `.composer` 위 여백) · 글 칸 44px 에서 글만큼 200px 까지(`fitComposer`) ·
   1px `--border-strong` · 그림자 없음(#1z-13), 바 = 서식 | 키 안내 · 질의 · 요청 세그먼트(라디오 그대로 — 형제 선택자, `:has()` 없음, 고른 칸 = 1px 고리) · 보내기(#1z-13 결정 3), 안내 문구 없음(placeholder "메시지 입력" — 요청 안내 `#ask_hint` 는 #1x 에서 지움) ·
   받은 대화(`dir = "in"`)는 질의 · 요청 세그먼트 없음(#1z-16 — `js/logic/conv.js` `asksKind`, 숨길 때 값 "질의", 보낼 때도 `asksKind` 로 `request` false — 서버는 그대로) ·
@@ -210,7 +215,10 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
     `md` `M.D HH:MM` · `relative` `오늘 | 어제 HH:MM`(그 전은 md) · `ymd` `YYYY-MM-DD HH:MM` · `time` `HH:MM` 로 그린다(md · relative 는 다른 해면 `YYYY.M.D` — `dateText`).
     화면 시각은 전부 이것(말풍선 메타 · 요청 의견 · 컨텍스트 줄 · 요청 카드 · 세부정보 목록 · 활동 · 주고받은 메시지 · 사이드바 · 개요), 실행 상세 '진행' 요청 · 응답 = `seconds: true`(`runSteps`),
     '대화 정보' 기간 · 압축 = 같은 방식(`dayLabel` 앞붙임 없음). 날짜 구분선(`dayLabel`)과 디버깅 로그 시각(`formatClock`)은 설정과 무관.
-    방식은 `fillPrefs` → `setDateFormat`(모듈 변수), 바꿔 저장하면 `[data-sig]` 를 비우고 `refresh()` — 그린 목록 · 대화가 새 방식으로 다시 그려진다.
+    방식은 `fillPrefs` → `setDateFormat`(모듈 변수). 다시 그리기 서명(`core/dom.js` `unchanged` · `needsRender`, `messagesSigOf`)에 `timeKey`(방식 · 지역 날짜)가 붙어
+    바꿔 저장하면 `refresh()` 로, 자정 · 해 넘김엔 5초 새로 고침에 그린 시각을 다시 그린다. 대화는 의견 칸(`.req-note`)이 열려 있으면 다시 그리기를 미룬다(쓰던 의견 보존).
+    설정 저장 = `js/settings/prefs.js` `saveSettings(body)` — 보낸 키만 `fillPrefs` 에 반영(집중 · 알림 일시 중지 · '나' 타일 저장 포함, 실패 복구 GET 도 그 키만) —
+    늦게 온 다른 설정 응답이 방금 저장한 값을 되돌리지 않게.
   - 디버깅(`loadDebug` — 화면을 열 때 · 새로 고침): 파일 카드(버전 · 데이터 폴더 · DB · 로그 — 경로 · 크기(`js/logic/format.js` `fileSize`) · 복사), 로그 상자(`GET /api/debug/log` 끝 200줄 —
     `js/logic/settings.js` `logLines` 로 수준 거르기 · 줄 앞 유닉스 초 = 이 PC 시각 "월-일 시:분:초", 끝이 보이게 아래로), "진단 정보 복사"(`js/logic/settings.js` `diagText` — 버전 · OS · 경로 · 크기 · 포트 · 열린 연결 수,
     신원 키 · 토큰 · 지문 없음). 로그 줄은 로그 그대로(자기 지문이 적힌 시작 줄 포함 — '사용자 정보' 에도 보이는 공개 식별자). 내 정보는 프로필 "사용자 정보" 팝업.
@@ -284,11 +292,12 @@ D17 개정 — 접속 판정 · 집중 거절은 [개발자 가이드](developer
 
 S9 · D27 · D29.
 
-- 기본 OFF. 켜면 페어링 요청 · 상대 승인 · 원격 메시지를 웹UI 탭이 열려 있으면 브라우저 알림(SSE → `Notification`, OS 알림 정책 D27), 탭과 무관하게 트레이
-  "새 요청" 표시. 웹UI 연결(`POST /api/seen`) · 트레이 열기 성공 · 끄기로 지운다. 켜짐 · 건수는 한 잠금으로 직렬화.
+- 기본 OFF. 켜면 페어링 요청 · 상대 승인 · 원격 메시지를 웹UI 탭이 열려 있으면 브라우저 알림(SSE → `Notification`, OS 알림 정책 D27).
+  트레이 "확인할 일" 표시는 탭 · 알림 설정과 무관하게 받은 요청 · 연결 요청 · 연결 승인 · 내 요청 상태 변경만 센다(`notify::tray_marks`, #1z-18) — 웹UI 연결(`POST /api/seen`) · 트레이 열기 성공으로 지운다
+  (알림을 꺼도 그대로). 켜짐 · 건수는 한 잠금으로 직렬화. 설정 알림 도움말 `tip_notify` 가 이 차이를 적는다.
 - 종류별(페어링 · 받은 요청 · 받은 답 · 자동 왕복) 켜기 · 끄기와 본문 미리보기 끄기. 자동 왕복은 기본 시작 1 + 끝 1(저절로 멈춘 것만)로 묶고, "메시지마다" ·
   "알리지 않음" 을 고를 수 있다. 자동 왕복 상한 기본값도 설정(1 ~ 50, 처음 10).
-- 알림 일시 중지(이 PC) 동안은 브라우저 알림 · 트레이 표시 · 이벤트를 버리고(건수 그대로) 풀면 설정대로.
+- 알림 일시 중지(이 PC) 동안은 브라우저 알림 · 이벤트를 버리고(트레이 확인할 일은 그대로) 풀면 설정대로.
 - **받은 요청 알림**(#1x — B안 · OS 알림 보강, D27 · D30 유지): 서버 알림 kind `request` — 제목 "받은 요청 {대기 수}", 본문 = 최근 대기 요청 최대 3줄 + "외 n건"
   ([an_app](an_app.md) `notify::request_notice`). `js/logic/conv.js` `requestNotice(n)` → tag `coworkagent-request`(같은 tag 라 앞 알림을 바꾼다) · 누르면 `pickRail(null)` · 요청 보드
   (`#requests`), 그 밖 kind 는 tag `coworkagent-{kind}` · 내 활동. 받은 요청 알림은 `silent` — 소리는 웹UI 효과음 `chime()`(WebAudio 두 음 880 Hz → 1320 Hz 각 0.12 초 ·
@@ -360,7 +369,7 @@ S9 · D27 · D29.
 | 상대가 연 대화 묶음 | 에이전트 대화 | agent 대화 |
 | 대화 목록 · 그 절 | 대화 | 대화방 |
 | 설정 화면 | 설정 | 환경설정 |
-| 받는 쪽 알림 켜기 | 알림 받기 | 인바운드 |
+| 받는 쪽 알림 켜기 | 브라우저 알림 | 인바운드 |
 | 대화 속 한 건 | 메시지 | 글 종류 · 사람 글 · 주고받은 글 · 보낸 글 · 받은 글 · 내 글 · 상대 글 · 첫 글 · 글마다 |
 
 예외(#1x) — 사용자가 글자 그대로 준 화면 문구는 표보다 앞선다: 나가기 확인 "대화방이 목록에서 삭제됩니다." · 기록 삭제 하위 "내 글만 삭제" · "모든 사용자 글 삭제"(사용자 2026-10-20).

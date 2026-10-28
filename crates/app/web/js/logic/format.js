@@ -79,6 +79,12 @@ export function setDateFormat(f) {
   return changed;
 }
 
+/// 그린 시각이 기대는 값 — 날짜 표시방식 · 지역 날짜(오늘 · 어제 · 연도 생략은 날이 바뀌면 달라진다). 다시 그리기 서명에 붙여
+/// 자정 · 해 넘김 · 방식 바꿈에 이미 그린 시각을 다시 그린다.
+export function timeKey(now = Date.now() / 1000) {
+  return `${dateFormat}|${dayKey(now)}`;
+}
+
 /// 유닉스 초 → 날짜 표시방식에 맞춘 지역 시각 — md `M.D HH:MM` · relative `오늘 | 어제 HH:MM`(그 전은 md) · ymd `YYYY-MM-DD HH:MM` · time `HH:MM`.
 /// md · relative 는 다른 해면 `YYYY.M.D`. `seconds` = `:SS` 붙임(실행 상세).
 export function formatTime(unix, { seconds = false, fmt = dateFormat, now = Date.now() / 1000 } = {}) {

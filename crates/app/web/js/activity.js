@@ -1,12 +1,14 @@
 // 내 활동 · 북마크 목록.
 import { api } from "./core/api.js";
-import { $, el, ico, needsRender } from "./core/dom.js";
+import { $, act, el, ico, needsRender } from "./core/dom.js";
 import { latest, state } from "./core/state.js";
-import { speakerEl } from "./core/widgets.js";
+import { iconButton, speakerEl } from "./core/widgets.js";
 import { ACT_KINDS, activityRows } from "./logic/activity.js";
 import { formatTime } from "./logic/format.js";
 import { inboxRows } from "./logic/inbox.js";
 import { scopeQuery } from "./logic/rail.js";
+import { route } from "./logic/shell.js";
+import { BOOKMARK_SVG, markSaved } from "./conv.js";
 import { grouped, loadCounts } from "./sidebar.js";
 
 export function rowEls(rows, empty) {
@@ -31,6 +33,33 @@ export function rowEls(rows, empty) {
       ),
     ),
   );
+}
+
+/// 북마크 목록 행 — `rowEls` 줄 머리에 켜진 북마크 단추(누르면 해제 · 목록에서 빠짐).
+export function savedRowEls(rows) {
+  return rowEls(rows, "북마크 없음").map((li, i) => {
+    const r = rows[i];
+    if (!r) return li;
+    const b = iconButton(BOOKMARK_SVG, "북마크 해제", () => unsaveRow(r));
+    b.classList.add("bookmark", "row-mark", "lead", "on");
+    b.setAttribute("aria-pressed", "true");
+    li.classList.add("has-mark");
+    li.prepend(b);
+    return li;
+  });
+}
+
+/// 북마크 목록에서 해제 — 말풍선 북마크와 같은 `PATCH saved`, 받은 글 사본 · 열린 대화 글(아이콘까지)도 같이 바꾸고,
+/// 아직 북마크 화면이면 목록을 다시 읽는다(다른 화면으로 옮겼으면 읽지 않는다 — 공유 조회 순번이 그 화면 조회를 버리게 하지 않게).
+export function unsaveRow(r) {
+  act("북마크 해제", async () => {
+    await api("PATCH", `/api/messages/${r.id}`, { saved: false });
+    for (const ms of state.peerPages.values()) for (const m of ms) if (m.id === r.id) m.saved = false;
+    const open = state.msgs.find((m) => m.id === r.id);
+    if (open) markSaved(open, false);
+    if (route(location.hash).view === "saved") await loadSaved();
+    return "북마크 해제";
+  });
 }
 
 /// 내 활동 행 — 종류 라벨 · 발화자 · 시각 · 대화 제목 · 본문 앞부분, 안 본 항목은 강조.
@@ -133,5 +162,5 @@ export async function loadSaved() {
   if (!latest.is(ticket)) return;
   const rows = inboxRows(ms, state.peerNames).map((r) => ({ ...r, href: `${r.href}/m/${r.id}` }));
   if (needsRender($("saved_list"), JSON.stringify([state.railPeer, state.railGroup, rows]), false))
-    $("saved_list").replaceChildren(...grouped("saved", rows, (rs) => rowEls(rs, "북마크 없음")));
+    $("saved_list").replaceChildren(...grouped("saved", rows, savedRowEls));
 }

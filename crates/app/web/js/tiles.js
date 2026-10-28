@@ -9,7 +9,7 @@ import { groupNameError, stepTarget } from "./logic/rail.js";
 import { stepMove } from "./drag.js";
 import { refresh } from "./events.js";
 import { loadGroups, loadPeers, pickGroup, pickTile } from "./rail.js";
-import { fillPrefs } from "./settings/prefs.js";
+import { saveSettings } from "./settings/prefs.js";
 
 export const ICON_PX = 80; // 타일 40px × 2(고해상도 화면)
 /// 열린 타일 편집 — `kind` = `me` · `peer` · `group`, `id` = 상대 · 그룹 id, `icon` = `undefined`(그대로) · `""`(지움) · PNG data URL,
@@ -153,7 +153,7 @@ export function openTileMenu(t, anchor) {
       item("image-off", "이미지 지우기", async () => {
         closeFloat(true);
         await act("이미지 지우기", async () => {
-          if (t.kind === "me") fillPrefs(await api("PUT", "/api/settings", { me_icon: "" }));
+          if (t.kind === "me") await saveSettings({ me_icon: "" });
           else if (t.kind === "group") {
             await api("PATCH", `/api/groups/${t.id}`, { icon: "" });
             await loadGroups();
@@ -272,7 +272,7 @@ $("tile_form").addEventListener("submit", (ev) => {
     async () => {
       if (kind === "me") {
         const body = { me_alias: alias, ...(icon === undefined ? {} : { me_icon: icon }), ...(color === undefined ? {} : { me_color: color }) };
-        fillPrefs(await api("PUT", "/api/settings", body));
+        await saveSettings(body);
       } else if (kind === "group") {
         await api("PATCH", `/api/groups/${id}`, tile({ name: alias }));
         await loadGroups();

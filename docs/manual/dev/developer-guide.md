@@ -190,7 +190,7 @@ flowchart TB
 
 | 서비스 | 위치 · 주소 · 주기 | 역할 | 코드 |
 |---|---|---|---|
-| 트레이 | 메인 스레드 | 메뉴 "열기" · "종료". 새 요청 건수를 주황 점 · 툴팁 "coworkAgent — 새 요청 N건" 으로. 시작 실패면 오류 모드(붉은 아이콘 · "오류 보기" · "종료") | `app::tray` |
+| 트레이 | 메인 스레드 | 메뉴 "열기" · "종료". 확인할 일 건수를 주황 점 · 툴팁 "coworkAgent — 확인할 일 N건" 으로. 시작 실패면 오류 모드(붉은 아이콘 · "오류 보기" · "종료") | `app::tray` |
 | 로컬 웹 서버 | `127.0.0.1:{임의 포트}` | 웹UI 정적 파일 · `/api/*` · SSE `/api/events` · 핸드오프 `POST /api/open` · 종료 `POST /api/quit`(#1n). 실행마다 새 토큰, Host · Origin 검사(D9) | `app::server` · `*_api` |
 | 피어 수신 | `0.0.0.0:47100`(사용 중이면 OS 임의 포트) | 상대 요청 1건 = 연결 1개. TLS 1.3 상호 인증(서로 ed25519 키) → 인가(페어링 여부) → 처리기. 연결당 3초 · 동시 32 · 출처 IP 당 4 | `net::node::serve` |
 | 실행 문 | `Chat` 안 | PC 전체 `claude -p` 동시 실행 상한(기본 2 · 1 ~ 8, 설정 `max_runs`) — 넘으면 닿은 순서로 대기 · 상대에 `Progress` 알림(#1b) | `agent::gate` · `chat::admit` |
@@ -199,7 +199,7 @@ flowchart TB
 | 접속 상태 | 통신할 때만(주기 확인 없음) | 보내기 성공 · 페어링된 상대의 요청 받기마다 `peers.seen_at`(10초에 한 번 쓰기). 시작 때 페어링된 상대마다 `Ping` 1회(`announce` — 주소 알림 · 집중), 웹UI 를 열 때 · 타일을 고를 때 ping(서버가 60초 안 통신이면 거름) — 8.8 | `node::announce` · `node::refresh` · `core::peers::touch` |
 | 대화 엔진 | 피어 처리기 + 대화별 작업 | 받은 요청 검증 · 저장(= 대기열 등록) · 대화별 순차 실행 · 답 보관 · 자동 왕복 · 완료 동기화 · 멘션 · 상태 질의 · CLI 트랜잭션. 피어 처리기는 막히지 않는다 — 실행은 대기열로 | `agent::chat::Chat` |
 | 실행기 | blocking 풀 | `claude -p` 인자 · 표준 입력 · 시간 제한 · 출력(stream-json 줄 — 단계 요약을 세고 마지막 `result` 줄만 남김) 읽기 | `agent::runner` |
-| 알림 | 노드 · 대화 엔진 이벤트 | 설정이 허락하면 건수 +1 → 트레이 표시 · SSE → 브라우저 알림(기본 꺼짐) | `app::notify` |
+| 알림 | 노드 · 대화 엔진 이벤트 | 받은 요청 · 연결 요청 · 연결 승인 · 내 요청 상태 변경이면 설정과 무관하게 건수 +1 → 트레이 표시, 설정이 허락하면 SSE → 브라우저 알림(기본 꺼짐) | `app::notify` |
 | 감시 · 자동 시작 | 감시 = 별도 프로세스(3.1), 자동 시작 = HKCU `Run` 값 `coworkAgent` · macOS `com.coworkagent.plist` | 비정상 종료면 다시 띄움 · 로그인 때 실행. 다시 띄워도 남은 일은 `recover`(6.6)가 이어 간다. 감시 잠금 `supervisor.lock`(#1n) | `app::watchdog` · `app::autostart` |
 | 로그 | `logs\coworkAgent.log` | 1 MiB 를 넘기 전에 `.1` 로 회전(1개 보관) | `core::log_file` |
 | 단일 인스턴스 | `instance.lock` · `instance.json` · `instance.pid` | OS 파일 잠금(프로세스가 죽으면 OS 가 푼다) · 핸드오프 정보(포트 · 토큰) · `stop` 의 강제 종료용 PID | `core::instance` |

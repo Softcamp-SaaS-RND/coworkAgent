@@ -155,7 +155,7 @@
             <option value="rejected">반려</option>
             <option value="done">완료</option>
           </select>
-          <span><input type="checkbox" id="req_archive"><label for="req_archive">archive 항목 보기</label></span>
+          <label class="switch-line"><input type="checkbox" id="req_archive" role="switch">archive 항목 보기</label>
         </div>
         <ol id="req_list" class="rows"></ol>
         <div id="req_board" class="req-board" hidden></div>
@@ -445,9 +445,9 @@
           </section>
 
           <section id="notify" class="set-page" aria-labelledby="notify_h" hidden>
-            <div class="set-head"><h2 id="notify_h">알림<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_notify">?</button><span id="tip_notify" class="tip" role="tooltip">탭이 열려 있으면 브라우저 알림으로, 아니면 트레이 아이콘의 주황 점으로 알립니다.</span></span></h2></div>
+            <div class="set-head"><h2 id="notify_h">알림<span class="help-wrap"><button type="button" class="help" aria-label="도움말" aria-describedby="tip_notify">?</button><span id="tip_notify" class="tip" role="tooltip">탭이 열려 있으면 브라우저 알림으로 알립니다. 트레이 아이콘 주황 점은 이 설정과 무관하게 받은 요청 · 연결 요청 · 연결 승인 · 내 요청의 상태 변경이 오면 켜집니다.</span></span></h2></div>
             <div class="set-tiles">
-              <div class="set-tile"><span class="set-tile-label"><label for="notify_inbound"><span class="ico ico-bell lead" aria-hidden="true"></span>알림 받기</label><span class="hint">아래 알림 전체</span></span><input type="checkbox" id="notify_inbound" role="switch"></div>
+              <div class="set-tile"><span class="set-tile-label"><label for="notify_inbound"><span class="ico ico-bell lead" aria-hidden="true"></span>브라우저 알림</label><span class="hint">아래 알림 전체</span></span><input type="checkbox" id="notify_inbound" role="switch"></div>
               <div class="set-tile"><span class="set-tile-label"><label for="notify_pair"><span class="ico ico-link lead" aria-hidden="true"></span>페어링</label><span class="hint">새 연결 · 승인 요청</span></span><input type="checkbox" id="notify_pair" role="switch"></div>
               <div class="set-tile"><span class="set-tile-label"><label for="notify_request"><span class="ico ico-arrow-down lead" aria-hidden="true"></span>받은 요청</label><span class="hint">상대가 보낸 요청</span></span><input type="checkbox" id="notify_request" role="switch"></div>
               <div class="set-tile"><span class="set-tile-label"><label for="notify_sound"><span class="ico ico-volume lead" aria-hidden="true"></span>효과음</label><span class="hint">받은 요청 알림에 짧은 소리 — 집중 중에는 내지 않습니다</span></span><input type="checkbox" id="notify_sound" role="switch"></div>

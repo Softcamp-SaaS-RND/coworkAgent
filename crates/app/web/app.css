@@ -380,7 +380,9 @@ input[type="checkbox"][role="switch"]:disabled { opacity: .5; cursor: default; }
 .req-note textarea { width: 100%; box-sizing: border-box; min-height: 88px; resize: vertical; padding: var(--sp-3) var(--sp-4); } /* 안쪽 여백 = 입력창 */
 .req-note-bar { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
 .req-note-bar .note-count { margin-right: auto; font-variant-numeric: tabular-nums; }
-.req-note button { height: 44px; }
+.req-note button { height: 32px; }
+.req-acts > .req-note { flex: 1 0 100%; } /* 상태 단추 줄 아래 한 줄 전체 — 단추 옆 좁은 칸에 끼지 않게 */
+.msg-body > .req-note { width: min(100%, 640px); } /* 대화 — 메시지 작업 줄 아래, 말풍선 쪽에 붙어서 */
 .keep-lines { white-space: pre-wrap; }
 .chip { font-variant-numeric: tabular-nums; font-size: var(--fs-xs); padding: 0 var(--sp-2); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); white-space: nowrap; }
 .st-done { color: var(--ok); }
@@ -459,6 +461,7 @@ button.text-btn.wait { color: var(--run); }
 .rows li.has-mark { display: flex; align-items: flex-start; }
 .rows li.has-mark > a { flex: 1 1 auto; min-width: 0; }
 .row-mark { flex: none; margin: var(--sp-3) var(--sp-4) 0 0; }
+.row-mark.lead { margin: var(--sp-3) 0 0 var(--sp-4); } /* 북마크 목록 — 줄 머리(해제) */
 .more-row { display: flex; align-items: center; gap: var(--sp-3); margin: 0; padding: var(--sp-3) var(--sp-5); font-size: var(--fs-sm); color: var(--faint); border-bottom: 1px solid var(--border); }
 
 /* 대화 */
@@ -862,6 +865,15 @@ details { margin: var(--sp-2) 0; }
 }
 /* 즐겨찾기 화면 — 대화방 줄 그대로 */
 .starred-list { padding: var(--sp-3) var(--sp-5); max-width: 760px; overflow-y: auto; }
+/* 즐겨찾기 줄 둘째 줄(상대 · 에이전트 · 상태) */
+.side-list .room-detail { display: block; overflow: hidden; text-overflow: ellipsis; }
+.side-list li[data-conv] > .star-btn { align-self: center; } /* 즐겨찾기 줄 머리 ★ — 두 줄 가운데 */
+/* 에이전트 응답 — 항목 1100px, 한 줄 = 에이전트 타일 · 제목 · 시각 · [이름]. 제목 기본 폭이 커서 항목이 1100px 보다 좁으면 시각 · [이름] 이 둘째 줄로 내려간다. */
+#agent_convs_list { max-width: calc(1100px + 2 * (var(--sp-5) + var(--sp-2))); } /* 목록 · 줄 좌우 여백을 빼면 항목 1100px */
+#agent_convs_list .title { flex-wrap: wrap; white-space: normal; row-gap: var(--sp-1); }
+#agent_convs_list .room-title { flex: 1 1 714px; min-width: 0; white-space: nowrap; }
+#agent_convs_list .room-end { flex: 0 0 272px; justify-content: flex-end; margin-left: auto; display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+.room-agent { max-width: 160px; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--accent); }
 
 /* ---- 관리 줄 · 줄 타일 · 주고받은 글 타일 · 에이전트 연필 ---- */
 .new-tile { border: 1px dashed var(--border); color: var(--muted); }

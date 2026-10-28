@@ -50,10 +50,11 @@ async fn events_stream_delivers_without_clearing() {
     let marks = Arc::new(Mutex::new(Vec::new()));
     let n = notifier("sse", marks.clone());
     n.set_enabled(true).unwrap();
-    n.on_event(&PeerEvent::Approved {
+    n.on_event(&PeerEvent::PairRequest {
         name: "a".into(),
         host: "b".into(),
-    }); // 웹UI 가 붙기 전 1건 → 트레이 1
+        fingerprint: "f".into(),
+    }); // 웹UI 가 붙기 전 연결 요청 1건 → 트레이 1
     let (port, (ck, cv)) = web(n.clone()).await;
     let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
@@ -118,9 +119,11 @@ async fn seen_post_clears() {
     let marks = Arc::new(Mutex::new(Vec::new()));
     let n = notifier("seen", marks.clone());
     n.set_enabled(true).unwrap();
-    n.on_event(&PeerEvent::Approved {
+    // 트레이 건수는 받은 요청 · 연결 요청 · 내 요청 상태 변경만 센다.
+    n.on_event(&PeerEvent::PairRequest {
         name: "a".into(),
         host: "b".into(),
+        fingerprint: "f".into(),
     });
     let (port, cookie) = web(n.clone()).await;
     let (code, raw) = common::send(

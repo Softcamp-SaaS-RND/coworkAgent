@@ -15,6 +15,18 @@ export function convLabel(conv, peerNames) {
   return { title, sub };
 }
 
+/// 즐겨찾기 줄 둘째 줄 — `{상대} · {에이전트} · {상태}`(빈 값 생략, 받은 대화의 에이전트는 '내 …'), 공유 대화는 대화 부제(`공유 · 초대한 사람 ↔ 원 상대`) · 상태.
+export function starDetail(c, peerName) {
+  const m = convMeta(c);
+  const head = c.dir === "shared" ? convLabel(c, new Map([[c.peer_id, peerName]])).sub : [shortName(peerName), m.agent].join(" · ");
+  return [head, m.state].filter(Boolean).join(" · ");
+}
+
+/// 에이전트 응답 줄의 답한 에이전트 — `[{이름}]`.
+export function agentTag(c) {
+  return `[${c.agent}]`;
+}
+
 /// 대화방 줄 미리보기 — 마지막 글 `{말한 이}: {본문 한 줄}`(서버 `last`), 글이 없으면 빈 글자.
 export function roomPreview(conv, peerName) {
   const l = conv.last;

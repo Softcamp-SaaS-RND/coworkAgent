@@ -121,7 +121,7 @@
   `clear()` · `set_enabled`(끄면 건수 0) · `prefs()` · `update(&SettingsPatch)`(검증 → 한 트랜잭션, 틀리면 `InvalidInput` · 아무것도 안
   바꿈) · `relay_cap_default()` · `run_defaults()` · `screen()`(설정 DB 읽기 오류는 `Err` — 기본값으로 감추지 않는다) · `subscribe()` · `pending()`. `Prefs` = `notify_pair` · `notify_request` · `notify_reply`(기본 켬) ·
   `notify_relay`(`start_end` 기본 · `every` · `off`) · `notify_preview`(기본 켬 — 끄면 본문 = 이름 · PC 만, 끝 사유는 보임) · `notify_paused`(기본 끔 —
-  켜 있는 동안 알림 · 트레이 표시 · 이벤트를 버린다, 건수 그대로) · `notify_sound`(#1x — 기본 켬, 웹UI 받은 요청 효과음 — 서버는 저장 · 읽기만).
+  켜 있는 동안 알림 · 이벤트를 버린다, 트레이 확인할 일은 그대로) · `notify_sound`(#1x — 기본 켬, 웹UI 받은 요청 효과음 — 서버는 저장 · 읽기만).
   받은 요청(`MessageKind::Ask`, #1x — B안)은 kind `request` 묶음 알림 `request_notice(rows, total, preview_on)`: 제목 "받은 요청 {대기 수}", 본문 =
   `an_core::chat::waiting_requests` 최근 `REQUEST_LINES`(3) 줄 `{표시 이름} · {첫 줄 앞 40자}`(미리보기 끄면 이름만) + 넘으면 "외 {n}건"(`Notifier::waiting` — 상태 잠금을 놓고
   읽는다, 못 읽거나 대기 0 이면 보통 알림 "요청 받음 — {에이전트}"). `MessageKind::Clear`(#1x — 상대가 모든 사용자 글 삭제) = kind `message` "대화 기록 삭제 — {에이전트}" ·
@@ -163,7 +163,8 @@
   `spawn_detached(exe, envs)`(표준 입출력 비움 · `watchdog::ENV` 지움 · Windows `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP` + 자기 표준 핸들
   상속 끔 · Unix `process_group(0)`).
 - `browser::open(url 또는 파일 경로)` — Windows `ShellExecuteW`(반환 ≤ 32 = 실패) · macOS `open` 종료 상태(두 OS 같은 동작 — D30).
-- `tray::Tray::new() -> (Tray, Attention)` — 메인 스레드 이벤트 루프. `Attention::set(n)` 은 프록시로 "새 요청" 표시(주황 점 · 툴팁).
+- `tray::Tray::new() -> (Tray, Attention)` — 메인 스레드 이벤트 루프. `Attention::set(n)` 은 프록시로 "확인할 일" 표시(주황 점 · 툴팁 "coworkAgent — 확인할 일 N건"). 세는 이벤트 = `notify::tray_marks` — 받은 요청(`MessageKind::Ask`) · 연결 요청(`PairRequest`) · 연결 승인(`Approved`) · 내 요청 상태 변경(`AskState`)만,
+  알림 설정(켜짐 · 세부 · 일시 중지 · 집중)과 무관, 지우기는 `Notifier::clear`(웹UI 연결 · 트레이 열기)만(#1z-18). 두 OS 같은 코드.
   `Tray::run(url, note, on_seen, on_quit)`(`note` = 툴팁 둘째 줄 — 피어 포트를 남이 잡았을 때 `peer_port_note`, `tray::tip(n, note)`) — "열기" · "종료"(S4 개정 — 내 정보는 웹UI 프로필 "사용자 정보" 팝업 `#me_dialog`, #1l), 열기 성공 시 `on_seen`. 트레이를 못 만들면
   `tray::retry_after(n)`(1 · 2 · 4 · 8 · 15 · 30초 — #1h, `ControlFlow::WaitUntil`) 뒤 다시, 끝내 못 만들면 사유 파일을 열고 끝냄(종료 코드 0). `Tray::run_error(message, file)` — 붉은 아이콘 · "오류 보기"(열기 전에 사유 파일을 다시 쓴다) · "종료"(감시만 부른다 — #1n). `write_start_error(message)` —
   `start_error_file()`(임시 폴더 `coworkAgent-start-error.txt`, 디버그 빌드 + `COWORKAGENT_DATA_DIR` 면 그 폴더) · `read_start_error()`("사유:" 줄) ·

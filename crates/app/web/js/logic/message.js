@@ -1,6 +1,6 @@
 // 글 — 말풍선 쪽 · 작성자 · 시간 줄 · 진행 · 멘션 · 메모 · 실행 단계.
 import { CLI_LABEL } from "./author.js";
-import { formatDuration, formatTime, stateText } from "./format.js";
+import { formatDuration, formatTime, stateText, timeKey } from "./format.js";
 import { reqMoves, reqResend } from "./request.js";
 
 /// 대화 머리글의 자동 왕복 표시와 누를 수 있는 동작 — 보낸 쪽: 멈춤 · 재개, 받은 쪽: 멈춤만(재개는 연 쪽 — 멈춘 뒤에는 표시 없음). 아니면 `null`.
@@ -114,7 +114,7 @@ export function outboxText(m) {
 }
 
 /// 대화 글 서명 — 바뀐 것이 없으면 다시 그리지 않는다(HTML 본문 · 스크롤 상태가 5초마다 풀리지 않게). 상대 표시 이름 · 요청 상태 · 메모 · 거절 사유 ·
-/// 상대가 알려 준 진행(대기 · 앞 사람 수 · 처리 중 — 글 상태는 `sent` 그대로)이 바뀌면 다시. 저장 여부는 넣지 않는다 — 저장 단추가 그 글자만 바꾼다.
+/// 상대가 알려 준 진행(대기 · 앞 사람 수 · 처리 중 — 글 상태는 `sent` 그대로)이 바뀌면 다시. 저장 여부는 넣지 않는다 — 저장 단추가 그 글자만 바꾸고, 새로 고침은 단추만 서버 값에 맞춘다(`openConversation`).
 export function messagesSigOf(peerName, ms) {
   return [
     peerName,
@@ -122,6 +122,7 @@ export function messagesSigOf(peerName, ms) {
       (m) =>
         `${m.id}:${m.state}:${m.text.length}:${m.req_state ?? ""}:${m.req_note ?? ""}:${m.refused ?? ""}:${progressText(m)}:${outboxText(m)}:${m.edited_at ?? ""}:${m.editable === true}`,
     ),
+    timeKey(),
   ].join(",");
 }
 

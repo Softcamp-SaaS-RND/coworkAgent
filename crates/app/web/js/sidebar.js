@@ -2,8 +2,8 @@
 import { api } from "./core/api.js";
 import { $, act, el, ico, needsRender, unchanged } from "./core/dom.js";
 import { state } from "./core/state.js";
-import { kindChip } from "./core/widgets.js";
-import { agentConvSections, convListParts, convMeta, convRows, convSections, visibleConvRows } from "./logic/conv.js";
+import { agentTile, kindChip } from "./core/widgets.js";
+import { agentConvSections, agentTag, convListParts, convMeta, convRows, convSections, starDetail, visibleConvRows } from "./logic/conv.js";
 import { displayName, formatTime } from "./logic/format.js";
 import { sortByPos } from "./logic/order.js";
 import { peerGroups, waitingByPeer } from "./logic/peer.js";
@@ -118,7 +118,8 @@ export async function toggleStar(c) {
   });
 }
 
-export function convItem({ c, label }, section, sideList = false) {
+/// `opts.star` = 줄 머리 ★(즐겨찾기 빼기), `opts.detail` = 제목 줄 아래 둘째 줄, `opts.agent` = 유형 아이콘 대신 답한 내 에이전트 타일 · 시각 뒤 `[이름]`.
+export function convItem({ c, label }, section, sideList = false, opts = {}) {
   const meta = convMeta(c);
   const cls = [state.current?.id === c.id ? "current" : "", meta.unread ? "unread" : ""].filter(Boolean).join(" ");
   return el(
@@ -132,12 +133,13 @@ export function convItem({ c, label }, section, sideList = false) {
       "aria-label": `${label.title} 옮기기`,
       onpointerdown: (ev) => convGrab(ev, ev.currentTarget.parentElement),
     }, ico("grip")),
+    opts.star ? starButton(c, label.title) : "",
     el(
       "a",
       { href: `#c/${c.id}`, title: label.sub, draggable: "false" },
       // 한 줄: 유형 아이콘(무채 — 응답 = 로봇 · 문의 = 사람 · 공유 = 눈) · 제목 · 실행 중 점 · 안 읽음 수 · 시각.
       // 사이드바 대화 목록(`sideList`)의 내 대화 줄은 아이콘 없음 — 그 목록의 기본이 내가 연 대화라 다른 절(에이전트 · 공유)만 표시한다.
-      sideList && c.dir === "out" ? "" : kindChip(c, "room-kind"),
+      opts.agent ? agentTile(state.agents.find((a) => a.name === c.agent)?.color, "small") : sideList && c.dir === "out" ? "" : kindChip(c, "room-kind"),
       el(
         "span",
         { class: "room-text" },
@@ -147,8 +149,13 @@ export function convItem({ c, label }, section, sideList = false) {
           el("span", { class: "room-title", text: label.title }),
           meta.running ? el("span", { class: "spin", role: "img", "aria-label": meta.state, title: meta.state }) : "",
           meta.unread ? el("span", { class: "count unread-n", "aria-label": `안 읽음 ${c.unread}`, text: String(c.unread) }) : "",
-          c.last_at != null ? el("span", { class: "room-time", text: formatTime(c.last_at) }) : "",
+          opts.agent
+            ? el("span", { class: "room-end" }, c.last_at != null ? el("span", { class: "room-time", text: formatTime(c.last_at) }) : "", el("span", { class: "room-agent", text: agentTag(c) }))
+            : c.last_at != null
+              ? el("span", { class: "room-time", text: formatTime(c.last_at) })
+              : "",
         ),
+        opts.detail ? el("span", { class: "sub room-detail", text: opts.detail }) : "",
       ),
     ),
     // 행 ⋯ — 마우스를 올리거나 초점이 오면 보인다.
@@ -229,7 +236,7 @@ export function renderStarred() {
             "section",
             { class: "side-section" },
             el("h2", { class: "side-title" }, el("span", { text: s.title })),
-            el("ul", { class: "side-list" }, ...s.rows.map((r) => convItem(r, `starred:${s.key}`))),
+            el("ul", { class: "side-list" }, ...s.rows.map((r) => convItem(r, `starred:${s.key}`, false, { star: true, detail: starDetail(r.c, state.peerNames.get(r.c.peer_id)) }))),
           ),
         )
       : [el("p", { class: "empty hint", text: "즐겨찾기 없음" })]),
@@ -240,7 +247,7 @@ export function renderStarred() {
 export function renderAgentConvs() {
   const paired = state.railPeer == null ? pairedIds() : [state.railPeer];
   const sections = agentConvSections(sortByPos(scopedConvs()), paired, state.peerNames);
-  const sig = JSON.stringify([state.current?.id, sections.map((s) => [s.key, s.title, s.rows.map((r) => [r.c, r.label])])]);
+  const sig = JSON.stringify([state.current?.id, state.agents.map((a) => [a.name, a.color]), sections.map((s) => [s.key, s.title, s.rows.map((r) => [r.c, r.label])])]);
   if (!needsRender($("agent_convs_list"), sig, false)) return;
   $("agent_convs_list").replaceChildren(
     ...(sections.length
@@ -250,7 +257,7 @@ export function renderAgentConvs() {
             { class: "side-section" },
             // 사용자 이름만 — 대화 수는 없다, 안 읽음은 줄마다.
             el("h2", { class: "side-title" }, el("span", { text: s.title })),
-            el("ul", { class: "side-list" }, ...s.rows.map((r) => convItem(r, s.key))),
+            el("ul", { class: "side-list" }, ...s.rows.map((r) => convItem(r, s.key, false, { agent: true }))),
           ),
         )
       : [el("p", { class: "empty hint", text: "에이전트 응답 없음" })]),

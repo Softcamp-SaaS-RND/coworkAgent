@@ -18,7 +18,7 @@ import { loadPeerMessages } from "./peers.js";
 import { pickRail, pickTile, railGroupOf } from "./rail.js";
 import { loadRequests } from "./requests.js";
 import { openSettings } from "./settings/index.js";
-import { fillPrefs } from "./settings/prefs.js";
+import { saveSettings } from "./settings/prefs.js";
 import { renderAgentConvs, renderConvList, renderSideHead, renderSideNav, renderStarred } from "./sidebar.js";
 import { openTileEdit } from "./tiles.js";
 
@@ -215,7 +215,7 @@ $("new_btn").addEventListener("click", () => toggleMenu("new_btn", "new_menu"));
 /// 집중 켜고 끄기 — 켜 있는 동안 상대 PC 의 새 요청을 받지 않고 알림을 멈춘다(알림 일시 중지 값은 그대로).
 export function setFocus(on) {
   act("집중", async () => {
-    fillPrefs(await api("PUT", "/api/settings", { focus: on }));
+    await saveSettings({ focus: on });
     return on ? "집중으로 바꿨습니다" : "받기 가능으로 바꿨습니다";
   });
 }
@@ -256,10 +256,10 @@ export function profileAct(i) {
   } else if (i.key === "avail" || i.key === "focus") {
     if (!i.checked) setFocus(i.key === "focus"); // 이미 고른 상태면 그대로
   } else {
-    // 알림 일시 중지(이 PC 에만) — 켜 있는 동안 브라우저 알림 · 트레이 표시를 내지 않는다, 풀면 알림 설정대로.
+    // 알림 일시 중지(이 PC 에만) — 켜 있는 동안 브라우저 알림을 내지 않는다(트레이 확인할 일은 그대로), 풀면 알림 설정대로.
     const on = !i.checked;
     act("알림 일시 중지", async () => {
-      fillPrefs(await api("PUT", "/api/settings", { notify_paused: on }));
+      await saveSettings({ notify_paused: on });
       return on ? "알림을 일시 중지했습니다" : "알림을 다시 켰습니다";
     });
   }
