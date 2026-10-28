@@ -1,4 +1,5 @@
-// 내 에이전트 — 실행 도구 · 옵션 블록 · 셸 확인 · 색.
+// 내 에이전트 — 실행 도구 · 옵션 블록 · 셸 확인 · 저장 · 삭제 창 · 색.
+import { josa } from "./format.js";
 
 /// 모든 실행의 도구 — 탐색(읽기 전용) 전부(an_core `READ_ONLY_TOOLS` 와 같다 — 프로필마다 고르지 않는다).
 export const READ_ONLY_TOOLS = ["Read", "Grep", "Glob"];
@@ -29,6 +30,21 @@ export function agentEngineBlocks(engine) {
 export const PARENT_NOTE = "켜면 폴더 바로 위 폴더 아래 전체(옆 폴더 포함)를 읽고 답합니다. 위가 드라이브 루트 · 사용자 홈이거나 데이터 폴더를 품으면 열지 않습니다.";
 /// "셸 명령 실행 허용" 도움말 — 등록 칸(index.html title)과 같은 글.
 export const SHELL_NOTE = "켜면 이 PC 에 설정된 workflow(스크립트 · 빌드 · 테스트 등)를 셸(Bash · PowerShell) 명령으로 수행해 답합니다. 소스 · 문서 · 설정의 삭제 · 편집 등 이 PC 를 바꾸는 행동은 허용하지 않습니다(workflow 가 만드는 빌드 · 테스트 산출물은 예외). 셸에는 폴더 제한이 적용되지 않아 켤 때 위험 안내를 확인합니다.";
+/// 에이전트 상세 저장 완료 창 글.
+export function agentSavedText(name) {
+  return `에이전트 ${name}${josa(name, "을", "를")} 저장했습니다.`;
+}
+
+/// 에이전트 상세 저장 실패 창 글.
+export function agentSaveFailText(name, reason) {
+  return `에이전트 ${name} 저장 실패: ${reason}`;
+}
+
+/// 에이전트 삭제 확인 창 글 — 지우면 이어 쓰던 세션도 비운다(같은 이름으로 다시 등록해도 이전 맥락을 잇지 않는다).
+export function agentDeleteAsk(name) {
+  return `에이전트 ${name}${josa(name, "을", "를")} 삭제할까요?\n\n이어 쓰던 세션도 끊겨, 같은 이름으로 다시 등록해도 이전 맥락을 잇지 않습니다.`;
+}
+
 /// 셸을 켤 때 한 번 보이는 위험 확인 — 셸에 실제로 열리는 것을 적는다.
 export const SHELL_WARN = [
   "셸 명령 실행은 이 PC 에 설정된 workflow(스크립트 · 빌드 · 테스트 등)를 수행하기 위한 기능입니다.",

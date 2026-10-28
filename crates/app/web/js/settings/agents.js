@@ -3,7 +3,7 @@ import { api } from "../core/api.js";
 import { $, act, button, el, field, lead, needsRender } from "../core/dom.js";
 import { state } from "../core/state.js";
 import { agentTile } from "../core/widgets.js";
-import { AGENT_COLORS, CODEX_READ_NOTE, PARENT_HINT, PARENT_NOTE, SHELL_HINT, SHELL_NOTE, SHELL_ON, SHELL_WARN, SKIP_GIT_HINT, TOOLS_NOTE, agentColor, agentEngineBlocks, agentPatch, engineLabel, shellConfirmNeeded } from "../logic/agent.js";
+import { AGENT_COLORS, CODEX_READ_NOTE, PARENT_HINT, PARENT_NOTE, SHELL_HINT, SHELL_NOTE, SHELL_ON, SHELL_WARN, SKIP_GIT_HINT, TOOLS_NOTE, agentColor, agentDeleteAsk, agentEngineBlocks, agentPatch, agentSaveFailText, agentSavedText, engineLabel, shellConfirmNeeded } from "../logic/agent.js";
 import { draftOf, pruneDrafts } from "../logic/settings.js";
 import { route } from "../logic/shell.js";
 import { renderAgentsView } from "../agents.js";
@@ -161,8 +161,14 @@ export function agentDetail(a) {
             "에이전트 저장",
             async () => {
               const sent = agentDrafts.get(a.id); // 응답을 기다리는 사이 또 고치면 새 객체라 남는다
-              await api("PATCH", `/api/agents/${a.id}`, body);
+              try {
+                await api("PATCH", `/api/agents/${a.id}`, body);
+              } catch (e) {
+                window.alert(agentSaveFailText(a.name, e.message));
+                throw e;
+              }
               if (agentDrafts.get(a.id) === sent) agentDrafts.delete(a.id);
+              window.alert(agentSavedText(a.name));
             },
             "agent_msg",
             loadAgents,
@@ -174,6 +180,8 @@ export function agentDetail(a) {
       button(
         "삭제",
         () =>
+          // 지우기 전 한 번 확인 — 취소면 보내지 않는다.
+          window.confirm(agentDeleteAsk(a.name)) &&
           act(
             "삭제",
             async () => {

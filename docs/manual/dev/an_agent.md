@@ -38,7 +38,7 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
   이름 대소문자 무시). `run_process_lines(…, env, on_line)` — `env` 가 `Some` 이면 `env_clear` 뒤 그것만. `run_claude` 는 셸을 켠 실행만 `shell_env(vars_os())`(원장 `#1a A-I3`).
   압축 요약 실행(`chat`)은 셸을 끈 에이전트 사본으로 돈다. 실측 시험 `cargo test -p an-agent --test shell_canary -- --ignored --nocapture`.
 - `runner::GUARD_PROMPT`(D31 문의 응답 전용 — 개입 · 편집 · 삭제 · 명령 실행 금지, 비밀 싣지 않기) — `claude_args` 가 항상
-  `--append-system-prompt`(가드 + `[수신자 추가 지시]` 프로필 지시) · `--system-prompt-snapshot off`(재개 세션에도 지금 가드) · 도구는
+  `--append-system-prompt`(`[수신자 추가 지시]` 프로필 지시(맨 앞 — `runner::extra_prompt`, 잘 따르게) + 가드 + 읽기 범위) · `--system-prompt-snapshot off`(재개 세션에도 지금 가드) · 도구는
   `agents::read_only`. `MIN_CLAUDE`(2.1.267) · `parse_version` · `version_ok` — `run_claude` 는 낮은 버전이면 실행하지 않는다(`--effort` 다섯 값
   모두 그 위에서 받는다 — 공식 CHANGELOG 근거는 `runner.rs` 주석).
 - `runner::parse_output(stdout) -> RunOutput{text, session, is_error, turns, duration_ms, ctx_tokens}` — 마지막 JSON 줄(stream-json 의 `result` 이벤트 · 예전

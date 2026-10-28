@@ -294,6 +294,13 @@ impl Notifier {
             return Err(invalid("ui_tile_size 는 normal · small"));
         }
         if patch
+            .ui_date_format
+            .as_deref()
+            .is_some_and(|t| !run_opts::DATE_FORMATS.contains(&t))
+        {
+            return Err(invalid("ui_date_format 는 md · relative · ymd · time"));
+        }
+        if patch
             .ui_home_view
             .as_deref()
             .is_some_and(|t| !run_opts::HOME_VIEWS.contains(&t))
@@ -382,6 +389,7 @@ impl Notifier {
             (run_opts::THEME_KEY, &patch.ui_theme),
             (run_opts::RAIL_ORDER_KEY, &patch.ui_rail_order),
             (run_opts::TILE_SIZE_KEY, &patch.ui_tile_size),
+            (run_opts::DATE_FORMAT_KEY, &patch.ui_date_format),
             (run_opts::HOME_VIEW_KEY, &patch.ui_home_view),
         ] {
             if let Some(v) = v {
@@ -483,6 +491,11 @@ impl Notifier {
     /// 레일 타일 크기 — `normal` · `small`.
     pub fn tile_size(&self) -> io::Result<String> {
         run_opts::tile_size(&an_core::sync::lock(&self.db)).map_err(db_err)
+    }
+
+    /// 날짜 표시방식 — `md` · `relative` · `ymd` · `time`.
+    pub fn date_format(&self) -> io::Result<String> {
+        run_opts::date_format(&an_core::sync::lock(&self.db)).map_err(db_err)
     }
 
     /// 개요 보기 — `preview` · `list`.
@@ -731,6 +744,8 @@ pub struct SettingsPatch {
     pub ui_rail_order: Option<String>,
     /// 레일 타일 크기 — `normal` · `small`.
     pub ui_tile_size: Option<String>,
+    /// 날짜 표시방식 — `md` · `relative` · `ymd` · `time`.
+    pub ui_date_format: Option<String>,
     /// 개요 보기 — `preview` · `list`.
     pub ui_home_view: Option<String>,
     /// 개요 미리보기 배율(%) — [`run_opts::HOME_ZOOMS`].
@@ -771,6 +786,7 @@ fn settings_json(n: &Notifier) -> io::Result<serde_json::Value> {
     v["ui_theme"] = json!(theme);
     v["ui_rail_order"] = json!(n.rail_order()?);
     v["ui_tile_size"] = json!(n.tile_size()?);
+    v["ui_date_format"] = json!(n.date_format()?);
     v["ui_home_view"] = json!(n.home_view()?);
     v["ui_home_zoom"] = json!(n.home_zoom()?);
     v["ui_peer_weeks"] = json!(n.peer_weeks()?);

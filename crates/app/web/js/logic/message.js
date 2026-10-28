@@ -1,6 +1,6 @@
 // 글 — 말풍선 쪽 · 작성자 · 시간 줄 · 진행 · 멘션 · 메모 · 실행 단계.
 import { CLI_LABEL } from "./author.js";
-import { formatClock, formatDuration, stateText } from "./format.js";
+import { formatDuration, formatTime, stateText } from "./format.js";
 import { reqMoves, reqResend } from "./request.js";
 
 /// 대화 머리글의 자동 왕복 표시와 누를 수 있는 동작 — 보낸 쪽: 멈춤 · 재개, 받은 쪽: 멈춤만(재개는 연 쪽 — 멈춘 뒤에는 표시 없음). 아니면 `null`.
@@ -217,7 +217,7 @@ export function enterSends(ev) {
 }
 
 /// 실행 상세 '진행' — 고른 요청(`timeline()` 항목)의 단계: 요청 → 대기열 → 실행 → 응답, 단계 상태 = done · now · wait · fail. 대기 시작 · 끝 시각은
-/// 남지 않아 시각은 요청 · 응답 때만(HH:MM:SS). 보낸 쪽은 상대가 알려 준 진행(`progress`)으로 대기 · 실행을 가른다(없으면 답이 오기 전까지 대기열).
+/// 남지 않아 시각은 요청 · 응답 때만(날짜 표시방식 + 초). 보낸 쪽은 상대가 알려 준 진행(`progress`)으로 대기 · 실행을 가른다(없으면 답이 오기 전까지 대기열).
 /// 실행 줄 = 답의 `{model} · {effort} · {n}턴 · {시간}`(없는 값은 뺀다). 상대가 보낸 요청이면 "요청 받음" · "응답 보냄".
 export function runSteps({ request, reply }) {
   const mine = request.mine !== false;
@@ -228,7 +228,7 @@ export function runSteps({ request, reply }) {
     ? [reply.model, reply.effort, reply.turns != null ? `${reply.turns}턴` : "", formatDuration(reply.duration_ms)].filter(Boolean).join(" · ")
     : "";
   return [
-    { key: "request", title: mine ? "요청 보냄" : "요청 받음", at: formatClock(request.created_at), state: "done" },
+    { key: "request", title: mine ? "요청 보냄" : "요청 받음", at: formatTime(request.created_at, { seconds: true }), state: "done" },
     { key: "queue", title: "대기열", at: "", state: reply || running || failed ? "done" : "now", meta: progressText(request) },
     {
       key: "run",
@@ -240,7 +240,7 @@ export function runSteps({ request, reply }) {
     {
       key: "reply",
       title: mine ? "응답 받음" : "응답 보냄",
-      at: reply ? formatClock(reply.created_at) : "",
+      at: reply ? formatTime(reply.created_at, { seconds: true }) : "",
       state: !reply ? "wait" : reply.state === "done" ? "done" : "fail",
       meta: reply && reply.state !== "done" ? stateText(reply.state) : "",
     },

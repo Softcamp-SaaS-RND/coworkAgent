@@ -24,6 +24,9 @@ pub const PEER_WEEKS_KEY: &str = "ui_peer_weeks";
 pub const PEER_WEEKS_DEFAULT: i64 = 4;
 pub const PEER_WEEKS_MAX: i64 = 12;
 pub const TILE_SIZES: [&str; 2] = ["small", "normal"];
+/// 화면 시각 날짜 표시방식 — `md`(기본, `M.D HH:MM`) · `relative`(오늘 · 어제) · `ymd`(`YYYY-MM-DD HH:MM`) · `time`(`HH:MM`). 그리는 것은 웹UI.
+pub const DATE_FORMAT_KEY: &str = "ui_date_format";
+pub const DATE_FORMATS: [&str; 4] = ["md", "relative", "ymd", "time"];
 /// 개요 보기 — `preview`(기본, 상대별 작은 대화 창) · `list`(상대별 접는 절).
 pub const HOME_VIEW_KEY: &str = "ui_home_view";
 pub const HOME_VIEWS: [&str; 2] = ["preview", "list"];
@@ -149,6 +152,13 @@ pub fn tile_size(conn: &Connection) -> rusqlite::Result<String> {
     Ok(settings::get(conn, TILE_SIZE_KEY)?
         .filter(|t| TILE_SIZES.contains(&t.as_str()))
         .unwrap_or_else(|| TILE_SIZES[0].into()))
+}
+
+/// 날짜 표시방식 — 없거나 틀리면 `md`.
+pub fn date_format(conn: &Connection) -> rusqlite::Result<String> {
+    Ok(settings::get(conn, DATE_FORMAT_KEY)?
+        .filter(|t| DATE_FORMATS.contains(&t.as_str()))
+        .unwrap_or_else(|| DATE_FORMATS[0].into()))
 }
 
 /// 개요 보기 — 없거나 틀리면 `preview`.

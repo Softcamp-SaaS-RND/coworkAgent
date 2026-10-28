@@ -43,7 +43,7 @@
 | `js/settings/agents.js` | 설정 · 에이전트 — 목록 · 상세 · 등록. |
 | `js/settings/prefs.js` | 설정값 — 실행 · 화면 · 시작 · 알림 칸. |
 | `js/settings/debug.js` | 설정 · 디버깅. |
-| `js/logic/format.js` | 형식 — 상태 글 · 날짜 · 시각 · 기간 · 조사 · 짧은 이름 · 크기. |
+| `js/logic/format.js` | 형식 — 상태 글 · 날짜 · 시각(날짜 표시방식 `ui_date_format`) · 기간 · 조사 · 짧은 이름 · 크기. |
 | `js/logic/conv.js` | 대화 — 이름 · 유형 · 목록 줄 · 절 · 메뉴 · 공유 · 대화 정보. |
 | `js/logic/message.js` | 글 — 말풍선 쪽 · 작성자 · 시간 줄 · 진행 · 멘션 · 메모 · 실행 단계. |
 | `js/logic/context.js` | 컨텍스트 — 크기 · 이름 · 메뉴 · 사유. |
@@ -200,10 +200,17 @@ D26 · D35 · S4 — 시안 v4(Nocturne) 5영역. 화면은 전부 웹UI 와 tra
     목록 = 내 에이전트(로봇 타일 · 이름 · "{Claude Code|Codex} · 폴더" · "상위 탐색" · "셸" 칩, 검색 칸
     없음 — #1l), 상세 = `agentDetail` 한 격자(#1z-7 — 이름(읽기 전용) · 실행 도구 칩(읽기 전용, #1z-9) · 아이콘 색 `swatches` · 폴더 · 좌우 블록(Claude Code — 상위 한단계 탐색 · 셸 · 도구 / Codex — Git 확인 건너뜀 · 읽기 범위,
     안 쓰는 도구 블록 비활성) · 추가 지시) · 저장 · 삭제 ·
-    닫기. 저장 전 값 = `agentDrafts`(id → 주인 `uid` · 폴더 · 추가 지시 · 스위치 · 색 — 다른 줄을 골랐다 와도 남고, 저장 성공 · 삭제면 지움. `gsDrafts` 와 함께 `js/logic/settings.js` `draftOf` 가 주인(에이전트 등록 세대 `uid` — 같은 이름 다시 등록 · 폴더 · 상위 · 셸 저장이면 바뀜, R2 · 상대 지문)이 다르면 버리고 `pruneDrafts` 가 목록에 없는 id 를 버린다 — 지운 뒤 같은 id 를 다시 쓴 새 프로필에 옛 초안이 붙지 않게, #1z-8 R1). 사용자 상세 "내 에이전트 편집" · '등록된 에이전트' ✎(`editAgent`
+    닫기. 저장 = 성공 · 실패 모두 브라우저 기본 창(`window.alert` — `js/logic/agent.js` `agentSavedText` · `agentSaveFailText`, 실패면 상세 아래 글자도),
+    삭제 = `window.confirm(agentDeleteAsk(이름))` 확인 뒤에만(취소 = 보내지 않음, #1z-17). 저장 전 값 = `agentDrafts`(id → 주인 `uid` · 폴더 · 추가 지시 · 스위치 · 색 — 다른 줄을 골랐다 와도 남고, 저장 성공 · 삭제면 지움. `gsDrafts` 와 함께 `js/logic/settings.js` `draftOf` 가 주인(에이전트 등록 세대 `uid` — 같은 이름 다시 등록 · 폴더 · 상위 · 셸 저장이면 바뀜, R2 · 상대 지문)이 다르면 버리고 `pruneDrafts` 가 목록에 없는 id 를 버린다 — 지운 뒤 같은 id 를 다시 쓴 새 프로필에 옛 초안이 붙지 않게, #1z-8 R1). 사용자 상세 "내 에이전트 편집" · '등록된 에이전트' ✎(`editAgent`
     — 그 에이전트를 고르고 그 줄에 초점).
-  - 실행 · 화면 · 시작 · 알림 = 2열 타일(`.set-tiles` / `.set-tile` — 상자 없이 아래 1px 선(#1z-13), 라벨 · 한 줄 설명 왼쪽, 컨트롤 오른쪽, 960px 아래 1열). 입력 id = 설정 이름(`PREFS` 그대로). 알림 "자동 왕복" '?'
-    (`tip_relay` — 위로 여는 `.tip.up`), 화면 "타일 크기"(`ui_tile_size`), 알림 "효과음"(`notify_sound`).
+  - 실행 · 화면 · 시작 · 알림 · 디버깅 파일 카드 = 1열 타일(`.set-tiles` / `.set-tile` — 상자 없이 아래 1px 선(#1z-13), 라벨 · 한 줄 설명 왼쪽, 컨트롤 오른쪽(select 너비 = 가장 긴 옵션, 최소 220px — 옵션 글이 잘리지 않게),
+    #1z-17 — 창 너비와 무관하게 1열 · 타일 묶음 `max-width: 900px` 라 넓은 창에서도 이름과 컨트롤이 멀어지지 않는다, 디버깅 로그 상자는 그대로 창 너비). 입력 id = 설정 이름(`PREFS` 그대로). 알림 "자동 왕복" '?'
+    (`tip_relay` — 위로 여는 `.tip.up`), 화면 "타일 크기"(`ui_tile_size`) · "날짜 표시방식"(`ui_date_format`, #1z-17 — 아래), 알림 "효과음"(`notify_sound`).
+  - **날짜 표시방식**(#1z-17 — 서버 설정 `ui_date_format` = `md`(기본) · `relative` · `ymd` · `time`, 모르는 값 400): `js/logic/format.js` `formatTime(unix, { seconds, fmt, now })` 가
+    `md` `M.D HH:MM` · `relative` `오늘 | 어제 HH:MM`(그 전은 md) · `ymd` `YYYY-MM-DD HH:MM` · `time` `HH:MM` 로 그린다(md · relative 는 다른 해면 `YYYY.M.D` — `dateText`).
+    화면 시각은 전부 이것(말풍선 메타 · 요청 의견 · 컨텍스트 줄 · 요청 카드 · 세부정보 목록 · 활동 · 주고받은 메시지 · 사이드바 · 개요), 실행 상세 '진행' 요청 · 응답 = `seconds: true`(`runSteps`),
+    '대화 정보' 기간 · 압축 = 같은 방식(`dayLabel` 앞붙임 없음). 날짜 구분선(`dayLabel`)과 디버깅 로그 시각(`formatClock`)은 설정과 무관.
+    방식은 `fillPrefs` → `setDateFormat`(모듈 변수), 바꿔 저장하면 `[data-sig]` 를 비우고 `refresh()` — 그린 목록 · 대화가 새 방식으로 다시 그려진다.
   - 디버깅(`loadDebug` — 화면을 열 때 · 새로 고침): 파일 카드(버전 · 데이터 폴더 · DB · 로그 — 경로 · 크기(`js/logic/format.js` `fileSize`) · 복사), 로그 상자(`GET /api/debug/log` 끝 200줄 —
     `js/logic/settings.js` `logLines` 로 수준 거르기 · 줄 앞 유닉스 초 = 이 PC 시각 "월-일 시:분:초", 끝이 보이게 아래로), "진단 정보 복사"(`js/logic/settings.js` `diagText` — 버전 · OS · 경로 · 크기 · 포트 · 열린 연결 수,
     신원 키 · 토큰 · 지문 없음). 로그 줄은 로그 그대로(자기 지문이 적힌 시작 줄 포함 — '사용자 정보' 에도 보이는 공개 식별자). 내 정보는 프로필 "사용자 정보" 팝업.

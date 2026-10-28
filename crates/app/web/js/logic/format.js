@@ -20,13 +20,18 @@ export function dayKey(ts) {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
 
+/// 날짜 글자 — `M.D`(올해) · `YYYY.M.D`.
+export function dateText(ts, now = Date.now() / 1000) {
+  const d = new Date(ts * 1000);
+  const md = `${d.getMonth() + 1}.${d.getDate()}`;
+  return d.getFullYear() === new Date(now * 1000).getFullYear() ? md : `${d.getFullYear()}.${md}`;
+}
+
 /// 날짜 구분선 글자 — 오늘 · 어제 · `M.D`(올해) · `YYYY.M.D`.
 export function dayLabel(ts, now = Date.now() / 1000) {
-  const d = new Date(ts * 1000);
-  const today = new Date(now * 1000);
   if (dayKey(ts) === dayKey(now)) return "오늘";
   if (dayKey(ts) === dayKey(now - 86400)) return "어제";
-  return d.getFullYear() === today.getFullYear() ? `${d.getMonth() + 1}.${d.getDate()}` : `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+  return dateText(ts, now);
 }
 
 /// 말풍선 목록 사이 날짜 구분선 자리 — 글마다 `{day}`(새 날짜면 그 글자, 아니면 `null`).
@@ -62,14 +67,35 @@ export function formatDuration(ms) {
   return `${m}분 ${s}초`;
 }
 
-/// 유닉스 초 → 지역 시각 "HH:MM".
-export function formatTime(unix) {
-  if (unix == null) return "";
-  const d = new Date(unix * 1000);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+/// 날짜 표시방식(설정 `ui_date_format`) — 첫 값이 기본.
+export const DATE_FORMATS = ["md", "relative", "ymd", "time"];
+let dateFormat = DATE_FORMATS[0];
+
+/// 날짜 표시방식을 바꾼다(모르는 값 = 기본). 바뀌었으면 `true` — 이미 그린 시각을 다시 그릴 때.
+export function setDateFormat(f) {
+  const next = DATE_FORMATS.includes(f) ? f : DATE_FORMATS[0];
+  const changed = next !== dateFormat;
+  dateFormat = next;
+  return changed;
 }
 
-/// 유닉스 초 → 지역 시각 "HH:MM:SS"(실행 상세 진행).
+/// 유닉스 초 → 날짜 표시방식에 맞춘 지역 시각 — md `M.D HH:MM` · relative `오늘 | 어제 HH:MM`(그 전은 md) · ymd `YYYY-MM-DD HH:MM` · time `HH:MM`.
+/// md · relative 는 다른 해면 `YYYY.M.D`. `seconds` = `:SS` 붙임(실행 상세).
+export function formatTime(unix, { seconds = false, fmt = dateFormat, now = Date.now() / 1000 } = {}) {
+  if (unix == null) return "";
+  const d = new Date(unix * 1000);
+  const two = (n) => String(n).padStart(2, "0");
+  const clock = [d.getHours(), d.getMinutes(), ...(seconds ? [d.getSeconds()] : [])].map(two).join(":");
+  const date = {
+    md: () => dateText(unix, now),
+    relative: () => dayLabel(unix, now),
+    ymd: () => `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`,
+    time: () => "",
+  }[fmt]();
+  return date ? `${date} ${clock}` : clock;
+}
+
+/// 유닉스 초 → 지역 시각 "HH:MM:SS"(디버깅 로그 — 날짜는 부르는 쪽이 붙인다).
 export function formatClock(unix) {
   if (unix == null) return "";
   const d = new Date(unix * 1000);

@@ -9,6 +9,8 @@ import {
   dayBreaks,
   formatDuration,
   formatTime,
+  DATE_FORMATS,
+  setDateFormat,
   josa,
   fileSize,
   displayName,
@@ -184,6 +186,9 @@ import {
   agentPatch,
   AGENT_COLORS,
   agentColor,
+  agentSavedText,
+  agentSaveFailText,
+  agentDeleteAsk,
 } from "./js/logic/agent.js";
 import {
   entryToken,
@@ -279,10 +284,38 @@ test("시간 표기", () => {
   assert.equal(formatDuration(850), "850ms");
   assert.equal(formatDuration(18400), "18.4초");
   assert.equal(formatDuration(125000), "2분 5초");
-  const t = 1791691336;
-  const d = new Date(t * 1000);
-  assert.equal(formatTime(t), `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`);
   assert.equal(formatTime(null), "");
+});
+
+test("agent_dialogs — 에이전트 상세 저장 완료 · 실패 창 · 삭제 확인 글", () => {
+  assert.equal(agentSavedText("가이드"), "에이전트 가이드를 저장했습니다.");
+  assert.equal(agentSavedText("guide"), "에이전트 guide을(를) 저장했습니다.");
+  assert.equal(agentSaveFailText("가이드", "폴더가 없습니다"), "에이전트 가이드 저장 실패: 폴더가 없습니다");
+  const ask = agentDeleteAsk("검토봇");
+  assert.ok(ask.startsWith("에이전트 검토봇을 삭제할까요?"), ask);
+  assert.ok(ask.includes("세션"), "이어 쓰던 세션이 끊김을 알린다");
+});
+
+test("format_time — 날짜 표시방식 md(기본) · relative · ymd · time, 다른 해 · 초", () => {
+  const at = (y, mo, d, h, mi, se = 0) => new Date(y, mo - 1, d, h, mi, se).getTime() / 1000;
+  const now = at(2026, 10, 28, 20, 0);
+  const t = at(2026, 10, 28, 14, 3, 21);
+  const y = at(2026, 10, 27, 9, 5);
+  const old = at(2026, 10, 25, 18, 0);
+  const past = at(2025, 12, 31, 9, 15);
+  const f = (ts, fmt, seconds = false) => formatTime(ts, { fmt, now, seconds });
+  assert.deepEqual([f(t, "md"), f(y, "md"), f(past, "md")], ["10.28 14:03", "10.27 09:05", "2025.12.31 09:15"]);
+  assert.deepEqual([f(t, "relative"), f(y, "relative"), f(old, "relative"), f(past, "relative")], ["오늘 14:03", "어제 09:05", "10.25 18:00", "2025.12.31 09:15"]);
+  assert.deepEqual([f(t, "ymd"), f(past, "ymd")], ["2026-10-28 14:03", "2025-12-31 09:15"]);
+  assert.equal(f(t, "time"), "14:03");
+  assert.deepEqual([f(t, "md", true), f(t, "relative", true), f(t, "ymd", true), f(t, "time", true)], ["10.28 14:03:21", "오늘 14:03:21", "2026-10-28 14:03:21", "14:03:21"]);
+  assert.deepEqual(DATE_FORMATS, ["md", "relative", "ymd", "time"]);
+  assert.equal(formatTime(t, { now }), "10.28 14:03", "기본 = md");
+  assert.equal(setDateFormat("ymd"), true);
+  assert.equal(setDateFormat("ymd"), false, "같은 값 = 안 바뀜");
+  assert.equal(formatTime(t, { now }), "2026-10-28 14:03", "고른 방식을 따른다");
+  setDateFormat("huge");
+  assert.equal(formatTime(t, { now }), "10.28 14:03", "모르는 값 = md");
 });
 
 test("타임라인 — reply_to 로 묶고, 실행 정보 · 대기 · 미전달", () => {
@@ -1118,12 +1151,9 @@ test("enter_sends — Enter 보내기 · Shift+Enter 줄바꿈 · 한글 조합 
   assert.equal(enterSends({ key: "a" }), false);
 });
 
-test("run_steps — 보냄 → 대기열 → 실행 → 응답, 시각 HH:MM:SS · 실행 줄 · 받은 요청은 받음 · 보냄", () => {
+test("run_steps — 보냄 → 대기열 → 실행 → 응답, 시각 = 날짜 표시방식 + 초 · 실행 줄 · 받은 요청은 받음 · 보냄", () => {
   const at = 1791691336;
-  const clock = (t) => {
-    const d = new Date(t * 1000);
-    return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
-  };
+  const clock = (t) => formatTime(t, { seconds: true });
   const steps = (ms) => runSteps(timeline(ms)[0]);
   const ask = { id: 1, author: "human", mine: true, exec: true, text: "q", created_at: at };
   const done = steps([
@@ -2752,10 +2782,10 @@ test("conv_info — 대화 정보 줄: 받은 대화 = 기간 · 도구 · 폴�
     mine.map((r) => [r.icon, r.label]),
     [["clock", "기간"], ["bot", "답하는 도구"], ["folder", "읽는 폴더"], ["compress", "컨텍스트"], ["terminal", "실행 명령"]],
   );
-  assert.equal(mine[0].text, "10.21 10:50 시작 · 마지막 오늘 16:05");
+  assert.equal(mine[0].text, "10.21 10:50 시작 · 마지막 10.23 16:05");
   assert.equal(mine[1].text, "Codex");
   assert.deepEqual([mine[2].text, mine[2].mono], ["/work/shop", true]);
-  assert.equal(mine[3].text, "압축 1회 · 어제 09:00");
+  assert.equal(mine[3].text, "압축 1회 · 10.22 09:00");
   assert.equal(mine[4].copy, info.cmd.text, "복사 = 전체 명령");
   for (const dir of ["out", "shared"])
     assert.deepEqual(

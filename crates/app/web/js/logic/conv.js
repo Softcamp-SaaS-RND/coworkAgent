@@ -1,7 +1,7 @@
 // 대화 — 이름 · 유형 · 목록 줄 · 절 · 메뉴 · 공유 · 대화 정보.
 import { engineLabel } from "./agent.js";
 import { authorLabel } from "./author.js";
-import { dayLabel, formatTime, preview, shortName, stateText } from "./format.js";
+import { formatTime, preview, shortName, stateText } from "./format.js";
 import { peerGroups } from "./peer.js";
 
 /// 사이드바 · 머리글의 대화(대화방) 이름. 제목이 없으면(메시지 없음) 에이전트로. 보냄 · 받음 표시는 없다(대화방 하나에 주고받은 글이 이어진다).
@@ -157,7 +157,7 @@ export const INFO_CMD_HINT = "이어 쓰기 세션 인자가 든 명령 그대�
 /// 컨텍스트 · 실행 명령(`copy` = 전체 명령) — 이 PC 가 자동 왕복을 멈췄으면(`relay_blocked` — 대화에서 덧붙임) 컨텍스트 뒤에 '자동 왕복' 줄,
 /// 보낸 대화 · 공유 사본 = 기간 · 컨텍스트(실행은 상대 PC 가 정한다).
 export function convInfoRows(info, dir, now = Date.now() / 1000) {
-  const when = (t) => `${dayLabel(t, now)} ${formatTime(t)}`;
+  const when = (t) => formatTime(t, { now });
   const mine = dir === "in";
   const ctx = info.compacts ? `압축 ${info.compacts}회 · ${when(info.last_compact_at)}` : "압축 없음";
   const rows = [{ icon: "clock", label: "기간", text: `${when(info.created_at)} 시작 · 마지막 ${when(info.last_at)}` }];

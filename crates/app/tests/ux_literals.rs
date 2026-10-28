@@ -267,8 +267,8 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app", r#"mdHead("agents", agentTile(a.color), a.name,"#, "#1k 줄 타일 · #1z-7 로봇 타일(고른 색) · #1z-8 상세 머리"),
     ("view", "agent: conv.dir === \"in\" ? `내 ${conv.agent}` : conv.agent", "#1k 받은 대화만 '내 '"),
     ("app.css", ".md-split { flex: 1 1 auto; min-height: 420px; display: grid; grid-template-columns: 360px minmax(0, 1fr);", "#1z-8 목록 · 상세 2단"),
-    ("app.css", ".set-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));", "#1z-8 2열 타일"),
-    ("app.css", "@media (max-width: 960px) {\n  .set-tiles, .md-cols { grid-template-columns: 1fr; }\n  .md-split { grid-template-columns: 1fr;", "#1z-8 좁은 창 1열 · 위아래"),
+    ("app.css", ".set-tiles { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); align-items: stretch; max-width: 900px; }", "#1z-8 타일 → #1z-17 결정 7 · 8 1열 · 최대 900px"),
+    ("app.css", "@media (max-width: 960px) {\n  .md-cols { grid-template-columns: 1fr; }\n  .md-split { grid-template-columns: 1fr;", "#1z-8 좁은 창 1열 · 위아래"),
     ("app.css", "@media (max-width: 960px) {\n  .engine-tiles, .engine-blocks { grid-template-columns: 1fr; }", "#1z-9 좁은 창 도구 타일 · 블록 1열(정의 뒤에 — 앞에 두면 덮임)"),
     // 1z-9 — 실행 도구(시안 B): 등록 1단계 타일 → 2단계 폼(도구 칩 · 다시 고르기 · 좌우 옵션 블록 · Git 확인 건너뜀 스위치 기본 켬), 상세 도구 칩 · 블록
     ("index.html", r#"<span id="agent_new_step" class="hint">1 / 2 — 실행 도구 고르기</span>"#, "#1z-9 등록 1단계"),
@@ -554,6 +554,18 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app.css", ".msg.own-rail-2 { --own-bg: var(--own-rail-2); }", "#1z-16 결정 2 기본 흑연"),
     ("app.css", ".msg.own-peer-5 { --own-bg: var(--own-peer-5); }", "#1z-16 결정 2 여섯 색"),
     ("app.css", ".req-note textarea { width: 100%; box-sizing: border-box; min-height: 88px; resize: vertical; padding: var(--sp-3) var(--sp-4); }", "#1z-16 결정 3 의견 칸 안쪽 여백 = 입력창"),
+    // 1z-17 — 날짜 표시방식 · 레일 상태 점
+    ("index.html", r#"<label for="ui_date_format"><span class="ico ico-clock lead" aria-hidden="true"></span>날짜 표시방식</label>"#, "#1z-17 결정 6 화면 설정 칸"),
+    ("index.html", r#"<option value="md">M.D HH:MM — 10.28 14:03</option>"#, "#1z-17 결정 1 기본 md"),
+    ("app", r#""ui_date_format","#, "#1z-17 설정 입력"),
+    ("app", "if (s.ui_date_format !== undefined) setDateFormat(s.ui_date_format);", "#1z-17 고른 방식을 시각 함수에"),
+    ("view", r#"export const DATE_FORMATS = ["md", "relative", "ymd", "time"];"#, "#1z-17 결정 6 넷"),
+    ("app.css", ".rail-dot { position: absolute; bottom: -3px; right: -3px; width: 14px; height: 14px;", "#1z-17 결정 5 큰 타일 14px"),
+    ("app.css", "#app.tile-small .rail-dot { width: 12px; height: 12px; }", "#1z-17 결정 5 작은 타일 12px"),
+    ("app.css", ".set-tile select { min-width: 220px; max-width: 100%; flex: none; }", "#1z-17 옵션 글 잘림 없음(너비 = 가장 긴 옵션)"),
+    ("app", "window.alert(agentSavedText(a.name));", "#1z-17 결정 10 에이전트 저장 완료 창"),
+    ("app", "window.alert(agentSaveFailText(a.name, e.message));", "#1z-17 결정 11 저장 실패도 창"),
+    ("app", "window.confirm(agentDeleteAsk(a.name)) &&", "#1z-17 결정 10 삭제 확인 뒤 삭제"),
 ];
 
 /// 없어야 하는 문구 — (파일 키, 문구, 출처). `a+b` 는 두 파일 모두에 없어야 한다.

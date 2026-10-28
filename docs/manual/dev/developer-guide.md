@@ -352,7 +352,7 @@ PC 사이는 앱끼리 직접 통신한다.
 ```text
 claude -p --output-format stream-json --verbose --permission-prompts none --permission-mode dontAsk
   --allowedTools Read,Grep,Glob,WebFetch,WebSearch[,Bash,PowerShell] --disallowedTools Edit,Write,NotebookEdit[,Bash,PowerShell]
-  [--add-dir <바로 위 폴더>] --append-system-prompt <가드 + [읽기 범위] + [수신자 추가 지시]> --system-prompt-snapshot off
+  [--add-dir <바로 위 폴더>] --append-system-prompt <[수신자 추가 지시] + 가드 + [읽기 범위]> --system-prompt-snapshot off
   (--session-id <새 UUID> | --resume <세션 ID>) --model <모델> --effort <effort>
 ```
 
@@ -377,7 +377,7 @@ claude -p --output-format stream-json --verbose --permission-prompts none --perm
   codex exec resume -c sandbox_mode="read-only" --json [--skip-git-repo-check] -c developer_instructions=… <thread_id> -
   ```
 
-  개발자 지시 = `CODEX_GUARD_PROMPT`(읽기 · 조회 셸 명령 · workflow 괜찮음, 삭제 · 편집 · 이동 · 설정 변경 · 외부 전송 금지) + `[읽기 범위] 이 폴더 … 아래만` + 추가 지시. 그 PC 사용자의
+  개발자 지시 = 추가 지시(맨 앞 — `[수신자 추가 지시]`, 없으면 생략) + `CODEX_GUARD_PROMPT`(읽기 · 조회 셸 명령 · workflow 괜찮음, 삭제 · 편집 · 이동 · 설정 변경 · 외부 전송 금지) + `[읽기 범위] 이 폴더 … 아래만`. 그 PC 사용자의
   Codex 설정 · 스킬 · MCP 는 그대로(`--ignore-user-config` 없음 — 결정 8), 모델 · effort 인자 없음(Codex 기본값 — 답 meta 에 모델 없음). 쓰기는 읽기 전용 샌드박스가 막고(실측),
   **`-C` 밖 읽기는 막지 못한다**(실측 — 가드 문구만). `--skip-git-repo-check` = 에이전트 옵션 "Git 저장소 아닌 폴더 허용"(기본 켬). 세션 = 첫 줄 `thread.started.thread_id`(우리가 정하지 못함),
   답 = 마지막 `agent_message`, 실패 = `turn.failed` · `error`, 단계 요약 = 끝난 `command_execution`(`Shell`) · `mcp_tool_call`(`MCP`) · `web_search`, 창 사용량 없음(턴 합이라 뜻이 다름).

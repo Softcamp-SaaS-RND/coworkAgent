@@ -153,7 +153,7 @@ pub fn shell_env(vars: impl IntoIterator<Item = (OsString, OsString)>) -> Vec<(O
 
 /// 실행 인자(D22 · D31 — 로컬 사용과 맞추고 편집 도구만 막는다) — 제한 모드 · MCP 설정 무시 · 도구 목록 고정 없이 그 PC 사용자 · 프로젝트
 /// settings(MCP · 스킬 · 훅 · 허용 규칙) 그대로, 권한 질문 없음 · `dontAsk`(허용 규칙 + 미리 허용한 읽기 도구만). 편집 도구([`an_core::agents::EDIT_TOOLS`])는 늘 막는다.
-/// 시스템 프롬프트는 [`GUARD_PROMPT`] + 프로필 추가 지시. 프로필이 셸을 켰으면 [`an_core::agents::SHELL_TOOLS`] 를 미리 허용하고 가드는 [`SHELL_GUARD_PROMPT`],
+/// 시스템 프롬프트는 프로필 추가 지시(맨 앞 — 잘 따르게) + [`GUARD_PROMPT`]. 프로필이 셸을 켰으면 [`an_core::agents::SHELL_TOOLS`] 를 미리 허용하고 가드는 [`SHELL_GUARD_PROMPT`],
 /// 끄면 셸을 막는다.
 /// 프로필이 상위 한 단계 읽기를 켰고 [`an_core::paths::parent_read_dir`] 가 허락하면 `--add-dir <바로 위 폴더>` + 읽기 범위 안내.
 /// `--add-dir` 은 값을 여러 개 받는다 — 프롬프트는 표준 입력이라 뒤 인자를 먹지 않는다(2.1.306 실측).
@@ -186,7 +186,8 @@ pub fn claude_args(agent: &Agent, session: &Session, model: &str, effort: &str) 
     .iter()
     .map(|s| s.to_string())
     .collect();
-    let mut system = if agent.shell { SHELL_GUARD_PROMPT } else { GUARD_PROMPT }.to_string();
+    let mut system = extra_prompt(agent);
+    system.push_str(if agent.shell { SHELL_GUARD_PROMPT } else { GUARD_PROMPT });
     if agent.parent_read {
         match an_core::paths::parent_read_dir(Path::new(&agent.folder)) {
             Some(up) => {
@@ -206,10 +207,6 @@ pub fn claude_args(agent: &Agent, session: &Session, model: &str, effort: &str) 
                 agent.folder
             ),
         }
-    }
-    if !agent.prompt.trim().is_empty() {
-        system.push_str("\n\n[수신자 추가 지시]\n");
-        system.push_str(agent.prompt.trim());
     }
     a.push("--append-system-prompt".into());
     a.push(system);
@@ -678,19 +675,26 @@ fn toml_string(s: &str) -> String {
     serde_json::Value::String(s.to_string()).to_string()
 }
 
+/// 시스템 프롬프트 첫머리 — 프로필 추가 지시(`[수신자 추가 지시]` + 빈 줄, 없으면 빈 글자). 가드 앞에 둬 잘 따르게 한다.
+pub fn extra_prompt(agent: &Agent) -> String {
+    let p = agent.prompt.trim();
+    if p.is_empty() {
+        String::new()
+    } else {
+        format!("[수신자 추가 지시]\n{p}\n\n")
+    }
+}
+
 /// Codex 실행 인자 — 새 세션 `exec -C <폴더> -s read-only`, 이어 쓰기 `exec resume … <thread_id>`(resume 은 `-C` · `-s` 를 받지 않아
 /// 샌드박스는 설정으로, 작업 폴더는 프로세스 cwd). 프롬프트는 표준 입력(`-`). 그 PC 사용자의 Codex 설정 · 스킬 · MCP 는 그대로(`--ignore-user-config` 없음),
-/// 모델 · effort 인자 없음(Codex 기본값). 개발자 지시 = [`CODEX_GUARD_PROMPT`] + 읽기 범위 + 프로필 추가 지시.
+/// 모델 · effort 인자 없음(Codex 기본값). 개발자 지시 = 프로필 추가 지시(맨 앞) + [`CODEX_GUARD_PROMPT`] + 읽기 범위.
 pub fn codex_args(agent: &Agent, session: &Session) -> Vec<String> {
-    let mut system = CODEX_GUARD_PROMPT.to_string();
+    let mut system = extra_prompt(agent);
+    system.push_str(CODEX_GUARD_PROMPT);
     system.push_str(&format!(
         "\n\n[읽기 범위] 이 폴더 {} 아래만 읽는다. 그 밖의 파일은 읽지 않는다.",
         agent.folder
     ));
-    if !agent.prompt.trim().is_empty() {
-        system.push_str("\n\n[수신자 추가 지시]\n");
-        system.push_str(agent.prompt.trim());
-    }
     let mut a: Vec<String> = vec!["exec".into()];
     match session {
         Session::New(_) => a.extend(["-C".into(), agent.folder.clone(), "-s".into(), "read-only".into()]),

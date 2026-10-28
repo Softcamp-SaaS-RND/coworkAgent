@@ -2,9 +2,11 @@
 import { api } from "../core/api.js";
 import { $, act, el } from "../core/dom.js";
 import { state } from "../core/state.js";
+import { setDateFormat } from "../logic/format.js";
 import { peerWeeksOptions } from "../logic/peer.js";
 import { EFFORTS, MODELS } from "../logic/settings.js";
 import { renderRuns } from "../detail.js";
+import { refresh } from "../events.js";
 import { applyHomeZoom } from "../home.js";
 import { loadPeerMessages } from "../peers.js";
 import { applyRailOrder, renderRail } from "../rail.js";
@@ -25,6 +27,7 @@ export const PREFS = [
   "ui_theme",
   "ui_rail_order",
   "ui_tile_size",
+  "ui_date_format",
   "ui_peer_weeks",
   "notify_sound",
   "autostart",
@@ -42,6 +45,7 @@ export function fillPrefs(s) {
   if (s.ui_theme !== undefined) applyTheme(s.ui_theme);
   if (s.ui_rail_order !== undefined) applyRailOrder(s.ui_rail_order);
   if (s.ui_tile_size !== undefined) applyTileSize(s.ui_tile_size);
+  if (s.ui_date_format !== undefined) setDateFormat(s.ui_date_format);
   if (s.notify_paused !== undefined || s.focus !== undefined) $("bell").classList.toggle("paused", s.notify_paused === true || s.focus === true);
   if (s.me_alias !== undefined || s.me_icon !== undefined || s.me_color !== undefined) {
     renderRail();
@@ -65,6 +69,11 @@ for (const key of PREFS) {
       try {
         fillPrefs(await api("PUT", "/api/settings", { [key]: value }));
         if (key === "claude_model" || key === "claude_effort") renderPeerList(); // 상대별 칸의 "기본값(…)" 문구
+        if (key === "ui_date_format") {
+          // 그린 목록 · 대화는 같은 서명이면 건너뛴다 — 서명을 비워 이미 그린 시각을 새 방식으로.
+          for (const box of document.querySelectorAll("[data-sig]")) box.dataset.sig = "";
+          refresh();
+        }
         if (key === "ui_peer_weeks") {
           state.peerPages.clear(); // 받은 꼬리에 기간 밖 글이 남지 않게
           loadPeerMessages();

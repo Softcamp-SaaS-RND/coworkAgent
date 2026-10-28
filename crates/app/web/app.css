@@ -308,7 +308,7 @@ input[type="checkbox"][role="switch"]:disabled { opacity: .5; cursor: default; }
 .rail-btn[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 2px; }
 .rail-btn.add { border: 1px solid var(--rail-text); background: transparent; color: var(--rail-text); font-size: var(--fs-xl); font-weight: var(--fw-regular); }
 .rail-btn.settings { margin-top: auto; background: transparent; color: var(--rail-text); }
-.rail-dot { position: absolute; bottom: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--rail); background: var(--wait); }
+.rail-dot { position: absolute; bottom: -3px; right: -3px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--rail); background: var(--wait); }
 .rail-dot.online { background: var(--ok); }
 .rail-dot.focus { background: var(--run); }
 .presence { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--wait); }
@@ -617,7 +617,7 @@ form.stack > button { align-self: flex-start; }
 #settings_tree a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: var(--fw-bold); } /* 고른 메뉴(첫 화면 = 연결) */
 /* position: relative — 안의 sr-only 라벨(절대 위치)이 이 스크롤 칸 기준이 되어 문서 전체를 스크롤 가능하게 만들지 않는다(없으면 절로 가기 scrollIntoView 가 상단 바를 밀어 올린다). */
 .settings-body { position: relative; flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: var(--sp-5); display: flex; flex-direction: column; }
-/* ---- 설정 화면 — 고른 메뉴 화면만: 머리 · 목록 / 상세 2단 · 2열 타일 ---- */
+/* ---- 설정 화면 — 고른 메뉴 화면만: 머리 · 목록 / 상세 2단 · 1열 타일(넓은 창에서도 이름과 옵션 칸이 멀어지지 않게 최대 900px) ---- */
 .set-page { display: flex; flex-direction: column; gap: var(--sp-3); min-height: 0; flex: 1 1 auto; }
 .set-page[hidden] { display: none; }
 .set-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
@@ -625,12 +625,12 @@ form.stack > button { align-self: flex-start; }
 .set-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .set-actions button { display: inline-flex; align-items: center; }
 .set-page > p[role="status"]:empty { display: none; }
-.set-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); align-items: stretch; }
+.set-tiles { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); align-items: stretch; max-width: 900px; }
 .set-tile { display: flex; align-items: center; gap: var(--sp-4); min-height: 64px; box-sizing: border-box; padding: var(--sp-3) 0; border-bottom: 1px solid var(--border); }
 .set-tile-label { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
 .set-tile-label label, .set-tile-label strong { color: var(--text); font-weight: var(--fw-medium); }
 .set-tile-label .hint { font-size: var(--fs-xs); overflow-wrap: anywhere; }
-.set-tile select { width: 220px; flex: none; }
+.set-tile select { min-width: 220px; max-width: 100%; flex: none; } /* 너비 = 가장 긴 옵션 글 — 한글 옵션이 잘리지 않게 */
 .set-tile input[type="number"] { width: 96px; flex: none; }
 .md-split { flex: 1 1 auto; min-height: 420px; display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: var(--sp-4); }
 .md-list, .md-detail { min-height: 0; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
@@ -671,7 +671,7 @@ form.stack > button { align-self: flex-start; }
 .debug-log-head h3 { margin: 0; font-size: var(--fs-md); }
 .debug-log-box { height: 360px; margin: 0; overflow: auto; padding: var(--sp-3); background: var(--subtle); border-radius: var(--radius); font-size: var(--fs-xs); line-height: var(--lh-body); white-space: pre; }
 @media (max-width: 960px) {
-  .set-tiles, .md-cols { grid-template-columns: 1fr; }
+  .md-cols { grid-template-columns: 1fr; }
   .md-split { grid-template-columns: 1fr; min-height: 0; }
   .md-list { max-height: 320px; }
 }
@@ -856,7 +856,7 @@ details { margin: var(--sp-2) 0; }
   #app.tile-small .rail-btn { width: 24px; height: 24px; font-size: var(--fs-xs); }
   #app.tile-small .rail-btn .tile-shape svg { width: 16px; height: 16px; }
   #app.tile-small .rail-btn .tile-name { top: 50%; left: calc(100% + var(--sp-2)); transform: translateY(-50%); width: calc(var(--rail-w-small) - 64px); font-size: var(--fs-sm); text-align: left; pointer-events: auto; }
-  #app.tile-small .rail-dot { width: 8px; height: 8px; }
+  #app.tile-small .rail-dot { width: 12px; height: 12px; }
   #app.tile-small .rail-badge { top: -8px; right: -10px; }
   #app.tile-small .rail-btn.add-text { width: auto; padding: 0 var(--sp-2); white-space: nowrap; }
 }

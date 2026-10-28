@@ -79,14 +79,11 @@ fn guard_prompt_always() {
     for must in ["문의", "수정", "삭제", "명령", "비밀"] {
         assert!(GUARD_PROMPT.contains(must), "{must}");
     }
-    // 프로필 지시는 그 뒤에.
+    // 프로필 지시는 가드 앞에(맨 앞 — 잘 따르게), 가드는 그대로 뒤에.
     let args = claude_args(&agent("짧게 답해"), &Session::New("u".into()));
     let system = value_of(&args, "--append-system-prompt").unwrap();
-    assert!(system.starts_with(GUARD_PROMPT), "{system}");
-    assert!(
-        system.ends_with("[수신자 추가 지시]\n짧게 답해"),
-        "{system}"
-    );
+    assert!(system.starts_with("[수신자 추가 지시]\n짧게 답해\n\n"), "{system}");
+    assert!(system.ends_with(GUARD_PROMPT), "{system}");
     // 재개 때도 기록된 옛 프롬프트가 아니라 지금 가드로 — 스냅샷 끔.
     for session in [
         Session::New("u".into()),
@@ -324,7 +321,7 @@ fn codex_args_follow_decisions() {
     let dev = value_of(&new, "-c").unwrap();
     let toml = dev.strip_prefix("developer_instructions=").unwrap();
     let text: String = serde_json::from_str(toml).unwrap();
-    assert!(text.starts_with(CODEX_GUARD_PROMPT) && text.contains(r"[읽기 범위] 이 폴더 D:\work\p 아래만") && text.ends_with("[수신자 추가 지시]\n짧게 \"답\""), "{text}");
+    assert!(text.starts_with("[수신자 추가 지시]\n짧게 \"답\"\n\n") && text.contains(CODEX_GUARD_PROMPT) && text.ends_with(r"[읽기 범위] 이 폴더 D:\work\p 아래만 읽는다. 그 밖의 파일은 읽지 않는다."), "{text}");
     for must in ["문의", "삭제 · 편집 · 이동", "비밀"] {
         assert!(CODEX_GUARD_PROMPT.contains(must), "{must}");
     }

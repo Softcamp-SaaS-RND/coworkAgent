@@ -2051,6 +2051,26 @@ async fn tile_size_setting_persists() {
     assert_eq!(s["ui_tile_size"], "normal", "다시 열어도 남는다");
 }
 
+/// 날짜 표시방식 — 기본 md, 바꾸면 남고, 틀린 값은 400.
+#[tokio::test(flavor = "multi_thread")]
+async fn date_format_setting_persists() {
+    let a = side("df").await;
+    let (_, s) = a.call("GET", "/api/settings", Value::Null).await;
+    assert_eq!(s["ui_date_format"], "md");
+    let (code, s) = a
+        .call("PUT", "/api/settings", json!({ "ui_date_format": "relative" }))
+        .await;
+    assert_eq!((code, &s["ui_date_format"]), (200, &json!("relative")), "{s}");
+    let (code, _) = a
+        .call("PUT", "/api/settings", json!({ "ui_date_format": "huge" }))
+        .await;
+    assert_eq!(code, 400);
+    let (port, h) = web(&a.paths, a.node.clone(), a.chat.clone()).await;
+    let (_, raw) = common::send_body(port, "GET", "/api/settings", &h, "").await;
+    let s: Value = serde_json::from_str(raw.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(s["ui_date_format"], "relative", "다시 열어도 남는다");
+}
+
 /// 개요 보기(#1z-4) — 기본 미리보기, 목록으로 바꾸면 남고, 틀린 값은 400.
 #[tokio::test(flavor = "multi_thread")]
 async fn home_view_setting_persists() {
