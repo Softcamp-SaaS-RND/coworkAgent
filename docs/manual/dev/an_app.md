@@ -165,7 +165,7 @@
 - `browser::open(url 또는 파일 경로)` — Windows `ShellExecuteW`(반환 ≤ 32 = 실패) · macOS `open` 종료 상태(두 OS 같은 동작 — D30).
 - `tray::Tray::new() -> (Tray, Attention)` — 메인 스레드 이벤트 루프. `Attention::set(n)` 은 프록시로 "확인할 일" 표시(주황 점 · 툴팁 "coworkAgent — 확인할 일 N건"). 세는 이벤트 = `notify::tray_marks` — 받은 요청(`MessageKind::Ask`) · 연결 요청(`PairRequest`) · 연결 승인(`Approved`) · 내 요청 상태 변경(`AskState`)만,
   알림 설정(켜짐 · 세부 · 일시 중지 · 집중)과 무관, 지우기는 `Notifier::clear`(웹UI 연결 · 트레이 열기)만(#1z-18). 두 OS 같은 코드.
-  `Tray::run(url, note, on_seen, on_quit)`(`note` = 툴팁 둘째 줄 — 피어 포트를 남이 잡았을 때 `peer_port_note`, `tray::tip(n, note)`) — "열기" · "종료"(S4 개정 — 내 정보는 웹UI 프로필 "사용자 정보" 팝업 `#me_dialog`, #1l), 열기 성공 시 `on_seen`. 트레이를 못 만들면
+  `Tray::run(url, note, on_seen, on_quit)`(`note` = 툴팁 둘째 줄 — 피어 포트를 남이 잡았을 때 `peer_port_note`, `tray::tip(n, note)`) — "열기" · "매뉴얼"(`tray::USER_GUIDE` — GitHub main 사용자 가이드, `on_seen` 안 부름) · "종료"(S4 개정 — 내 정보는 웹UI 프로필 "사용자 정보" 팝업 `#me_dialog`, #1l), 열기 성공 시 `on_seen`. 트레이를 못 만들면
   `tray::retry_after(n)`(1 · 2 · 4 · 8 · 15 · 30초 — #1h, `ControlFlow::WaitUntil`) 뒤 다시, 끝내 못 만들면 사유 파일을 열고 끝냄(종료 코드 0). `Tray::run_error(message, file)` — 붉은 아이콘 · "오류 보기"(열기 전에 사유 파일을 다시 쓴다) · "종료"(감시만 부른다 — #1n). `write_start_error(message)` —
   `start_error_file()`(임시 폴더 `coworkAgent-start-error.txt`, 디버그 빌드 + `COWORKAGENT_DATA_DIR` 면 그 폴더) · `read_start_error()`("사유:" 줄) ·
   `start_error_by(pid)`(그 PID 가 썼나 — 사유 파일 끝 줄 `PID: n`).

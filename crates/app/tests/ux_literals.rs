@@ -49,6 +49,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("index.html", r#"<input id="conv_search" type="search" placeholder="제목 검색" aria-label="제목 검색">"#, "#15 제목 검색"),
     ("tray.rs", r#"MenuItem::new("열기""#, "#17 트레이"),
     ("tray.rs", r#"MenuItem::new("종료""#, "#17 트레이"),
+    ("tray.rs", r#"MenuItem::new("매뉴얼""#, "#1z-19 트레이 매뉴얼"),
     // 17 — 시안 v4 영역별 라벨
     ("web", r#"id="search_q" type="search" placeholder="검색""#, "#17 라벨"),
     ("index.html", r#"aria-controls="new_menu"><span class="ico ico-plus lead" aria-hidden="true"></span>새로 만들기</button>"#, "#17 라벨 · #1z-10 + 글자 → 아이콘"),
@@ -831,7 +832,7 @@ const ABSENT: &[(&str, &str, &str)] = &[
 /// 정확한 개수 — (파일 키, 문구, 개수, 출처).
 #[rustfmt::skip]
 const COUNTS: &[(&str, &str, usize, &str)] = &[
-    ("tray.rs", "MenuItem::new(", 4, "#17 정상 모드 열기 · 종료 + 오류 모드 오류 보기 · 종료"),
+    ("tray.rs", "MenuItem::new(", 5, "#17 정상 모드 열기 · 매뉴얼(#1z-19) · 종료 + 오류 모드 오류 보기 · 종료"),
     ("index.html", r#"id="raw_btn""#, 1, "#17 원문 보기는 머리글 하나"),
     ("app.css", "\n.ico { ", 1, "#1l 아이콘 크기 정의는 한 곳(16px)"),
     ("app.css", "\n.md {", 1, "#1z-8 .md = 대화 본문 마크다운만(설정 목록 · 상세 2단은 .md-split — 이름이 겹치면 본문이 2단으로 갈림)"),

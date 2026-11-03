@@ -1,4 +1,4 @@
-//! 트레이 상주 — 메뉴 "열기" · "종료", "확인할 일" 표시, 시작 실패 시 오류 모드(D30).
+//! 트레이 상주 — 메뉴 "열기" · "매뉴얼" · "종료", "확인할 일" 표시, 시작 실패 시 오류 모드(D30).
 //! 두 OS 공통 tray-icon 만 쓴다. macOS 는 Dock 아이콘 없이 메뉴 막대에만.
 use crate::browser;
 use std::io;
@@ -8,6 +8,10 @@ use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
+
+/// 메뉴 "매뉴얼" 이 여는 사용자 가이드 — GitHub main(릴리스 단위로 갱신된다).
+pub const USER_GUIDE: &str =
+    "https://github.com/Softcamp-SaaS-RND/coworkAgent/blob/main/docs/manual/user/user-guide.md";
 
 /// 이벤트 루프로 들어오는 것.
 pub enum TrayEvent {
@@ -126,7 +130,7 @@ impl Tray {
         })
     }
 
-    /// 정상 모드 — "열기" 는 웹UI 를 열고 `on_seen` 을 부른다(확인할 일 표시 지움). "종료" 는 `on_quit` 후 끝. `note` 는 툴팁 둘째 줄(피어 포트 등).
+    /// 정상 모드 — "열기" 는 웹UI 를 열고 `on_seen` 을 부른다(확인할 일 표시 지움). "매뉴얼" 은 `USER_GUIDE` 를 연다(표시는 그대로). "종료" 는 `on_quit` 후 끝. `note` 는 툴팁 둘째 줄(피어 포트 등).
     pub fn run(
         self,
         url: String,
@@ -135,9 +139,10 @@ impl Tray {
         on_quit: impl FnOnce() + 'static,
     ) -> ! {
         let open = MenuItem::new("열기", true, None);
+        let guide = MenuItem::new("매뉴얼", true, None);
         let quit = MenuItem::new("종료", true, None);
-        let (open_id, quit_id) = (open.id().clone(), quit.id().clone());
-        let mut menu = Some((open, quit));
+        let (open_id, guide_id, quit_id) = (open.id().clone(), guide.id().clone(), quit.id().clone());
+        let mut menu = Some((open, guide, quit));
         let mut tray: Option<TrayIcon> = None;
         let mut on_quit = Some(on_quit);
         // 트레이 만들기 실패 횟수 · 다음 시도 시각 — 기다리는 동안에도 다른 이벤트(확인할 일 표시 등)는 돈다.
@@ -151,9 +156,9 @@ impl Tray {
             match event {
                 // macOS 는 이벤트 루프가 돈 뒤에 트레이를 만들어야 한다. 실패하면 간격을 늘려 다시(`retry_after`).
                 Event::NewEvents(StartCause::Init | StartCause::ResumeTimeReached { .. }) => {
-                    if let Some((open, quit)) = &menu {
+                    if let Some((open, guide, quit)) = &menu {
                         retry_at = None;
-                        match build(&[open, quit], &tip(attention, note.as_deref()), icon(mark_of(attention))) {
+                        match build(&[open, guide, quit], &tip(attention, note.as_deref()), icon(mark_of(attention))) {
                             Ok(t) => {
                                 tray = Some(t);
                                 menu = None;
@@ -197,6 +202,11 @@ impl Tray {
                     match browser::open(&url) {
                         Ok(()) => on_seen(),
                         Err(e) => log::error!("브라우저 열기 실패: {e}"),
+                    }
+                }
+                Event::UserEvent(TrayEvent::Menu(e)) if e.id == guide_id => {
+                    if let Err(e) = browser::open(USER_GUIDE) {
+                        log::error!("매뉴얼 열기 실패: {e}");
                     }
                 }
                 Event::UserEvent(TrayEvent::Quit) => {
@@ -372,6 +382,15 @@ mod tests {
         let long = super::tip(1, Some(&"가".repeat(200)));
         assert_eq!(long.encode_utf16().count(), 127);
         assert!(long.ends_with('…'));
+    }
+
+    /// 메뉴 "매뉴얼" 이 여는 주소 — GitHub main 의 사용자 가이드.
+    #[test]
+    fn user_guide_url() {
+        assert_eq!(
+            super::USER_GUIDE,
+            "https://github.com/Softcamp-SaaS-RND/coworkAgent/blob/main/docs/manual/user/user-guide.md"
+        );
     }
 
     /// 다시 시도 간격 — 1 · 2 · 4 · 8 · 15 · 30초(합 60초), 그 뒤 없음.
