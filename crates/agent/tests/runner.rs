@@ -255,7 +255,8 @@ fn parent_read_adds_dir() {
     let args = claude_args(&with(&work, true), &Session::New("u".into()));
     assert_eq!(value_of(&args, "--add-dir"), Some(root.display().to_string().as_str()));
     let system = value_of(&args, "--append-system-prompt").unwrap();
-    assert!(system.starts_with(GUARD_PROMPT) && system.contains("[읽기 범위]"), "{system}");
+    // 막는 장치가 없다 — 범위 밖을 "읽을 수 없다" 고 말하지 않는다(셸 켬과 같은 문장).
+    assert!(system.starts_with(GUARD_PROMPT) && system.contains("[읽기 범위] 파일 도구는") && !system.contains("읽을 수 없다"), "{system}");
     for off in [with(&work, false), with(std::path::Path::new(if cfg!(windows) { r"C:\Windows" } else { "/usr" }), true)] {
         let args = claude_args(&off, &Session::New("u".into()));
         assert!(!args.iter().any(|a| a == "--add-dir"), "{args:?}");

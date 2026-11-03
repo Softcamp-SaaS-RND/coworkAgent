@@ -647,3 +647,22 @@ async fn unreachable_viewer_dropped_after_give_up() {
         "꺼진 동안 글은 가지 않는다"
     );
 }
+
+/// 같은 대화를 양쪽(A · B)이 같은 관람자 C 에게 공유 — C 는 먼저 받은 사본이 있어 B 의 공유를 `exists` 로 거절한다. B 는 C 를 관람자로 남기지 않는다
+/// (영원히 관람자로 보이며 보내기만 되풀이하지 않게).
+#[tokio::test(flavor = "multi_thread")]
+async fn second_owner_share_exists_drops_viewer() {
+    let t = three("sh-both").await;
+    let (c_at_b, _) = common::pair(&t.b, &t.c).await;
+    let (conv, _) = asked(&t, "질문").await;
+    t.a.chat.share_add(conv.id, t.c_id).await.unwrap();
+    common::eventually(|| copy_texts(&t.c, &conv.uuid).len() == 3).await;
+    let b_conv = chat::list(&common::db(&t.b)).unwrap().into_iter().find(|c| c.uuid == conv.uuid).unwrap();
+    let _ = t.b.chat.share_add(b_conv.id, c_at_b).await;
+    common::eventually(|| share::watchers(&common::db(&t.b), b_conv.id).unwrap().is_empty()).await;
+    let left: i64 = common::db(&t.b)
+        .query_row("SELECT count(*) FROM outbox WHERE peer_id = ?1 AND kind = 'share'", [c_at_b], |r| r.get(0))
+        .unwrap();
+    assert_eq!(left, 0, "거절된 관람자 앞 공유 행을 버렸다");
+    assert_eq!(copy_texts(&t.c, &conv.uuid).len(), 3, "C 의 A 사본은 그대로");
+}

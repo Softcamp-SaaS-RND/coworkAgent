@@ -308,8 +308,8 @@ impl Chat {
         }
     }
 
-    /// 공유 프레임이 거절됐다 — 관람자가 이 기능을 모르거나(`unsupported`) 이 PC 를 페어링된 상대로 보지 않으면(`not_paired`) 그 관람자를
-    /// 뺀다(관람자 목록에서 빠진다). 원 상대 알림 · 관람자의 나가기 거절은 로그만.
+    /// 공유 프레임이 거절됐다 — 관람자가 이 기능을 모르거나(`unsupported`) 이 PC 를 페어링된 상대로 보지 않거나(`not_paired`) 같은 대화의
+    /// 다른 사본을 이미 가지면(`exists` — 원 상대가 먼저 공유) 그 관람자를 뺀다(관람자 목록에서 빠진다). 원 상대 알림 · 관람자의 나가기 거절은 로그만.
     pub(super) fn share_refused(&self, item: &outbox::Item, resp: &Response) {
         let code = match resp {
             Response::Error { code } => an_net::proto::clean_code(code),
@@ -320,7 +320,7 @@ impl Chat {
             item.peer_id,
             item.kind
         );
-        if item.kind != SHARE || !matches!(code, "not_paired" | "unsupported") {
+        if item.kind != SHARE || !matches!(code, "not_paired" | "unsupported" | "exists") {
             return;
         }
         let conv = item

@@ -39,7 +39,7 @@ fn db_schema_version_kept_on_reopen() {
     let root = temp_root("dbver");
     let paths = Paths::under(&root);
     paths.ensure().unwrap();
-    assert_eq!(db::SCHEMA_VERSION, 29);
+    assert_eq!(db::SCHEMA_VERSION, 30);
     {
         // 00 이 남긴 스키마 1 파일 — 열면 2 로 오른다.
         let conn = rusqlite::Connection::open(paths.db_file()).unwrap();
@@ -86,6 +86,53 @@ fn schema5_migration_survives_partial_state() {
     for c in ["reply_to", "turns", "duration_ms"] {
         assert!(cols.iter().any(|x| x == c), "{c} 열: {cols:?}");
     }
+}
+
+/// 사본을 뜨다 끊겨 남은 반쪽 파일(`.tmp`)은 사본으로 믿지 않는다 — 다음 시작이 온전한 사본을 다시 뜬다.
+#[test]
+fn migration_backup_ignores_half_written_temp() {
+    let root = temp_root("backup-tmp");
+    let paths = Paths::under(&root);
+    paths.ensure().unwrap();
+    {
+        let conn = db::open(&paths.db_file()).unwrap();
+        conn.execute_batch(
+            "ALTER TABLE messages DROP COLUMN reply_to; ALTER TABLE messages DROP COLUMN turns;
+             ALTER TABLE messages DROP COLUMN duration_ms; PRAGMA user_version = 4;
+             INSERT INTO settings (key, value) VALUES ('k', 'v4');",
+        )
+        .unwrap();
+    }
+    let bak = db::backup_path(&paths.db_file(), 4);
+    let mut tmp = bak.clone().into_os_string();
+    tmp.push(".tmp");
+    std::fs::write(&tmp, b"half").unwrap();
+    db::open(&paths.db_file()).unwrap();
+    assert!(!std::path::Path::new(&tmp).exists(), "반쪽 임시 파일은 지운다");
+    let old = rusqlite::Connection::open(&bak).unwrap();
+    assert_eq!(db::user_version(&old).unwrap(), 4, "온전한 사본");
+}
+
+/// 30 — 새로 고침 경로 색인(보내기 줄 글 · 대화 안 순서)을 질의가 실제로 쓴다.
+#[test]
+fn schema30_indexes_used() {
+    let root = temp_root("idx30");
+    let paths = Paths::under(&root);
+    paths.ensure().unwrap();
+    let conn = db::open(&paths.db_file()).unwrap();
+    let plan = |sql: &str| -> String {
+        conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(3))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>()
+            .join(" / ")
+    };
+    let o = plan("SELECT id FROM outbox WHERE msg_id = 1 ORDER BY id DESC LIMIT 1");
+    assert!(o.contains("outbox_msg"), "{o}");
+    let m = plan("SELECT uuid FROM messages WHERE conversation_id = 1 ORDER BY lc DESC, uuid DESC LIMIT 1");
+    assert!(m.contains("messages_conv_lc"), "{m}");
 }
 
 #[test]
@@ -782,6 +829,33 @@ fn legacy_with_empty_new_root_adopted() {
         b"new log",
         "있는 것은 덮어쓰지 않는다"
     );
+}
+
+/// 옮기다 끊긴 상태(DB 는 새 루트 · 신원은 옛 루트에 남음) — 충돌이 아니다, 다음 실행이 마저 옮긴다. 끊긴 트랜잭션 곁 파일도 새 DB 이름으로.
+#[test]
+fn legacy_half_moved_resumes() {
+    let base = temp_root("legacy-half");
+    let old = legacy_root(&base);
+    std::fs::write(old.join("agentNetwork.db-journal"), b"j").unwrap();
+    let paths = Paths::under(base.join("coworkAgent"));
+    paths.ensure().unwrap();
+    std::fs::rename(old.join("agentNetwork.db"), paths.db_file()).unwrap();
+    assert!(paths.adopt_legacy(&old).unwrap(), "이어서 옮겼다");
+    assert_eq!(std::fs::read(paths.identity_file()).unwrap(), b"key");
+    assert_eq!(std::fs::read(paths.db_file()).unwrap(), b"db");
+    assert_eq!(std::fs::read(paths.root().join("coworkAgent.db-journal")).unwrap(), b"j", "곁 파일은 새 DB 이름");
+    assert!(!old.exists());
+    // DB · 신원은 다 옮겼고 곁 파일(journal)만 남은 채 끊김 — 그것도 마저 옮긴다(DB 를 열기 전에).
+    let base = temp_root("legacy-sidecar");
+    let old = legacy_root(&base);
+    std::fs::write(old.join("agentNetwork.db-journal"), b"j2").unwrap();
+    let paths = Paths::under(base.join("coworkAgent"));
+    paths.ensure().unwrap();
+    std::fs::rename(old.join("agentNetwork.db"), paths.db_file()).unwrap();
+    std::fs::rename(old.join("identity.key"), paths.identity_file()).unwrap();
+    assert!(paths.adopt_legacy(&old).unwrap(), "곁 파일만 남아도 옮긴다");
+    assert_eq!(std::fs::read(paths.root().join("coworkAgent.db-journal")).unwrap(), b"j2");
+    assert!(!old.exists());
 }
 
 #[test]

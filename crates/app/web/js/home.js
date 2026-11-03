@@ -138,7 +138,7 @@ export async function renderHomePreview(groups, single) {
         convMeta(c).agent,
         state.previewMsgs.has(c.id) && previewBubbles(c, state.previewMsgs.get(c.id).ms, state.peerNames.get(c.peer_id)),
       ]),
-      presence(peerOf(s.peer)).text,
+      presence(peerOf(s.peer)).key,
       peerOf(s.peer)?.paired,
     ]),
   ]);
@@ -165,13 +165,14 @@ export function refitPreview() {
 }
 new ResizeObserver(refitPreview).observe($("home_preview"));
 
-/// 미리보기 절 하나 — 머리(이름 · 접속 · 대화 수 · 안 읽음 · 대기 요청) + 카드 한 줄(끝 칸 "+n개 더 보기" = 그 상대 개요).
+/// 미리보기 절 하나 — 머리(이름 · 접속 점 · 대화 수 · 안 읽음 · 대기 요청) + 카드 한 줄(끝 칸 "+n개 더 보기" = 그 상대 개요).
 /// 대화 없는 상대 = 머리 한 줄 + "세션 생성"(페어링된 상대만).
 export function previewSectionEl(s, p) {
   const pres = presence(p);
   const head = [
     el("strong", { text: s.name }),
-    el("span", { class: "pv-pres" }, el("span", { class: `st-dot st-${pres.key}`, "aria-hidden": "true" }), el("span", { text: p ? pres.text : "페어링 해제" })),
+    // 접속 글("…통신")은 대화 시각과 어긋나 싣지 않는다 — 점만(대화 시각은 카드마다 있다).
+    el("span", { class: "pv-pres" }, el("span", { class: `st-dot st-${pres.key}`, "aria-hidden": "true" }), p ? "" : el("span", { text: "페어링 해제" })),
     el("span", { text: s.convs ? `· 대화 ${s.convs}` : "· 대화 없음" }),
     s.unread ? el("span", { class: "stat", text: `· 안 읽음 ${s.unread}` }) : "",
     s.waiting ? el("span", { class: "stat pv-wait", text: `· 대기 요청 ${s.waiting}` }) : "",

@@ -49,6 +49,31 @@ fn conversation_by_uuid_per_peer() {
     assert_eq!(chat::list(&c).unwrap().len(), 1);
 }
 
+/// 받은 대화를 못 연 이유 — 다른 상대 uuid · 지운 대화(묘비)는 거절, 그 밖(DB 잠금 등)은 거절이 아니다(보낸 쪽이 다시 보낸다).
+#[test]
+fn open_refused_only_for_refusals() {
+    let c = conn("refused");
+    chat::open_conversation(&c, "u-r", 7, "review", chat::Dir::In).unwrap();
+    let other = chat::open_conversation(&c, "u-r", 8, "review", chat::Dir::In).unwrap_err();
+    assert!(chat::open_refused(&other), "다른 상대 uuid: {other}");
+    let gone = chat::open_conversation(&c, "u-g", 7, "review", chat::Dir::In).unwrap();
+    assert!(chat::delete_conversation(&c, gone.id).unwrap());
+    let tomb = chat::open_conversation(&c, "u-g", 7, "review", chat::Dir::In).unwrap_err();
+    assert!(chat::open_refused(&tomb), "묘비: {tomb}");
+    // 다른 연결이 쓰기 잠금을 쥔 채 — 잠금 오류는 거절이 아니다.
+    let path = std::env::temp_dir().join(format!("an-refused-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let a = db::open(&path).unwrap();
+    let b = db::open(&path).unwrap();
+    b.busy_timeout(std::time::Duration::from_millis(10)).unwrap();
+    a.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let busy = chat::open_conversation(&b, "u-b", 7, "review", chat::Dir::In).unwrap_err();
+    assert!(!chat::open_refused(&busy), "잠금: {busy}");
+    a.execute_batch("ROLLBACK").unwrap();
+    drop((a, b));
+    let _ = std::fs::remove_file(&path);
+}
+
 #[test]
 fn messages_in_order_with_state() {
     let c = conn("msgs");

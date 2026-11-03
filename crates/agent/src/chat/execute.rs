@@ -88,12 +88,20 @@ impl Chat {
                 let mut taken = std::collections::HashSet::new();
                 while rx.recv().await.is_some() {
                     loop {
-                        let next = chat::pending(&me.db(), conversation_id)
-                            .map(|ms| ms.into_iter().find(|m| !taken.contains(&m.id)));
+                        // 대기열을 떠난 글은 잊는다 — 멈춤으로 끝난 자동 왕복 차례를 재개가 다시 줄 세우면 다시 꺼내야 한다.
+                        let next = chat::pending(&me.db(), conversation_id).map(|ms| {
+                            taken.retain(|id| ms.iter().any(|m| m.id == *id));
+                            ms.into_iter().find(|m| !taken.contains(&m.id))
+                        });
                         match next {
                             Ok(Some(m)) => {
-                                taken.insert(m.id);
+                                let id = m.id;
+                                taken.insert(id);
                                 me.process(conversation_id, m).await;
+                                // 실행하지 않고 되돌린 차례 — 재개가 이 사이에 다시 줄 세웠어도(다음 대기열 읽기 전) 다시 꺼낸다.
+                                if an_core::sync::lock(&me.returned).remove(&id) {
+                                    taken.remove(&id);
+                                }
                             }
                             Ok(None) => break,
                             Err(e) => {
@@ -158,8 +166,20 @@ impl Chat {
         let relaying = conv.dir == Dir::Out && asked.author == Author::Agent;
         // 그사이 멈췄으면(사람이 씀 · 멈춤) 넘기지 않은 상대 답으로 되돌린다 — 재개 때 다시 넘긴다.
         if relaying && !conv.relay.as_ref().is_some_and(|r| r.on) {
-            let _ = chat::set_flags(&self.db(), asked.id, false, false, State::Done);
-            return;
+            // 재개(`relay`)와 같은 잠금 안에서 다시 본다 — 그사이 재개가 끝났으면(켜짐) 되돌리지 않고 그대로 넘긴다(재개는 아직 실행 중인 이 답을 건너뛴다).
+            let db = self.db();
+            let on = chat::by_id(&db, conv.id).ok().flatten().and_then(|c| c.relay).is_some_and(|r| r.on);
+            if !on {
+                match chat::set_flags(&db, asked.id, false, false, State::Done) {
+                    Ok(_) => {
+                        drop(db);
+                        an_core::sync::lock(&self.returned).insert(asked.id);
+                    }
+                    // 되돌리지 못했다 — 꺼낸 글로 남겨(다시 꺼내지 않음) 같은 글을 되풀이하지 않는다. 앱을 다시 켜면 `recover` 가 맞춘다.
+                    Err(e) => log::error!("대화 {conversation_id} 자동 왕복 차례 되돌리기 실패: {e}"),
+                }
+                return;
+            }
         }
         if relaying {
             let _ = chat::relay_step(&self.db(), conv.id);

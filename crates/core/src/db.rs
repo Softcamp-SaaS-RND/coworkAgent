@@ -2,7 +2,7 @@ use rusqlite::OptionalExtension;
 pub use rusqlite::{Connection, Error};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 29;
+pub const SCHEMA_VERSION: i64 = 30;
 
 /// DB 오류를 `io::Error` 로 — 상위 크레이트가 `map_err(db_err)` 로 쓴다(`Error` 는 rusqlite 것이라 `From` 을 구현할 수 없다).
 pub fn db_err(e: Error) -> std::io::Error {
@@ -698,6 +698,16 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         tx.execute_batch("PRAGMA user_version = 29;")?;
         tx.commit()?;
     }
+    // 30: 5초 새로 고침 경로의 색인 — 글마다 보내기 줄 찾기(`outbox::for_message`), 대화 안 순서(`lc` · `uuid`) 끝 글.
+    if v < 30 {
+        conn.execute_batch(
+            "BEGIN;
+             CREATE INDEX IF NOT EXISTS outbox_msg ON outbox (msg_id);
+             CREATE INDEX IF NOT EXISTS messages_conv_lc ON messages (conversation_id, lc, uuid);
+             PRAGMA user_version = 30;
+             COMMIT;",
+        )?;
+    }
     Ok(conn)
 }
 
@@ -728,14 +738,23 @@ pub fn backup_path(path: &Path, version: i64) -> std::path::PathBuf {
     path.with_file_name(name)
 }
 
-/// `VACUUM INTO` 는 열린 연결에서도 일관된 사본을 만든다.
+/// `VACUUM INTO` 는 열린 연결에서도 일관된 사본을 만든다. 임시 이름에 뜬 뒤 바꿔 — 뜨다 끊긴 반쪽 파일이 사본 이름으로 남지 않는다
+/// (남은 임시 파일은 지우고 다시 뜬다).
 fn backup_before_migration(conn: &Connection, path: &Path, version: i64) -> rusqlite::Result<()> {
     let to = backup_path(path, version);
     if to.exists() {
         return Ok(());
     }
-    conn.execute("VACUUM INTO ?1", [to.to_string_lossy()])?;
-    Ok(())
+    let mut tmp = to.clone().into_os_string();
+    tmp.push(".tmp");
+    let tmp = std::path::PathBuf::from(tmp);
+    let io = |e: std::io::Error| rusqlite::Error::ToSqlConversionFailure(Box::new(e));
+    match std::fs::remove_file(&tmp) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(io(e)),
+        _ => {}
+    }
+    conn.execute("VACUUM INTO ?1", [tmp.to_string_lossy()])?;
+    std::fs::rename(&tmp, &to).map_err(io)
 }
 
 fn has_column(conn: &Connection, table: &str, col: &str) -> rusqlite::Result<bool> {

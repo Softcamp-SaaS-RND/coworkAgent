@@ -40,7 +40,7 @@ pub(super) async fn continue_conversation(
         Err(m) => return bad(m),
     };
     let _keyed = match key {
-        Some(_) => Some(chat.keyed().await),
+        Some(k) => Some(chat.keyed(k).await),
         None => None,
     };
     if let Some(again) = tx_again(&chat, key) {

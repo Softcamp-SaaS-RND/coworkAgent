@@ -73,3 +73,19 @@ async fn rehello_without_code_needs_approval() {
         .unwrap();
     assert!(pc.my_ok, "같은 창의 코드로 처음 보는 키는 자동 등록");
 }
+
+/// 초대 수락 기록(등록 · 내 승인)이 실패하면 초대 창은 쓰이지 않은 채 남는다 — 같은 코드로 다시 오면 자동 등록(사람 승인으로 떨어지지 않는다).
+#[tokio::test]
+async fn failed_accept_keeps_invite() {
+    let (a, b) = (common::start("fail-a").await, common::start("fail-b").await);
+    let code = b.open();
+    b.db()
+        .execute_batch("CREATE TRIGGER no_ok BEFORE UPDATE OF my_ok ON peers BEGIN SELECT RAISE(ABORT, 'disk'); END;")
+        .unwrap();
+    assert!(a.node.add(b.addr, code.clone()).await.is_err(), "기록 실패 = 등록 실패");
+    assert!(an_core::peers::list(&b.db()).unwrap().is_empty(), "반쪽 등록(내 승인 없는 행)을 남기지 않는다");
+    b.db().execute_batch("DROP TRIGGER no_ok;").unwrap();
+    let pb = a.node.add(b.addr, code).await.unwrap();
+    assert!(pb.their_ok, "같은 초대로 다시 — 자동 등록");
+    assert!(b.only_peer().my_ok);
+}

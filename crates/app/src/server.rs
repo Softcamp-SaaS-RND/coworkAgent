@@ -329,14 +329,7 @@ async fn favicon() -> impl IntoResponse {
 
 async fn api_status(State(s): State<Arc<AppState>>) -> impl IntoResponse {
     let st = &s.status;
-    let body = format!(
-        r#"{{"version":"{}","data_dir":"{}","db":"{}","cli_api":{CLI_API},"mode":"{}"}}"#,
-        json_escape(&st.version),
-        json_escape(&st.data_dir),
-        json_escape(&st.db),
-        s.mode
-    );
-    ([(header::CONTENT_TYPE, "application/json")], body)
+    Json(json!({"version": st.version, "data_dir": st.data_dir, "db": st.db, "cli_api": CLI_API, "mode": s.mode}))
 }
 
 /// 디버깅 화면 로그 끝 — 줄 수 · 파일 끝에서 읽는 바이트 상한.
@@ -416,22 +409,9 @@ async fn api_quit(State(s): State<Arc<AppState>>) -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
-fn json_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{ct_eq, json_escape, new_token};
+    use super::{ct_eq, new_token};
 
     #[test]
     fn token_is_64_hex_and_fresh() {
@@ -446,10 +426,5 @@ mod tests {
         assert!(ct_eq("abc", "abc"));
         assert!(!ct_eq("abc", "abd"));
         assert!(!ct_eq("abc", "ab"));
-    }
-
-    #[test]
-    fn json_escape_quotes_backslash_control() {
-        assert_eq!(json_escape("a\"b\\c\n"), "a\\\"b\\\\c\\u000a");
     }
 }

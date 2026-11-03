@@ -366,31 +366,36 @@ impl Node {
         code
     }
 
-    /// 창이 열려 있고 코드가 맞으면 닫고 true. 틀린 코드는 창을 닫지 않는다(선점 불가) — 대신 출처 IP 별로 세어 [`MAX_CODE_MISSES`]
-    /// 번 틀린 IP 는 코드를 보지 않고 거절한다(추측 — 응답은 창 닫힘과 같아 상한을 알리지 않는다).
-    fn take_window(&self, ip: IpAddr, code: Option<&str>) -> bool {
+    /// 창이 열려 있고 코드가 맞으면 닫고 그 창(기록이 실패하면 [`Node::reopen_window`] 로 되돌린다). 틀린 코드는 창을 닫지 않는다(선점 불가) —
+    /// 대신 출처 IP 별로 세어 [`MAX_CODE_MISSES`] 번 틀린 IP 는 코드를 보지 않고 거절한다(추측 — 응답은 창 닫힘과 같아 상한을 알리지 않는다).
+    fn take_window(&self, ip: IpAddr, code: Option<&str>) -> Option<(Instant, String)> {
         // 셈 확인 · 증가는 창 잠금을 쥔 채로 — 같은 IP 의 동시 연결이 상한 경계를 넘어 더 추측하지 못하게(잠금 순서: window → misses).
         let mut w = an_core::sync::lock(&self.window);
         if an_core::sync::lock(&self.misses)
             .get(&ip)
             .is_some_and(|&n| n >= MAX_CODE_MISSES)
         {
-            return false;
+            return None;
         }
-        let Some((until, want)) = w.as_ref() else {
-            return false;
-        };
+        let (until, want) = w.as_ref()?;
         if Instant::now() >= *until {
             *w = None;
-            return false;
+            return None;
         }
         let given = normalize_code(code.unwrap_or(""));
         if !ct_eq(given.as_bytes(), normalize_code(want).as_bytes()) {
             *an_core::sync::lock(&self.misses).entry(ip).or_insert(0) += 1;
-            return false;
+            return None;
         }
-        *w = None;
-        true
+        w.take()
+    }
+
+    /// 쓴 초대 창을 되돌린다 — 수락 기록이 실패했을 때(그사이 새 창이 열렸으면 그대로).
+    fn reopen_window(&self, taken: (Instant, String)) {
+        let mut w = an_core::sync::lock(&self.window);
+        if w.is_none() {
+            *w = Some(taken);
+        }
     }
 
     /// `bind_peer_port` 가 알려 준 잡은 프로세스를 기록한다(한 번).
@@ -545,29 +550,40 @@ impl Node {
                 code,
             } => {
                 let known = peers::by_spki(&db, spki).map_err(db_err)?.is_some();
+                let mut taken = None;
                 if port == 0 || round.is_empty() || round.len() > 64 || spki == self.id.spki() {
                     Response::error("bad_request")
                 } else if !known && peers::count_unapproved(&db).map_err(db_err)? >= MAX_UNAPPROVED
                 {
                     Response::error("busy")
-                } else if !known && !self.take_window(ip, code.as_deref()) {
+                } else if !known && {
+                    taken = self.take_window(ip, code.as_deref());
+                    taken.is_none()
+                } {
                     Response::error("closed")
                 } else {
                     let addr = SocketAddr::new(ip, port).to_string();
-                    let p = peers::upsert(
-                        &db,
-                        spki,
-                        &clean_name(&name),
-                        &clean_name(&host),
-                        &addr,
-                        &round,
-                    )
-                    .map_err(db_err)?;
-                    // 처음 보는 키가 여기 왔다 = 받기 창의 초대 코드가 맞았다 → 내 승인은 자동(D8).
+                    // 처음 보는 키가 여기 왔다 = 받기 창의 초대 코드가 맞았다 → 내 승인은 자동(D8). 등록 · 승인은 한 번에 — 실패하면 반쪽 행도,
+                    // 쓴 초대도 남기지 않는다(같은 코드로 다시 오면 자동 등록).
                     let auto = !known;
-                    if auto {
-                        peers::set_my_ok(&db, p.id).map_err(db_err)?;
-                    }
+                    let recorded = (|| {
+                        let tx = an_core::db::write_tx(&db)?;
+                        let p = peers::upsert(&tx, spki, &clean_name(&name), &clean_name(&host), &addr, &round)?;
+                        if auto {
+                            peers::set_my_ok(&tx, p.id)?;
+                        }
+                        tx.commit()?;
+                        Ok::<_, an_core::db::Error>(p)
+                    })();
+                    let p = match recorded {
+                        Ok(p) => p,
+                        Err(e) => {
+                            if let Some(w) = taken {
+                                self.reopen_window(w);
+                            }
+                            return Err(db_err(e));
+                        }
+                    };
                     let (name, host, fingerprint) =
                         (p.name, p.host, crate::identity::fingerprint(spki));
                     event = Some(if auto {

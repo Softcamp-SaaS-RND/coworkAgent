@@ -126,7 +126,7 @@ pub(super) async fn start_conversation(
     };
     // 같은 키는 확인부터 보내기까지 한 줄로 — 동시에 두 번 불러도 한 번만 보낸다.
     let _keyed = match key {
-        Some(_) => Some(chat.keyed().await),
+        Some(k) => Some(chat.keyed(k).await),
         None => None,
     };
     if let Some(again) = tx_again(&chat, key) {

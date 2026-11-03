@@ -151,7 +151,7 @@ impl Chat {
         text: String,
         (lc, by_agent, relay, via, request, mention): MessageExtra,
     ) -> io::Result<Response> {
-        if text.trim().is_empty() || text.len() > MAX_TEXT || conv.is_empty() || msg.is_empty() {
+        if text.trim().is_empty() || text.len() > MAX_TEXT {
             return Ok(Response::error("bad_request"));
         }
         // 요청 — 실행이 없어 집중과 무관하게 받는다. 자동 왕복 · 멘션과 함께 오지 않는다.
@@ -193,8 +193,20 @@ impl Chat {
             if chat::left(&db, &conv, peer.id).map_err(db_err)? {
                 return Ok(Response::error(chat::LEFT));
             }
-            let Ok(c) = chat::open_conversation(&db, &conv, peer.id, &agent, Dir::In) else {
-                return Ok(Response::error("bad_request")); // 다른 상대의 대화 uuid
+            // 그 상대가 맡긴 실행이 상한이면 새 실행 요청(새 글 · 자동 왕복 승격)은 나중에(`retry`) — 셈과 등록이 같은 잠금 안이라 동시 요청이 남은
+            // 자리를 겹쳐 쓰지 못한다. 재전송(이미 받은 글)은 아래에서 `Ok`.
+            let fresh = match chat::message_by_uuid(&db, &msg).map_err(db_err)? {
+                None => !chat::gone(&db, &msg).map_err(db_err)?,
+                Some(old) => by_agent.is_some() && old.author == Author::Agent && !old.mine && !old.exec,
+            };
+            if fresh && chat::peer_pending_runs(&db, peer.id).map_err(db_err)? >= PEER_RUN_CAP {
+                return Ok(Response::error(RETRY));
+            }
+            let c = match chat::open_conversation(&db, &conv, peer.id, &agent, Dir::In) {
+                Ok(c) => c,
+                // 다른 상대의 대화 uuid · 지운 대화는 거절, 그 밖(DB 잠금 등)은 오류 → 보낸 쪽이 다시 보낸다(`retry`).
+                Err(e) if chat::open_refused(&e) => return Ok(Response::error("bad_request")),
+                Err(e) => return Err(db_err(e)),
             };
             // 자동 왕복 대화에는 멘션을 받지 않는다.
             if c.dir != Dir::In || c.agent != agent || (mention.is_some() && c.relay.is_some()) {
@@ -282,7 +294,7 @@ impl Chat {
         let ctx = ctx.filter(|v| (0..=MAX_CTX_TOKENS).contains(v));
         let (model, effort) = run_meta(model, effort);
         // 에이전트 답은 비어 있으면 받지 않는다 — 조용한 빈 성공 · 자동 왕복의 빈 입력.
-        if text.len() > MAX_TEXT || msg.is_empty() || (author == "agent" && text.trim().is_empty())
+        if text.len() > MAX_TEXT || (author == "agent" && text.trim().is_empty())
         {
             return Ok(Response::error("bad_request"));
         }
@@ -420,8 +432,11 @@ impl Chat {
             if chat::left(&db, conv, peer.id).map_err(db_err)? {
                 return Ok(Response::error(chat::LEFT));
             }
-            let Ok(c) = chat::open_conversation(&db, conv, peer.id, &agent, Dir::In) else {
-                return Ok(Response::error("bad_request")); // 다른 상대의 대화 uuid
+            let c = match chat::open_conversation(&db, conv, peer.id, &agent, Dir::In) {
+                Ok(c) => c,
+                // 다른 상대의 대화 uuid · 지운 대화는 거절, 그 밖(DB 잠금 등)은 오류 → 보낸 쪽이 다시 보낸다(`retry`).
+                Err(e) if chat::open_refused(&e) => return Ok(Response::error("bad_request")),
+                Err(e) => return Err(db_err(e)),
             };
             if c.dir != Dir::In || c.agent != agent {
                 return Ok(Response::error("bad_request"));
@@ -498,7 +513,7 @@ impl Chat {
         };
         let ctx = ctx.filter(|v| (0..=MAX_CTX_TOKENS).contains(v));
         let (model, effort) = run_meta(model, effort);
-        if text.len() > MAX_TEXT || msg.is_empty() || text.trim().is_empty() {
+        if text.len() > MAX_TEXT || text.trim().is_empty() {
             return Ok(Response::error("bad_request"));
         }
         let (cid, agent) = {
@@ -582,3 +597,4 @@ impl Chat {
         Ok(Response::Ok)
     }
 }
+

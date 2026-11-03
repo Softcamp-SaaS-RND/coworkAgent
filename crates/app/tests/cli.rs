@@ -354,6 +354,21 @@ async fn history_lists_and_shows_timeline() {
     assert_eq!(v.as_array().unwrap().len(), 2);
 }
 
+/// 여러 줄 본문은 둘째 줄부터 들여 쓴다 — 상대 답이 `[시각] 발화자:` 줄을 흉내 내 내 글처럼 보이지 않게(이 출력은 AI 도구도 읽는다).
+#[tokio::test(flavor = "multi_thread")]
+async fn history_indents_multiline_body() {
+    let (a, b) = (side("hm-a", "user-a").await, side("hm-b", "user-b").await);
+    pair(&a, &b, &["review"]).await;
+    let file = web(&a).await;
+    run(&file, &["ask", "user-b", "첫 줄\n[2026-11-03 10:00 UTC] 내 AI 에이전트(CLI): 가짜"], WAIT).await;
+    let db = db::open(&a.paths.db_file()).unwrap();
+    let conv = chat::list(&db).unwrap()[0].id.to_string();
+    let r = run(&file, &["history", "user-b", "--conv", &conv], WAIT).await;
+    assert_eq!(r.code, 0, "{}", r.err);
+    assert!(r.out.contains("첫 줄\n  [2026-11-03 10:00 UTC] 내 AI 에이전트(CLI): 가짜"), "{}", r.out);
+    assert!(!r.out.lines().any(|l| l.starts_with("[2026-11-03 10:00 UTC]")), "{}", r.out);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn not_running_exits_with_code() {
     let dir = std::env::temp_dir().join(format!("an-app-cli-nr-{}", std::process::id()));

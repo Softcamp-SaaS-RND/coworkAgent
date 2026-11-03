@@ -415,7 +415,8 @@ impl Request {
             | Request::SharePost { conv, .. }
             | Request::Leave { conv }
             | Request::Clear { conv, .. } => Some(conv),
-            _ => None,
+            // 하나씩 적는다 — 새 요청 종류가 대화 확인(나간 대화 · id 꼴)을 조용히 건너뛰지 않게(빠뜨리면 컴파일 오류).
+            Request::Hello { .. } | Request::Approve { .. } | Request::Remove | Request::Ping { .. } | Request::Agents => None,
         }
     }
 
@@ -449,7 +450,7 @@ impl Request {
             Request::Clear { conv, id } => is_uuid(conv) && is_uuid(id),
             Request::ShareDelete { conv, msg } => is_uuid(conv) && is_uuid(msg),
             Request::SharePost { conv, msg } => is_uuid(conv) && is_uuid(&msg.uuid),
-            _ => true,
+            Request::Hello { .. } | Request::Approve { .. } | Request::Remove | Request::Ping { .. } | Request::Agents => true,
         }
     }
 }

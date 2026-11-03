@@ -26,14 +26,15 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
 
 ## 공개 계약
 
-- `runner::claude_args(&Agent, &Session, model, effort)` — `-p --output-format stream-json --verbose --restricted --strict-mcp-config --permission-prompts none
-  --permission-mode dontAsk --tools <t> --allowedTools <t> [--append-system-prompt <p>]` + `--session-id <uuid>`(`Session::New`) |
-  `--resume <id>`(`Session::Resume`) + 끝에 `--model <m> --effort <e>`. `--bare` · `bypassPermissions` 없음(D20 · D22).
-  프로필 `parent_read` 이고 `an_core::paths::parent_read_dir` 가 `Some` 이면 `--add-dir <바로 위 폴더>` + 시스템 프롬프트에 `[읽기 범위]` 한 줄(#05-2 —
-  `--restricted` 는 파일 도구를 작업 폴더 + `--add-dir` 안으로 가둔다, 허용 규칙 `Read(//…)` 로는 넘지 못한다 — 2.1.306 실측). `None` 이면 폴더만(로그 한 줄).
+- `runner::claude_args(&Agent, &Session, model, effort)` — `-p --output-format stream-json --verbose --permission-prompts none --permission-mode dontAsk
+  --allowedTools <읽기 · 웹(+ 셸)> --disallowedTools <편집(+ 셸 끔이면 셸)> --append-system-prompt <p> --system-prompt-snapshot off` + `--session-id <uuid>`(`Session::New`) |
+  `--resume <id>`(`Session::Resume`) + 끝에 `--model <m> --effort <e>`. `--bare` · `bypassPermissions` · `--restricted` · `--strict-mcp-config` 없음(D20 · D22 · D31 —
+  도구 · 탐색 · MCP 최대 허용, #1z-20 결정 6): 그 PC 의 MCP · 스킬 · 허용 규칙 그대로, 파일 도구는 폴더 밖도 읽는다(막는 것은 편집 도구만 — 원장 `#1z-20 R0-1 · R0-4` 수용).
+  프로필 `parent_read` 이고 `an_core::paths::parent_read_dir` 가 `Some` 이면 `--add-dir <바로 위 폴더>` + 시스템 프롬프트에 `[읽기 범위] 파일 도구는 이 폴더와 바로 위 폴더 … 아래를 읽는다.`
+  (셸 켜기와 무관하게 같은 문장 — 막지 않는 것을 막는다고 말하지 않는다). `None` 이면 폴더만(로그 한 줄).
   `--add-dir` 은 값을 여러 개 받아 뒤의 위치 인자를 먹는다 — 원격 텍스트가 표준 입력이라 해당 없음.
-  프로필 `shell`(#05-3)이면 `--tools` · `--allowedTools` 에 `an_core::agents::SHELL_TOOLS` 를 더하고 가드는 `SHELL_GUARD_PROMPT`(명령 실행 금지만 뺌), `[읽기 범위]` 는
-  "파일 도구는 … 아래를 읽는다"(셸은 범위 밖도 읽는다 — `--restricted` 는 `--tools` 에 적은 셸을 남긴다, 2.1.308 실측).
+  프로필 `shell`(#05-3)이면 `--allowedTools` 에 `an_core::agents::SHELL_TOOLS` 를 더하고 가드는 `SHELL_GUARD_PROMPT`(명령 실행 금지만 뺌).
+  실행마다 `claude --version` 확인은 실행 파일 경로별로 한 번(통과만 기억).
 - `runner::shell_env(vars)` — `SHELL_ENV_KEEP`(OS 기본 · 사용자 폴더 · 임시 · PATH · 프록시 · `CLAUDE_CONFIG_DIR` · `CLAUDE_CODE_GIT_BASH_PATH`)에 든 변수만(Windows 는
   이름 대소문자 무시). `run_process_lines(…, env, on_line)` — `env` 가 `Some` 이면 `env_clear` 뒤 그것만. `run_claude` 는 셸을 켠 실행만 `shell_env(vars_os())`(원장 `#1a A-I3`).
   압축 요약 실행(`chat`)은 셸을 끈 에이전트 사본으로 돈다. 실측 시험 `cargo test -p an-agent --test shell_canary -- --ignored --nocapture`.
@@ -84,7 +85,10 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
   panic · 취소에도) · `set_cap`(늘면 바로 당김) · `snapshot()`. `Chat` 하나 = PC 전체 문 — `process` 첫 줄 `admit` 에서 줄을 서고 **차례가 온 뒤**
   대화 · 에이전트 · 자동 왕복 멈춤을 읽는다(사람 요청 · 자동 왕복 · 이 PC 사람 요청 모두 같은 문). 상한 `max_runs(conn)`(설정 `MAX_RUNS_KEY`
   `max_runs`, 기본 `DEFAULT_MAX_RUNS` 2 · 1 ~ `MAX_RUNS` 8, 못 읽으면 기본값 + warn) · `run_queue() -> (cap, 실행 중 id, 기다리는 id)` ·
-  `set_max_runs(n)`(저장 + 문에 바로, 범위 밖 `InvalidInput`). 상대가 보낸 실행 요청이면 `Progress` 를 그 상대 보내기 줄(outbox, 키
+  `set_max_runs(n)`(저장 + 문에 바로, 범위 밖 `InvalidInput`). 상대별 상한 `PEER_RUN_CAP` 10 — 그 상대와의 대화에서 상대가 보낸 실행 글(사람 글 · 에이전트발 · 압축 구분선의 대기 + 실행,
+  `an_core::chat::peer_pending_runs`)이 상한이면 새 실행 요청(새 글 · 자동 왕복 승격 · `Context` 새 구분선)은 `retry`(재전송은 `Ok` — 보낸 쪽 outbox 가 다시 보낸다).
+  셈과 등록은 같은 DB 잠금 안 — 동시 요청이 남은 자리를 겹쳐 쓰지 못한다. 대화 작업은 꺼낸 글 집합 `taken` 을 대기열에 남은 글로 줄이고, 실행하지 않고
+  넘기지 않은 답으로 되돌린 자동 왕복 차례(`returned`)는 처리 직후 지운다 — 재개가 다시 줄 세우면(다음 대기열 읽기 전이어도) 다시 꺼낸다. 상대가 보낸 실행 요청이면 `Progress` 를 그 상대 보내기 줄(outbox, 키
   `progress:{글 uuid}` — 기다리는 진행은 마지막 값만)로: 기다리면 `queued`(앞 사람 수) → `running`, 바로면 `running`. 실행 중에는 실행기 단계 요약의
   마지막 값을 두고 작업 하나가 `step_every`(기본 10초 · 시험용 `set_step_every(Duration)`)마다 바뀐 것만 `running` + `detail` 로(10초 안에 끝나면
   보내지 않음). 보낸 쪽 `inbound_progress` — 그 상대 대화의 내 실행 요청 · `sent` 만(아니면 `unknown`, 상태 밖 `bad_request`, `detail` 은 `running`
@@ -119,12 +123,13 @@ Windows 는 `windows-sys`(Job Object — 자손 프로세스 종료, 프로세�
   "상대에 닿지 않음", `reply` · `reply_post` · `relay_last` → `undelivered`, 그 밖은 기록만). 시험용 `set_retry(base, max, give_up)`(초). 그 상대에서
   무엇이든 받거나(`handle` · `on_seen` 의 `Ping`) 상태 질의가 닿으면 `peer_back` — 그 상대 줄을 지금 보낸다. `recover` 는 남은 상대 줄을 지금 다시
   띄우고 7일 지난 실패 보관을 지운다. `outbox_of(&Message) -> Option<outbox::Item>` — 내 글의 보관 상태(웹UI "보내는 중" · "보내지 못함").
-- 받는 쪽 처리 오류(DB 잠금 등)는 거절이 아니라 `Error{RETRY}`(`retry`) — 보낸 쪽이 다시 보낸다.
+- 받는 쪽 처리 오류(DB 잠금 등)는 거절이 아니라 `Error{RETRY}`(`retry`) — 보낸 쪽이 다시 보낸다. 받은 대화를 열지 못한 것도 `an_core::chat::open_refused`(다른 상대의 대화 uuid · 묘비)일 때만
+  `bad_request`, 그 밖은 `retry`.
 - 상태 질의(#1c): `ask_status(&Message) -> Response` — 상대에 `Status` 를 바로(보관하지 않음), `queued` · `running` 이면 진행을 갱신. 받는 쪽
   `inbound_status` — 그 상대 대화의 상대 실행 요청 글이면 `queued`(실행 대기 목록의 앞 사람 수) · `running` · `done`(끝남 — 그 상대 줄을 지금
   보냄), 그 밖 `unknown`.
-- CLI 트랜잭션(#1c): `Compose.tx_key` — `via` 가 있는 글은 글과 같은 트랜잭션에서 `cli_tx` 를 만든다(키가 겹치면 글도 없음) · `keyed()`(키 있는 CLI
-  보내기 잠금 — API 가 같은 키 확인부터 보내기까지 잡는다) · `tx_of_message(id)` · `tx_by_key(key)` · `tx_resume(id)`(`wait` — 멈춤을
+- CLI 트랜잭션(#1c): `Compose.tx_key` — `via` 가 있는 글은 글과 같은 트랜잭션에서 `cli_tx` 를 만든다(키가 겹치면 글도 없음) · `keyed(key)`(키 있는 CLI
+  보내기 잠금 — 키 해시 16칸(`KEYED_LANES`) 중 하나, API 가 같은 키 확인부터 보내기까지 잡는다 · 다른 키는 대개 서로 기다리지 않는다) · `tx_of_message(id)` · `tx_by_key(key)` · `tx_resume(id)`(`wait` — 멈춤을
   풀고 다시) · `tx_view(id) -> Option<TxView{tx, state, message, reply, progress, outbox}>` — `state` 는 순서대로 `answered` · `failed`(실패 답 · 글
   실패) · `stalled` · `failed`(실패 보관) · `sending`(outbox 에 남음) · `queued` · `running` · `sent`. 끝나지 않았고 마지막 질의가 `every` 초 전이면 감시 작업을
   띄우고 바로 돌아온다(같은 트랜잭션은 겹쳐 묻지 않음) — `sending` 이면 그 상대 줄이 닿지 않고 있는지(`outbox::failing`), 그 밖은 `ask_status`.

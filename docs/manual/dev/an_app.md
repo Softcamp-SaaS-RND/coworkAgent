@@ -185,7 +185,8 @@
   `swap(exe)`(받아 둔 `.new` — exe 를 `.old` 로 → `.new` 를 제자리,
   실패면 되돌림) · `rollback(exe)`(지금 → `.bad` · `.old` → 제자리) · `pending`(`.old` 있음) · `settled`(`.old` 지움 — 앱 준비 뒤, 실행 중 이미지라 못 지우면 스레드가 1초마다 최대 60번 · R2) · `clean(exe)`(`.new` · `.bad` 지움). HTTP = `ureq`(rustls · `platform-verifier`), 시간 제한 연결 5초 · `latest` 10초 · 받기 120초.
   `main.rs` `supervise`: 감시 잠금 뒤 · `watchdog::supervise` 전 — 트레이 모드(부모 없음) · 릴리스 빌드 · `ASSET` 있음이면 `clean` → `check(RELEASES, asset,
-  CARGO_PKG_VERSION, update-skip.txt, current_exe, verify)` → `{outcome:?}` 를 `Paths::update_note_file()`(`update.txt`)에 덧붙임(R1 — 새 감시의 `UpToDate` 가 `Updated` 를 덮지 않게), `Updated` 면 새 exe 를 인자 없이 띄우고 0(못 띄우면 되돌림).
+  CARGO_PKG_VERSION, update-skip.txt, current_exe, verify)` → `{outcome:?}` 를 `Paths::update_note_file()`(`update.txt`)에 덧붙임(R1 — 새 감시의 `UpToDate` 가 `Updated` 를 덮지 않게), `Updated` 면 새 exe 를 인자 없이 띄우고 0(못 띄우면 되돌림), `Rejected(태그, 사유)`(받은 파일이 이 PC 의 실행 파일 꼴이 아님 · 서명 · 제품 · 버전 확인 실패)면 태그를 `update_skip_file` 에(시작마다 다시 받지 않게).
+  감시 잠금을 못 잡은 두 번째 실행(`hand_off`)은 감시가 살아 있는 동안(`watchdog::held`) `HANDOFF_WAIT` 150초까지 `instance.json` 을 기다린다(감시가 자동 업데이트 확인 중일 수 있다), 감시가 없으면 3초.
   자식 결과가 시작 실패 · `GaveUp` 이고 `pending` 이면 태그를 `update_skip_file` 에 · `rollback` · 잠금을 놓고 지난 exe 를 띄운다(R1). 앱 `start` 는 `instance.json` 뒤 `settled`.
   `start` 는 로거 뒤 `update.txt` 를 줄마다 `log::info!("자동 업데이트: …")` 로 옮기고 지운다 · 첫 `db::open` 뒤 `db::vacuum_if_sparse`(오류 = `warn` · 계속, `?` 아님).
   의존 `ureq` 3.4(`default-features = false`, `rustls` · `platform-verifier`) · `windows-sys` 기능 `Win32_Security_WinTrust` · `Win32_Security_Cryptography`(+ `_Catalog` · `_Sip`) · `Win32_Storage_FileSystem`. 시험 `tests/update.rs`(로컬 HTTP, `real_github_latest` · `real_signed_release` 는 `#[ignore]`).

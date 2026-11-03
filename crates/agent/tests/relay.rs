@@ -641,3 +641,37 @@ async fn mention_rejected_in_relay() {
             .is_none()
     );
 }
+
+/// 실행 자리를 기다리던 자동 왕복 차례를 멈췄다 재개하면 — 그 상대 답이 앱을 다시 켜지 않고 내 에이전트에 넘어간다.
+/// A 의 실행 자리(1)를 B 가 보낸 긴 질문("hold")이 잡은 동안 B 의 답이 A 에 와 줄을 서고, 그때 멈춤 → 자리가 나면 넘기지 않은 답으로 남음 → 재개.
+#[tokio::test(flavor = "multi_thread")]
+async fn stop_while_waiting_then_resume() {
+    let a = common::side_with("sw-a", |runs| {
+        let inner = common::fake_run(runs, Duration::ZERO);
+        std::sync::Arc::new(move |input: an_agent::runner::RunInput| {
+            let hold = common::body(&input.text) == "hold";
+            let out = inner(input); // 입력을 먼저 남긴다(runs) — 그 뒤 자리를 쥔다.
+            if hold {
+                std::thread::sleep(Duration::from_secs(3));
+            }
+            out
+        })
+    })
+    .await;
+    let b = common::side("sw-b", Duration::ZERO).await;
+    let (b_id, a_id) = common::pair(&a, &b).await;
+    agents::add(&common::db(&a), "mine", ".", "").unwrap();
+    agents::add(&common::db(&b), "review", ".", "").unwrap();
+    a.chat.set_max_runs(1).unwrap();
+    b.chat.send(a_id, "mine", None, "hold").await.unwrap();
+    common::eventually(|| a.runs.lock().unwrap().len() == 1).await;
+    let (conv, _) = a.chat.start_relay(b_id, "review", "mine", 10, "시작", None).await.unwrap();
+    // B 의 답이 A 에 와 실행 자리를 기다린다.
+    common::eventually(|| !chat::pending(&common::db(&a), conv.id).unwrap().is_empty()).await;
+    a.chat.relay(conv.id, false).await.unwrap();
+    // 자리가 나면 그 차례는 넘기지 않은 답으로 끝난다(실행 없음).
+    common::eventually(|| chat::pending(&common::db(&a), conv.id).unwrap().is_empty()).await;
+    assert_eq!(a.runs.lock().unwrap().len(), 1, "멈춘 차례는 실행하지 않는다");
+    a.chat.relay(conv.id, true).await.unwrap();
+    common::eventually(|| a.runs.lock().unwrap().len() == 2).await;
+}

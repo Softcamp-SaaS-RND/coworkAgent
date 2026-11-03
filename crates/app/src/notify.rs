@@ -470,6 +470,10 @@ impl Notifier {
             }
         };
         st.prefs = prefs;
+        // 저장한 값과 메모리를 함께 — 아래 자동 시작 지우기가 실패해 오류를 돌려줘도 저장은 이미 끝났다.
+        if let Some(on) = patch.notify_inbound {
+            st.enabled = on;
+        }
         if let Some((h, false)) = auto
             && let Err(e) = h(false)
         {
@@ -481,9 +485,6 @@ impl Notifier {
             return Err(e);
         }
         drop(hook);
-        if let Some(on) = patch.notify_inbound {
-            st.enabled = on;
-        }
         Ok(())
     }
 

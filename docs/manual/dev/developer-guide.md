@@ -123,7 +123,7 @@ python tools/check_crates.py
   exe 자리가 빈다 — 실행 중 이미지는 한 번에 바꿀 수 없어 남는 위험, 그때는 `coworkAgent.exe.old` 를 `coworkAgent.exe` 로 손으로 바꾼다.
 - **되돌리기**(적대적 평가 R1) — 교체 뒤 새 exe 를 띄우지 못하거나, 새 버전 앱이 시작 실패(코드 3) · 60초 안 3번 죽음이고 `.old` 가 남아 있으면(아직 한 번도 준비되지
   않음) 감시가 `rollback`(지금 exe → `.bad` · `.old` → 제자리) 뒤 지난 버전을 띄운다. 교체한 감시는 잠금을 먼저 놓고 새 감시를 띄운 뒤 15초 동안 지켜보다
-  (`NEW_SUPERVISOR_GRACE`, R2) 새 감시가 앱을 띄우기 전에 실패로 끝나면 직접 되돌린다. 그 태그는 `update-skip.txt` 에 남겨 다시 받지 않는다(다음 태그는 받는다).
+  (`NEW_SUPERVISOR_GRACE`, R2) 새 감시가 앱을 띄우기 전에 실패로 끝나면 직접 되돌린다. 그 태그는 `update-skip.txt` 에 남겨 다시 받지 않는다(다음 태그는 받는다) — 받은 파일이 확인(실행 파일 꼴 · 서명 · 제품 · 버전)에 떨어진 태그도 같다(`Outcome::Rejected`).
   새 버전 앱이 준비되면(`instance.json` 쓴 뒤) `settled` 가 `.old` 를 지운다 — 지난 감시가 아직 `.old` 이미지로 떠 있어 못 지우면 1초마다 다시(최대 60번, 적대적 평가 R2). 다음 시작의 `clean` 은 `.new` · `.bad` 만 지운다.
 - **시험**: `crates/app/tests/update.rs`(로컬 HTTP — `update_*` · 확인은 주입, `authenticode_rejects_unsigned` = 서명 · 버전 리소스 없는 시험 exe), `real_github_latest` ·
   `real_signed_release`(실제 배포처의 최신 정식 exe 를 받아 서명 · 제품 · 버전 통과 · 다른 서명자 이름 · 다른 제품 이름 · 더 높은 태그 · 한 바이트 고친 사본 실패)는 `#[ignore]` — 릴리스 뒤 `-- --ignored` 로 손으로.

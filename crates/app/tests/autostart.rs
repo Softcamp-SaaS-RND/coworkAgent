@@ -127,6 +127,22 @@ async fn hook_failure_500_and_not_saved() {
     assert_eq!(get(port, &auth).await["autostart"], true);
 }
 
+/// 자동 시작 끄기(OS 지우기)만 실패 — 함께 보낸 다른 설정은 저장됐으니, 알림 전체 켜짐도 저장된 값 그대로 동작한다(저장 · 메모리가 어긋나지 않는다).
+#[tokio::test]
+async fn autostart_off_failure_keeps_notify_in_sync() {
+    let path = db_path("sync");
+    let n = Notifier::new(an_core::db::open(&path).unwrap(), |_| {}).unwrap();
+    n.set_autostart_hook(|on| if on { Ok(()) } else { Err(io::Error::other("레지스트리 거부")) });
+    let (port, auth) = web(n.clone()).await;
+    assert_eq!(put(port, &auth, r#"{"autostart":true}"#).await, 200);
+    assert!(!n.enabled());
+    assert_eq!(put(port, &auth, r#"{"notify_inbound":true,"autostart":false}"#).await, 500);
+    let saved = an_core::settings::get(&an_core::db::open(&path).unwrap(), notify::NOTIFY_KEY).unwrap();
+    assert_eq!(saved.as_deref(), Some("1"), "알림 켜짐은 저장됐다");
+    assert!(n.enabled(), "메모리도 저장 값과 같다");
+    assert_eq!(get(port, &auth).await["autostart"], true, "자동 시작은 되돌렸다");
+}
+
 /// 순서 — 켜기는 OS 등록이 저장보다 먼저, 끄기는 저장 뒤에 OS 지우기(라운드 2 high). 훅이 부를 때의 저장 값을 보면 어느 지점에서 중단돼도
 /// "저장 켜짐 · OS 꺼짐" 이 남지 않는다: 켜기 훅 때 저장은 아직 꺼짐 · 끄기 훅 때 저장은 이미 꺼짐.
 #[tokio::test]

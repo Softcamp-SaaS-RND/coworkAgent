@@ -176,6 +176,10 @@ impl Chat {
                 if c.dir == Dir::Out && c.relay.is_none() {
                     return Ok(Response::error("bad_request"));
                 }
+                // 압축도 실행이다 — 상대별 상한(셈과 등록이 같은 잠금 안).
+                if chat::peer_pending_runs(&db, c.peer_id).map_err(db_err)? >= PEER_RUN_CAP {
+                    return Ok(Response::error(RETRY));
+                }
                 chat::add_context(&db, c.id, &msg, &op, State::Queued, false, true)
                     .map_err(db_err)?;
                 drop(db);

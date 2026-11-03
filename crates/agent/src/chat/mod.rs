@@ -55,6 +55,8 @@ pub fn default_relay_cap(conn: &Connection) -> Result<i64, an_core::db::Error> {
 pub const MAX_RUNS_KEY: &str = "max_runs";
 pub const DEFAULT_MAX_RUNS: usize = 2;
 pub const MAX_RUNS: usize = 8;
+/// 한 상대가 이 PC 에 쌓아 둘 수 있는 실행(대기 + 실행) — 넘으면 `retry`(보낸 쪽 outbox 가 기다렸다 다시 보낸다). 한 상대가 실행 자리를 독차지하지 않게.
+pub const PEER_RUN_CAP: i64 = 10;
 
 /// 동시 실행 상한 — 설정이 없거나 범위 밖이면 `DEFAULT_MAX_RUNS`. DB 오류는 기본값으로 감추지 않는다.
 pub fn max_runs(conn: &Connection) -> Result<usize, an_core::db::Error> {
@@ -113,6 +115,8 @@ const STOPPED: &str = "stopped";
 
 /// 받는 쪽이 잠시 처리하지 못했다(거절 아님 — 보낸 쪽이 다시 보낸다).
 pub const RETRY: &str = "retry";
+/// 키 있는 CLI 보내기 잠금 칸 수.
+const KEYED_LANES: usize = 16;
 
 /// 보내기 결과 — 상대 응답 또는 보관(전송 오류 · 앞선 행이 있어 줄에 섬 — 사유는 outbox 행에).
 enum Shipped {
@@ -180,9 +184,11 @@ pub struct Chat {
     watch: Mutex<Watch>,
     /// 실행 중 단계 요약을 보낸 쪽에 알리는 간격(기본 10초, 그 사이 바뀐 것은 마지막 값 하나로 합친다).
     step_every: Mutex<std::time::Duration>,
-    /// 키 있는 CLI 보내기 줄 세우기 — 같은 키를 동시에 두 번 보내도 확인 · 보내기 사이에 끼어들지 못하게.
-    // ponytail: 키 있는 CLI 보내기 전체를 한 줄로 — 동시 CLI 가 많아지면 키별 잠금으로.
-    keyed: tokio::sync::Mutex<()>,
+    /// 키 있는 CLI 보내기 줄 세우기 — 같은 키를 동시에 두 번 보내도 확인 · 보내기 사이에 끼어들지 못하게. 키 해시로 고른 칸 하나 —
+    /// 다른 키는 (같은 칸에 걸리지 않으면) 서로의 보내기(상대가 꺼져 있으면 연결 제한만큼)를 기다리지 않는다.
+    keyed: [tokio::sync::Mutex<()>; KEYED_LANES],
+    /// 실행하지 않고 넘기지 않은 답으로 되돌린 자동 왕복 차례 — 대화 작업이 꺼낸 글 집합에서 지워 재개가 다시 줄 세우면 다시 꺼낸다.
+    returned: Mutex<std::collections::HashSet<i64>>,
     /// 지금 상대에 상태를 묻고 있는 트랜잭션(같은 것을 겹쳐 묻지 않게).
     watching: Mutex<std::collections::HashSet<i64>>,
     /// 줄 작업을 띄울 때 쓰는 자기 참조.
@@ -303,7 +309,8 @@ impl Chat {
                 stall_after: 600,
             }),
             step_every: Mutex::new(std::time::Duration::from_secs(10)),
-            keyed: tokio::sync::Mutex::new(()),
+            keyed: std::array::from_fn(|_| tokio::sync::Mutex::new(())),
+            returned: Mutex::new(std::collections::HashSet::new()),
             watching: Mutex::new(std::collections::HashSet::new()),
             me: me.clone(),
         })

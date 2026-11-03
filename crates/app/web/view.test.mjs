@@ -78,6 +78,7 @@ import {
 import {
   isHtmlDoc,
   htmlSrcdoc,
+  inlines,
   markdownBlocks,
 } from "./js/logic/markdown.js";
 import {
@@ -568,6 +569,13 @@ test("markdown_blocks_safe — 블록 · 인라인, HTML · 링크는 글자 그
   assert.equal(blocks[5].inlines[0].v, "주의 <script>alert(1)</script>", "태그는 글자");
   assert.equal(blocks[6].text, "<img src=x onerror=alert(1)>");
   assert.deepEqual(blocks[7].inlines, [{ t: "text", v: "[링크](javascript:alert(1)) <b>굵게</b>" }], "링크 · 태그는 글자");
+  // 번호 목록은 시작 번호를 지킨다(빈 줄 · 하위 항목으로 끊겨도, 날짜 줄도) — 1 이면 없음.
+  assert.equal(blocks[2].start, undefined, "1 부터면 시작 번호 없음");
+  assert.equal(markdownBlocks(["2. 실행", "3. 확인"].join("\n"))[0].start, 2);
+  assert.equal(markdownBlocks("2026. 11. 3. 배포 완료")[0].start, 2026, "날짜 줄은 연도 그대로");
+  // 닫는 * 앞이 공백이면 기울임이 아니다 — 백틱 없는 파일 패턴의 별표가 사라지지 않는다.
+  assert.deepEqual(inlines("match *.rs or *.toml"), [{ t: "text", v: "match *.rs or *.toml" }]);
+  assert.deepEqual(inlines("*기울임* 끝"), [{ t: "i", v: "기울임" }, { t: "text", v: " 끝" }]);
   assert.deepEqual(markdownBlocks("설정_키_값 과 _기울임_")[0].inlines, [{ t: "text", v: "설정_키_값 과 " }, { t: "i", v: "기울임" }], "낱말 안 _ 는 글자");
   // 블록 · 인라인 종류는 정해진 것뿐 — 그리는 쪽이 고를 태그가 정해져 있다.
   const kinds = new Set();

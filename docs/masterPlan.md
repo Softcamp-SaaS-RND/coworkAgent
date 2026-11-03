@@ -182,6 +182,10 @@
   **요청**(S1 — 사람이 처리). 기각안: 시스템 프롬프트만.
   (#1z-17 개정 — 사용자 "추가지시를 에이전트가 잘 준수할 수 있도록 시스템 프롬프트의 앞에 배치") 덧붙이는 글 순서 = `[수신자 추가 지시]`(프로필) → 가드 → `[읽기 범위]`
   (Claude `--append-system-prompt` · Codex `developer_instructions` — Claude Code 기본 시스템 프롬프트는 그대로, 편집 도구 막음 · 읽기 전용 샌드박스 그대로).
+  (#1z-20 개정 — 사용자 "내부회의 결과 mcp/도구 사용은 최대한 허용 … 각 부서간 cowork … AI Agent 의 정확한 응답(MCP/도구 활용)이 더 중요 … 부작용은 감수함")
+  원격 실행의 **도구 · 탐색 · MCP 는 최대 허용** — 그 PC 의 MCP · 스킬 · 허용 규칙 그대로, 파일 도구는 폴더 밖도 읽음(경로 금지 규칙 없음), Codex 는 앱 환경 변수 그대로.
+  막는 것은 편집 도구(D22)뿐. 위험(신원 키 · 대화 DB · `~/.claude` · `~/.ssh` 읽기 · MCP 쓰기 · 환경 변수)은 원장 `#1z-20 R0-1 · R0-4 · R0-5` 수용, 안내문 · 사용자 가이드는
+  막는다고 말하지 않는다. 한 상대가 이 PC 에 쌓는 실행(대기 + 실행 · 압축 포함) 상한 10 — 넘치면 `retry`. 기각: 데이터 폴더 · `~/.claude` · `~/.ssh` 경로 금지(`Read(//…)`) · `mcp__*` 금지.
 - **D32** **배포 전 하위 호환 없음** — 피어 프로토콜은 이전 버전 상대를 고려하지 않는다(양쪽 같은 빌드 전제, 호환 장치 신설
   없음). 사용자 데이터(SQLite)는 보존 대상이라 순방향 마이그레이션 유지. 배포(S6) 시작 시 다시 정한다.
 - **D33** **위협 모델 — 한 PC = 한 사용자**. 다른 로그인 사용자 · 같은 사용자 권한의 악성 프로세스는 범위 밖. 데이터 루트는
@@ -218,6 +222,8 @@
     안 읽음 = 테두리 색 + "새 글 n" · 바닥 "에이전트 · 시각" + 상태 점, 카드 안 말풍선 12px · 줄간격 1.5(대화방 말풍선은 그대로), "+n개 더 보기", 대화 없는 상대 = 머리 한 줄.
     색 · 크기 = 미리보기 전용 토큰 `--pv-*`(다크 = 어두운 종이 톤). 기각안: A 파스텔 피치 · B 파스텔 민트·스카이 · D 소프트 다크.
     (#1z-13 개정 — 사용자 "새 언어로 함께 바꿈") 종이 톤 없음 — 색은 공용 토큰, `--pv-*` 는 크기 · 간격만.
+    (#1z-20 개정 — 사용자 "미리보기 카드 상단의 `방금 통신`, `XX시간 전 통신` 등의 내용은 실제 대화 시간과 맞지 않음. 현행화가 안될 경우 해당 정보는 표시하지 않도록") 절 머리 접속 = 점만(접속 글 없음 —
+    접속 시각은 통신할 때만 바뀌어 카드의 마지막 글 시각과 어긋남, D7). 레일 · 대화 머리글 · 목록 보기의 접속 글은 그대로. 기각: "n시간 전 대화" · 점까지 지움.
   - (#1z-7 — 2026-10-23 사용자, 시안 A) **대화 유형 색 · 아이콘** — 대화는 두 유형: 내 에이전트가 답(`in`) = 청록(`--agent`) · 로봇, 내가 다른 에이전트에 문의(`out`) =
     파랑(`--accent`) · 사람, 공유 사본 = 회색 점선 · 아이콘 없음. 대화 머리(제목 앞 아이콘 · 머리 아래 선) · 사이드바 대화 줄(대화 · 즐겨찾기 · 에이전트 응답) · 개요 미리보기 카드 ·
     개요 목록 줄이 같은 규칙 — 테두리 = 유형 색, 고른 줄 = 유형 옅은 바탕, 안 읽음 카드 = 바깥 윤곽선(유형 테두리를 덮지 않게). (#1z-11 개정 — 개요 미리보기 카드만 아이콘 색 · 한 색 테두리 · 안 읽음 테두리 색.) 말풍선 · 설정의 대화 관리 줄은 그대로.
@@ -386,7 +392,7 @@ Task 상태는 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`).
 Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 1b.inbound-capacity · 1c.durable-messaging · 1d.request-list ·
 1e.autostart-watchdog · 1f.message-edit · 1g.rail-scope · 1h.stabilization · 1i.rail-group · 1j.messenger-ui · 1k.ui-polish ·
 1l.ui-icons · 1m.context-compact · 1n.cli-start-stop · 1o.chat-list-split · 1p.project-tidy · 1q.request-overview · 1r.ui-polish ·
-1s.fold-line-readme · 1t.notion-ux · 1u.scoped-refresh · 1v.notion-design · 1w.conv-leave · 1x.session-ui · 1y.data-update · 1z.chat-look · 1z-2.ui-refine · 1z-3.activity-color · 1z-4.home-preview · 1z-5.home-thumb · 1z-6.home-zoom · 1z-7.conv-type-look · 1z-8.settings-search · 1z-9.agent-engine · 1z-10.conv-info · 1z-11.overview-calm · 1z-12.code-tidy · 1z-13.design-taste · 1z-14.ui-touchup · 1z-15.tile-color · 1z-16.owner-chat · 1z-17.time-date · 1z-18.ui-fixes · 1z-19.tray-guide. 남음:
+1s.fold-line-readme · 1t.notion-ux · 1u.scoped-refresh · 1v.notion-design · 1w.conv-leave · 1x.session-ui · 1y.data-update · 1z.chat-look · 1z-2.ui-refine · 1z-3.activity-color · 1z-4.home-preview · 1z-5.home-thumb · 1z-6.home-zoom · 1z-7.conv-type-look · 1z-8.settings-search · 1z-9.agent-engine · 1z-10.conv-info · 1z-11.overview-calm · 1z-12.code-tidy · 1z-13.design-taste · 1z-14.ui-touchup · 1z-15.tile-color · 1z-16.owner-chat · 1z-17.time-date · 1z-18.ui-fixes · 1z-19.tray-guide · 1z-20.audit-fixes. 남음:
 - 후보(착수 전): 통계 메뉴(사이드바 상단 — 보여줄 숫자 미정 · 서버 집계 API 필요).
 - 후보(착수 전): outbox 정산 순서 점검 — 기존 종류(`req_state` 거절 등)도 "행을 지운 뒤 정산" 순서라 원자성 보강이 필요한지 판단(1f 평가의 범위 밖 관찰).
 - 후보(착수 전): 요청 보드 보기 설정(D39 ① · 1t U2 — U1 은 #1v 종결) — 보드의 그룹 · 정렬 · 거르기(이 PC 에만, 지금 보기 기억은 `ui_folded` 열쇠를 빌려 씀 → 전용 설정 키). 닿는 D·S: D35 · D39.
@@ -485,6 +491,8 @@ Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 
   확인할 일 — 받은 요청 · 연결 요청 · 연결 승인 · 내 요청 상태 변경만, 알림 설정과 무관) — 사용자 지시 · 질문 답 · UI 시안 · 확인 답 · "종결 승인", 버전 1.4.3, 종결 목록에 1z-18
 - 2026-11-03 · Task #1z-19 · S4 개정(트레이 메뉴 "열기" · "매뉴얼" · "종료" — "매뉴얼" = GitHub main 사용자 가이드, 처음 "사용자 매뉴얼" → 사용자 지시로 "매뉴얼") · 사용자 가이드 간결 재작성(10장 · 캡처 11장) —
   사용자 지시 · "승인." · "진행." · "종결 진행", 버전 1.4.4, 종결 목록에 1z-19
+- 2026-11-03 · Task #1z-20 · D31 개정(원격 실행 도구 · 탐색 · MCP 최대 허용 · 상대별 실행 상한 10) · D7 보강(받기 DB 일시 오류 = `retry`) · S4 개정(개요 미리보기 절 머리 = 접속 점만) —
+  저장소 점검 지적 20 개선 · 사용자 "진행." · 결정 6(내부 회의) · 리뷰 2/2, 버전 1.4.5, 종결 목록에 1z-20
 - 2026-10-24 · Task #1z-12 · D10 보강(웹 원본 = ES 모듈 `js/` 48 · 서버 내장 표 `SCRIPTS` · `/js/{모듈}` 정확 이름만 토큰 없이) · 코드 정리(크레이트 안 도메인 모듈 · 죽은 코드 · 주석 = 왜 · 보안 · 함정만, 결정 이력은 문서 — 검증 명령 `tools/check_code_tidy.py`, 동작 · 버전 1.3.6 그대로) — 사용자 결정(질문 답 넷 · "권장 방안 승인." · 재개 "권장 방안으로 진행." — A2 예외 = 도메인을 가로지르는 화면 흐름, 동작 불변인 중복 지움), 종결 목록에 1z-12
 - 2026-10-19 · 1.0.0 배포 · D25 보강(보유한 Mac 의 macOS universal 실행 파일을 사전 배포에 첨부, 확인 · 서명은 Phase 4) — 사용자 지시(버전 1.0.0 · Mac 빌드 = 보유한 Mac)
 - 2026-10-19 · S1 개정(요청 상태 = 네 상태 사이 어디로든 — 되돌리기 포함) · S4 보강(요청 보드 손잡이 포인터 끌기 · 놓은 열로 옮김 · 요청 화면 "메모" → "피드백") — 사용자 지시(Task 밖 수정)

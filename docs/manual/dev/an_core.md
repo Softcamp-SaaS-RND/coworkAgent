@@ -21,18 +21,18 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
 
 ## 공개 계약
 
-- `paths::Paths` — `legacy_root()` · `adopt_legacy(legacy)`(개명 전 이름 `LEGACY_APP_DIR` 의 데이터를 첫 실행 때 이어받음 — 옛 `instance.lock` 을 잡고 항목별로 옮김 · 옛 DB · 로그는 새 이름, 옛 앱 실행 중 · 두 루트 모두 데이터면 오류로 시작 멈춤, 다시 불러도 안전) · `default_root()`(Windows `%LOCALAPPDATA%\coworkAgent` · macOS `~/Library/Application Support/coworkAgent`) ·
+- `paths::Paths` — `legacy_root()` · `adopt_legacy(legacy)`(개명 전 이름 `LEGACY_APP_DIR` 의 데이터를 첫 실행 때 이어받음 — 옛 `instance.lock` 을 잡고 항목별로 옮김 · 옛 DB · 로그는 새 이름, 옛 앱 실행 중 · 같은 데이터(신원 · DB)가 두 루트 모두에 있으면 오류로 시작 멈춤, 반쯤 옮긴 상태는 이어서 옮김 · 옛 DB 곁 파일(`-journal` · `-wal` · `-shm`)도 새 DB 이름으로 — 곁 파일만 남아도 옮김, 다시 불러도 안전) · `default_root()`(Windows `%LOCALAPPDATA%\coworkAgent` · macOS `~/Library/Application Support/coworkAgent`) ·
   `under(root)` · `db_file` · `log_dir` · `log_file` · `lock_file` · `instance_file` · `identity_file` · `ensure()` · `restrict()`(#1a — 루트를 소유자
-  전용으로, 주 인스턴스가 잠금 뒤 매 시작) · `instance_pid_file` · `supervisor_lock_file` · `supervisor_pid_file`(#1n) · `update_skip_file`(#1y — `update-skip.txt`, 되돌린 태그) · `update_note_file`(#1y — `update.txt`, 감시가 남긴 자동 업데이트 결과). 경로 API 는 루트를 인자로 받는다 —
+  전용으로, 주 인스턴스가 잠금 뒤 매 시작) · `instance_pid_file` · `supervisor_lock_file` · `supervisor_pid_file`(#1n) · `update_skip_file`(#1y — `update-skip.txt`, 되돌렸거나 확인에 떨어진 태그) · `update_note_file`(#1y — `update.txt`, 감시가 남긴 자동 업데이트 결과). 경로 API 는 루트를 인자로 받는다 —
   환경 변수 스위치는 디버그 빌드의 `DATA_DIR_ENV`(`COWORKAGENT_DATA_DIR` — `default_root` 를 바꾸고 `legacy_root` 는 없음, 시험 전용) 하나뿐. `paths::protected_roots()` ·
   `agent_folder_problem(folder) -> Option<이유>`(데이터 루트를 품음 · 그 안 · 네트워크 경로 — 등록 · 수정 · 실행 직전) · `folder_blocked(folder, roots)` ·
   `parent_read_dir(folder) -> Option<PathBuf>`(#05-2 — 상위 한 단계 읽기로 `--add-dir` 에 줄 바로 위 폴더. 위가 없음 · 드라이브 루트 · 사용자 홈 ·
   `agent_folder_problem` 이면 `None`, 비교는 정규화 · 대소문자 무시, 돌려주는 값은 정규화 전 경로).
 - `owner_only::restrict(dir)`(#1a) — Windows 보호 DACL(토큰 사용자 SID · SYSTEM, `FILE_ALL_ACCESS`, 하위 상속) · Unix 0700.
 - `sync::lock(&Mutex<T>)`(#1a) — 오염된 잠금도 안의 값을 꺼내 계속 쓴다(warn). 원시 `.lock().expect(` 는 쓰지 않는다.
-- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(29)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
+- `db::open(path)` — 스키마를 `SCHEMA_VERSION`(30)으로 올린다(→ 2 `peers` 표, → 3 `settings` 표, → 4 `agents` · `conversations` · `messages` 표, → 5
   `messages` 에 `reply_to` · `turns` · `duration_ms` — 한 트랜잭션, 있는 열은 건너뜀). 더 새 스키마면 오류. 올리기 전 `{db}.v{버전}.bak`
-  사본(`db::backup_path`, `VACUUM INTO`) — 이전 실행 파일로 롤백할 때 DB 를 이 사본으로 바꿔 쓴다. → 6 `messages` 에 `mine` ·
+  사본(`db::backup_path`, `VACUUM INTO` 를 `….bak.tmp` 에 뜬 뒤 이름 바꿈 — 끊긴 반쪽 파일을 사본으로 믿지 않는다, 남은 `.tmp` 는 지우고 다시) — 이전 실행 파일로 롤백할 때 DB 를 이 사본으로 바꿔 쓴다. → 6 `messages` 에 `mine` ·
   `exec` · `lc`(이전 이력은 방향 · id 로 채움). → 7 `conversations` 에 `relay_agent` · `relay_cap` · `relay_count` · `relay_on` ·
   `relay_blocked`(자동 왕복 D24). → 8 `messages` 에 `via`(글의 출처 — `cli` · NULL). → 9 `peers` 에 `grp` · `model` · `effort`, `agents` 에 `grp`. → 10 `conversations` 에
   `title`, `peers` 에 `alias` · `icon`(이 PC 에만 — 상대에 보내지 않는다). → 11 `conversations` 에 `starred_at` · `read_id`, `messages` 에 `saved_at` ·
@@ -70,7 +70,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   `by_id` · `list` · `remove` · `update(id, folder, prompt, group)`(`group` 은 #1j 화면이 쓰지 않는다 · 이름은 바꾸지 않는다 — 대화 · 상대 PC 가 이름으로 부른다. 폴더가 바뀌면
   그 에이전트가 이어 가던 세션(받은 대화 · 내가 연 자동 왕복 · 멘션 `agent_sessions`)을 비운다 — `forget_sessions(name)`, `remove` 도 같다 — Claude 세션은 폴더에 묶여 있다).
 - `chat` — `Dir{Out,In,Shared}`(#1o `shared` = 남이 나를 관람자로 넣은 사본) · `Message.owner` · `find_own` · `Author{Human,Agent}` · `State{Sent,Queued,Running,Done,Error,Undelivered}` · `Conversation` · `Message`.
-  `open_conversation(uuid, peer_id, agent, dir)`(다른 상대의 같은 uuid 는 오류) · `find(uuid, peer_id)` · `by_id` · `list` · `set_session` ·
+  `open_conversation(uuid, peer_id, agent, dir)`(다른 상대의 같은 uuid 는 오류) · `open_refused(&err)`(그 오류가 거절 — 다른 상대 uuid · 묘비 — 인가, 잠금 등은 아님) · `peer_pending_runs(peer_id)`(그 상대와의 대화에서 상대가 보낸 실행 대상 — `mine` 아님 · exec — 의 대기 + 실행 수) · `find(uuid, peer_id)` · `by_id` · `list` · `set_session` ·
   `add_message` · `add_reply(…, reply_to, turns, duration_ms)`(에이전트 답) · `set_state` · `messages` · `message_by_uuid` ·
   `pending(conv)`(DB 대기열 — 커서 없이 매번 처음부터) · `pending_conversations` · `summaries`(`Summary{conversation, title(이 PC 에서 붙인 제목,
   없으면 첫 사람 메시지 앞 40자), last_state, last_at}`, 최근 것 먼저) · `Summary.last: Option<LastMessage{text, author, mine, agent, via}>`(#1j — 대화
@@ -135,6 +135,7 @@ OS UI · HTTP · 암호를 모른다(SPKI 는 BLOB 으로만).
   스키마 19(#1m, 한 트랜잭션): `messages.ctx_tokens` · `ctx_op` · `ctx_seeds(conversation_id, agent, text)`. `chat::Author::Context` · `set_ctx_tokens` ·
   `add_context` · `finish_context` · `sessions(conv)` · `clear_sessions(conv, keep_seeds)` · `set_ctx_seed` · `ctx_seed` · `drop_ctx_seed`, `pending` 은 구분선
   글 먼저 · 구분선은 내 활동 · 미리보기 · 안 읽음 · 가로지른 글 · 메모 범위에서 뺌.
+  스키마 30(#1z-20, 한 트랜잭션): 색인 `outbox_msg(msg_id)`(글마다 보내기 줄 — `outbox::for_message`) · `messages_conv_lc(conversation_id, lc, uuid)`(대화 안 순서 끝 글).
   스키마 29(#1z-15, 한 트랜잭션): `peers.color` · `groups.color`(TEXT NOT NULL — 이 PC 의 타일 색, `agents::ICON_COLORS` 열쇠) — 더한 뒤 있던 행은
   `run_opts::TILE_COLOR_RANDOM`(SQL `abs(random()) % 6`)으로 한 번 정해 저장, 새 상대(`peers::upsert` INSERT — 다시 hello 갱신은 색 그대로) · 새 그룹(`groups::add`)도 같은 식.
   `peers::set_color` · `groups::set_color`(값 검사 `run_opts::clean_tile_color` — 여섯만), '나' = 설정 `me_color`(`run_opts::ME_COLOR_KEY`, 빈 · 틀린 값 = 흑연 — `me_tile` 셋째 값).

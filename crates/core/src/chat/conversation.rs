@@ -65,6 +65,15 @@ pub fn open_conversation(
     by_id(conn, conn.last_insert_rowid()).map(|c| c.expect("방금 쓴 대화"))
 }
 
+/// [`open_conversation`] 이 거절한 경우인가 — 다른 상대의 대화 uuid(UNIQUE 위반) · 지운 대화(묘비 = 행 없음). 그 밖(DB 잠금 등)은 일시 오류다.
+pub fn open_refused(e: &rusqlite::Error) -> bool {
+    match e {
+        rusqlite::Error::QueryReturnedNoRows => true,
+        rusqlite::Error::SqliteFailure(f, _) => f.code == rusqlite::ErrorCode::ConstraintViolation,
+        _ => false,
+    }
+}
+
 /// [`find`] 중 공유 사본이 아닌 것 — 상대의 대화 프레임은 이 PC 의 사본을 건드리지 못한다(사본은 `share` 만 쓴다).
 pub fn find_own(
     conn: &Connection,

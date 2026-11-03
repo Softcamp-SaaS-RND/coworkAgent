@@ -35,7 +35,7 @@ export function markdownEl(text) {
     else if (b.type === "p") box.append(el("p", {}, ...inlineEls(b.inlines)));
     else if (b.type === "quote") box.append(el("blockquote", {}, ...inlineEls(b.inlines)));
     else if (b.type === "code") box.append(el("pre", {}, el("code", { text: b.text })));
-    else if (b.type === "ul" || b.type === "ol") box.append(el(b.type, {}, ...b.items.map((it) => el("li", {}, ...inlineEls(it)))));
+    else if (b.type === "ul" || b.type === "ol") box.append(el(b.type, { start: b.start }, ...b.items.map((it) => el("li", {}, ...inlineEls(it)))));
     else if (b.type === "table")
       box.append(
         el(

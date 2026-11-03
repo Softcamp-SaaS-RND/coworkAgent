@@ -16,7 +16,7 @@ export function htmlSrcdoc(text) {
 /// 인라인 — `코드` · **굵게** · *기울임* · _기울임_. 그 밖(링크 · HTML 태그 포함)은 글자 그대로.
 export function inlines(text) {
   const out = [];
-  const re = /`([^`]+)`|\*\*([^*]+)\*\*|\*([^*\s][^*]*)\*|(?<![\p{L}\p{N}_])_([^_\s][^_]*)_(?![\p{L}\p{N}_])/gu;
+  const re = /`([^`]+)`|\*\*([^*]+)\*\*|\*([^*\s](?:[^*]*[^*\s])?)\*|(?<![\p{L}\p{N}_])_([^_\s][^_]*)_(?![\p{L}\p{N}_])/gu;
   let at = 0;
   for (const m of text.matchAll(re)) {
     if (m.index > at) out.push({ t: "text", v: text.slice(at, m.index) });
@@ -74,7 +74,9 @@ export function markdownBlocks(text) {
       const ordered = /\d/.test(m[1]);
       const items = [inlines(m[2])];
       for (let n; i + 1 < lines.length && (n = ITEM.exec(lines[i + 1])) && /\d/.test(n[1]) === ordered; i++) items.push(inlines(n[2]));
-      blocks.push({ type: ordered ? "ol" : "ul", items });
+      // 번호 목록은 첫 항목 번호부터(빈 줄 · 하위 항목으로 끊긴 목록 · 날짜 줄) — 1 이면 생략.
+      const start = ordered ? parseInt(m[1], 10) : 1;
+      blocks.push({ type: ordered ? "ol" : "ul", items, ...(start !== 1 && { start }) });
     } else if ((m = /^\s*>\s?(.*)$/.exec(line))) {
       flush();
       const quote = [m[1]];

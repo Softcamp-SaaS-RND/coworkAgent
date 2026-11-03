@@ -125,13 +125,12 @@ impl Chat {
     }
 
     /// 받은 쪽 멈춤 — 에이전트발 요청을 거절하고 연 쪽에 알린다(알림 실패는 거절로 충분).
-    pub(super) async fn block_relay(&self, conv: &Conversation, peer: &Peer) {
+    pub(super) async fn block_relay(&self, conv: &Conversation) {
         let _ = chat::set_blocked(&self.db(), conv.id, true);
         let req = Request::Relay {
             conv: conv.uuid.clone(),
             on: false,
         };
-        let _ = peer;
         let _ = self.ship(conv, None, RELAY, &req).await;
     }
 
@@ -153,7 +152,7 @@ impl Chat {
             (Dir::Shared, _) => {
                 return Err(io::Error::new(io::ErrorKind::InvalidInput, READ_ONLY));
             }
-            (Dir::In, false) => self.block_relay(&conv, &peer).await,
+            (Dir::In, false) => self.block_relay(&conv).await,
             (Dir::In, true) => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,

@@ -60,7 +60,7 @@ impl Paths {
     pub fn update_note_file(&self) -> PathBuf {
         self.root.join("update.txt")
     }
-    /// 뜨지 못해 되돌린 업데이트 태그 — 그 태그는 다시 받지 않는다.
+    /// 뜨지 못해 되돌렸거나 확인(실행 파일 꼴 · 서명)에 떨어진 업데이트 태그 — 그 태그는 다시 받지 않는다.
     pub fn update_skip_file(&self) -> PathBuf {
         self.root.join("update-skip.txt")
     }
@@ -76,7 +76,7 @@ impl Paths {
         self.root.join("identity.key")
     }
     /// 개명 전 데이터를 이어받는다. 옛 루트의 `instance.lock` 을 먼저 잡고(옛 앱이 실행 중이면 아무것도 바꾸지 않고 오류), 잡은 채로
-    /// 옛 루트의 항목을 새 루트로 옮긴 뒤(옛 DB · 로그는 새 이름으로) 옛 루트를 지운다. 두 루트 모두에 데이터(DB · 신원)가 있으면 고르지
+    /// 옛 루트의 항목을 새 루트로 옮긴 뒤(옛 DB · 로그는 새 이름으로) 옛 루트를 지운다. 같은 데이터(DB · 신원)가 두 루트 모두에 있으면 고르지
     /// 않고 충돌 오류 — 사람이 하나를 정리한다. 이미 있는 새 항목은 덮어쓰지 않아 중간에 끊겨도 다시 부르면 이어서 끝난다.
     /// 돌려주는 값: 옛 데이터를 옮겼나.
     pub fn adopt_legacy(&self, legacy_root: &Path) -> io::Result<bool> {
@@ -98,11 +98,18 @@ impl Paths {
     }
 
     fn move_legacy(&self, legacy: &Path) -> io::Result<bool> {
-        let has_data =
-            |dir: &Path, db: &str| dir.join("identity.key").exists() || dir.join(db).exists();
-        let legacy_data = has_data(legacy, LEGACY_DB);
-        let new_data = has_data(&self.root, "coworkAgent.db") || self.root.join(LEGACY_DB).exists();
-        if legacy_data && new_data {
+        // 같은 항목이 양쪽에 다 있을 때만 충돌 — 반쯤 옮긴 상태(DB 는 새 쪽 · 신원은 옛 쪽)는 이어서 옮긴다.
+        let key = (legacy.join("identity.key").exists(), self.identity_file().exists());
+        let db = (
+            legacy.join(LEGACY_DB).exists(),
+            self.db_file().exists() || self.root.join(LEGACY_DB).exists(),
+        );
+        // DB · 신원이 이미 옮겨졌어도 옛 DB 곁 파일(끊긴 트랜잭션 journal 등)이 남았으면 마저 옮긴다 — SQLite 가 새 DB 를 열 때 그것으로 되돌린다.
+        let sidecar = ["-journal", "-wal", "-shm"]
+            .iter()
+            .any(|s| legacy.join(format!("{LEGACY_DB}{s}")).exists());
+        let legacy_data = key.0 || db.0 || sidecar;
+        if (key.0 && key.1) || (db.0 && db.1) {
             return Err(io::Error::other(format!(
                 "옛 데이터({})와 새 데이터({})가 둘 다 있다 — 쓸 쪽만 남기고 다른 쪽을 옮기거나 지운 뒤 다시 실행",
                 legacy.display(),
@@ -129,7 +136,12 @@ impl Paths {
             let name = entry.file_name();
             let to = match name.to_str() {
                 Some("instance.lock" | "instance.json") => continue, // 실행 중 표시 — 옮기지 않는다
-                Some(LEGACY_DB) => self.db_file(),
+                // DB 와 그 곁 파일(`-journal` · `-wal` · `-shm` — 끊긴 트랜잭션)은 새 DB 이름으로 — SQLite 는 DB 이름으로 곁 파일을 찾는다.
+                Some(n) if n.starts_with(LEGACY_DB) => {
+                    let mut to = self.db_file().into_os_string();
+                    to.push(&n[LEGACY_DB.len()..]);
+                    to.into()
+                }
                 _ => self.root.join(&name),
             };
             move_entry(&entry.path(), &to)?;

@@ -307,7 +307,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
     ("app.css", ".pv-msg.agent, .pv-msg.running { background: var(--surface); border: 1px solid var(--border); color: var(--text); }", "#1z-11 에이전트 · 실행 중 말풍선 → #1z-13 결정 12 에이전트 글 = 흰 면 + 가는 선"),
     ("app", r#"c.unread ? el("span", { class: "pv-new", text: `새 글 ${c.unread}` }) : "","#, "#1z-11 결정 6 안 읽음 = 머리 \"새 글 n\""),
     ("app", r#"c.last_state ? el("span", { class: `pv-state st-${c.last_state}`, text: stateText(c.last_state) }) : "","#, "#1z-11 상태 = 바닥 점 + 글자"),
-    ("app", r#"el("span", { class: "pv-pres" }, el("span", { class: `st-dot st-${pres.key}`, "aria-hidden": "true" }), el("span", { text: p ? pres.text : "페어링 해제" })),"#, "#1z-11 머리 접속 = 점 + 글"),
+    ("app", r#"el("span", { class: "pv-pres" }, el("span", { class: `st-dot st-${pres.key}`, "aria-hidden": "true" }), p ? "" : el("span", { text: "페어링 해제" })),"#, "#1z-11 머리 접속 = 점 + 글 → #1z-20 점만(접속 글은 대화 시각과 어긋남)"),
     ("app", "    el(\"div\", { class: \"pv-head\" }, ...head),", "개요 미리보기 절 머리에 \"{이름} 개요 →\" 없음(사용자 지시)"),
     ("app.css", ".side-list li[data-conv] > .row-more { position: static; flex: none; align-self: center;", "대화 줄 ⋯ 이 시각을 가리지 않는다(사용자 지시)"),
     ("app", "if (state.railPeer == null && state.railGroup == null) pickRail(c.peer_id);", "'나' 개요에서 연 대화 → 레일 · 사이드바도 그 상대로(사용자 지시)"),
@@ -592,6 +592,7 @@ const PRESENT: &[(&str, &str, &str)] = &[
 /// 없어야 하는 문구 — (파일 키, 문구, 출처). `a+b` 는 두 파일 모두에 없어야 한다.
 #[rustfmt::skip]
 const ABSENT: &[(&str, &str, &str)] = &[
+    ("app", "p ? pres.text", "#1z-20 개요 미리보기 절 머리에 접속 글(\"…통신\") 없음"),
     ("index.html", "새 자동 왕복 대화의 상한 기본값", "#13 상한 라벨"),
     ("index.html+app", "페어링 받기", "#15 초대"),
     ("index.html+app", "초대 붙여넣기", "#15 초대"),

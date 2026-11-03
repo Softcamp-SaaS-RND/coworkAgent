@@ -191,13 +191,11 @@ pub fn claude_args(agent: &Agent, session: &Session, model: &str, effort: &str) 
     if agent.parent_read {
         match an_core::paths::parent_read_dir(Path::new(&agent.folder)) {
             Some(up) => {
-                // 셸은 이 범위 밖도 읽는다 — 셸이면 "그 위는 읽을 수 없다" 를 싣지 않는다.
-                let scope = if agent.shell {
-                    format!("파일 도구는 이 폴더와 바로 위 폴더 {} 아래를 읽는다.", up.display())
-                } else {
-                    format!("이 폴더와 바로 위 폴더 {} 아래를 읽을 수 있다. 그 위는 읽을 수 없다.", up.display())
-                };
-                system.push_str(&format!("\n\n[읽기 범위] {scope}"));
+                // 범위 밖 읽기를 막는 장치는 없다(파일 도구 · 셸 모두) — 막는다고 말하지 않는다.
+                system.push_str(&format!(
+                    "\n\n[읽기 범위] 파일 도구는 이 폴더와 바로 위 폴더 {} 아래를 읽는다.",
+                    up.display()
+                ));
                 a.push("--add-dir".into());
                 a.push(up.display().to_string());
             }
@@ -500,7 +498,20 @@ pub fn version_ok(version: (u32, u32, u32)) -> bool {
     version >= MIN_CLAUDE
 }
 
+/// 버전 확인 — 실행 파일마다 한 번 통과하면 앱이 끝날 때까지 다시 묻지 않는다(실행 · 압축마다 `claude --version` 을 띄우지 않게).
+/// 통과는 "최소 버전 이상" 이라 그 뒤의 `claude update` 도 통과다. 실패는 기억하지 않는다(올린 뒤 바로 다시 본다).
 fn check_version(program: &Path) -> io::Result<()> {
+    static PASSED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<PathBuf>>> = std::sync::OnceLock::new();
+    let passed = PASSED.get_or_init(Default::default);
+    if an_core::sync::lock(passed).contains(program) {
+        return Ok(());
+    }
+    check_version_now(program)?;
+    an_core::sync::lock(passed).insert(program.to_path_buf());
+    Ok(())
+}
+
+fn check_version_now(program: &Path) -> io::Result<()> {
     let out = run_process(
         program,
         &["--version".to_string()],

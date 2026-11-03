@@ -416,10 +416,11 @@ impl Cli {
                 let at = utc_time(m["created_at"].as_i64().unwrap_or(0));
                 line(
                     out,
+                    // 본문 둘째 줄부터 들여 쓴다 — 상대 글이 `[시각] 발화자:` 줄을 흉내 내지 못하게.
                     format!(
                         "[{at}] {}: {}",
                         author_label(&c, &m, &who),
-                        text(&m["text"])
+                        text(&m["text"]).replace('\n', "\n  ")
                     ),
                 )?;
             }

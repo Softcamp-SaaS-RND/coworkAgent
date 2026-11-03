@@ -35,9 +35,11 @@ pub enum Outcome {
     UpToDate,
     /// 바꾸지 않았다 — 사유.
     Skipped(String),
+    /// 받은 태그가 확인(이 PC 의 실행 파일 꼴 · 서명 · 제품 · 버전)에 떨어졌다 — (태그, 사유). 부른 쪽이 건너뛰기 파일에 적어 다시 받지 않는다.
+    Rejected(String, String),
 }
 
-/// 확인 · 받기 · 교체를 한 번에. `base` = 릴리스 주소(`…/releases`), `current` = 지금 버전(`X.Y.Z`), `skip` = 전에 뜨지 못해 되돌린 태그(다시 받지 않는다),
+/// 확인 · 받기 · 교체를 한 번에. `base` = 릴리스 주소(`…/releases`), `current` = 지금 버전(`X.Y.Z`), `skip` = 전에 되돌렸거나 확인에 떨어진 태그(다시 받지 않는다),
 /// `trusted(.new, tag)` = 받아 쓴 `{exe}.new` 를 바꾸기 전에 확인(실행 = [`verify`]).
 pub fn check(base: &str, asset: &str, current: &str, skip: Option<&str>, exe: &Path, trusted: impl Fn(&Path, &str) -> io::Result<()>) -> Outcome {
     let tag = match latest_tag(base) {
@@ -49,7 +51,7 @@ pub fn check(base: &str, asset: &str, current: &str, skip: Option<&str>, exe: &P
         return Outcome::UpToDate;
     }
     if skip == Some(tag.as_str()) {
-        return Outcome::Skipped(format!("{tag} 는 전에 뜨지 못해 되돌린 버전 — 다음 버전을 기다린다"));
+        return Outcome::Skipped(format!("{tag} 는 전에 되돌렸거나 확인에 떨어진 버전 — 다음 버전을 기다린다"));
     }
     let url = format!("{base}/download/{tag}/{asset}");
     let bytes = match download(&url, MAX_ASSET) {
@@ -59,7 +61,7 @@ pub fn check(base: &str, asset: &str, current: &str, skip: Option<&str>, exe: &P
     // 이 PC 의 실행 파일 꼴(PE · 같은 아키텍처)이 아니면 바꾸지 않는다 — 200 으로 온 오류 · 로그인 페이지 · 잘린 파일이 exe 자리에 들어가 다음 실행부터
     // 뜨지 않는 일을 막는다(서명 확인은 아님). 그래도 뜨지 못하면 감시가 되돌린다(`rollback`).
     if !is_native_pe(&bytes) {
-        return Outcome::Skipped(format!("{tag} 받은 파일이 이 PC 의 실행 파일이 아니다 — 바꾸지 않음"));
+        return Outcome::Rejected(tag, "받은 파일이 이 PC 의 실행 파일이 아니다 — 바꾸지 않음".into());
     }
     let new = sibling(exe, ".new");
     if let Err(e) = std::fs::write(&new, &bytes) {
@@ -67,7 +69,7 @@ pub fn check(base: &str, asset: &str, current: &str, skip: Option<&str>, exe: &P
     }
     if let Err(e) = trusted(&new, &tag) {
         let _ = std::fs::remove_file(&new);
-        return Outcome::Skipped(format!("{tag} 서명 확인 실패 — 바꾸지 않음: {e}"));
+        return Outcome::Rejected(tag, format!("서명 확인 실패 — 바꾸지 않음: {e}"));
     }
     match swap(exe) {
         Ok(()) => Outcome::Updated(tag),

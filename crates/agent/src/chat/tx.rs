@@ -16,9 +16,11 @@ impl Chat {
         cli_tx::by_message(&self.db(), message_id).map_err(db_err)
     }
 
-    /// 키 있는 CLI 보내기 잠금 — 같은 키 확인부터 보내기까지 잡는다.
-    pub async fn keyed(&self) -> tokio::sync::MutexGuard<'_, ()> {
-        self.keyed.lock().await
+    /// 키 있는 CLI 보내기 잠금 — 같은 키 확인부터 보내기까지 잡는다(키 해시 칸 — 다른 키는 대개 서로 기다리지 않는다).
+    pub async fn keyed(&self, key: &str) -> tokio::sync::MutexGuard<'_, ()> {
+        use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
+        let lane = BuildHasherDefault::<DefaultHasher>::default().hash_one(key) as usize % self.keyed.len();
+        self.keyed[lane].lock().await
     }
 
     /// 이어 받기(`wait`) — 멈춤을 풀고 다시 감시한다.

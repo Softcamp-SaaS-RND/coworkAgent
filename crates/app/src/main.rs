@@ -175,6 +175,10 @@ fn supervise(parent: Option<u32>) -> i32 {
         let skip = std::fs::read_to_string(paths.update_skip_file()).ok();
         let outcome = update::check(update::RELEASES, asset, env!("CARGO_PKG_VERSION"), skip.as_deref().map(str::trim), exe, update::verify);
         note(format!("{outcome:?}\n"));
+        // 확인에 떨어진 태그는 다시 받지 않는다(시작마다 최대 64 MiB 를 받고 트레이가 늦게 뜨지 않게) — 다음 태그는 받는다.
+        if let update::Outcome::Rejected(tag, _) = &outcome {
+            let _ = std::fs::write(paths.update_skip_file(), tag);
+        }
         if let update::Outcome::Updated(tag) = outcome {
             // 새 감시가 잠금을 잡게 먼저 놓는다. 새 감시가 앱을 띄우기 전에 실패로 끝나면(로더 · 시작 전 오류) 그 감시는 되돌리지
             // 못하므로 여기서 [`NEW_SUPERVISOR_GRACE`] 동안 지켜보다 되돌린다 — 그 뒤의 실패(앱 시작 실패 · 거듭 죽음)는 새 감시가 되돌린다.
@@ -212,6 +216,8 @@ fn supervise(parent: Option<u32>) -> i32 {
 
 /// 자동 업데이트 뒤 지난 감시가 새 감시를 지켜보는 시간 — 그 안에 실패로 끝나면 되돌린다.
 const NEW_SUPERVISOR_GRACE: Duration = Duration::from_secs(15);
+/// 두 번째 실행이 감시가 앱을 띄우기를 기다리는 최대 — 감시의 자동 업데이트 확인(연결 5초 · 최신 10초 · 받기 120초) 뒤 앱 시작까지.
+const HANDOFF_WAIT: Duration = Duration::from_secs(150);
 
 /// 시작이 끝난 주 인스턴스 — 트레이에 넘길 것.
 struct App {
@@ -378,12 +384,12 @@ fn start(
     }))
 }
 
-/// 이미 실행 중 — 주 인스턴스에 "열기" 를 넘기고 끝낸다. 주 인스턴스가 막 떠서 `instance.json` 을
-/// 아직 안 썼을 수 있으므로 짧게 다시 시도한다.
+/// 이미 실행 중 — 주 인스턴스에 "열기" 를 넘기고 끝낸다. 주 인스턴스가 막 떠서 `instance.json` 을 아직 안 썼을 수 있으므로 다시 시도한다 —
+/// 감시가 살아 있으면(감시 잠금) 앱을 띄우기 전(자동 업데이트 확인 · 받기)일 수 있어 [`HANDOFF_WAIT`] 까지, 아니면 3초.
 fn hand_off(paths: &Paths) -> Result<(), Box<dyn Error>> {
-    let mut last = String::from("instance.json 없음");
-    for _ in 0..10 {
-        match InstanceInfo::read(&paths.instance_file()) {
+    let start = std::time::Instant::now();
+    loop {
+        let last = match InstanceInfo::read(&paths.instance_file()) {
             Ok(Some(info)) => match handoff::request_open(&info) {
                 Ok(204) => {
                     log::info!("이미 실행 중 — 기존 인스턴스에 열기 전달");
@@ -393,15 +399,18 @@ fn hand_off(paths: &Paths) -> Result<(), Box<dyn Error>> {
                 Ok(code) if code >= 500 => {
                     return Err(format!("기존 인스턴스의 열기 실패: HTTP {code}").into());
                 }
-                Ok(code) => last = format!("HTTP {code}"),
-                Err(e) => last = e.to_string(),
+                Ok(code) => format!("HTTP {code}"),
+                Err(e) => e.to_string(),
             },
-            Ok(None) => last = "instance.json 형식 오류".into(),
-            Err(e) => last = e.to_string(),
+            Ok(None) => "instance.json 형식 오류".into(),
+            Err(e) => e.to_string(),
+        };
+        let waited = start.elapsed();
+        if waited >= HANDOFF_WAIT || (waited >= Duration::from_secs(3) && !watchdog::held(paths)) {
+            return Err(format!("기존 인스턴스에 전달 실패: {last}").into());
         }
         std::thread::sleep(Duration::from_millis(300));
     }
-    Err(format!("기존 인스턴스에 전달 실패: {last}").into())
 }
 
 /// OS 사용자 이름.

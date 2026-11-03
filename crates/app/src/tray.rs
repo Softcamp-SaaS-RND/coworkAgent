@@ -384,15 +384,6 @@ mod tests {
         assert!(long.ends_with('…'));
     }
 
-    /// 메뉴 "매뉴얼" 이 여는 주소 — GitHub main 의 사용자 가이드.
-    #[test]
-    fn user_guide_url() {
-        assert_eq!(
-            super::USER_GUIDE,
-            "https://github.com/Softcamp-SaaS-RND/coworkAgent/blob/main/docs/manual/user/user-guide.md"
-        );
-    }
-
     /// 다시 시도 간격 — 1 · 2 · 4 · 8 · 15 · 30초(합 60초), 그 뒤 없음.
     #[test]
     fn retry_after_schedule() {

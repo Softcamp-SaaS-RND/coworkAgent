@@ -260,3 +260,48 @@ async fn foreign_progress_refused() {
         assert_eq!(resp, Response::error(want), "{req:?}");
     }
 }
+
+/// 상대별 실행 상한(`PEER_RUN_CAP`) — 한 상대가 상한을 넘겨 보내면 넘친 것은 `retry` 로 돌려보내 받는 쪽에 상한까지만 쌓이고,
+/// 보낸 쪽이 다시 보내 모두 답을 받는다.
+#[tokio::test(flavor = "multi_thread")]
+async fn peer_run_cap_defers_overflow() {
+    let cap = an_agent::chat::PEER_RUN_CAP as usize;
+    let (a, b, _meter, b_id) = two("pcap", Duration::from_millis(400)).await;
+    let a_id = an_core::peers::list(&common::db(&b)).unwrap().into_iter().find(|p| p.paired()).unwrap().id;
+    let n = cap + 3;
+    for i in 0..n {
+        a.chat.send(b_id, "review", None, &format!("q{i}")).await.unwrap();
+    }
+    let mut most = 0;
+    let until = std::time::Instant::now() + Duration::from_secs(60);
+    while answered(&a) < n {
+        most = most.max(chat::peer_pending_runs(&common::db(&b), a_id).unwrap() as usize);
+        assert!(std::time::Instant::now() < until, "{n}건이 60초 안에 다 답하지 않았다: {}", answered(&a));
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(most <= cap, "받는 쪽에 쌓인 실행 {most} > 상한 {cap}");
+    assert!(most >= cap - 1, "상한까지는 받는다: {most}");
+    let db = common::db(&a);
+    for c in chat::list(&db).unwrap() {
+        assert!(chat::messages(&db, c.id).unwrap().iter().all(|m| m.state != State::Error), "넘친 것도 실패가 아니다");
+    }
+}
+
+/// 압축 요청(`Context`)도 실행이다 — 상한이면 새 구분선은 `retry`, 같은 uuid 재전송은 `Ok`(상한과 무관).
+#[tokio::test(flavor = "multi_thread")]
+async fn peer_run_cap_covers_context() {
+    let cap = an_agent::chat::PEER_RUN_CAP as usize;
+    let (a, b, _meter, b_id) = two("pctx", Duration::from_secs(3)).await;
+    let a_id = an_core::peers::list(&common::db(&b)).unwrap().into_iter().find(|p| p.paired()).unwrap().id;
+    let (conv, _) = a.chat.send(b_id, "review", None, "q0").await.unwrap();
+    for i in 1..cap {
+        a.chat.send(b_id, "review", Some(conv.id), &format!("q{i}")).await.unwrap();
+    }
+    common::eventually(|| chat::peer_pending_runs(&common::db(&b), a_id).unwrap() as usize == cap).await;
+    let pin = Some(b.node.identity().spki().to_vec());
+    let ctx = |msg: &str| Request::Context { conv: conv.uuid.clone(), msg: msg.into(), op: "compact".into(), text: String::new() };
+    let fresh = an_agent::chat::new_uuid();
+    let (resp, _) = a.node.send(b.addr, pin.clone(), &ctx(&fresh)).await.unwrap();
+    assert_eq!(resp, Response::error("retry"), "상한 = 새 압축은 나중에");
+    assert_eq!(chat::peer_pending_runs(&common::db(&b), a_id).unwrap() as usize, cap, "상한을 넘겨 쌓지 않는다");
+}

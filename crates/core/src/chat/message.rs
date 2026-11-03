@@ -348,6 +348,16 @@ pub fn pending(conn: &Connection, conversation_id: i64) -> rusqlite::Result<Vec<
     .collect()
 }
 
+/// 한 상대가 이 PC 에 맡긴 실행 수 — 그 상대와의 대화에서 상대가 보낸(`mine` 아님) 실행 대상(사람 글 · 에이전트발 · 압축 구분선) 중 `queued` · `running`.
+pub fn peer_pending_runs(conn: &Connection, peer_id: i64) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT count(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id
+         WHERE c.peer_id = ?1 AND m.mine = 0 AND m.exec = 1 AND m.state IN ('queued', 'running')",
+        [peer_id],
+        |r| r.get(0),
+    )
+}
+
 /// 에이전트 답 — 원 요청(`reply_to`) · 실행 정보(턴 · 시간 · model · effort)와 함께.
 #[allow(clippy::too_many_arguments)]
 pub fn add_reply(

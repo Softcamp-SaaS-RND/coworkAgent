@@ -97,6 +97,11 @@ pub fn acquire(paths: &Paths) -> io::Result<Option<InstanceLock>> {
     }
 }
 
+/// 감시가 살아 있나(감시 잠금을 다른 프로세스가 쥠). 잡히면 바로 놓는다.
+pub fn held(paths: &Paths) -> bool {
+    matches!(InstanceLock::acquire(&paths.supervisor_lock_file()), Ok(Acquired::Secondary))
+}
+
 /// 트레이 없는 모드면 지켜볼 부모 PID(숫자가 아니면 트레이 모드로 본다).
 pub fn parent() -> Option<u32> {
     std::env::var(PARENT_ENV).ok()?.parse().ok()
