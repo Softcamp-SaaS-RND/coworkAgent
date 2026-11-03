@@ -333,7 +333,7 @@
   상태**(D7) · **집중**(D17).
 - **S2** 트레이 상주 실행 — 인자 없는 실행은 감시 프로세스 + 앱(D13).
 - **S3** 대화/작업 이력은 SQLite — 사용자 경로(D15). 범위 · 이어서 작업은 D19, 내 사람 글 편집 · 삭제는 D34.
-- **S4** 트레이 메뉴 "열기" · "종료". 웹UI 는 Slack 형 5영역(D26):
+- **S4** 트레이 메뉴 "열기" · "매뉴얼" · "종료"(#1z-19 — "매뉴얼" = GitHub main 의 사용자 가이드를 기본 브라우저로, 확인할 일 표시는 그대로 · 오류 모드 메뉴엔 없음). 웹UI 는 Slack 형 5영역(D26):
   - 통합 검색(메시지 · 대화 · 사람 · 에이전트) · 내 활동(받은 요청 · 내 요청 · 받은 답 · 실패 — #1q, 종류 색 칩 · 같은 색 탭 — #1z-3 시안 A → #1z-13 무채 칩 · 글자 탭, 실패만 위험 색) · ★ 즐겨찾기 · 북마크 ·
     입력창 서식 · "+ 새로 만들기"(#1x — "세션 생성" = 상대 · 에이전트 · 내 응답 에이전트만 고르고 글 없이 대화를 만든다, 첫 글은 그 대화방 입력창 · 자동 왕복은 첫 글부터, 상대 칸 =
     레일에서 고른 상대. 자동 왕복은 세션 생성 화면 안에서 — #1r 칸 이름 "내 응답 에이전트" + 고를 때만 하위 줄 "최대 응답 횟수", 기능 이름
@@ -386,7 +386,7 @@ Task 상태는 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`).
 Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 1b.inbound-capacity · 1c.durable-messaging · 1d.request-list ·
 1e.autostart-watchdog · 1f.message-edit · 1g.rail-scope · 1h.stabilization · 1i.rail-group · 1j.messenger-ui · 1k.ui-polish ·
 1l.ui-icons · 1m.context-compact · 1n.cli-start-stop · 1o.chat-list-split · 1p.project-tidy · 1q.request-overview · 1r.ui-polish ·
-1s.fold-line-readme · 1t.notion-ux · 1u.scoped-refresh · 1v.notion-design · 1w.conv-leave · 1x.session-ui · 1y.data-update · 1z.chat-look · 1z-2.ui-refine · 1z-3.activity-color · 1z-4.home-preview · 1z-5.home-thumb · 1z-6.home-zoom · 1z-7.conv-type-look · 1z-8.settings-search · 1z-9.agent-engine · 1z-10.conv-info · 1z-11.overview-calm · 1z-12.code-tidy · 1z-13.design-taste · 1z-14.ui-touchup · 1z-15.tile-color · 1z-16.owner-chat · 1z-17.time-date · 1z-18.ui-fixes. 남음:
+1s.fold-line-readme · 1t.notion-ux · 1u.scoped-refresh · 1v.notion-design · 1w.conv-leave · 1x.session-ui · 1y.data-update · 1z.chat-look · 1z-2.ui-refine · 1z-3.activity-color · 1z-4.home-preview · 1z-5.home-thumb · 1z-6.home-zoom · 1z-7.conv-type-look · 1z-8.settings-search · 1z-9.agent-engine · 1z-10.conv-info · 1z-11.overview-calm · 1z-12.code-tidy · 1z-13.design-taste · 1z-14.ui-touchup · 1z-15.tile-color · 1z-16.owner-chat · 1z-17.time-date · 1z-18.ui-fixes · 1z-19.tray-guide. 남음:
 - 후보(착수 전): 통계 메뉴(사이드바 상단 — 보여줄 숫자 미정 · 서버 집계 API 필요).
 - 후보(착수 전): outbox 정산 순서 점검 — 기존 종류(`req_state` 거절 등)도 "행을 지운 뒤 정산" 순서라 원자성 보강이 필요한지 판단(1f 평가의 범위 밖 관찰).
 - 후보(착수 전): 요청 보드 보기 설정(D39 ① · 1t U2 — U1 은 #1v 종결) — 보드의 그룹 · 정렬 · 거르기(이 PC 에만, 지금 보기 기억은 `ui_folded` 열쇠를 빌려 씀 → 전용 설정 키). 닿는 D·S: D35 · D39.
@@ -483,6 +483,8 @@ Phase 1 오버플로(모두 19 인수 전): 종결 — 1a.security-hardening · 
   사용자 지시 · 질문 답 U1 ~ U9 · "완결처리"(구현자 해석 결정 12 · 사이드바 제목 칸 폭은 권장안 그대로), 버전 1.4.2, 종결 목록에 1z-17
 - 2026-10-28 · Task #1z-18 · S4 개정(요청 의견 칸 · archive 토글 · 즐겨찾기 줄 ★ · 둘째 줄 · 에이전트 응답 줄 · 북마크 목록 해제 · 설정 "브라우저 알림") · D29 개정(트레이 =
   확인할 일 — 받은 요청 · 연결 요청 · 연결 승인 · 내 요청 상태 변경만, 알림 설정과 무관) — 사용자 지시 · 질문 답 · UI 시안 · 확인 답 · "종결 승인", 버전 1.4.3, 종결 목록에 1z-18
+- 2026-11-03 · Task #1z-19 · S4 개정(트레이 메뉴 "열기" · "매뉴얼" · "종료" — "매뉴얼" = GitHub main 사용자 가이드, 처음 "사용자 매뉴얼" → 사용자 지시로 "매뉴얼") · 사용자 가이드 간결 재작성(10장 · 캡처 11장) —
+  사용자 지시 · "승인." · "진행." · "종결 진행", 버전 1.4.4, 종결 목록에 1z-19
 - 2026-10-24 · Task #1z-12 · D10 보강(웹 원본 = ES 모듈 `js/` 48 · 서버 내장 표 `SCRIPTS` · `/js/{모듈}` 정확 이름만 토큰 없이) · 코드 정리(크레이트 안 도메인 모듈 · 죽은 코드 · 주석 = 왜 · 보안 · 함정만, 결정 이력은 문서 — 검증 명령 `tools/check_code_tidy.py`, 동작 · 버전 1.3.6 그대로) — 사용자 결정(질문 답 넷 · "권장 방안 승인." · 재개 "권장 방안으로 진행." — A2 예외 = 도메인을 가로지르는 화면 흐름, 동작 불변인 중복 지움), 종결 목록에 1z-12
 - 2026-10-19 · 1.0.0 배포 · D25 보강(보유한 Mac 의 macOS universal 실행 파일을 사전 배포에 첨부, 확인 · 서명은 Phase 4) — 사용자 지시(버전 1.0.0 · Mac 빌드 = 보유한 Mac)
 - 2026-10-19 · S1 개정(요청 상태 = 네 상태 사이 어디로든 — 되돌리기 포함) · S4 보강(요청 보드 손잡이 포인터 끌기 · 놓은 열로 옮김 · 요청 화면 "메모" → "피드백") — 사용자 지시(Task 밖 수정)
