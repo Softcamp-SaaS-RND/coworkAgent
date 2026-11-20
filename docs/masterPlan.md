@@ -2,7 +2,7 @@
 
 > 프로젝트 **전체 의도·명세·로드맵**의 계약 문서. Task 의 `intent.md` 는 여기의 D·S 번호를 인용하고,
 > 종결 시 결정·명세 변경분을 여기로 옮긴다(링크가 아니라 내용 — 규약은
-> [etc/intent-protocol.md](etc/intent-protocol.md) 5). 활성 Task 를 가리키지 않는다.
+> saas plugin 규칙 문서 `intent-protocol.md` 5). 활성 Task 를 가리키지 않는다.
 > 아래 `승인:` 줄은 프로젝트 수준 의도의 사용자 확인이다(`대기` → `{YYYY-MM-DD}`, 열 0 · 한 줄).
 > `대기` 인 채 Task 폴더를 열면 체커가 FAIL 한다 — 확정되지 않은 의도를 인용하지 않는다.
 > 각 D·S 는 **현재 유효한 상태**만 적는다. 개정 경위 · 사용자 원문은 git 이력과 해당 Task 폴더(`docs/archive/`)에 있다.
@@ -377,7 +377,7 @@
 ## Phase 로드맵
 
 관통 우선 — Phase 0 에서 PC 2대 간 사람 → 원격 에이전트 1왕복을 보안 포함으로 끝까지 잇고, 이후 Phase 가 각 층을 키운다.
-Task 상태는 폴더가 SSOT(`python tools/check_ddd_docs.py --tasks`).
+Task 상태는 폴더가 SSOT(`python <ddd>/assets/check_ddd_docs.py --tasks`).
 
 | Phase | Task 후보 | NN 버퍼 |
 |-------|-----------|---------|

@@ -77,16 +77,16 @@ python tools/rebuild_run.py --yes          # 빌드 도구(Rust · C 컴파일�
 
 ### 2.3 개발 — 검증 명령
 
-문서 주도 개발(DDD)로 진행한다 — 시작점은 루트 `CLAUDE.md`. 커밋 · 종결 전 검증(정본은 루트 `PROJECT.md` "검증 명령"):
+문서 주도 개발(DDD)로 진행한다. 커밋 · 종결 전 검증(정본은 루트 `PROJECT.md` "검증 명령"):
 
 ```powershell
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 node --test --test-reporter=tap "crates/app/web/*.test.mjs"
-python tools/check_ddd_docs.py
 python tools/check_crates.py
 ```
 
+- 문서 규약 · 평가 항목 gate 검사는 saas plugin 체커(`check_ddd_docs.py` · `check_gates.py`)가 한다 — 리포에 두지 않고, `/saas:d3-mode` 가 plugin 경로로 실행한다.
 - 자동 테스트는 실제 `claude` 를 부르지 않는다(수신 PC 구독 사용량) — `Chat::new` 의 `Run` 자리에 대역을 넣는다([an_agent](an_agent.md)).
 - 데이터 루트는 OS 사용자마다 하나(`%LOCALAPPDATA%\coworkAgent`)이고 경로를 바꾸는 스위치가 없다 — 한 OS 사용자 계정에 주 인스턴스는
   하나뿐이다. 테스트는 임시 루트(`Paths::under`)를 쓴다.

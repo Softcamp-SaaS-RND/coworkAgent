@@ -1,19 +1,19 @@
 # PROJECT.md — coworkAgent
 
 **어떻게 일하는가**의 단일 위치 — 가드레일 · 개발 환경 · 검증. 제품 구조·규칙은 루트 `PRODUCT.md`,
-진행 현황은 진행 Task 폴더의 `state.md`(`python tools/check_ddd_docs.py --tasks`). 계약은 [etc/doc-conventions.md](docs/etc/doc-conventions.md) "PROJECT.md — 필수 5절".
+진행 현황은 진행 Task 폴더의 `state.md`(`python <ddd>/assets/check_ddd_docs.py --tasks`). 계약은 saas plugin 규칙 문서 `doc-conventions.md` "PROJECT.md — 필수 5절".
 **빈 절은 없다** — 실내용이 없으면 `없음`, 미확정이면 `미확정` + TODO 주석.
 
 ## 치명 가드레일
 
 <!-- 출처: 1~5행 의도 문서 "방법"·"기능" · 6행 인터뷰 Q3, 문구는 Q21(masterPlan D22). 작성 규칙은 doc-conventions "PROJECT.md — 필수 5절" -->
 
-- 배포 산출물은 OS 별 **단일 실행 파일** 하나다 — 보조 실행 파일을 함께 배포하지 않는다.
+- **단일 실행 파일** — 배포 산출물은 OS 별 **단일 실행 파일** 하나다 — 보조 실행 파일을 함께 배포하지 않는다.
 - **Rust** 단일 코드베이스가 Windows·macOS 양쪽에서 빌드·동작한다 — 한 OS 에서만 되는 기능은 완료가 아니다.
-- 서버·클라이언트를 **같은 실행 파일**이 겸한다 — 서버 전용·클라이언트 전용 빌드로 나누지 않는다.
-- 화면은 전부 **웹UI** 로 만든다 — 트레이 메뉴 외에 네이티브 창을 두지 않는다.
-- 대화·작업 이력은 사용자 데이터 경로(AppData 류) 아래 **SQLite** 에 둔다 — 실행 파일 옆·시스템 경로에 쓰지 않는다.
-- 원격 메시지는 **신뢰하지 않는 입력**이다 — 에이전트에 허용하지 않은 동작으로 이어지지 않는다.
+- **서버·클라이언트** — 서버·클라이언트를 **같은 실행 파일**이 겸한다 — 서버 전용·클라이언트 전용 빌드로 나누지 않는다.
+- **웹UI** — 화면은 전부 **웹UI** 로 만든다 — 트레이 메뉴 외에 네이티브 창을 두지 않는다.
+- **SQLite** — 대화·작업 이력은 사용자 데이터 경로(AppData 류) 아래 **SQLite** 에 둔다 — 실행 파일 옆·시스템 경로에 쓰지 않는다.
+- **신뢰하지 않는 입력** — 원격 메시지는 **신뢰하지 않는 입력**이다 — 에이전트에 허용하지 않은 동작으로 이어지지 않는다.
 
 ## 프로젝트 개요
 
@@ -34,9 +34,9 @@
     `superpowers:verification-before-completion`.
   - 적대적 평가자 — `codex-peer-review` 스킬로 구현 세션과 분리된 Codex 에 적대적 리뷰를 배정 — Orca 가 라운드마다 Codex 를 새로 띄운다(`worker-start --agent codex`,
     요청 절차는 그 스킬 · 사용자 전역 지침, 2026-10-21 — 기존 `review` · `review2` 터미널 배정과 옛 `codex-review` 세션 대행 요청은 폐지). **라운드 상한 2**
-    ([etc/eval-protocol.md](docs/etc/eval-protocol.md)).
+    (saas plugin 규칙 문서 `eval-protocol.md`).
 - **실행 방식**: pstack 사용 — `/pstack:poteto-mode` (사용자 호출 — 모델이 스스로 켤 수 없다). 규칙은
-  [etc/ddd-workflow.md](docs/etc/ddd-workflow.md) "실행 방식 — pstack".
+  saas plugin 규칙 문서 `ddd-workflow.md` "실행 방식 — pstack".
 - **Git 브랜치**: Task 별 `task/NN-이름` 브랜치 → main 으로 merge. rebase 는 사용자 요청 시에만.
 - **squash push**: origin/main 은 릴리스 단위 squash 커밋 이력. 로컬 커밋 뒤 `git commit-tree HEAD^{tree} -p origin/main -m "<메시지>"` 로 만든 커밋을 `git push origin <sha>:refs/heads/main`, 이어서 `git reset --mixed origin/main` 으로 로컬을 맞춘다(2026-10-20 정리 — 이전 로컬 이력은 `backup/pre-reset-1020`).
   squash 라 Task 브랜치는 main 의 조상이 되지 않는다(`git branch -d` 거절) — **종결 push 뒤** `git rev-parse task/<키>^{tree} origin/main^{tree}` 가 같으면
@@ -56,16 +56,14 @@
 | 테스트 | `cargo test --workspace` | 매 stage · 종결 |
 | 경고 0 | `cargo clippy --workspace --all-targets -- -D warnings` | 매 stage · 종결 |
 | 웹UI 화면 로직 | `node --test --test-reporter=tap "crates/app/web/*.test.mjs"` — Node 22+(검증 환경 25.8.0), 개발 PC 에만 필요 | 매 stage · 종결 |
-| 문서 규약 | `python tools/check_ddd_docs.py` | 매 커밋 |
+| 문서 규약 | `python <ddd>/assets/check_ddd_docs.py` | 매 커밋 |
 | README 사용자 관점 (#1c) | `python tools/check_readme.py` — 상대 링크 존재 · 기술 절(통신 메커니즘 · 피어 프로토콜 · 빌드) 없음 · 목적 4문구 | README 를 바꾼 커밋 · 종결 |
 | 코드 정리 | `python tools/check_code_tidy.py` — 제품 원본(`crates/*/src` · `crates/app/web/js` · `app.css`) 주석의 결정 이력 표식(Task 번호 · 리뷰 라운드 · 사용자 지시 · 날짜 · 시안 · plan 항목) 0, rs · js 파일 1,000줄 상한 | 매 stage · 종결 |
-| 평가 항목 gate | `python tools/check_gates.py docs/tasks/{key}` | 구현 완료 시점 · 이후 코드 수정마다 |
+| 평가 항목 gate | `python <ddd>/assets/check_gates.py docs/tasks/{key}` | 구현 완료 시점 · 이후 코드 수정마다 |
 | 의존 경계 (`check_layers.py` 대체 — 비-Python) | `python tools/check_crates.py` — `cargo metadata` 로 워크스페이스 크레이트 · 내부 간선 실측, Layer 역방향 · 미분류 크레이트를 위반으로 센다 | 매 종결 |
 | 임계값 경계 (`check_thresholds.py` 대체 — 비-Python) | 경계 정확값·±1 단위 테스트(`cargo test --workspace` 안). `cargo-mutants` 도입은 첫 임계값 Task 에서 판단 | 도입 예정 — 첫 임계값 Task 부터 매 종결 |
 
 ## 참조 문서
-
-필요할 때 여는 문서 표는 루트 `CLAUDE.md` 에 있다. 거기 없는 것만:
 
 - [overview/bootstrap-interview.md](docs/overview/bootstrap-interview.md) — 부트스트랩 인터뷰(질문 · 답 · 조사 사실). 본 문서 TODO · 가드레일 출처의 `Qn`
 - `docs/tasks/*/intent.md` · `docs/archive/*/intent.md` — Task 별 의도(전부 grep 하면 의도가 모인다) · `docs/archive/*/report.md` — 종결 보고서

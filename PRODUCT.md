@@ -1,7 +1,7 @@
 # PRODUCT.md — coworkAgent
 
 **무엇을 만들었는가**의 단일 위치 — 구조 · 규칙 · 설계. 프로세스·환경은 루트 `PROJECT.md`,
-진행 현황은 진행 Task 폴더의 `state.md`(`python tools/check_ddd_docs.py --tasks`). 계약은 [etc/doc-conventions.md](docs/etc/doc-conventions.md) "PRODUCT.md — 필수 6절".
+진행 현황은 진행 Task 폴더의 `state.md`(`python <ddd>/assets/check_ddd_docs.py --tasks`). 계약은 saas plugin 규칙 문서 `doc-conventions.md` "PRODUCT.md — 필수 6절".
 **빈 절은 없다** — 실내용이 없으면 `없음`, 미확정이면 `미확정` + TODO 주석.
 
 ## 제품 개요
