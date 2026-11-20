@@ -208,3 +208,5 @@
 - `docs/tech/` — 횡단 기술 노트 · 환경 함정(개발 전 필독). 생기면 한 줄씩 링크로 등록한다.
   - [tech/windows-crates-io-tls-revocation.md](docs/tech/windows-crates-io-tls-revocation.md) — Windows 에서 crates.io
     TLS 폐기 확인 실패 → cargo `check-revoke` 설정
+  - [tech/security-posture.md](docs/tech/security-posture.md) — 외부 공격자 위협 모델 · 경계별 안전조치 · 점검 이력 · 남은 위험 ·
+    다시 점검하는 법
