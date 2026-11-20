@@ -7,11 +7,10 @@
 
 검사 항목:
 
-1. 루트 ``CLAUDE.md`` 에 TODO 주석이 없다(프로젝트 무관 뼈대). PROJECT.md·PRODUCT.md·STATE.md·
+1. 루트 ``CLAUDE.md`` 에 TODO 주석이 없다(프로젝트 무관 뼈대). PROJECT.md·PRODUCT.md·
    masterPlan·manual/README 의 TODO 는 **위반이 아니라 INFO 로 집계**한다(부트스트랩 미해소 항목).
 2. 템플릿이 요구하는 ``docs/`` 하위 디렉토리 8개가 존재한다.
-3. ``docs/`` **와 루트 5문서**(``CLAUDE.md``·``PROJECT.md``·``PRODUCT.md``·``STATE.md``·
-   ``README.md``)의
+3. ``docs/`` **와 루트 4문서**(``CLAUDE.md``·``PROJECT.md``·``PRODUCT.md``·``README.md``)의
    모든 **상대 마크다운 링크**가 실제 파일로 해소된다. 🔴 ``[[wikilink]]`` 는 백틱·울타리
    안까지 위반으로 잡는다. 같은 Task 폴더 형제는 폴더 밖으로 나가지 않는다(``git mv`` 로
    archive 에 옮길 때 끊긴다). ``docs/`` 안에서 **현존 문서**를 백틱 경로로 쓰지 않는다.
@@ -30,13 +29,15 @@
 6. **PROJECT.md 계약** — 필수 섹션(:data:`PROJECT_MD_SECTIONS`) heading + 본문,
    ``## 치명 가드레일`` 이 첫 heading, 가드레일 **줄 수·자리별 키워드**(빈 키워드 금지).
    **PRODUCT.md 계약** — 필수 섹션(:data:`PRODUCT_MD_SECTIONS`) heading + 본문. 일하는 방식
-   (PROJECT) · 만든 것(PRODUCT) · 지금 어디인가(STATE)를 한 문서에 섞지 않는다.
+   (PROJECT) · 만든 것(PRODUCT) · 지금 어디인가(Task state.md)를 한 문서에 섞지 않는다.
 7. **Task 목록은 폴더가 SSOT** — 목록 표를 문서에 두지 않는다. 상태는 위치(``docs/tasks/`` =
    진행, ``docs/archive/`` = 종결)와 ``report.md`` 의 ``⛔ 폐기`` 마커로 **이미 결정**되므로,
    표는 정보를 더하지 않고 동기화 부담만 만든다. 목록이 필요하면 ``--tasks`` 로 파생한다.
-8. **STATE.md 계약** — 필수 섹션 2개(:data:`STATE_MD_SECTIONS`) heading + **본문**. STATE.md 는
-   **전부 덮어쓰는** 재개 좌표다 — 누적 기록(목록·원장)을 여기 두지 않는다.
-   heading 만 남고 비면 "상태를 적었다" 는 침묵이 된다 — 없으면 ``없음`` 이라고 적는다.
+8. **state.md 계약** — 진행 중 Task 폴더(``docs/tasks/*``)마다 ``state.md`` 가 있고, 필수 섹션
+   2개(:data:`STATE_MD_SECTIONS`) heading + **본문**, ``갱신: YYYY-MM-DD HH:MM`` 줄이 **정확히 1건**
+   (``--tasks`` 가 이 값으로 최근 Task 를 고른다). **전부 덮어쓰는** 재개 좌표다 — 누적 기록을 두지
+   않는다. 종결하면 지운다 — ``docs/archive/*`` 에 ``state.md`` 가 있으면 FAIL. 루트 ``STATE.md`` 는
+   폐지 — 있으면 FAIL.
 9. **적대적 평가자 규약** — 구현이 시작된 Task 에 ``plan.md`` 존재 + ``## 평가 항목`` 절,
    ``report.md`` 가 있으면 ``eval.md`` 도 있고 ``plan.md`` 에 ``사용자 미승인`` 개정이 남아
    있지 않다. :data:`GATE_LEGACY_KEYS` 의 Task 는 면제(규약 도입 전에 종결된 Task 에 평가
@@ -102,7 +103,7 @@ DISCARD_MARKER = "⛔ 폐기"
 # 없게 되고, 셀 수 없는 원장은 아무도 안 본다.
 # 🔴 `닫힘`(해결됨)과 `수용`(위험을 알고 고치지 않기로 결정)을 섞지 않는다 —
 #    섞으면 원장이 거짓말을 하고 후속 추적 대상이 사라진다.
-#: 미조치 원장의 집 — **STATE.md 가 아니다.** 원장은 Task 를 가로질러 누적되는 유일한 기록이라
+#: 미조치 원장의 집 — **state.md 가 아니다.** 원장은 Task 를 가로질러 누적되는 유일한 기록이라
 #: 덮어쓰는 재개 좌표와 같은 문서에 살 수 없다(상태 전이·마지막 확인은 폴더에서 파생되지 않는다).
 LEDGER_DOC = "docs/overview/ledger.md"
 LEDGER_HEADING = "## 미조치 원장"
@@ -122,8 +123,8 @@ TASK_STATES = {"tasks": "⏳", "archive": "✅", "discard": "⛔"}
 #: plan 개정 줄의 미승인 표기 — 종결 Task 에 남아 있으면 FAIL (eval-protocol 규약 3).
 UNAPPROVED_MARK = "사용자 미승인"
 
-# docs/etc/doc-conventions.md "루트 3문서 계약" 의 PROJECT.md 표와 **같은 값**(바꾸려면 표와 동시 개정).
-# 🔴 **일하는 방식**만 여기 — 제품 구조는 PRODUCT.md, 진행 현황·미조치는 STATE.md 가 갖는다.
+# docs/etc/doc-conventions.md "프로젝트 문서 계약" 의 PROJECT.md 표와 **같은 값**(바꾸려면 표와 동시 개정).
+# 🔴 **일하는 방식**만 여기 — 제품 구조는 PRODUCT.md, 지금 상태는 Task state.md, 미조치는 원장이 갖는다.
 PROJECT_MD_SECTIONS = (
     "치명 가드레일",
     "프로젝트 개요",
@@ -131,7 +132,7 @@ PROJECT_MD_SECTIONS = (
     "검증 명령",
     "참조 문서",
 )
-# docs/etc/doc-conventions.md "루트 3문서 계약" 의 PRODUCT.md 표와 **같은 값**.
+# docs/etc/doc-conventions.md "프로젝트 문서 계약" 의 PRODUCT.md 표와 **같은 값**.
 # 제품 문서에 프로세스(도구 전제·브랜치·Task 현황)를 섞지 않는다.
 PRODUCT_MD_SECTIONS = (
     "제품 개요",
@@ -166,12 +167,14 @@ NO_CRITERIA = ("없음", "미확정")
 #: 종결 환류처 — masterPlan 의 개정 기록 절(intent-protocol 규약 5). 한 줄에 Task 번호(`#N`)를 단다.
 MASTERPLAN = "docs/masterPlan.md"
 REVISION_SECTION = "## 개정 기록"
-# docs/etc/ddd-workflow.md "STATE.md — 필수 2절" bullet 목록과 **같은 값**이어야 한다.
+# docs/etc/ddd-workflow.md "state.md — 필수 2절" bullet 목록과 **같은 값**이어야 한다.
 # 목록을 바꾸려면 그 절과 본 상수를 동시 개정한다. 두 절 모두 **덮어쓴다** — 누적은 여기 없다.
 STATE_MD_SECTIONS = (
     "현재 작업",
     "다음 행동",
 )
+#: state.md 의 갱신 줄 — 열 0, 정확히 1건. 파일 시각(mtime)은 checkout·복사로 바뀌므로 이 값이 정본이다.
+STATE_UPDATED_RE = re.compile(r"^갱신:[ \t]*(\d{4}-\d{2}-\d{2} \d{2}:\d{2})?", re.MULTILINE)
 
 # 치명 가드레일 계약 — **정확값**. doc-conventions.md PROJECT 계약 표 1행("3~7줄")을 프로젝트 확정 개수로 못박는다.
 # 개수만 세면 5줄을 아무 내용으로나 바꿔치기할 수 있으므로 **각 줄의 키워드**까지 동결한다.
@@ -661,7 +664,7 @@ def derive_tasks() -> list[tuple[str, str, str, str]]:
             state = TASK_STATES[folder]
             if folder == "archive" and report.is_file() and DISCARD_MARKER in report.read_text(encoding="utf-8"):
                 state = TASK_STATES["discard"]
-            doc = report if report.is_file() else task_dir / "intent.md"
+            doc = report if report.is_file() else task_dir / ("state.md" if (task_dir / "state.md").is_file() else "intent.md")
             scope = ""
             intent = task_dir / "intent.md"
             if intent.is_file():
@@ -808,18 +811,43 @@ def _masterplan_problems() -> list[str]:
     return []
 
 
-def _state_md_problems() -> list[str]:
-    """STATE.md 계약 — 필수 2 섹션 heading + 본문. **누적 기록은 여기 없다.**
-
-    STATE.md 는 매 단계 덮어쓰는 재개 좌표다. Task 목록은 폴더에서 파생하고(:func:`derive_tasks`),
-    미조치 원장은 :data:`LEDGER_DOC` 가 갖는다 — 덮어쓰는 문서와 누적 문서를 섞지 않는다.
-    """
-    state = REPO / "STATE.md"
+def state_updated(task_dir: Path) -> str | None:
+    """``state.md`` 의 ``갱신:`` 시각(``YYYY-MM-DD HH:MM``). 없거나 형식이 틀리면 ``None``."""
+    state = task_dir / "state.md"
     if not state.is_file():
-        return ["루트 STATE.md 가 없다 — 재개 좌표(현재 작업 · 다음 행동)의 단일 위치가 필수다 "
-                "(ddd-workflow.md 'STATE.md — 필수 2절')"]
-    return _required_sections("STATE.md", state.read_text(encoding="utf-8"), STATE_MD_SECTIONS,
-                              "ddd-workflow.md 'STATE.md — 필수 2절'")
+        return None
+    hits = STATE_UPDATED_RE.findall(visible_text(state.read_text(encoding="utf-8")))
+    return (hits[0] or None) if len(hits) == 1 else None
+
+
+def _state_md_problems() -> list[str]:
+    """state.md 계약 — 진행 Task 마다 필수 2 섹션 + 갱신 줄 1건. **누적 기록은 여기 없다.**
+
+    state.md 는 매 단계 덮어쓰는 그 Task 의 재개 좌표다. Task 목록은 폴더에서 파생하고
+    (:func:`derive_tasks`), 미조치 원장은 :data:`LEDGER_DOC` 가 갖는다. 루트 ``STATE.md`` 는 폐지됐다 —
+    여러 Task 의 상태를 한 문서에 쌓으면 누적 문서가 된다.
+    """
+    source = "ddd-workflow.md 'state.md — 필수 2절'"
+    found: list[str] = []
+    if (REPO / "STATE.md").is_file():
+        found.append("루트 STATE.md 는 폐지됐다 — 각 진행 Task 의 재개 좌표는 docs/tasks/{key}/state.md, "
+                     f"대기 항목도 관련 진행 Task 의 state.md 로(없으면 Task 를 연다 — 원장 아님) 옮기고 지울 것 ({source})")
+    for task_dir in _task_dirs("tasks"):
+        rel = f"docs/tasks/{task_dir.name}/state.md"
+        state = task_dir / "state.md"
+        if not state.is_file():
+            found.append(f"{rel} 가 없다 — 진행 Task 는 재개 좌표를 갖는다 ({source})")
+            continue
+        text = state.read_text(encoding="utf-8")
+        found.extend(_required_sections(rel, text, STATE_MD_SECTIONS, source))
+        if state_updated(task_dir) is None:
+            hits = len(STATE_UPDATED_RE.findall(visible_text(text)))
+            found.append(f"{rel}: '갱신: YYYY-MM-DD HH:MM' 줄이 {hits}건이거나 형식이 다르다 — 정확히 1건, 열 0")
+    for task_dir in _task_dirs("archive"):
+        if (task_dir / "state.md").is_file():
+            found.append(f"docs/archive/{task_dir.name}/state.md — 종결 Task 는 재개할 것이 없다. "
+                         "git rm 할 것(끝 상태는 report.md)")
+    return found
 
 
 def _ledger_problems() -> list[str]:
@@ -925,12 +953,11 @@ def check() -> list[str]:
         if not (DOCS / name).is_dir():
             problems.append(f"docs/{name}/ 없음")
 
-    # 루트 CLAUDE.md·PROJECT.md·PRODUCT.md·STATE.md·README.md 도 docs/ 문서를 가리킨다 —
+    # 루트 CLAUDE.md·PROJECT.md·PRODUCT.md·README.md 도 docs/ 문서를 가리킨다 —
     # git mv 로 Task 를 archive 로 옮기면 그 링크가 끊긴다.
     roots = [
         p
-        for p in (claude, REPO / "PROJECT.md", REPO / "PRODUCT.md", REPO / "STATE.md",
-                  REPO / "README.md")
+        for p in (claude, REPO / "PROJECT.md", REPO / "PRODUCT.md", REPO / "README.md")
         if p.is_file()
     ]
     for md in [*DOCS.rglob("*.md"), *roots]:
@@ -968,7 +995,7 @@ def todo_notes() -> list[str]:
     목록화한다. CLAUDE.md 의 TODO 만 위반으로 검사한다(위 1번).
     """
     notes: list[str] = []
-    for rel in ("PROJECT.md", "PRODUCT.md", "STATE.md", "docs/masterPlan.md",
+    for rel in ("PROJECT.md", "PRODUCT.md", "docs/masterPlan.md",
                 "docs/manual/README.md"):
         path = REPO / rel
         if path.is_file():
@@ -986,12 +1013,17 @@ def print_tasks() -> int:
         return 0
     active = [r for r in rows if r[0] == TASK_STATES["tasks"]]
     closed = [r for r in rows if r[0] != TASK_STATES["tasks"]]
+    updated = {key: state_updated(DOCS / "tasks" / key) for _, key, _, _ in active}
+    latest = max((k for k in updated if updated[k]), key=lambda k: updated[k], default=None)
+    if not active:
+        print("진행 Task 없음 — 다음 행동은 docs/masterPlan.md Phase 로드맵")
     for group, label in ((active, "진행"), (closed, "종결·폐기")):
         if not group:
             continue
         print(f"— {label} {len(group)}건 —")
         for state, key, doc, scope in group:
-            print(f"{state} #{key}  {doc}" + (f"  — {scope}" if scope else ""))
+            stamp = f"  갱신 {updated[key] or '?'}" + ("  ← 최근" if key == latest else "") if key in updated else ""
+            print(f"{state} #{key}  {doc}{stamp}" + (f"  — {scope}" if scope else ""))
     return 0
 
 

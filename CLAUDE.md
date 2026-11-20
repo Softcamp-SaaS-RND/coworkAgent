@@ -1,13 +1,15 @@
 # CLAUDE.md
 
 저장소 권위 문서의 **부트로더**. 절차·명령·계약은 여기 적지 않는다. 프로젝트 무관 뼈대 — 고유 요소는 루트
-`PROJECT.md`(일하는 방식) · `PRODUCT.md`(만든 것) · `STATE.md`(지금 상태)가 나눠 갖는다. 정본과 다르면 정본을 따른다.
+`PROJECT.md`(일하는 방식) · `PRODUCT.md`(만든 것)와 진행 Task 폴더의 `state.md`(지금 상태)가 나눠 갖는다. 정본과 다르면 정본을 따른다.
 
 ## 매 세션 필독
 
-1. `STATE.md` — 재개 좌표. **가장 먼저.**
-2. `PROJECT.md` — 가드레일 · 개발 환경 · 검증 명령.
-3. [etc/ddd-workflow.md](docs/etc/ddd-workflow.md) — DDD 절차 핵심(문서 체인 · 개발 Flow · 평가 계약 · Git).
+1. `python tools/check_ddd_docs.py --tasks` → 진행 Task 폴더의 `state.md` — 재개 좌표. **가장 먼저.** 사용자가 Task 를
+   지정하지 않았으면 `갱신:` 이 가장 최근인 Task(← 최근), 진행 0건이면 [masterPlan.md](docs/masterPlan.md) 로드맵.
+2. `PROJECT.md` — 가드레일 · 개발 환경 · 검증 명령. 도구 전제가 pstack 인데 이 대화에서 `/pstack:poteto-mode` 가
+   호출되지 않았으면 착수 전 사용자에게 호출을 요청한다(모델이 스스로 켤 수 없다).
+3. [etc/ddd-workflow.md](docs/etc/ddd-workflow.md) — DDD 절차 핵심(문서 체인 · 개발 Flow · 평가 계약 · `state.md` 2절 · Git).
 
 ## 필요할 때 여는 문서
 

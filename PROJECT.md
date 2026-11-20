@@ -1,7 +1,7 @@
 # PROJECT.md — coworkAgent
 
 **어떻게 일하는가**의 단일 위치 — 가드레일 · 개발 환경 · 검증. 제품 구조·규칙은 루트 `PRODUCT.md`,
-진행 현황은 루트 `STATE.md`. 계약은 [etc/doc-conventions.md](docs/etc/doc-conventions.md) "PROJECT.md — 필수 5절".
+진행 현황은 진행 Task 폴더의 `state.md`(`python tools/check_ddd_docs.py --tasks`). 계약은 [etc/doc-conventions.md](docs/etc/doc-conventions.md) "PROJECT.md — 필수 5절".
 **빈 절은 없다** — 실내용이 없으면 `없음`, 미확정이면 `미확정` + TODO 주석.
 
 ## 치명 가드레일
@@ -33,12 +33,14 @@
   - TDD · stage 리뷰 · 완료 증거 — `superpowers:test-driven-development` · `superpowers:requesting-code-review` ·
     `superpowers:verification-before-completion`.
   - 적대적 평가자 — `codex-peer-review` 스킬로 구현 세션과 분리된 Codex 에 적대적 리뷰를 배정 — Orca 가 라운드마다 Codex 를 새로 띄운다(`worker-start --agent codex`,
-    요청 절차는 그 스킬 · 사용자 전역 지침, 2026-10-21 — 기존 `review` · `review2` 터미널 배정과 옛 `codex-review` 세션 대행 요청은 폐지). **라운드 상한 2** —
-    사용자 전역 지침이 [etc/eval-protocol.md](docs/etc/eval-protocol.md) 의 "최대 3 라운드" 보다 우선한다.
+    요청 절차는 그 스킬 · 사용자 전역 지침, 2026-10-21 — 기존 `review` · `review2` 터미널 배정과 옛 `codex-review` 세션 대행 요청은 폐지). **라운드 상한 2**
+    ([etc/eval-protocol.md](docs/etc/eval-protocol.md)).
+- **실행 방식**: pstack 사용 — `/pstack:poteto-mode` (사용자 호출 — 모델이 스스로 켤 수 없다). 규칙은
+  [etc/ddd-workflow.md](docs/etc/ddd-workflow.md) "실행 방식 — pstack".
 - **Git 브랜치**: Task 별 `task/NN-이름` 브랜치 → main 으로 merge. rebase 는 사용자 요청 시에만.
 - **squash push**: origin/main 은 릴리스 단위 squash 커밋 이력. 로컬 커밋 뒤 `git commit-tree HEAD^{tree} -p origin/main -m "<메시지>"` 로 만든 커밋을 `git push origin <sha>:refs/heads/main`, 이어서 `git reset --mixed origin/main` 으로 로컬을 맞춘다(2026-10-20 정리 — 이전 로컬 이력은 `backup/pre-reset-1020`).
   squash 라 Task 브랜치는 main 의 조상이 되지 않는다(`git branch -d` 거절) — **종결 push 뒤** `git rev-parse task/<키>^{tree} origin/main^{tree}` 가 같으면
-  `git branch -D task/<키>` 로 지운다(트리가 다르면 남기고 사유를 STATE 에 적는다).
+  `git branch -D task/<키>` 로 지운다(트리가 다르면 남기고 사유를 그 Task 의 `report.md` 에 적는다).
 - **수동 테스트 시점**: 프로토타입(Phase 1 끝)까지는 함수 테스트 · TDD 만 — 각 Task 의 수동 gate 는 ABANDON 으로 드러내고 프로토타입 인수 Task 에서
   일괄 진행한다(masterPlan D28).
 - **개발 PC 재실행**: `python tools/rebuild_run.py` — Claude Code 세션에서 앱을 띄울 때는 `Start-Process` 대신 이것을 쓴다(세션 환경 변수가 앱 · `claude -p`

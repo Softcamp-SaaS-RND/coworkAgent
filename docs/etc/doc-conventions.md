@@ -1,7 +1,7 @@
-# 문서 규약 — 문서 트리 · 루트 3문서 계약 · Task 폴더 명 · 링크
+# 문서 규약 — 문서 트리 · 프로젝트 문서 계약 · Task 폴더 명 · 링크
 
 > **문서를 만들거나 옮길 때 · 루트 `PROJECT.md` · `PRODUCT.md` 의 절이나 원장 형식을 고칠 때 여는 문서.** 절차는
-> [ddd-workflow.md](ddd-workflow.md)(매 세션 필독 — 개발 Flow · `STATE.md` 2절), 종결 절차는 그 문서 "개발 Flow" 6. 여기는 문서 구조 계약이며
+> [ddd-workflow.md](ddd-workflow.md)(매 세션 필독 — 개발 Flow · `state.md` 2절), 종결 절차는 그 문서 "개발 Flow" 6. 여기는 문서 구조 계약이며
 > `tools/check_ddd_docs.py` 가 기계로 잡는다.
 
 ## 문서 체계 (`docs/`)
@@ -11,7 +11,7 @@
 ```tree
 docs/
 ├── masterPlan.md                ← 계약 문서 — 전체 의도·확정 방향(D)·기능 명세(S)·Phase 로드맵
-├── tasks/{NN.기능명}/            ← 활성 Task — 문서 체인 일습 (work/stage{M}.md 포함)
+├── tasks/{NN.기능명}/            ← 활성 Task — 문서 체인 일습 (work/stage{M}.md · state.md 포함)
 ├── archive/{NN.기능명}/          ← 종결 Task — `git mv` 한 번으로 이동
 ├── overview/                    ← ledger.md(미조치 원장 · 누적) + Phase·횡단 보고서
 ├── manual/                      ← README.md(라우팅·등록 규약) + dev/(개발자·AI) + user/(쓰는 사람)
@@ -35,7 +35,7 @@ docs/
 - **문서 규약 체커(필수)**: `tools/check_ddd_docs.py` 가 링크·디렉토리·계약·gate·원장을 기계로
   잡는다 — 검사 목록의 정본은 그 파일의 docstring. **빌드·테스트 green 과 별개**로 통과해야 종결한다.
 
-## 루트 3문서 계약
+## 프로젝트 문서 계약
 
 프로젝트 고유 요소는 **역할로 갈린다** — 뼈대는 절차만 정의하고, 절차가 소비하는 데이터는 이 셋이
 공급한다. 어느 문서든 **빈 절은 없다**: 실내용이 없으면 `없음`, 미확정이면 `미확정` + TODO 주석.
@@ -46,9 +46,9 @@ docs/
 |------|---------|-----------|
 | `PROJECT.md` | 어떻게 일하는가 — 가드레일 · 개발 환경 · 검증 | 결정이 바뀔 때 |
 | `PRODUCT.md` | 무엇을 만들었는가 — 구조 · 규칙 · 설계 | 모듈·규칙이 바뀐 Task 종결 시 |
-| `STATE.md` | 지금 어디인가 — 재개 좌표 (**전부 덮어쓴다**) | 단계 전환마다 |
+| `docs/tasks/{key}/state.md` | 그 Task 가 지금 어디인가 — 재개 좌표 (**전부 덮어쓴다**) | 단계 전환마다 |
 
-`STATE.md` 2절 계약은 단계 전환마다 쓰므로 [ddd-workflow.md](ddd-workflow.md) "STATE.md — 필수 2절" 에 둔다.
+`state.md` 2절 계약은 단계 전환마다 쓰므로 [ddd-workflow.md](ddd-workflow.md) "state.md — 필수 2절 (Task 폴더)" 에 둔다.
 
 ### PROJECT.md — 필수 5절
 
@@ -112,6 +112,6 @@ Task 를 가로질러 **누적**되는 유일한 기록. 상태 전이(`열림`�
   링크가 아니라 **그 문서로 내용을 옮긴다**. 활성 Task 목록을 링크 표로 만들지 않는다 — 폴더가
   SSOT 이고 목록은 `python tools/check_ddd_docs.py --tasks` 로 파생한다.
 - **현존 문서는 링크로.** 백틱 경로는 코드 파일과 삭제된 역사 경로에만.
-- **루트 문서**(`CLAUDE.md`·`PROJECT.md`·`PRODUCT.md`·`STATE.md`)는 `docs/` 밖이다. `docs/` 안에서는 백틱으로
+- **루트 문서**(`CLAUDE.md`·`PROJECT.md`·`PRODUCT.md`)는 `docs/` 밖이다. `docs/` 안에서는 백틱으로
   **루트 `PROJECT.md`** 처럼 쓴다. 코드 docstring·문서 밖 인용은 **주제명으로** — 섹션 번호는 개정 때
   전량 어긋난다.
